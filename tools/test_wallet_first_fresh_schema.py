@@ -65,6 +65,14 @@ def main():
         for column in retired_columns:
             assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_attempts' AND COLUMN_NAME='"+column+"'")== '0',column
             checks.append('retired_payment_column:'+column)
+        for table,columns in {
+            'gift_list':['server_offset'],
+            'server_config':['port_type','reality','ip','sni','header_type','request_header','response_header','security','tlsSettings'],
+            'server_plans':['dest','serverNames','spiderX','limitip','rahgozar','flow','custom_path','custom_port','custom_sni'],
+        }.items():
+            for column in columns:
+                assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='"+table+"' AND COLUMN_NAME='"+column+"'")=='0',(table,column)
+                checks.append('retired_native_column:'+table+'.'+column)
         path=work/'fresh.php';path.write_text(PHP)
         for mode in ('strict','off'):
             p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode],

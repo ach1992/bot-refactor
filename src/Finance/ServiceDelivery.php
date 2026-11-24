@@ -21,7 +21,11 @@ function achbotServiceDeliverySchemaReady(mysqli $db): bool {
             $keys[(int)$row['Seq_in_index']]=$row['Column_name'];
         }
         $q->free();ksort($keys);
-        return array_values($keys)===['service_operation_id','ordinal'] && achbotDeliveryPartsSchemaReady($db);
+        if (array_values($keys)!==['service_operation_id','ordinal'] || !achbotDeliveryPartsSchemaReady($db)) return false;
+        $constraint=achbotProviderRow($db,"SELECT CONSTRAINT_NAME FROM information_schema.TABLE_CONSTRAINTS
+            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_delivery_intents'
+            AND CONSTRAINT_NAME='ck_delivery_source_current' AND CONSTRAINT_TYPE='CHECK'");
+        return $constraint!==null;
     } catch (Throwable $e) {return false;}
 }
 
@@ -119,11 +123,13 @@ function achbotServiceEditDeliveryInsertLocked(mysqli $db,array $op,array $quote
         throw new RuntimeException('service_delivery_packet_invalid');
     achbotServiceDeliveryInsertBindingLocked($db,$b,$packet);
 }
-function achbotServiceDeliveryInsertBindingLocked(mysqli $db,array $b,array $packet): void {
+function achbotServiceDeliveryInsertBindingLocked(mysqli $db,array $b,array $packet): int {
+    if ((int)(achbotProviderRow($db,'SELECT @@in_transaction AS active')['active']??0)!==1)
+        throw new RuntimeException('delivery_insert_requires_transaction');
     $source=hash('sha256',achbotServiceJson($b));
     $parts=achbotSubscriptionDeliveryParts($packet);
     $sealed=achbotPaymentEvidenceProtect(achbotServiceDeliveryPurpose(
-        $b['service_id'],$b['ordinal'],$b['effect_id']??0,$b['order_id']),
+        $b['service_id']??0,$b['ordinal'],$b['effect_id']??0,$b['order_id']),
         ['binding'=>$b,'packet'=>$packet,'parts'=>$parts]);
     $s=achbotProviderStatement($db,"INSERT INTO payment_delivery_intents
         (service_operation_id,ordinal,effect_id,order_id,user_id,server_id,source_digest,
@@ -134,6 +140,61 @@ function achbotServiceDeliveryInsertBindingLocked(mysqli $db,array $b,array $pac
     $n=$s->affected_rows;$id=(int)$s->insert_id;$s->close();
     if ($n!==1 || $id<=0) throw new RuntimeException('service_delivery_insert_failed');
     achbotDeliveryPartsInsertLocked($db,$id,$parts);
+    return $id;
+}
+
+/** A nonpaid CREATE has the same physical identity and delivery parts, but
+ * its original source is the verified effect, never a fabricated payment. */
+function achbotNonpaidDeliveryBinding(mysqli $db,int $effectId,int $orderId): array {
+    $o=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=? FOR UPDATE','i',[$orderId]);
+    $e=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=? FOR UPDATE','i',[$effectId]);
+    if (!$o || !$e) throw new RuntimeException('delivery_nonpaid_source_missing');
+    $owner=(int)$o['userid'];$ordinal=(int)$e['ordinal'];$kind=$e['source_kind'];$ref=$e['source_ref'];
+    if ($owner<=0 || $ordinal<=0 || !is_string($ref) ||
+        !($kind==='free_trial'?($ordinal===1 && preg_match('/^(?:trial:'.$owner.'|trial_admin:'.$owner.':[1-9][0-9]*)$/D',$ref)===1):
+            ($kind==='admin_bulk' && preg_match('/^bulk:'.$owner.':[1-9][0-9]*$/D',$ref)===1)) ||
+        $e['pay_row_id']!==null || $e['effect_kind']!=='create' ||
+        (int)$e['actor_userid']!==$owner || $e['state']!=='local_recorded' ||
+        $e['provider_state']!=='linked' || (int)$e['order_id']!==$orderId ||
+        (int)$o['status']!==1 || (int)$o['server_id']!==(int)$e['target_server_id'] ||
+        (int)$o['fileid']!==(int)$e['plan_id'] || (int)$o['inbound_id']!==0 ||
+        $o['remark']!==$e['remote_username'] || (int)$o['provider_effect_id']!==$effectId ||
+        (int)$o['provider_remote_user_id']<=0 ||
+        (int)$o['provider_remote_user_id']!==(int)$e['provider_remote_user_id'] ||
+        !is_string($o['provider_remote_created_at']) ||
+        $o['provider_remote_created_at']!==$e['provider_remote_created_at'])
+        throw new RuntimeException('delivery_nonpaid_source_conflict');
+    return ['v'=>3,'service_id'=>null,'source_kind'=>$kind,'source_ref'=>$ref,'ordinal'=>$ordinal,
+        'user_id'=>$owner,'effect_id'=>$effectId,'order_id'=>$orderId,
+        'server_id'=>(int)$o['server_id'],'native_operation'=>$e['operation_id'],
+        'native_target_key'=>$e['target_key'],'native_request_sha256'=>$e['request_sha256'],
+        'native_user_id'=>(int)$e['provider_remote_user_id'],'native_created_at'=>$e['provider_remote_created_at'],
+        'remark'=>$o['remark'],'uuid'=>(string)$o['uuid'],'expire'=>(int)$e['requested_expire'],
+        'link_sha256'=>hash('sha256',(string)$o['link']),'token_sha256'=>hash('sha256',(string)$o['token'])];
+}
+function achbotNonpaidDeliveryInsertLocked(mysqli $db,int $effectId,int $orderId,array $packet): int {
+    $b=achbotNonpaidDeliveryBinding($db,$effectId,$orderId);
+    if (!achbotServiceBuyPacketValid($packet,$b['user_id']))
+        throw new RuntimeException('delivery_nonpaid_packet_invalid');
+    return achbotServiceDeliveryInsertBindingLocked($db,$b,$packet);
+}
+function achbotNonpaidDeliveryValidateLocked(mysqli $db,array $d): array {
+    if ($d['service_operation_id']!==null || $d['pay_row_id']!==null ||
+        $d['attempt_id']!==null || $d['pay_type']!==null || $d['pay_fingerprint']!==null ||
+        (int)$d['effect_id']<=0 || (int)$d['order_id']<=0 ||
+        !hash_equals($d['payload_sha256'],hash('sha256',$d['sealed_payload'])))
+        throw new RuntimeException('delivery_nonpaid_intent_invalid');
+    $b=achbotNonpaidDeliveryBinding($db,(int)$d['effect_id'],(int)$d['order_id']);
+    foreach (['ordinal','user_id','server_id'] as $key)
+        if ($b[$key]!==(int)$d[$key]) throw new RuntimeException('delivery_nonpaid_binding_conflict');
+    foreach (['native_operation','native_target_key'] as $key)
+        if ($b[$key]!==$d[$key]) throw new RuntimeException('delivery_nonpaid_binding_conflict');
+    $body=achbotPaymentEvidenceUnprotect(achbotServiceDeliveryPurpose(0,$b['ordinal'],$b['effect_id'],$b['order_id']),$d['sealed_payload']);
+    if (($body['binding']??null)!==$b || !hash_equals($d['source_digest'],hash('sha256',achbotServiceJson($b))) ||
+        !is_array($body['packet']??null) || !achbotServiceBuyPacketValid($body['packet'],$b['user_id']) ||
+        !is_array($body['parts']??null))
+        throw new RuntimeException('delivery_nonpaid_binding_conflict');
+    return $body['parts'];
 }
 
 /** Shared original completion evidence for historical reports and actual
@@ -225,20 +286,26 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
     $serviceId=0;$claim=null;$physicalLock=null;$serviceLock=null;$cursor=0;
     $priorContext=$GLOBALS['achbotTelegramDiagnosticContext']??null;
     try {
-        $loc=achbotProviderRow($db,'SELECT service_operation_id,user_id FROM payment_delivery_intents WHERE id=?','i',[$id]);
-        if (!$loc || $loc['service_operation_id']===null) return 'missing';
+        $loc=achbotProviderRow($db,'SELECT service_operation_id,user_id,effect_id,pay_row_id,part_count
+            FROM payment_delivery_intents WHERE id=?','i',[$id]);
+        if (!$loc || $loc['pay_row_id']!==null || $loc['part_count']===null ||
+            ($loc['service_operation_id']===null && (int)$loc['effect_id']<=0)) return 'missing';
         $serviceId=(int)$loc['service_operation_id'];$owner=(int)$loc['user_id'];
+        $nonpaid=$serviceId===0;
         require_once __DIR__.'/../Services/Execution.php';
-        $name=achbotServiceExecutionLock($db,$serviceId);
-        $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
-        if ((int)($held['acquired']??0)!==1) return 'busy';
-        $serviceLock=$name;
+        if (!$nonpaid) {
+            $name=achbotServiceExecutionLock($db,$serviceId);
+            $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
+            if ((int)($held['acquired']??0)!==1) return 'busy';
+            $serviceLock=$name;
+        }
         while (true) {
             $claim=null;
             if (!$db->begin_transaction()) throw new RuntimeException('service_delivery_begin');
-            [$op,$quote,$walletOwner]=achbotServiceReadLocked($db,$owner,$serviceId);
+            if (!$nonpaid) [$op,$quote,$walletOwner]=achbotServiceReadLocked($db,$owner,$serviceId);
             $d=achbotProviderRow($db,'SELECT * FROM payment_delivery_intents WHERE id=? FOR UPDATE','i',[$id]);
-            if (!$d || (int)$d['service_operation_id']!==$serviceId || (int)$d['user_id']!==$owner)
+            if (!$d || (int)$d['service_operation_id']!==$serviceId || (int)$d['user_id']!==$owner ||
+                $d['pay_row_id']!==null || $d['effect_id']!==$loc['effect_id'])
                 throw new RuntimeException('service_delivery_source_changed');
             // Source-only pre-032 service drafts have no verified part
             // boundaries. Never fabricate part outcomes from old claims.
@@ -253,9 +320,13 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
             }
             if ($actor===0 && $d['state']!=='pending') {$db->rollback();return $d['state'];}
             if ($actor>0 && $d['state']==='acknowledged') {$db->rollback();return 'stale';}
-            if ($op['stage']!=='completed') {$db->rollback();return 'not_ready';}
-            achbotServiceVerifyFundingLocked($db,$op,$walletOwner);
-            $parts=achbotServiceDeliveryValidateLocked($db,$op,$quote,$d);
+            if ($nonpaid) {
+                $parts=achbotNonpaidDeliveryValidateLocked($db,$d);
+            } else {
+                if ($op['stage']!=='completed') {$db->rollback();return 'not_ready';}
+                achbotServiceVerifyFundingLocked($db,$op,$walletOwner);
+                $parts=achbotServiceDeliveryValidateLocked($db,$op,$quote,$d);
+            }
             $rows=achbotDeliveryPartsValidateLocked($db,$d,$parts);
             $p=null;
             foreach ($rows as $row) {
@@ -267,8 +338,11 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
             if ($p===null) {$db->rollback();return $actor>0?'stale':$d['state'];}
             // Reuse the physical lease already used by account edits,
             // deletion and plan/ownership changes, without a new lock family.
-            if ($op['kind']==='BUY' && $physicalLock===null) {
-                $adapter=achbotProviderDefinition($quote['target']['provider']??null);
+            if (($nonpaid || $op['kind']==='BUY') && $physicalLock===null) {
+                $provider=$nonpaid?achbotProviderType($db,(int)$d['server_id']):($quote['target']['provider']??null);
+                $adapter=achbotProviderDefinition($provider);
+                if ($nonpaid && !isset($adapter['service_account_lock']))
+                    throw new RuntimeException('delivery_nonpaid_provider_lock_missing');
                 if (isset($adapter['service_account_lock'])) {
                     $name=($adapter['service_account_lock'])($db,(int)$d['order_id']);
                     $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
@@ -285,7 +359,8 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
                 if ((int)($owned['owned']??0)!==1) throw new RuntimeException('service_delivery_ownership_lost');
             }
             $GLOBALS['achbotTelegramDiagnosticContext']=[
-                'service_operation_id'=>$serviceId,'delivery_id'=>$id,'delivery_ordinal'=>(int)$d['ordinal'],
+                'service_operation_id'=>$serviceId?:null,'service_effect_id'=>$nonpaid?(int)$d['effect_id']:null,
+                'delivery_id'=>$id,'delivery_ordinal'=>(int)$d['ordinal'],
                 'delivery_part'=>$cursor,'delivery_attempt'=>$claim['attempt'],'delivery_actor'=>$actor];
             $outcome=['result'=>'unknown','code'=>null,'retry_after'=>null];
             try {

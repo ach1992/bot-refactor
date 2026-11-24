@@ -368,12 +368,9 @@ return [
         'bot.gift_volume_and_day.message.6463835f72' => '⚠️ وضعیت ثبت هدیه تأیید نشد؛ پیش از هر اقدام جدید صف هدایا را بررسی کنید.',
         'bot.gift_volume_and_day.message.b155540ffb' => 'ℹ️ این پیام قبلاً برای هدیه ثبت شده و درخواست تکراری ایجاد نشد.',
         // bot.cant_edit_trojan
-        'bot.cant_edit_trojan.alert.4d3c064114' => 'پروتکل تروجان فقط نوع شبکه TCP را دارد',
         // bot.servers_setting
         'bot.servers_setting.message.4c0e6ed6fc' => '☑️ مدیریت سرور ها:',
         'bot.servers_setting.message.ac9cd6d52a' => ['text' => '☑️ مدیریت سرور ها: {cname}', 'parameters' => ['cname']],
-        'bot.servers_setting.text.7267d348aa' => 'اطلاعاتی یافت نشد',
-        'bot.servers_setting.message.47c8f910e4' => ['text' => '📝 لیست آیپی های فعلی: ' . "\n" . '{serverIp}' . "\n" . 'لطفا آیپی های جدید را در خط های جدا بفرستید' . "\n" . '' . "\n" . 'برای خالی کردن متن /empty را وارد کنید', 'parameters' => ['serverIp']],
         // bot.add_new_server
         'bot.manage_marzban_panel_groups.message.59d5170317' => '🗂 گروه‌های مشترک پنل: فقط سرورهای متصل به یک پنل واقعی پاسارگارد را هم‌گروه کنید. مشابه بودن آدرس یا نام، دلیل یکسان بودن پنل فیزیکی نیست. تشخیص پنل واقعی بر عهدهٔ ادمین است.',
         // bot.add_marzban_panel_group
@@ -396,17 +393,6 @@ return [
         'bot.addserver_name.message.9495c6622a' => '✅ گروه پنل سرور به‌روزرسانی شد.',
         'bot.addserver_name.button.13159f8c74' => '✅ بله',
         'bot.addserver_name.button.f47dddc181' => '❌ نخير',
-        'bot.addserver_name.txt.437acc9f7f' => 'اسم',
-        'bot.addserver_name.txt.57400196e6' => '⚠️ ظرفیت',
-        'bot.addserver_name.txt.f4e3596bd2' => 'ریمارک',
-        'bot.addserver_name.txt.fe242ccc0e' => 'پرچم',
-        'bot.addserver_name.end.42b150373f' => 'برای خالی کردن متن /empty را وارد کنید',
-        'bot.addserver_name.message.8f3366957d' => '🔘 لطفا ',
-        'bot.addserver_name.message.035f46db23' => ' جدید را وارد کنید.',
-        'bot.addserver_name.message.664df12986' => ['text' => '⚙️ مدیریت سرور {cname}', 'parameters' => ['cname']],
-        'bot.addserver_name.message.25ce426865' => ' جدید را وارد کنید.' . "\n" . 'برای خالی کردن متن /empty را وارد کنید.',
-        'bot.addserver_name.message.cac7dafe0d' => 'برای نوع header type فقط none و یا http مجاز است.',
-        'bot.addserver_name.message.d763b5be93' => 'برای نوع security فقط tls یا xtls و یا هم none مجاز است.',
         // bot.manage_panel
         'bot.manage_panel.msg.5db5d59c90' => ['text' => '' . "\n" . '👤 به بخش مدیریت خوش اومدی {first_name}' . "\n" . '' . "\n" . '🚪 شروع دوباره: /start' . "\n" . '', 'parameters' => ['first_name']],
         'bot.manage_panel.msg.7d8f330c92' => '' . "\n" . '⚠️ درخواست تغییر موجودی نیمه‌تمام لغو شد؛ مبلغی از این درخواست اعمال نشد.' . "\n" . '',
@@ -1064,8 +1050,6 @@ return [
         'management.server_remark' => "🏷 پیشوند نام سرویس‌ها را وارد کنید؛ فقط حروف انگلیسی، عدد، خط تیره یا زیرخط و حداکثر 60 کاراکتر:",
         'management.server_flag' => "🏳️ پرچم یا نشانه سرور را ارسال کنید:",
         'management.server_url' => "🔗 آدرس پایه پنل را بفرستید، مانند:\n<code>https://panel.example.com</code>\nآدرس صفحه dashboard یا مسیر api را وارد نکنید. برای پاسارگارد می‌توانید یکی از اتصال‌های ذخیره‌شده زیر را هم انتخاب کنید.",
-        'management.server_username' => '🔖 نام کاربری مدیر پنل را وارد کنید:',
-        'management.server_password' => "🔑 رمز عبور مدیر پنل را وارد کنید.",
         'management.server_api_key' => '🔑 کلید API پاسارگارد را وارد کنید؛ فقط خود کلید، بدون Bearer یا X-Api-Key.' . "\n" . 'نسخه پشتیبانی‌شده 5.5.1 است. کلید باید دسترسی مدیریت کاربران و خواندن گروه‌های دسترسی داشته باشد.',
         'management.server_panelgroup' => "🗂 گروه مشترک پنل را انتخاب کنید؛ فقط سرورهای یک نوع که واقعاً به همان پنل فیزیکی وصل هستند باید گروه یکسان داشته باشند. تشخیص با ادمین است. بدون گروه مشترک، انتقال سرویس ممکن نیست:",
         'management.server_groups' => "🗂 گروه‌های Native پاسارگارد فقط هنگام ساخت یا ویرایش پلن تعیین می‌شوند.",

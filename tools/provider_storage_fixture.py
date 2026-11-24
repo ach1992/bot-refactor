@@ -11,8 +11,9 @@ def connection(server_id,connection_id,url,instance='b'*32,key='fixture-private-
         ",provider_connection_id="+str(connection_id)+",provider_instance_key="+text(instance)+
         ",provider_version='5.5.1',provider_enabled=1 WHERE id="+str(server_id)+";")
 
-def clone(server_id,source_id):
-    fields='panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,port_type,reality,sub_links,provider_connection_id,provider_instance_key,provider_version,provider_enabled'
+def clone(server_id,source_id, *, current=False):
+    fields='panel_url,type,username,password,sub_links,provider_connection_id,provider_instance_key,provider_version,provider_enabled'
+    if not current: fields+=',ip,sni,header_type,request_header,response_header,security,tlsSettings,port_type,reality'
     return 'INSERT INTO server_config(id,'+fields+') SELECT '+str(server_id)+','+fields+' FROM server_config WHERE id='+str(source_id)+';'
 
 def identity(effect_id,order_id,connection_id,url,remote_id,created_at,username,marker,entitlement,*,server_id=2,plan_id=7,existing=False,reference_id=None):

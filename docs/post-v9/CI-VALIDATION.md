@@ -30,7 +30,7 @@ main pushes under the single `php85-validation` required status:
   bytes and part/attempt state. Unchanged menu, management, web and
   context parity suites remain required. Negative fixtures reject changed
   parse mode, altered arguments, missing calls, and new unowned calls.
-- Existing current-provider import, alias, DELETE, gift, account
+- Nonpaid trial/bulk runs on the exact empty current schema, including durable multipart delivery, interrupted-process recovery, explicit redrive and stale ownership denial. Fresh-schema proof checks the nineteen retired Native/port/custom-plan/gift cursor columns and exact retained table definitions.\n- Existing current-provider import, alias, DELETE, gift, account
   management, indexed payment lock, payment audience, permission, browser,
   onboarding, agency, Wallet transfer/admin and diagnostic suites remain
   mandatory. PasarGuard is the only shipped Native adapter; historical

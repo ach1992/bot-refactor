@@ -217,6 +217,8 @@ function achbotCreateNonPaymentAccount(
 ): array {
     require_once __DIR__.'/OperationalReports.php';
     achbotOperationalReportRequireReady($db);
+    require_once __DIR__.'/ServiceDelivery.php';
+    if (!achbotServiceDeliverySchemaReady($db)) throw new RuntimeException('delivery_schema_unavailable');
     achbotEffectRequireAutocommit($db);
     achbotEffectRequireUniqueLine($db);
     $serverId=(int)($p['server_id']??0);

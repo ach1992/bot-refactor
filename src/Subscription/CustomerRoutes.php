@@ -208,56 +208,6 @@ if(preg_match('/^orderDetails(\d+)(_|)(?<offset>\d+|)/', $data, $match)){
     }
 }
 
-if($data=="cantEditGrpc"){
-    alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.06fdc45418'));
-    exit();
-}
-if(preg_match('/^changeCustomPort(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    delMessage();
-    sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.3034785b83'), $cancelKey, 'HTML');
-    setUser($data);
-}
-if(preg_match('/^changeCustomPort(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
-    if(is_numeric($text)){
-        $stmt = $connection->prepare("UPDATE `server_plans` SET `custom_port`= ? WHERE `id` = ?");
-        $stmt->bind_param("ii", $text, $match[1]);
-        $stmt->execute();
-        $stmt->close();  
-        sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
-         
-        sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.06d5c646c1'), getPlanDetailsKeys($match[1]), 'HTML');
-        setUser();
-    }else sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
-}
-if(preg_match('/^changeCustomSni(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    delMessage();
-    sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.d4b5f70a92'), $cancelKey, 'HTML');
-    setUser($data);
-}
-if(preg_match('/^changeCustomSni(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
-    if($text == "/empty"){
-        $stmt = $connection->prepare("UPDATE `server_plans` SET `custom_sni`= NULL WHERE `id` = ?");
-        $stmt->bind_param("i", $match[1]);
-    }
-    else {
-        $stmt = $connection->prepare("UPDATE `server_plans` SET `custom_sni`= ? WHERE `id` = ?");
-        $stmt->bind_param("si", $text, $match[1]);
-    }
-    $stmt->execute();
-    $stmt->close();  
-    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
-     
-    sendMessage(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.message.06d5c646c1'), getPlanDetailsKeys($match[1]), 'HTML');
-    setUser();
-}
-if(preg_match('/^changeCustomPath(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("UPDATE `server_plans` SET `custom_path` = IF(`custom_path` = 1, 0, 1) WHERE `id` = ?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $stmt->close();
-    
-    editKeys(getPlanDetailsKeys($match[1]));
-}
 if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
     alert(\achbotMessage('legacy_messages.please_wait_message'));
     $oid = $match[1];

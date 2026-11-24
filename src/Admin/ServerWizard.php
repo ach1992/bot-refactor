@@ -172,9 +172,9 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
     if ($provider==='pasarguard') {
         // Each logical server owns its connection; reused aliases keep the same stable instance.
         $pid=$pid??$id;
-        $s=achbotManagementSql($db,"INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type,
+        $s=achbotManagementSql($db,"INSERT INTO server_config(id,panel_url,username,password,type,
             provider_connection_id,provider_instance_key,provider_version,provider_enabled)
-            VALUES(?,?,'','','none','','','none','','',?,'pasarguard',?,?,?,1)",
+            VALUES(?,?,'',?,'pasarguard',?,?,?,1)",
             'ississ',[$id,$v['url'],$p['api_key'],$pid,$p['instance_key'],$check['version']]);$s->close();
     }
     achbotSetPanelGroup($db,$id,(int)$v['panel_group_id']);

@@ -1332,9 +1332,19 @@ require an explicit original-packet redrive. The old best-effort customer
 send and notice projection are removed; their three obsolete warning copy
 keys are retired, not replaced with a separate notification system.
 The existing attention inbox distinguishes customer redrive from staff
-report recovery using existing confirmation copy. Trial/bulk QR delivery
-still uses the existing direct path; its multipart durable recovery is a
-separate remaining acceptance gap. Ordinary UI and diagnostics stay separate.
+report recovery using existing confirmation copy. Free trial and administrator
+bulk creation now atomically record the already verified Native CREATE alongside
+the local order, sealed customer packet/parts and staff reports. The existing
+multipart delivery ledger, maintenance scheduler and explicit part recovery
+handle both paid and nonpaid sources; a nonpaid source uses its actual
+effect identity, never a synthetic payment or wallet debit. The shared
+attention inbox exposes uncertain nonpaid parts using the same confirmation
+copy. Ordinary on-demand subscription display and diagnostics stay separate.
+Fresh schema construction 041 admits the effect-owned delivery source;
+042 removes nineteen unused Native transport and gift cursor columns. Old
+server and custom-plan editing handlers, stale compatibility routes and
+their unreferenced Persian text are removed. Original financial and Native
+provenance fields remain evidence, not runnable historical operations.
 Owner decision (24 Nov 2026): a definitively ineligible report recipient
 is terminally skipped without redirection, another Telegram attempt, or
 manufactured acknowledgement. Incomplete permission reads remain retryable;

@@ -62,16 +62,16 @@ def main():
             p=subprocess.run(client,input=query,text=True,env=env,capture_output=True,timeout=30)
             assert p.returncode==0,(p.stderr,query[:200])
             return p.stdout.strip()
-        sql("""INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password)
-            VALUES (2,'https://fixture.invalid','127.0.0.1','','none','','','none','{}','pasarguard','fixture','fixture'),
-                   (3,'http://127.0.0.1:9','127.0.0.1','','none','','','none','{}','marzban','fixture','fixture');
+        sql("""INSERT INTO server_config(id,panel_url,type,username,password)
+            VALUES (2,'https://fixture.invalid','pasarguard','fixture','fixture'),
+                   (3,'http://127.0.0.1:9','marzban','fixture','fixture');
             INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES
                 (2,'Fixture PG','100','pgfixture','',1,1),(3,'Retired M','100','fixture','',1,1);
             UPDATE server_config SET provider_connection_id=2,provider_instance_key=REPEAT('a',32),
                 provider_version='5.5.1',provider_enabled=1 WHERE id=2;
-            INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)
-            VALUES (7,'7',1,2,0,6,'Fixture PG','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]'),
-                   (8,'8',1,3,0,6,'Retired M','vless',30,2,'normal',100,'description','',1,0,'fixture','{"inbounds":{"vless":["inbound"]}}',NULL);
+            INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids)
+            VALUES (7,'7',1,2,0,6,'Fixture PG','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]'),
+                   (8,'8',1,3,0,6,'Retired M','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL);
             INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date,
                 provider_effect_id,provider_remote_user_id,provider_remote_created_at)
             VALUES (91,1001,REPEAT('a',30),'fixture',7,2,0,'fixture-user','fixture-uuid',1800000100,'["vless://fixture"]',100,1,'fixture',

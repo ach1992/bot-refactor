@@ -584,22 +584,22 @@ def main():
                 id INT AUTO_INCREMENT PRIMARY KEY, intent_id BIGINT UNSIGNED NOT NULL,
                 user_id BIGINT NOT NULL, part_no INT NOT NULL,kind VARCHAR(12), qr TEXT, caption TEXT, keys_json TEXT, mode VARCHAR(12)) ENGINE=InnoDB""")
 
-            sql(f"""INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password)
-                VALUES (2,'{base}','127.0.0.1','','none','','','none','{{}}','pasarguard','fixture','fixture');
+            sql(f"""INSERT INTO server_config(id,panel_url,type,username,password)
+                VALUES (2,'{base}','pasarguard','fixture','fixture');
                 INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (2,'Fixture PG','100','pgfixture','',1,1);
                 UPDATE server_config SET provider_connection_id=2,provider_instance_key=REPEAT('a',32),
                     provider_version='5.5.1',provider_enabled=1 WHERE id=2;
-                INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)
-                VALUES (7,'7',1,2,0,6,'Fixture PG','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]');""")
-            sql(f"""INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled)
-                VALUES (3,'{base}','127.0.0.1','','none','','','none','{{}}','pasarguard','fixture','fixture',2,REPEAT('a',32),'5.5.1',1);
+                INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids)
+                VALUES (7,'7',1,2,0,6,'Fixture PG','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]');""")
+            sql(f"""INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled)
+                VALUES (3,'{base}','pasarguard','fixture','fixture',2,REPEAT('a',32),'5.5.1',1);
                 INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (3,'Fixture alias','200','pgalias','',1,1);
                 INSERT INTO setting(type,value) VALUES ('ACHBOT_MARZBAN_PANEL_GROUP','fixture group');
                 UPDATE server_info SET panel_group_id=LAST_INSERT_ID() WHERE id IN (2,3);
-                INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)
-                VALUES (8,'8',1,2,0,6,'Fixture PG next','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]'),
-                       (9,'9',1,3,0,6,'Fixture PG alias','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]'),
-                       (10,'10',1,2,0,6,'Fixture PG group change','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1]');""")
+                INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids)
+                VALUES (8,'8',1,2,0,6,'Fixture PG next','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]'),
+                       (9,'9',1,3,0,6,'Fixture PG alias','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]'),
+                       (10,'10',1,2,0,6,'Fixture PG group change','vless',30,2,'normal',100,'description','',1,0,'fixture','[1]');""")
             sql('UPDATE users SET wallet=50000 WHERE userid=9002')
             driver=work/'execution.php';driver.write_text(PHP)
             def php(mysqli_mode,op,**kw):
@@ -781,11 +781,11 @@ def main():
                 # An operator may deliberately delete a logical server.
                 # The missing inventory must not prevent an original refund.
                 sid=31 if mode=='strict' else 32
-                sql(f"""INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled)
-                    SELECT {sid},panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled FROM server_config WHERE id=2;
+                sql(f"""INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled)
+                    SELECT {sid},panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled FROM server_config WHERE id=2;
                     INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES ({sid},'Fixture removed','10','removed','',1,1);
-                    INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni,provider_group_ids)
-                    VALUES ({sid},'{sid}',1,{sid},0,6,'Fixture removed','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL,'[1,2]');""")
+                    INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids)
+                    VALUES ({sid},'{sid}',1,{sid},0,6,'Fixture removed','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]');""")
                 op=issue(mode,'resolution-removed-server',server=sid,plan=sid);fund(mode,op)
                 sql(f"START TRANSACTION; DELETE FROM server_config WHERE id={sid}; DELETE FROM server_info WHERE id={sid}; COMMIT")
                 before=finance();bal=int(sql('SELECT wallet FROM users WHERE userid=1001'));wire=len(requests)

@@ -51,11 +51,11 @@
   ],
   "changes": {
     "bot.php": {
+      "reason": "Remove source-dead legacy server editing handlers; current ManagementFlow remains the single writer.",
       "before_count": 200,
-      "after_count": 190,
+      "after_count": 176,
       "before_sha256": "cff48d8a700a865d62d8c96389da43e7a2d34431deff1f650f3bd4b107808baa",
-      "after_sha256": "5c129b242e412cefd818f590bd43b6950489adcf3cd8bd566304829463246cab",
-      "reason": "Retired Marzban wizard and external renewal selection. Retire old physical-group alias/free-text step; use current provider-neutral group selectors."
+      "after_sha256": "d780d435163a004f878bd8e03f22601f5511f3a879026eb6b0fd529ab3ec1101"
     },
     "src/Finance/ApiPaymentPresentation.php": {
       "before_count": 1,
@@ -231,6 +231,13 @@
       "after_count": 0,
       "before_sha256": "bea9782d701af416213500d452e96958f40b09133a70eadbe91ae48c6a6e6b64",
       "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "src/Subscription/CustomerRoutes.php": {
+      "reason": "Remove obsolete custom port/SNI/path and gRPC callbacks. Native provider groups own transport configuration.",
+      "before_count": 23,
+      "after_count": 16,
+      "before_sha256": "3dd3773833d6d1001eb2967ff89317f8e1db3902af1e9921d5644a5aac9dd877",
+      "after_sha256": "d10828d5c75b32eb6a9b85b13d559b09259ebc53583899f2395a11972b77b0c0"
     }
   },
   "added_with_direct_send": [

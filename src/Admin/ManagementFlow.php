@@ -55,8 +55,6 @@ function achbotManagementText(string $key,array $params=[]): string {
         'server_remark'=>achbotMessage('admin_settings.management.server_remark',$params),
         'server_flag'=>achbotMessage('admin_settings.management.server_flag',$params),
         'server_url'=>achbotMessage('admin_settings.management.server_url',$params),
-        'server_username'=>achbotMessage('admin_settings.management.server_username',$params),
-        'server_password'=>achbotMessage('admin_settings.management.server_password',$params),
         'server_api_key'=>achbotMessage('admin_settings.management.server_api_key',$params),
         'server_panelgroup'=>achbotMessage('admin_settings.management.server_panelgroup',$params),
         'server_groups'=>achbotMessage('admin_settings.management.server_groups',$params),
@@ -298,8 +296,7 @@ function achbotManagementFieldBaseline(array $row,string $field): string {
     $column=['name'=>'title','flag'=>'flag','remark'=>'remark','max'=>'ucount','days'=>'days','volume'=>'volume'][$field]??null;
     $identity=['id'=>$row['id'],'type'=>$row['type']];
     if (isset($row['server_id'])) $identity['server_id']=$row['server_id'];
-    if ($field==='login') foreach (['panel_url','username','password'] as $key) $identity[$key]=$row[$key];
-    elseif ($column!==null) $identity['value']=$row[$column];
+    if ($column!==null) $identity['value']=$row[$column];
     else throw new RuntimeException('management_input');
     return hash('sha256',json_encode($identity,JSON_THROW_ON_ERROR));
 }
@@ -308,12 +305,10 @@ function achbotHandleManagementFields(): bool {
     global $connection, $from_id, $admin, $data, $text, $update, $userInfo, $cancelKey, $message_id, $chat_id;    $cb=is_string($data??null)?$data:'';
     $step=(string)($userInfo['step']??'');
     $active=str_starts_with($step,'achbotField|');
-    $start=preg_match('/^(editServer(Name|Flag|Remark|Max)|plan(Days|Volume)|changesServerLoginInfo)([1-9][0-9]*)$/D',$cb,$match)===1;
-    $legacyCancel=is_string($text??null) && $text===(\achbotMessage('legacy_buttons.cancel')??null) &&
-        preg_match('/^(?:editServer(?:Name|Flag|Remark|Max)|plan(?:Days|Volume)|changesServerLoginInfo)([1-9][0-9]*)$/D',$step,$old);
+    $start=preg_match('/^(editServer(Name|Flag|Remark|Max)|plan(Days|Volume))([1-9][0-9]*)$/D',$cb,$match)===1;
     $delete=preg_match('/^yesDeleteServer([1-9][0-9]*)_([a-f0-9]{16})$/D',$cb,$deletion)===1;
     $cancelDelete=preg_match('/^cancelDeleteServer([1-9][0-9]*)_([a-f0-9]{16})$/D',$cb,$cancellation)===1;
-    if (!$start && !$active && !$legacyCancel && !$delete && !$cancelDelete) return false;
+    if (!$start && !$active && !$delete && !$cancelDelete) return false;
     $begun=false;$context='server';$entity=0;
     try {
         $actor=(int)$from_id;$source=achbotManagementFrame($update,$actor,$cb,is_string($text??null)?$text:null);
@@ -356,24 +351,17 @@ function achbotHandleManagementFields(): bool {
                 $keys??json_encode(['inline_keyboard'=>[]]),'HTML');
             return true;
         }
-        if ($legacyCancel) {
-            if ($u['step']!==$step) throw new RuntimeException('management_stale');
-            $context=str_starts_with($step,'plan')?'plan':'server';$entity=(int)$old[1];
-            achbotManagementStore($connection,$actor,$actorRowId,null);
-            if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
-            achbotManagementHome($context,$entity);return true;
-        }
         if ($start) {
             if (!in_array($u['step'],['none',''],true) && !str_starts_with($u['step'],'achbotField|')) throw new RuntimeException('management_other_flow');
             $entity=(int)$match[4];
             $context=str_starts_with($cb,'plan')?'plan':'server';
-            $field=$context==='plan'?strtolower($match[3]):($match[1]==='changesServerLoginInfo'?'login':strtolower($match[2]));
+            $field=$context==='plan'?strtolower($match[3]):strtolower($match[2]);
             $row=$context==='plan'?achbotManagementRow($connection,'SELECT p.*,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=? AND p.active=1 FOR UPDATE','i',[$entity]):
-                achbotManagementRow($connection,'SELECT i.*,c.type,c.panel_url,c.username,c.password FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
-            if (!$row || !achbotSupportsAccount($row['type'],0) || $field==='login')
+                achbotManagementRow($connection,'SELECT i.*,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
+            if (!$row || !achbotSupportsAccount($row['type'],0))
                 throw new RuntimeException('management_targets');
             $d=['nonce'=>bin2hex(random_bytes(6)),'source'=>$source,'context'=>$context,'id'=>$entity,
-                'field'=>$field,'stage'=>$field==='login'?'url':$field,'values'=>[],
+                'field'=>$field,'stage'=>$field,
                 'baseline'=>achbotManagementFieldBaseline($row,$field)];
         } else {
             $context=$d['context'];$entity=(int)$d['id'];
@@ -383,28 +371,23 @@ function achbotHandleManagementFields(): bool {
                 achbotManagementHome($context,$entity);return true;
             }
             if ($cb!=='' || !is_string($text)) throw new RuntimeException('management_other_action');
-            $field=$d['field'];$input=trim($text);$save=true;
-            if ($field==='login') throw new RuntimeException('management_targets');
+            $field=$d['field'];$input=trim($text);
             if (in_array($field,['max','days','volume'],true)) {
                 $input=achbotManagementInteger($input,1,$field==='days'?achbotServiceDaysMax():($field==='volume'?achbotServiceVolumeMax():2147483647));
                 if ($field==='volume' && achbotCatalogServiceUnits($input,achbotServiceVolumeMax())===null)
                     throw new RuntimeException('management_input');
             } elseif ($input==='' || mb_strlen($input)>100 ||
                 ($field==='remark' && preg_match('/^[a-zA-Z0-9_-]{1,60}$/D',$input)!==1)) throw new RuntimeException('management_input');
-            if ($save) {
-                $row=$context==='plan'?achbotManagementRow($connection,'SELECT p.*,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=? AND p.active=1 FOR UPDATE','i',[$entity]):
-                    achbotManagementRow($connection,'SELECT i.*,c.type,c.panel_url,c.username,c.password FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
-                if (!$row || !hash_equals($d['baseline'],achbotManagementFieldBaseline($row,$field))) throw new RuntimeException('management_stale');
-                if ($field==='login') throw new RuntimeException('management_targets');
-                $column=['name'=>'title','flag'=>'flag','remark'=>'remark','max'=>'ucount','days'=>'days','volume'=>'volume'][$field]??null;
-                if ($column===null) throw new RuntimeException('management_input');
-                $table=$context==='plan'?'server_plans':'server_info';
-                achbotManagementSql($connection,"UPDATE $table SET $column=? WHERE id=?",'si',[(string)$input,$entity])->close();
-                achbotManagementStore($connection,$actor,$actorRowId,null);
-                if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
-                achbotManagementHome($context,$entity,achbotManagementText($context==='plan'?'plan_updated':'settings_saved'));return true;
-            }
-            $d['source']=$source;
+            $row=$context==='plan'?achbotManagementRow($connection,'SELECT p.*,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=? AND p.active=1 FOR UPDATE','i',[$entity]):
+                achbotManagementRow($connection,'SELECT i.*,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
+            if (!$row || !hash_equals($d['baseline'],achbotManagementFieldBaseline($row,$field))) throw new RuntimeException('management_stale');
+            $column=['name'=>'title','flag'=>'flag','remark'=>'remark','max'=>'ucount','days'=>'days','volume'=>'volume'][$field]??null;
+            if ($column===null) throw new RuntimeException('management_input');
+            $table=$context==='plan'?'server_plans':'server_info';
+            achbotManagementSql($connection,"UPDATE $table SET $column=? WHERE id=?",'si',[(string)$input,$entity])->close();
+            achbotManagementStore($connection,$actor,$actorRowId,null);
+            if (!achbotManagementCommit($connection)) throw new RuntimeException('management_commit_unknown');$begun=false;
+            achbotManagementHome($context,$entity,achbotManagementText($context==='plan'?'plan_updated':'settings_saved'));return true;
         }
         $next='achbotField|'.$d['nonce'];$payload=json_encode($d,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         achbotManagementWriteActorState($connection,$actor,$actorRowId,$next,$payload);
@@ -412,7 +395,6 @@ function achbotHandleManagementFields(): bool {
         $prompt=match($d['stage']) {
             'days'=>'plan_days_prompt','volume'=>'plan_volume_prompt',
             'name'=>'server_title','flag'=>'server_flag','remark'=>'server_remark','max'=>'server_capacity',
-            'url'=>'server_url','username'=>'server_username','password'=>'server_password',
             default=>throw new RuntimeException('management_input')
         };
         sendMessage(achbotManagementText($prompt),$cancelKey,'HTML');

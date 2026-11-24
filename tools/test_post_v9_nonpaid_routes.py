@@ -11,13 +11,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import test_access_state as owned
-import test_v6_native as native
-import test_v8_native as purchase
 import provider_storage_fixture as storage
-import operational_report_fixture as report_fixture
 
 ROOT=Path(__file__).resolve().parents[1]
-DB=purchase.SIDE[1]
+DB=owned.NAMES[1]
 PHP=r'''<?php
 error_reporting(E_ALL & ~E_DEPRECATED);
 set_error_handler(static function($n,$m){throw new ErrorException($m,0,$n);});
@@ -72,17 +69,32 @@ function setUser($value='none',$field='step'){
     if (!$stmt->execute()) throw new RuntimeException('step_write_failed');
     $stmt->close();
 }
+function fixtureDeliveryTransport($to) {
+    global $connection;
+    $ctx=$GLOBALS['achbotTelegramDiagnosticContext']??null;
+    if (!$ctx || !isset($ctx['delivery_id'])) return null;
+    $d=achbotProviderRow($connection,'SELECT * FROM payment_delivery_intents WHERE id=?','i',[$ctx['delivery_id']]);
+    $p=achbotProviderRow($connection,'SELECT * FROM payment_delivery_parts WHERE intent_id=? AND part_no=?','ii',[$ctx['delivery_id'],$ctx['delivery_part']]);
+    if (!$d || !$p || $d['state']!=='dispatching' || $p['state']!=='dispatching' ||
+        (int)$d['user_id']!==(int)$to || (int)achbotProviderRow($connection,'SELECT @@in_transaction AS active')['active']!==0)
+        throw new RuntimeException('fixture_delivery_without_committed_claim');
+    $GLOBALS['events'][]=['name'=>(int)$p['part_no']===1?'DELIVER':'DELIVER_PART',
+        'uid'=>$to,'intent'=>(int)$d['id'],'part'=>(int)$p['part_no']];
+    if (($GLOBALS['spec']['notice']??'')==='interrupt') exit(0);
+    if (($GLOBALS['spec']['notice']??'')==='throw') throw new RuntimeException('lost_qr_ack');
+    if (($GLOBALS['spec']['notice']??'')==='false') return (object)['ok'=>false,'error_code'=>500,'description'=>'uncertain'];
+    return (object)['ok'=>true,'result'=>(object)['message_id'=>42]];
+}
 function sendMessage($body=null,$keys=null,$format=null,$to=null){
+    $transport=fixtureDeliveryTransport($to);
+    if ($transport!==null) return $transport;
     $GLOBALS['events'][]=['name'=>'MESSAGE','to'=>$to,'text'=>(string)$body,'format'=>$format];
     return (object)['ok'=>true];
 }
-function sendQrFromLink(...$args) {
-    $GLOBALS['events'][]=['name'=>'DELIVER','uid'=>$args[4]??null];
-    if (($GLOBALS['spec']['notice']??'')==='interrupt') exit(0);
-    if (($GLOBALS['spec']['notice']??'')==='throw')
-        throw new RuntimeException('lost_qr_ack');
-    if (($GLOBALS['spec']['notice']??'')==='false') return false;
-    return true;
+function sendPhoto($photo,$caption,$keys,$format,$to) {
+    if (!($photo instanceof CURLFile) || !is_file($photo->getFilename()))
+        throw new RuntimeException('fixture_qr_image_missing');
+    return fixtureDeliveryTransport($to);
 }
 function getMainKeys(){return '{}';}
 function calculateAgentPrice($userInfo,$botState,$planId,$serverId,$buyType,$price){
@@ -97,12 +109,6 @@ function getServerInfoAndConfig($connection,$sid) {
 }
 function generateRandomString(){return 'fixtureuuid';}
 function getNextPortAndIncrease(...$args){throw new RuntimeException('unexpected_native_port_allocation');}
-function buildLinksAndSendQr(...$args) {
-    if (end($args)!==false)
-        throw new RuntimeException('premature_link_delivery');
-    $GLOBALS['events'][]=['name'=>'BUILD'];
-    return ['token','["vless://fixture"]','uuid','Fixture account','{}','vless://fixture'];
-}
 function ensureAccountCreationSucceeded($response,$serverInfo,$inbound,$admin,$throw=false) {
     if (!is_object($response) || ($response->success??false)!==true)
         throw new RuntimeException('fixture_remote_unconfirmed');
@@ -143,6 +149,17 @@ if (($spec['route']??'trial')==='trial') {
         'plan_copy'=>achbotMessage('renewal.extensions.message.143c7f81f1'),
         'purchase_report'=>achbotMessages('legacy_messages')['sent_config_to_user'],
         'pasarguard_base'=>$first];
+} elseif ($spec['route']==='delivery_recovery') {
+    require_once $root.'/src/Finance/ServiceDelivery.php';
+    achbotDeliveryMaintainPending($connection);
+} elseif ($spec['route']==='delivery_redrive') {
+    require_once $root.'/src/Finance/ServiceDelivery.php';
+    $id=(int)$spec['intent'];$part=(int)$spec['part'];
+    $d=achbotProviderRow($connection,'SELECT * FROM payment_delivery_intents WHERE id=?','i',[$id]);
+    $p=achbotProviderRow($connection,'SELECT * FROM payment_delivery_parts WHERE intent_id=? AND part_no=?','ii',[$id,$part]);
+    $token=achbotDeliveryPartRedriveToken($d,$p,$actor);
+    $result=achbotServiceDeliveryDispatch($connection,$id,$actor,$part,$token);
+    $GLOBALS['events'][]=['name'=>'REDRIVE','status'=>$result];
 } elseif ($spec['route']==='report_recovery') {
     require_once $root.'/src/Finance/OperationalReports.php';
     achbotOperationalReportDispatch($connection,$spec['reference']);
@@ -152,7 +169,9 @@ if (($spec['route']??'trial')==='trial') {
 '''
 
 def sql(work,env,cmd):
-    return native.sql(work,env,cmd,DB).strip()
+    return subprocess.run(['mariadb','--no-defaults','--protocol=SOCKET',
+        '--socket='+str(work/'mysql.sock'),'-uroot','--batch','--skip-column-names',DB],
+        input=cmd,env=env,capture_output=True,text=True,check=True,timeout=30).stdout.strip()
 
 def php(work,env,driver,**spec):
     actor=spec.get('actor',1001)
@@ -164,7 +183,7 @@ def php(work,env,driver,**spec):
         start=len(PEER.trace)
         PEER.faults[source]=spec.get('remote','ok')
     p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-        '-d','extension=curl','-d','allow_url_fopen=0',
+        '-d','extension=curl','-d','extension=gd','-d','allow_url_fopen=0',
         '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
         str(driver),str(ROOT),str(work/'mysql.sock'),DB,json.dumps(spec)],
         cwd=work,env=env,capture_output=True,text=True,timeout=25)
@@ -251,17 +270,18 @@ def check():
               if 'getNextPortAndIncrease(' in p.read_text()]
     assert not obsolete,obsolete
     cases.append('native_create_routes_do_not_use_mutable_temp_port_allocator')
-    with owned.owned_database() as (work,env),provider(work,env) as url:
-        purchase.init(work,env,'http://127.0.0.1:9')
-        sql(work,env,(ROOT/'migrations/post-v9/001_marzban_panel_group_id.sql').read_text())
-        sql(work,env,(ROOT/'migrations/post-v9/007_service_effects.sql').read_text())
-        for migration in ('011_provider_identity.sql','012_shared_provider_storage.sql'):
-            sql(work,env,(ROOT/'migrations/post-v9'/migration).read_text())
-        sql(work,env,'ALTER TABLE service_effects'+(ROOT/'migrations/post-v9/035_service_resolution.sql').read_text().split('ALTER TABLE service_effects',1)[1])
-        report_fixture.install(lambda statement: sql(work,env,statement))
+    with owned.owned_database(ROOT/'database/current-schema.sql') as (work,env),provider(work,env) as url:
         def configure_pg():
+            sql(work,env,"INSERT INTO server_config(id,panel_url,type,username,password) VALUES (2,"+
+                storage.text(url)+",'pasarguard','','fixture-private-key');"
+                "INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES(2,'Fixture purchase server',10,'buyfixture','',1,1);"
+                "INSERT INTO server_categories(id,server_id,title,parent,step,active) VALUES(1,'2','Fixture category',0,4,1);"
+                "INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids) VALUES "
+                "(7,'7',1,2,0,6,'Fixture','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]'),"
+                "(8,'8',1,2,0,6,'Free fixture','vless',30,2,'normal',0,'fixture-free','',1,0,'fixture','[1,2]');")
             sql(work,env,storage.connection(2,2,url))
-            sql(work,env,"UPDATE server_plans SET provider_group_ids='[1,2]' WHERE server_id=2")
+            sql(work,env,"UPDATE users SET step='none',freetrial=NULL,temp=NULL,wallet=50000,is_agent=0,discount_percent=NULL; "
+                "UPDATE users SET is_agent=1,discount_percent='{\"normal\":10,\"plans\":{},\"servers\":{}}' WHERE userid=9002")
         configure_pg()
         driver=work/'nonpaid-route.php';driver.write_text(PHP)
         observed=php(work,env,driver,route='alias_identity')
@@ -308,8 +328,8 @@ def check():
         cases.append('configured_single_style_and_source_stable_bulk_decimal_identifiers')
         cases.append('pasarguard_forced_random_collision_source_bound_bulk_and_provider_limits')
         def reset():
-            sql(work,env,'DELETE FROM payment_followup_attempts; DELETE FROM payment_followup_intents; DELETE FROM service_effects')
-            purchase.init(work,env,'http://127.0.0.1:9')
+            sql(work,env,'DELETE FROM payment_followup_attempts; DELETE FROM payment_followup_intents; DELETE FROM payment_delivery_attempts; DELETE FROM payment_delivery_parts; DELETE FROM payment_delivery_intents; DELETE FROM service_effects')
+            sql(work,env,'DELETE FROM orders_list; DELETE FROM server_plans; DELETE FROM server_categories; DELETE FROM server_info; DELETE FROM server_config')
             configure_pg()
             with PEER.lock:PEER.users.clear();PEER.sources.clear();PEER.trace.clear();PEER.faults.clear()
             sql(work,env,'UPDATE users SET freetrial=NULL WHERE userid=1001')
@@ -376,6 +396,19 @@ def check():
         assert sql(work,env,f"SELECT COUNT(*) FROM payment_followup_intents WHERE operational_ref='{ref}' AND state='acknowledged'")=='4'
         assert not php(work,env,driver,route='report_recovery',actor=9001,reference=ref)
         assert len(PEER.trace)==native_count and capacity()==8
+        assert sql(work,env,"SELECT state FROM payment_delivery_intents ORDER BY ordinal")=='dispatching\npending'
+        sql(work,env,"UPDATE payment_delivery_intents SET updated_at=DATE_SUB(NOW(),INTERVAL 3 MINUTE)")
+        recovery=php(work,env,driver,route='delivery_recovery',actor=9001)
+        assert len([e for e in recovery if e['name']=='DELIVER'])==1,recovery
+        assert sql(work,env,"SELECT state FROM payment_delivery_intents ORDER BY ordinal")=='unknown\nacknowledged'
+        unknown=sql(work,env,"SELECT d.id,p.part_no FROM payment_delivery_intents d JOIN payment_delivery_parts p ON p.intent_id=d.id WHERE p.state='unknown'").split()
+        redrive=php(work,env,driver,route='delivery_redrive',actor=9001,intent=int(unknown[0]),part=int(unknown[1]))
+        assert any(e['name']=='REDRIVE' and e['status']=='acknowledged' for e in redrive),redrive
+        sql(work,env,"UPDATE payment_delivery_intents SET updated_at=DATE_SUB(NOW(),INTERVAL 3 MINUTE)")
+        php(work,env,driver,route='delivery_recovery',actor=9001)
+        assert sql(work,env,"SELECT COUNT(*) FROM payment_delivery_intents WHERE state='acknowledged'")=='2'
+        assert len(PEER.trace)==native_count and capacity()==8
+        cases.append('actual_interrupted_bulk_shared_part_recovery_and_explicit_redrive_no_native_replay')
         cases.append('actual_admin_bulk_process_exit_recovers_every_original_report_without_native_replay')
 
         reset()
@@ -506,6 +539,14 @@ def check():
         assert sql(work,env,'SELECT freetrial FROM users WHERE userid=1001')=='used'
         assert effects('free_trial')=='1\tlocal_recorded\t1'
         assert not any(e['name']=='POST' for e in php(work,env,driver,route='trial'))
+        unknown=sql(work,env,"SELECT d.id,p.part_no FROM payment_delivery_intents d JOIN payment_delivery_parts p ON p.intent_id=d.id WHERE p.state='unknown' ORDER BY p.part_no LIMIT 1").split()
+        assert unknown,delivered
+        native_count=len(PEER.trace)
+        sql(work,env,"UPDATE orders_list SET userid=9002")
+        stale=php(work,env,driver,route='delivery_redrive',actor=9001,intent=int(unknown[0]),part=int(unknown[1]))
+        assert not any(e['name'] in ('DELIVER','DELIVER_PART') for e in stale),stale
+        assert len(PEER.trace)==native_count and capacity()==9
+        cases.append('nonpaid_redrive_never_releases_credentials_to_changed_owner')
         cases.append('trial_postcommit_telegram_failure_no_recreate')
 
     return dict(complete=True,cases=len(cases),scenarios=cases,source_real_php=True,

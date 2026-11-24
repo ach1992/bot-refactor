@@ -74,9 +74,12 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
         require_once __DIR__.'/ServiceDelivery.php';
         if (!achbotServiceDeliverySchemaReady($db))
             throw new RuntimeException('delivery_service_schema_invalid');
-        $q=$db->query("SELECT d.id,d.pay_row_id,d.ordinal
-            FROM payment_delivery_intents d JOIN service_operations o ON o.id=d.service_operation_id
-            WHERE d.state IN ('pending','dispatching') AND o.stage='completed'
+        $q=$db->query("SELECT d.id,d.service_operation_id,d.effect_id,d.ordinal
+            FROM payment_delivery_intents d LEFT JOIN service_operations o ON o.id=d.service_operation_id
+            LEFT JOIN service_effects e ON e.id=d.effect_id
+            WHERE d.state IN ('pending','dispatching') AND d.pay_row_id IS NULL
+                AND (o.stage='completed' OR (d.service_operation_id IS NULL AND e.source_kind IN ('free_trial','admin_bulk')
+                    AND e.state='local_recorded'))
                 AND d.part_count IS NOT NULL AND ((d.next_attempt_at IS NULL
                     AND d.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE)) OR d.next_attempt_at<=NOW(6))
             ORDER BY COALESCE(d.next_attempt_at,d.updated_at),d.id LIMIT {$limit}");
@@ -93,13 +96,13 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
     $started=microtime(true);
     foreach ($rows as $d) {
         if (microtime(true)-$started >= $budgetSeconds) break;
-        $id=(int)$d['id'];$payId=(int)$d['pay_row_id'];
+        $id=(int)$d['id'];$sourceId=(int)($d['service_operation_id']??$d['effect_id']);
         $ordinal=(int)$d['ordinal'];
         $stats['checked']++;
         try {
             $outcome=achbotServiceDeliveryDispatch($db,$id);
         } catch (Throwable $error) {
-            error_log('achbot_delivery_maintenance_dispatch_deferred pay_id='.$payId.
+            error_log('achbot_delivery_maintenance_dispatch_deferred source_id='.$sourceId.
                 ' ordinal='.$ordinal.' class='.get_class($error));
             $outcome='review';
         }
@@ -120,12 +123,12 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
                 $q=$db->prepare("UPDATE payment_delivery_intents
                     SET updated_at=NOW(),next_attempt_at=CASE WHEN next_attempt_at<=NOW(6)
                         THEN DATE_ADD(NOW(6),INTERVAL 2 MINUTE) ELSE next_attempt_at END
-                    WHERE id=? AND service_operation_id IS NOT NULL
+                    WHERE id=? AND pay_row_id IS NULL
                         AND part_count IS NOT NULL AND state IN ('pending','dispatching')");
                 $q->bind_param('i',$id);
                 $q->execute();$q->close();
             } catch (Throwable $error) {
-                error_log('achbot_delivery_maintenance_defer_failed pay_id='.$payId.
+                error_log('achbot_delivery_maintenance_defer_failed source_id='.$sourceId.
                     ' ordinal='.$ordinal.' class='.get_class($error));
             }
         }

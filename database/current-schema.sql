@@ -112,7 +112,6 @@ CREATE TABLE `gift_list` (
   `volume` int(11) NOT NULL,
   `day` int(11) NOT NULL,
   `offset` int(11) DEFAULT 0,
-  `server_offset` int(11) NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -325,7 +324,7 @@ CREATE TABLE `payment_delivery_intents` (
   CONSTRAINT `fk_delivery_effect` FOREIGN KEY (`effect_id`) REFERENCES `service_effects` (`id`),
   CONSTRAINT `fk_delivery_payment` FOREIGN KEY (`pay_row_id`) REFERENCES `pays` (`id`),
   CONSTRAINT `fk_delivery_service_operation` FOREIGN KEY (`service_operation_id`) REFERENCES `service_operations` (`id`),
-  CONSTRAINT `ck_delivery_source` CHECK (`service_operation_id` is null and `pay_row_id` is not null and `attempt_id` is not null and `pay_type` is not null and `pay_fingerprint` is not null or `service_operation_id` is not null and `pay_row_id` is null and `attempt_id` is null and `pay_type` is null and `pay_fingerprint` is null)
+  CONSTRAINT `ck_delivery_source_current` CHECK (`service_operation_id` is null and `pay_row_id` is not null and `attempt_id` is not null and `pay_type` is not null and `pay_fingerprint` is not null or (`service_operation_id` is not null or `effect_id` is not null) and `pay_row_id` is null and `attempt_id` is null and `pay_type` is null and `pay_fingerprint` is null)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -556,18 +555,9 @@ CREATE TABLE `server_categories` (
 CREATE TABLE `server_config` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `panel_url` varchar(1000) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  `ip` mediumtext NOT NULL,
-  `sni` varchar(254) NOT NULL,
-  `header_type` enum('none','http') NOT NULL,
-  `request_header` mediumtext NOT NULL,
-  `response_header` mediumtext NOT NULL,
-  `security` enum('xtls','tls','none') NOT NULL,
-  `tlsSettings` mediumtext NOT NULL,
   `type` varchar(100) DEFAULT NULL,
   `username` varchar(100) NOT NULL,
   `password` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
-  `port_type` varchar(10) DEFAULT 'auto',
-  `reality` varchar(10) DEFAULT 'false',
   `sub_links` mediumtext DEFAULT NULL,
   `provider_connection_id` int(11) DEFAULT NULL,
   `provider_instance_key` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
@@ -601,7 +591,6 @@ CREATE TABLE `server_plans` (
   `server_id` int(11) NOT NULL,
   `inbound_id` int(11) NOT NULL DEFAULT 0,
   `acount` bigint(20) NOT NULL,
-  `limitip` int(11) NOT NULL DEFAULT 1,
   `title` varchar(150) NOT NULL,
   `protocol` varchar(100) NOT NULL,
   `days` float NOT NULL,
@@ -613,14 +602,6 @@ CREATE TABLE `server_plans` (
   `active` int(11) NOT NULL DEFAULT 0,
   `step` int(11) NOT NULL,
   `date` varchar(50) NOT NULL,
-  `rahgozar` int(11) DEFAULT 0,
-  `dest` varchar(1000) DEFAULT NULL,
-  `serverNames` text DEFAULT NULL,
-  `spiderX` varchar(500) DEFAULT NULL,
-  `flow` varchar(50) DEFAULT 'None',
-  `custom_path` int(11) DEFAULT 1,
-  `custom_port` int(11) NOT NULL DEFAULT 0,
-  `custom_sni` text DEFAULT NULL,
   `provider_group_ids` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

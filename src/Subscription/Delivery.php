@@ -65,73 +65,21 @@ function achbotPurchaseRenderPacket(string $provider,array $native,array $botSta
     return ['caption'=>$acc_text,'keys'=>$keys,'qr'=>$qrLink];
 }
 
-if (!function_exists('buildLinksAndSendQr')) {
-    function buildLinksAndSendQr(
-        $serverType,
-        $serverConfig,
-        $botState,
-        $botUrl,
-        $server_id,
-        $uniqid,
-        $protocol,
-        $remark,
-        $port,
-        $netType,
-        $inbound_id,
-        $rahgozar,
-        $customPath,
-        $customPort,
-        $customSni,
-        $response,
-        $uid,
-        $volume,
-        $days,
-        $unusedLinkIndices,
-        $unusedHideConfigIfMany,
-        $qrPublicPrefix = '',
-        $qrFsDir = null,
-        $sendToUser = true
-    ) {
-        global $botUsername, $connection;
-
-        $response = is_object($response) ? get_object_vars($response)
-            : (is_array($response) ? $response : []);
-        $panelUrl = $serverConfig['panel_url'] ?? '';
-        $subLinksRaw = $serverConfig['sub_links'] ?? '';
-        if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
-            throw new \UnexpectedValueException('unsupported_panel');
-        }
-        $backupUrls = [];
-        if ($serverType === 'pasarguard') {
-            // Native URL is opaque. Never invent a Marzban token or rebuild a
-            // vendor config; provider identity is retained in existing service-effect evidence.
-            $token = '';
-            $mainSubLink = $response['subscription_url'] ?? '';
-            $backupUrls = \AchBot\Subscription\Presentation\subscriptionAliases($mainSubLink, $subLinksRaw);
-        } else {
-            throw new \UnexpectedValueException('unsupported_panel');
-        }
-        $nativeLinks = ($response['links'] ?? []);
-        $native = [
-            'links' => $nativeLinks,
-            'subscription_url' => $mainSubLink,
-            'backup_urls' => $backupUrls,
-        ];
-        require_once __DIR__ . '/ServerDisplaySettings.php';
-        $options = achbotServerDisplayOptions($connection ?? null, (int)$server_id, (string)$serverType);
-        $vray_link = json_encode($nativeLinks, JSON_INVALID_UTF8_SUBSTITUTE);
-        $packet = achbotPurchaseRenderPacket($serverType,$native,$botState,$options,
-            (string)($botUsername??''),(string)$remark,$volume,$days);
-        $acc_text=$packet['caption'];$keys=$packet['keys'];$qrLink=$packet['qr'];
-
-        if (!$sendToUser) {
-            return [$token, $vray_link, $uniqid, $acc_text, $keys, $qrLink];
-        }
-
-        sendQrFromLink((string)$qrLink, $acc_text, $keys, (string)$botUrl,
-            (int)$uid, (string)$qrPublicPrefix, $qrFsDir);
-        return [$token, $vray_link, $uniqid];
-    }
+/** Render verified native credentials once, without performing delivery. */
+function achbotNonpaidPurchasePacket(mysqli $db,string $provider,int $serverId,array $serverConfig,
+    array $botState,string $botUsername,string $botUrl,string $remark,object $response,
+    $volume,$days,int $uid): array {
+    if (!achbotSupportsProviderType($provider)) throw new UnexpectedValueException('unsupported_panel');
+    $subscription=(string)($response->subscription_url??'');
+    $links=$response->links??[];
+    $native=['links'=>$links,'subscription_url'=>$subscription,
+        'backup_urls'=>\AchBot\Subscription\Presentation\subscriptionAliases($subscription,
+            $serverConfig['sub_links']??'')];
+    require_once __DIR__.'/ServerDisplaySettings.php';
+    $options=achbotServerDisplayOptions($db,$serverId,$provider);
+    return ['link'=>json_encode($links,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE),
+        'packet'=>['kind'=>'qr','uid'=>$uid,'bot_url'=>$botUrl]+
+            achbotPurchaseRenderPacket($provider,$native,$botState,$options,$botUsername,$remark,$volume,$days)];
 }
 
 /** Freeze the real Telegram message boundaries before the completion commit.

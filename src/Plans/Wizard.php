@@ -119,14 +119,11 @@ function achbotPlanWizardAdvance(mysqli $db,array &$d,string $action,string $inp
     $selected=$v['targets']??[];
     if (!$selected || array_diff($selected,$allowed))
         throw new RuntimeException('management_targets');
-    $custom=null;
     $groups=json_encode(achbotPgGroupsCanonical($selected),JSON_THROW_ON_ERROR);
-    $sql="INSERT INTO server_plans(fileid,catid,server_id,inbound_id,acount,limitip,title,protocol,days,volume,type,price,descr,pic,active,step,date,custom_sni";
-    $columns=$server['type']==='pasarguard'?',provider_group_ids':'';
-    $sql.=$columns.") VALUES('',?,?,0,0,1,?,'',?,?,'ws',?,?,'',1,10,?,?".($columns!==''?',?':'').")";
-    $args=[$v['category'],$v['server'],$v['title'],$v['days'],$v['volume'],$v['price'],$v['description'],(string)time(),$custom];
+    $sql="INSERT INTO server_plans(fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids)
+        VALUES('',?,?,0,0,?,'',?,?,'ws',?,?,'',1,10,?,?)";
+    $args=[$v['category'],$v['server'],$v['title'],$v['days'],$v['volume'],$v['price'],$v['description'],(string)time(),$groups];
     $types='iisiiisss';
-    if ($columns!=='') {$types.='s';$args[]=$groups;}
     $s=achbotManagementSql($db,$sql,$types,$args);$id=(int)$s->insert_id;$s->close();
     return $id;
 }

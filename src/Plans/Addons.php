@@ -253,22 +253,6 @@ function achbotAddonPayLocal(mysqli $db,array $pay,array $order): bool {
     return hash_equals($scope['scope_hash'],$s['scope_hash']);
 }
 /** Complete verification requires native readback and highest-specificity selection. */
-function achbotAddonPayEligible(mysqli $db,array $pay,array $order,?array $context=null): bool {
-    try {
-        if (!achbotAddonPayLocal($db,$pay,$order)) return false;
-        $context=$context??achbotAddonContext($db,$order);
-        $snapshot=$pay['addon_scope_snapshot']??null;
-        $s=json_decode($snapshot,true,32,JSON_THROW_ON_ERROR);
-        if ($s['provider']!==$context['provider'] ||
-            $s['remark']!==$context['remark'] ||
-            $s['server_id']!==$context['server_id'] ||
-            $s['native_groups']!==$context['groups'] ||
-            $s['native_identity']!==$context['identity']) return false;
-        $kind=strtolower(explode('_',(string)$pay['type'])[1]);
-        $offer=achbotAddonOfferById($db,$kind,$context,(int)$s['offer_id']);
-        return $offer!==null && hash_equals($offer['scope_hash'],$s['scope_hash']);
-    } catch(Throwable $error){return false;}
-}
 /** Extra issuance fence: an admin edit between menu display and COMMIT must
  * never create a new quote at the stale, unpinned menu price.
  */

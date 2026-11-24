@@ -223,12 +223,6 @@ if (
     $acount     = (int)$plan['acount'];
 
     $protocol   = $plan['protocol'];
-    $netType    = $plan['type'];
-    $rahgozar   = $plan['rahgozar'];
-    $customPath = $plan['custom_path'];
-    $customPort = $plan['custom_port'];
-    $customSni  = $plan['custom_sni'];
-    $limitip    = $plan['limitip'];
 
     ensureServerCapacity($connection, $server_id, $inbound_id, $acount);
 
@@ -274,7 +268,6 @@ if (
 
         $uniqid = generateRandomString(42, $protocol);
 
-        $port = 0;
 
         $remark = buildRemark(
             $botState,
@@ -294,57 +287,32 @@ if (
         $remark=achbotAdminBulkAccountRemark(
             (string)$remark,$bulkSource,$i,$count,(string)$serverType,
             $remarkMode);
-        [$response, $remark, $port, $effectId] = achbotCreateNonPaymentAccount(
+        [$response, $remark, , $effectId] = achbotCreateNonPaymentAccount(
             $connection,'admin_bulk',$bulkSource,$uid,$i,$count,[
                 'is_primary_admin'=>($uid===(int)$admin),
                 'user_id'=>$uid,'server_type'=>$serverType,
                 'server_id'=>$server_id,'inbound_id'=>$inbound_id,
                 'plan_id'=>$fidFromStep,'remark'=>$remark,'volume'=>$volume,
-                'days'=>$days,'uniqid'=>$uniqid,'protocol'=>$protocol,
-                'port'=>$port,
-                'net_type'=>$netType,'rahgozar'=>$rahgozar,
-                'limitip'=>$limitip
+                'days'=>$days
             ]
         );
 
         ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
         $expire_date=(int)$response->expire;
 
-        [$token, $vray_link, $uniqidReturned, $caption, $keys, $qrLink] = buildLinksAndSendQr(
-            $serverType,
-            $serverConfig,
-            $botState,
-            $botUrl,
-            $server_id,
-            $uniqid,
-            $protocol,
-            $remark,
-            $port,
-            $netType,
-            $inbound_id,
-            $rahgozar,
-            $customPath,
-            $customPort,
-            $customSni,
-            $response,
-            $uid,
-            $volume,
-            $days,
-            [],
-            false,
-            '',
-            null,
-            false
-        );
+        require_once __DIR__.'/../Subscription/Delivery.php';
+        $delivery=achbotNonpaidPurchasePacket($connection,$serverType,$server_id,$serverConfig,
+            $botState,(string)($botUsername??''),(string)$botUrl,$remark,$response,$volume,$days,$uid);
 
         if ($connection->begin_transaction()!==true)
             throw new RuntimeException('admin_bulk_order_begin');
         try {
             $orderId=insertOrder(
-                $connection,$uid,$token,$fidFromStep,$server_id,
-                $inbound_id,$remark,$uniqidReturned?:$uniqid,$expire_date,$vray_link,$price,
+                $connection,$uid,'',$fidFromStep,$server_id,
+                $inbound_id,$remark,$uniqid,$expire_date,$delivery['link'],$price,
                 $date,0,true);
             achbotLinkNonPaymentAccountEffect($connection,$effectId,$orderId);
+            $deliveryId=achbotNonpaidDeliveryInsertLocked($connection,$effectId,$orderId,$delivery['packet']);
             $line=achbotMessageHtml('bulk_reporting.continuation',['page'=>$i,'reference'=>$bulkSource]).
                 "\n".$i.'. <code>'.htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8').'</code> (#'.$orderId.')';
             achbotOperationalReportStageLocked($connection,$bulkSource,$uid,$uid,'operations',
@@ -355,7 +323,7 @@ if (
             try {$connection->rollback();} catch (Throwable $ignored) {}
             throw $error;
         }
-        $pendingDeliveries[]=['qr'=>$qrLink,'caption'=>$caption,'keys'=>$keys];
+        $pendingDeliveries[]=$deliveryId;
     }
 
     // Capacity was atomically held with first journal dispatch.
@@ -377,10 +345,9 @@ if (
         return;
     }
     $deliveryReview=[];
-    foreach ($pendingDeliveries as $index=>$packet) {
+    foreach ($pendingDeliveries as $index=>$deliveryId) {
         try {
-            if (!sendQrFromLink($packet['qr'],$packet['caption'],$packet['keys'],
-                    $botUrl,$uid,'',null))
+            if (achbotServiceDeliveryDispatch($connection,$deliveryId)!=='acknowledged')
                 throw new RuntimeException('bulk_telegram_unconfirmed');
         } catch (Throwable $error) {
             $deliveryReview[]=$index+1;

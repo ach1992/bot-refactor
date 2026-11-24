@@ -48,18 +48,11 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     $volume           = $planDetails['volume'];
     $date             = $planDetails['date'];
 
-    $type       = $plan['type'];
     $protocol   = $plan['protocol'];
     $price      = (int)$plan['price'];
     $server_id  = (int)$plan['server_id'];
     $acount     = (int)$plan['acount'];
     $inbound_id = (int)$plan['inbound_id'];
-    $limitip    = $plan['limitip'];
-    $netType    = $plan['type'];
-    $rahgozar   = $plan['rahgozar'];
-    $customPath = $plan['custom_path'];
-    $customPort = $plan['custom_port'];
-    $customSni  = $plan['custom_sni'];
 
     [$price, $agentBought, $discountPercent] = calculateAgentPrice(
         $userInfo,
@@ -88,19 +81,15 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
     $remarkUserId = $from_id;
     $remark       = buildRemark($botState, $srv_remark, '', $remarkUserId, $forcedRemark);
 
-    // Native responses supply subscription/listener URLs; no local port file.
-    $port = 0;
 
     try {
-        [$response, $remark, $port, $effectId] = achbotCreateNonPaymentAccount(
+        [$response, $remark, , $effectId] = achbotCreateNonPaymentAccount(
             $connection,'free_trial',$trialSource,(int)$from_id,1,1,[
                 'is_primary_admin'=>((int)$from_id===(int)$admin),
                 'user_id'=>(int)$from_id,'server_type'=>$serverType,
                 'server_id'=>$server_id,'inbound_id'=>$inbound_id,
                 'plan_id'=>$planId,'remark'=>$remark,'volume'=>$volume,
-                'days'=>$days,'uniqid'=>$uniqid,'protocol'=>$protocol,
-                'port'=>$port,
-                'net_type'=>$netType,'rahgozar'=>$rahgozar,'limitip'=>$limitip
+                'days'=>$days
             ]);
 
     // چک موفقیت ساخت اکانت
@@ -109,41 +98,19 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
 
     alert(\achbotMessage('legacy_messages.sending_config_to_user'));
 
-    [$token, $vray_link, $uniqid, $caption, $keys, $qrLink] = buildLinksAndSendQr(
-        $serverType,
-        $serverConfig,
-        $botState,
-        $botUrl,
-        $server_id,
-        $uniqid,
-        $protocol,
-        $remark,
-        $port,
-        $netType,
-        $inbound_id,
-        $rahgozar,
-        $customPath,
-        $customPort,
-        $customSni,
-        $response,
-        $from_id,
-        $volume,
-        $days,
-        [],
-        false,
-        '',
-        null,
-        false
-    );
+    require_once __DIR__.'/../Subscription/Delivery.php';
+    $delivery=achbotNonpaidPurchasePacket($connection,$serverType,$server_id,$serverConfig,
+        $botState,(string)($botUsername??''),(string)$botUrl,$remark,$response,$volume,$days,(int)$from_id);
 
     if ($connection->begin_transaction()!==true)
         throw new RuntimeException('trial_order_begin');
     try {
         $orderId=insertOrder(
-            $connection,$from_id,$token,$planId,$server_id,$inbound_id,
-            $remark,$uniqid,$expire_date,$vray_link,
+            $connection,$from_id,'',$planId,$server_id,$inbound_id,
+            $remark,$uniqid,$expire_date,$delivery['link'],
             $price,$date,$agentBought?1:0,true);
         achbotLinkNonPaymentAccountEffect($connection,$effectId,$orderId);
+        $deliveryId=achbotNonpaidDeliveryInsertLocked($connection,$effectId,$orderId,$delivery['packet']);
         require_once __DIR__.'/../Finance/OperationalReports.php';
         $userId   = $userInfo['userid'] ?? $from_id;
         $fullName = $userInfo['name'] ?? '---';
@@ -181,7 +148,7 @@ if (preg_match('/freeTrial(\d+)_(?<buyType>\w+)/', $data, $match)) {
 
     achbotOperationalReportDispatch($connection,$reportRef);
     try {
-        if (!sendQrFromLink($qrLink,$caption,$keys,$botUrl,(int)$from_id,'',null))
+        if (achbotServiceDeliveryDispatch($connection,$deliveryId)!=='acknowledged')
             throw new RuntimeException('trial_delivery_unconfirmed');
     } catch (Throwable $error) {
         error_log('achbot_trial_delivery_review effect_id='.$effectId.

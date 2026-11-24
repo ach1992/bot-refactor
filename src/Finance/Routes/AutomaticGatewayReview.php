@@ -150,10 +150,22 @@ if (preg_match('/^attentionDelivery([CS])_([1-9][0-9]{0,17})_([1-9][0-9]{0,8})(?
         $d=achbotProviderRow($connection,'SELECT * FROM payment_delivery_intents WHERE id=?','i',[$id]);
         $p=achbotProviderRow($connection,'SELECT * FROM payment_delivery_parts WHERE intent_id=? AND part_no=?','ii',[$id,$part]);
         $opId=(int)($d['service_operation_id']??0);
-        if (!$d || !$p || !achbotServiceAttentionCaseOpen($connection,$opId))
+        if (!$d || !$p || $d['pay_row_id']!==null)
             throw new RuntimeException('delivery_review_stale');
+        $back='attentionInbox';
+        if ($opId>0) {
+            if (!achbotServiceAttentionCaseOpen($connection,$opId))
+                throw new RuntimeException('delivery_review_stale');
+            $payId=$opId;$back='attentionService_'.$opId;
+        } else {
+            $e=achbotProviderRow($connection,"SELECT source_ref FROM service_effects
+                WHERE id=? AND source_kind IN ('free_trial','admin_bulk') AND state='local_recorded'",
+                'i',[(int)$d['effect_id']]);
+            if (!$e) throw new RuntimeException('delivery_review_stale');
+            $payId=$e['source_ref'];
+        }
         $token=achbotDeliveryPartRedriveToken($d,$p,$actor);
-        $rows=[];$payId=$opId;
+        $rows=[];
         if ($reviewAction[1]==='C' && !isset($reviewAction[4])) {
             $body=achbotMessageHtml('automatic_gateway_review.redrive_confirm',[
                 'user'=>$d['user_id'],'payment'=>$payId,'ordinal'=>$d['ordinal'].'.'.$part]);
@@ -170,7 +182,7 @@ if (preg_match('/^attentionDelivery([CS])_([1-9][0-9]{0,17})_([1-9][0-9]{0,8})(?
                 default=>'automatic_gateway_review.redrive_stale',
             });
         } else throw new RuntimeException('delivery_review_stale');
-        $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),'callback_data'=>'attentionService_'.$opId]];
+        $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),'callback_data'=>$back]];
         $keys=json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         $edited=editText($message_id,$body,$keys,'HTML',$actor);
         if (!is_object($edited)||($edited->ok??false)!==true) sendMessage($body,$keys,'HTML',$actor);
@@ -295,19 +307,27 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
             $before=(int)($inbox[1]??0);
             $serviceScope=achbotServiceAttentionScope();
             $q=achbotProviderStatement($connection,"SELECT * FROM (
-                SELECT p.id,p.user_id,p.price,COALESCE(a.provider,'wallet') AS provider,'receipt' AS source,p.id*4 AS cursor
+                SELECT p.id,p.user_id,p.price,COALESCE(a.provider,'wallet') AS provider,'receipt' AS source,p.id*5 AS cursor
                   FROM pays p LEFT JOIN payment_attempts a ON a.pay_row_id=p.id WHERE $scope
                 UNION ALL
-                SELECT o.id,o.userid,o.price_toman,o.kind,'service',o.id*4+1
+                SELECT o.id,o.userid,o.price_toman,o.kind,'service',o.id*5+1
                   FROM service_operations o WHERE $serviceScope
                 UNION ALL
-                SELECT f.id,w.userid,ABS(w.delta_toman),CONCAT('W',w.id),'wallet_report',f.id*4+2
+                SELECT f.id,w.userid,ABS(w.delta_toman),CONCAT('W',w.id),'wallet_report',f.id*5+2
                   FROM payment_followup_intents f JOIN wallet_entries w ON w.id=f.wallet_entry_id
                   WHERE f.stage='wallet_movement' AND f.state IN ('unknown','rejected')
                 UNION ALL
-                SELECT f.id,0,0,f.operational_ref,IF(f.stage='operational_customer_notice','operational_customer','operational_report'),f.id*4+3
+                SELECT f.id,0,0,f.operational_ref,IF(f.stage='operational_customer_notice','operational_customer','operational_report'),f.id*5+3
                   FROM payment_followup_intents f
                   WHERE f.operational_ref IS NOT NULL AND f.state IN ('unknown','rejected')
+                UNION ALL
+                SELECT d.id,d.user_id,MIN(dp.part_no),e.source_ref,'nonpaid_delivery',d.id*5+4
+                  FROM payment_delivery_intents d JOIN service_effects e ON e.id=d.effect_id
+                  JOIN payment_delivery_parts dp ON dp.intent_id=d.id
+                  WHERE d.service_operation_id IS NULL AND d.pay_row_id IS NULL
+                    AND e.source_kind IN ('free_trial','admin_bulk') AND e.state='local_recorded'
+                    AND dp.state IN ('unknown','rejected')
+                  GROUP BY d.id,d.user_id,e.source_ref
                 ) AS cases WHERE (?=0 OR cursor<?) ORDER BY cursor DESC LIMIT 13",
                 'ii',[$before,$before]);
             $items=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
@@ -317,6 +337,11 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 'ADD_TIME'=>achbotMessage('automatic_gateway_review.days'),
                 'ADD_VOLUME'=>achbotMessage('automatic_gateway_review.volume')];
             foreach ($items as $item) {
+                if ($item['source']==='nonpaid_delivery') {
+                    $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_action').' | '.$item['provider'],
+                        'callback_data'=>'attentionDeliveryC_'.(int)$item['id'].'_'.(int)$item['price']]];
+                    continue;
+                }
                 $service=$item['source']==='service';
                 if (in_array($item['source'],['operational_report','operational_customer'],true)) {
                     $rows[]=[['text'=>($item['source']==='operational_customer'?

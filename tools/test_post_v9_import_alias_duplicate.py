@@ -50,8 +50,8 @@ def run() -> list[str]:
 
             # The actual supported transfer now retires current drafts. Use
             # the complete fresh runtime schema, never a partial old chain.
-            db("INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password)"
-               " VALUES(2,"+storage.text(url)+",'127.0.0.1','','none','','','none','{}','pasarguard','fixture-admin','fixture-private-key');"
+            db("INSERT INTO server_config(id,panel_url,type,username,password)"
+               " VALUES(2,"+storage.text(url)+",'pasarguard','fixture-admin','fixture-private-key');"
                "INSERT INTO server_info(id,title,ucount,remark,flag,active,state)"
                " VALUES(2,'Fixture purchase server',10,'buyfixture','',1,1);"
                "INSERT INTO server_categories(id,server_id,title,parent,step,active) VALUES(1,'2','Fixture category',0,4,1);"
@@ -63,7 +63,7 @@ def run() -> list[str]:
                "(1004,'D','d','0',50000,'1700000000',0,'sent','none');"
                "INSERT INTO server_info(id,title,ucount,remark,flag,active,state)"
                " VALUES(5,'Shared alias',10,'alias','',1,1);"
-               + storage.clone(5, 2) +
+               + storage.clone(5, 2, current=True) +
                "INSERT INTO setting(type,value) VALUES"
                "('ACHBOT_MARZBAN_PANEL_GROUP','reviewed shared panel');"
                "UPDATE server_info SET panel_group_id=(SELECT MAX(id) FROM setting"

@@ -1830,10 +1830,6 @@ else {
 }
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/Extensions.php') === null) return;
 if ($achbotV8Result === '__ACHBOT_V8_GOTO_START__') goto GOTOSTART;
-if($data == 'cantEditTrojan'){
-    alert(\achbotMessage('bot.bot.cant_edit_trojan.alert.4d3c064114'));
-    exit;
-}
 if ((require __DIR__ . '/src/Plans/Categories.php') === null) return;
 if(($data=='serversSetting' || preg_match('/^nextServerPage(\d+)/',$data,$match)) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(isset($match[1])) $keys = getServerListKeys($match[1]);
@@ -1882,31 +1878,6 @@ if(preg_match('/^showServerSettings(\d+)_(\d+)/',$data,$match) and ($from_id == 
     $serverPage=achbotManagementRow($connection,'SELECT title FROM server_info WHERE id=?','i',[(int)$match[1]]);
     $cname=(string)($serverPage['title']??'');
     editText($message_id,\achbotMessageHtml('bot.bot.servers_setting.message.ac9cd6d52a', ['cname' => $cname]),$keys,'HTML');
-}
-if(preg_match('/^changesServerIp(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id`=?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $serverIp= $stmt->get_result()->fetch_assoc()['ip']??\achbotMessage('bot.bot.servers_setting.text.7267d348aa');
-    $stmt->close();
-
-    delMessage();
-    sendMessage(\achbotMessage('bot.bot.servers_setting.message.47c8f910e4', ['serverIp' => $serverIp]),$cancelKey,null,null,null);
-    setUser($data);
-    exit();
-}
-if(preg_match('/^changesServerIp(\d+)/',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
-    $stmt = $connection->prepare("UPDATE `server_config` SET `ip` = ? WHERE `id`=?");
-    if($text == "/empty") $text = "";
-    $stmt->bind_param("si", $text, $match[1]);
-    $stmt->execute();
-    $stmt->close();
-    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
-    setUser();
-
-    $keys = getServerConfigKeys($match[1]);
-    sendMessage(\achbotMessage('bot.bot.servers_setting.message.ac9cd6d52a', ['cname' => $cname]),$keys);
-    exit();
 }
 // Define real-panel identity groups centrally, before assigning them to
 // logical server entries. A group is trusted admin configuration, never
@@ -2038,157 +2009,6 @@ if(preg_match('/^wizwizdeleteserver([1-9][0-9]*)$/D',(string)$data,$match)){
 // Confirmed server deletion is handled exclusively by achbotHandleManagementFields()
 // at ingress. Never retain a broader legacy fallback that can bypass the
 // physical-account, payment and journal recovery admission checks.
-if(preg_match('/^editServer(\D+)(\d+)/',$data,$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    switch($match[1]){
-        case "Name":
-            $txt =\achbotMessage('bot.bot.addserver_name.txt.437acc9f7f');
-            break;
-        case "Max":
-            $txt = \achbotMessage('bot.bot.addserver_name.txt.57400196e6');
-            break;
-        case "Remark":
-            $txt =\achbotMessage('bot.bot.addserver_name.txt.f4e3596bd2');
-            break;
-        case "Flag":
-            $txt = \achbotMessage('bot.bot.addserver_name.txt.fe242ccc0e');
-            break;
-        default:
-            $txt = str_replace("_", " ", $match[1]);
-            $end = \achbotMessage('bot.bot.addserver_name.end.42b150373f');
-            break;
-    }
-    delMessage();
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8f3366957d') . $txt . \achbotMessage('bot.bot.addserver_name.message.035f46db23') . $end,$cancelKey);
-    setUser($data);
-    exit();
-}
-if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    switch($match[1]){
-        case "Name":
-            $sql = "UPDATE `server_info` SET `title`";
-            break;
-        case "Flag":
-            $sql = "UPDATE `server_info` SET `flag`";
-            break;
-        case "Remark":
-            $sql = "UPDATE `server_info` SET `remark`";
-            break;
-        case "Max":
-            $sql = "UPDATE `server_info` SET `ucount`";
-            break;
-    }
-
-    if($text == "/empty"){
-        $stmt = $connection->prepare("$sql IS NULL WHERE `id`=?");
-        $stmt->bind_param("i", $match[2]);
-        $stmt->execute();
-        $stmt->close();
-    }else{
-        $stmt = $connection->prepare("$sql=? WHERE `id`=?");
-        $stmt->bind_param("si",$text, $match[2]);
-        $stmt->execute();
-        $stmt->close();
-    }
-
-    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
-    setUser();
-
-    $keys = getServerConfigKeys($match[2]);
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.664df12986', ['cname' => $cname]),$keys);
-    exit();
-}
-if(preg_match('/^editsServer(\D+)(\d+)/',$data,$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $txt = str_replace("_", " ", $match[1]);
-    delMessage();
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8f3366957d') . $txt . \achbotMessage('bot.bot.addserver_name.message.25ce426865'),$cancelKey);
-    setUser($data);
-    exit();
-}
-if(preg_match('/^editsServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    if($text == "/empty"){
-        if($match[1] == "sni") $stmt = $connection->prepare("UPDATE `server_config` SET `sni` = '' WHERE `id`=?");
-        elseif($match[1] == "header_type") $stmt = $connection->prepare("UPDATE `server_config` SET `header_type` = 'none' WHERE `id`=?");
-        elseif($match[1] == "request_header") $stmt = $connection->prepare("UPDATE `server_config` SET `request_header` = '' WHERE `id`=?");
-        elseif($match[1] == "response_header") $stmt = $connection->prepare("UPDATE `server_config` SET `response_header` = '' WHERE `id`=?");
-        elseif($match[1] == "security") $stmt = $connection->prepare("UPDATE `server_config` SET `security` = 'none' WHERE `id`=?");
-        elseif($match[1] == "tlsSettings") $stmt = $connection->prepare("UPDATE `server_config` SET `tlsSettings` = '' WHERE `id`=?");
-
-        $stmt->bind_param("i", $match[2]);
-    }else{
-        if($match[1] == "sni") $stmt = $connection->prepare("UPDATE `server_config` SET `sni`=? WHERE `id`=?");
-        elseif($match[1] == "header_type"){
-            if($text != "http" && $text != "none"){
-                sendMessage(\achbotMessage('bot.bot.addserver_name.message.cac7dafe0d'), null, 'HTML');
-                exit();
-            }else $stmt = $connection->prepare("UPDATE `server_config` SET `header_type`=? WHERE `id`=?");
-        }
-        elseif($match[1] == "request_header") $stmt = $connection->prepare("UPDATE `server_config` SET `request_header`=? WHERE `id`=?");
-        elseif($match[1] == "response_header") $stmt = $connection->prepare("UPDATE `server_config` SET `response_header`=? WHERE `id`=?");
-        elseif($match[1] == "security"){
-            if($text != "tls" && $text != "none" && $text != "xtls"){
-                sendMessage(\achbotMessage('bot.bot.addserver_name.message.d763b5be93'), null, 'HTML');
-                exit();
-            }else $stmt = $connection->prepare("UPDATE `server_config` SET `security`=? WHERE `id`=?");
-        }
-        elseif($match[1] == "tlsSettings") $stmt = $connection->prepare("UPDATE `server_config` SET `tlsSettings`=? WHERE `id`=?");
-        $stmt->bind_param("si",$text, $match[2]);
-    }
-    $stmt->execute();
-    $stmt->close();
-
-    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
-    setUser();
-
-    $keys = getServerConfigKeys($match[2]);
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.664df12986', ['cname' => $cname]),$keys);
-    exit();
-}
-if(preg_match('/^editServer(\D+)(\d+)/',$data,$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    switch($match[1]){
-        case "Name":
-            $txt =\achbotMessage('bot.bot.addserver_name.txt.437acc9f7f');
-            break;
-        case "Max":
-            $txt = \achbotMessage('bot.bot.addserver_name.txt.57400196e6');
-            break;
-        case "Remark":
-            $txt =\achbotMessage('bot.bot.addserver_name.txt.f4e3596bd2');
-            break;
-        case "Flag":
-            $txt = \achbotMessage('bot.bot.addserver_name.txt.fe242ccc0e');
-            break;
-    }
-    delMessage();
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.8f3366957d') . $txt . \achbotMessage('bot.bot.addserver_name.message.035f46db23'),$cancelKey);
-    setUser($data);
-}
-if(preg_match('/^editServer(\D+)(\d+)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    switch($match[1]){
-        case "Name":
-            $stmt = $connection->prepare("UPDATE `server_info` SET `title`=? WHERE `id`=?");
-            break;
-        case "Max":
-            $stmt = $connection->prepare("UPDATE `server_info` SET `ucount`=? WHERE `id`=?");
-            break;
-        case "Remark":
-            $stmt = $connection->prepare("UPDATE `server_info` SET `remark`=? WHERE `id`=?");
-            break;
-        case "Flag":
-            $stmt = $connection->prepare("UPDATE `server_info` SET `flag`=? WHERE `id`=?");
-            break;
-    }
-
-    $stmt->bind_param("si",$text, $match[2]);
-    $stmt->execute();
-    $stmt->close();
-
-    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
-    setUser();
-
-    $keys = getServerConfigKeys($match[2]);
-    sendMessage(\achbotMessage('bot.bot.addserver_name.message.664df12986', ['cname' => $cname]),$keys);
-}
-
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/DiscountAdministration.php') === null) return;
 if($data == "managePanel" and (($from_id == $admin || $userInfo['isAdmin'] == true))){
 
