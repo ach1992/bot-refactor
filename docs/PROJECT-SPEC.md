@@ -33,6 +33,11 @@ Use PHP **8.5** for current source acceptance; require the corresponding functio
 - Pending unrelated drafts do not block new eligible orders or renewal; genuine issued claims and uncertain effects remain guarded. Messages failing Telegram edits do not change payment/Native state and are retried without claiming completed text synchronization.
 - See [financial architecture](post-v9/FINANCIAL-CONSOLIDATION.md), [payment delivery recovery](post-v9/PAYMENT-DELIVERY-RECOVERY.md), [API evidence](post-v9/API-PAYMENT-EVIDENCE.md) and [gateway rules](post-v9/GATEWAY-ELIGIBILITY-RULES.md).
 
+
+### Approved next financial architecture
+
+The Owner accepted Wallet-first settlement, an independent Wallet ledger, one funded service-operation engine and independent delivery. All methods verify/credit money exactly once; Native execution cannot depend on the funding method. Automatic continuation is the normal result for recoverable failures. The [Wallet-first architecture and execution contract](post-v9/WALLET-FIRST-ARCHITECTURE.md) defines the target, migration gates and acceptance. Until the complete candidate is integrated and installed, current Stable implementation contracts remain operational; no partial parallel runtime or unauthorized UI/policy change is authorized.
+
 ## Operations, safety and source acceptance
 
 - Keep the already-issued customer proxy/subscription links working through appropriate Native/server configuration. Source release, Git merge, database migration, file transfer, Cron/webhook setup and live acceptance are distinct operational actions.

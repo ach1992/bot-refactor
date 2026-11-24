@@ -38,6 +38,7 @@ Each bot has its own database, webhook, private configuration and Cron job. The 
 
 ## Documentation
 
+- [Wallet-first architecture (approved target; not current runtime)](docs/post-v9/WALLET-FIRST-ARCHITECTURE.md)
 - [Product contract](docs/PROJECT-SPEC.md) · [Stable-baseline and release boundary](docs/post-v9/STABLE-BASELINE.md)
 - [Fresh installation](docs/post-v9/FRESH-INSTALL.md) · [Installed-runtime diagnostics](docs/post-v9/INSTALL-DIAGNOSTICS.md)
 - [Provider storage and account identity](docs/post-v9/SHARED-PROVIDER-STORAGE.md) · [Service/plan changes](docs/post-v9/SHARED-SERVICE-TRANSFER.md)
