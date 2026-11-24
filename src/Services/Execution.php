@@ -3,6 +3,7 @@ declare(strict_types=1);
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/Funding.php';
 require_once __DIR__.'/../Finance/ServicePurchaseReferral.php';
+require_once __DIR__.'/../Finance/ServiceReports.php';
 
 /** The database-local session owner serializes actual live workers without
  * holding an InnoDB transaction across HTTP. A persisted claim token fences
@@ -66,7 +67,10 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[]): ar
         if ($work===null) {
             // The adapter has verified every original line in this phase.
             $stage=$finalizing?'completed':'applied';
-            if ($finalizing) achbotServiceReferralReserveLocked($db,$op);
+            if ($finalizing) {
+                achbotServiceReferralReserveLocked($db,$op);
+                achbotServiceStageCompletionReportsLocked($db,$op,$quote);
+            }
             $s=achbotProviderStatement($db,"UPDATE service_operations SET stage=?,next_attempt_at=IF(?=1,NULL,NOW(6)),
                 claim_token=NULL,claim_until=NULL,failure_code=NULL,updated_at=NOW(6) WHERE id=?",
                 'sii',[$stage,(int)$finalizing,$id]);$s->close();
@@ -91,7 +95,10 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[]): ar
             $done=($def['apply'])($db,$current,$original,$work,$result);
             if (!is_bool($done)) throw new RuntimeException('service_worker_result_invalid');
             $stage=$done?($finalizing?'completed':'applied'):$claimStage;
-            if ($done && $finalizing) achbotServiceReferralReserveLocked($db,$current);
+            if ($done && $finalizing) {
+                achbotServiceReferralReserveLocked($db,$current);
+                achbotServiceStageCompletionReportsLocked($db,$current,$original);
+            }
             $s=achbotProviderStatement($db,"UPDATE service_operations SET stage=?,
                 next_attempt_at=IF(?='completed',NULL,NOW(6)),claim_token=NULL,claim_until=NULL,
                 failure_code=NULL,updated_at=NOW(6) WHERE id=? AND claim_token=? AND stage=?",

@@ -31,7 +31,7 @@ function achbotCreditMethodRegistry(): array {
         'manual_trx'=>$manual,
         'nowpayments'=>['invoice'=>'achbotCreditValidateUsdInvoice','proofs'=>[
             'nowpayments'=>'achbotCreditVerifyNowpaymentsLocked'],'additional_evidence'=>true,
-            'hosted'=>['credential_setting'=>'nowpayment','quote'=>'achbotHostedUsdQuote',
+            'hosted'=>['credential_setting'=>'nowpayment','report_gateway'=>'nowpayment','quote'=>'achbotHostedUsdQuote',
                 'issue'=>'achbotHostedNowpaymentsIssue','verify'=>'achbotHostedNowpaymentsVerify',
                 'url'=>'achbotHostedNowpaymentsUrl','reference'=>'achbotHostedChildReference',
                 'child_transactions'=>true]],

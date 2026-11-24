@@ -8,6 +8,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__.'/../Wallet/Ledger.php';
 require_once __DIR__.'/PaymentEvidence.php';
 require_once __DIR__.'/ReceiptMethods.php';
+require_once __DIR__.'/../Panel/ProviderStorage.php';
 
 /**
  * Wallet-first money identity deliberately excludes mutable service state
@@ -157,4 +158,58 @@ function achbotPaymentCreditLocked(mysqli $db,int $payId,int $userId,
         throw new RuntimeException('payment_credit_link_write');
     $q->close();
     return $entry;
+}
+
+/** Read the original committed credit, not the current Wallet balance or
+ * a later provider callback. Same owner -> invoice -> journal lock order. */
+function achbotReceiptCreditEvidenceLocked(mysqli $db,int $payId,int $userId): array {
+    [$pay,$attempt]=achbotCreditInvoiceLocked($db,$payId,$userId);
+    $owner=achbotWalletLockOwnerLocked($db,$userId);
+    $pin=$attempt['wallet_invoice_sha256'];
+    $method=achbotCreditMethodDefinition((string)$attempt['provider']);
+    $basis=(string)($attempt['wallet_credit_basis']??'');
+    $entry=achbotWalletFindEntryLocked($db,$owner['id'],$userId,
+        'payment_credit',(string)$payId,0,(int)$pay['price']);
+    if ($pay['state']!=='paid' || $attempt['stage']!=='done' ||
+        !$method || !isset($method['proofs'][$basis]) || !is_string($pin) ||
+        !hash_equals($pin,achbotCreditInvoiceFingerprint($pay,$attempt)) ||
+        !$entry || $entry['id']!==(int)$attempt['wallet_credit_entry_id'] ||
+        !in_array($attempt['wallet_funding_result']??null,
+            ['funded','wallet_only','already_funded','request_invalidated','capacity_unavailable','insufficient_funds'],true) ||
+        $entry['after']-$entry['before']!==(int)$pay['price'] ||
+        ($basis==='manual')!==($entry['actor']>0))
+        throw new RuntimeException('payment_credit_report_evidence_conflict');
+    $tid=$attempt['wallet_credit_transaction_id'];
+    if ($tid!==null) {
+        $t=achbotProviderRow($db,'SELECT attempt_id,provider FROM payment_transactions WHERE id=? FOR UPDATE',
+            'i',[(int)$tid]);
+        if (!$t || (int)$t['attempt_id']!==(int)$attempt['id'] || $t['provider']!==$attempt['provider'])
+            throw new RuntimeException('payment_credit_report_transaction_conflict');
+    }
+    $fingerprint=hash('sha256',json_encode([
+        'invoice'=>$pin,'entry'=>$entry['id'],'owner_row'=>$owner['id'],
+        'before'=>$entry['before'],'after'=>$entry['after'],'actor'=>$entry['actor'],
+        'basis'=>$basis,'funding'=>$attempt['wallet_funding_result'],
+        'transaction'=>$tid===null?null:(int)$tid,
+    ],JSON_THROW_ON_ERROR));
+    return ['pay'=>$pay,'attempt'=>$attempt,'entry'=>$entry,'fingerprint'=>$fingerprint];
+}
+
+/** The original receipt that actually admitted the operation, not a late
+ * receipt for a service already paid by Wallet or an unrelated top-up. */
+function achbotServiceFundingReceiptLocked(mysqli $db,array $op): ?array {
+    $id=(int)$op['id'];$user=(int)$op['userid'];
+    $s=achbotProviderStatement($db,"SELECT pay_row_id FROM payment_attempts
+        WHERE service_operation_id=? AND wallet_funding_result='funded'
+        ORDER BY id LIMIT 2 FOR UPDATE",'i',[$id]);
+    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    if (!$rows) return null;
+    if (count($rows)!==1 || (int)$op['price_toman']<=0)
+        throw new RuntimeException('service_funding_receipt_conflict');
+    $e=achbotReceiptCreditEvidenceLocked($db,(int)$rows[0]['pay_row_id'],$user);
+    if ((int)$e['attempt']['service_operation_id']!==$id ||
+        $e['attempt']['wallet_funding_result']!=='funded' ||
+        (int)$e['pay']['price']!==(int)$op['price_toman'])
+        throw new RuntimeException('service_funding_receipt_evidence_conflict');
+    return $e;
 }

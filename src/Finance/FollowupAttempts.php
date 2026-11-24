@@ -4,11 +4,12 @@ if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(40
 require_once __DIR__.'/../Panel/ProviderStorage.php';
 require_once __DIR__.'/../Telegram/Response.php';
 require_once __DIR__.'/PaymentEvidence.php';
+require_once __DIR__.'/FollowupOutbox.php';
 require_once __DIR__.'/../Admin/Access.php';
 
 /** Actor- and exact-version-bound duplicate-risk preview, not authorization. */
 function achbotFollowupRedriveToken(array $r,int $actor): string {
-    if ($actor<=0 || !isset($r['service_operation_id']) || (int)$r['id']<=0 ||
+    if ($actor<=0 || !achbotFollowupJournaled($r) || (int)$r['id']<=0 ||
         !in_array($r['state'],['rejected','unknown'],true) ||
         !preg_match('/^[a-f0-9]{64}$/D',(string)$r['payload_sha256']))
         throw new RuntimeException('followup_redrive_preview_invalid');
@@ -21,7 +22,7 @@ function achbotFollowupRedriveToken(array $r,int $actor): string {
  * attempt is committed with the original source's unchanged packet. */
 function achbotFollowupAttemptClaimLocked(mysqli $db,array $r,int $actor,?string $confirmation): array {
     $id=(int)$r['id'];$count=(int)$r['attempt_count'];$state=$r['state'];
-    if (!isset($r['service_operation_id']) || !array_key_exists('next_attempt_at',$r))
+    if (!achbotFollowupJournaled($r) || !array_key_exists('next_attempt_at',$r))
         throw new RuntimeException('followup_attempt_schema_missing');
     $last=$count>0?achbotProviderRow($db,'SELECT * FROM payment_followup_attempts
         WHERE intent_id=? AND attempt_no=? FOR UPDATE','ii',[$id,$count]):null;

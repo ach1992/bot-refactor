@@ -909,6 +909,58 @@ or legacy v1 replacement. General service/receipt reports, multipart
 QR/text and authorized delivery recovery, actual route/scheduler integration,
 migration rehearsal and all other #204 acceptance criteria remain open.
 
+### Original completion and retained-credit report convergence
+
+General BUY (standard/custom/bulk), RENEW, ADD_VOLUME and ADD_TIME
+completion stages reuse the actual service ID, immutable original quote,
+confirmed debit and exact sealed 018 completion lines. Reports do not need
+a synthetic payment/attempt, a fresh plan price, a current subscription
+credential or a successful Telegram delivery. Bulk reports are staged only
+with the last committed line and include the original confirmed account
+names. Existing automatic-renewal and referral policies remain separate
+business decisions but share the same original-source Outbox sender.
+
+The receipt evidence reader checks the pinned invoice, original wallet
+credit row/actor/balances, committed funding outcome and bound external
+transaction. Only the receipt that actually funded the service determines
+its report method; a second, late, refused or otherwise retained receipt
+has its own real pay-only wallet-credit report (sealed packet v4).
+A service-funded receipt never also emits a Wallet top-up success.
+The first credit and its required report intents commit together. A
+rollback leaves neither, and exact receipt replay never restages reports.
+
+Existing hosted owner/staff/channel notifications and manual top-up
+owner/staff notifications keep their respective audiences. API and timer
+approval edit existing authorized receipt cards without extra staff
+notifications. For a manual/API/timer-funded completed service, the
+original receipt message targets are checked again before editing; archived
+receipt cards are not reopened. Manual operator notices that assert
+customer delivery, and actor-context menu presentation, still belong to
+the subsequent delivery/route integration slice. Do not send a fabricated
+"delivered" notice before 018 acknowledges it. Current catalog wording is
+reused and no new callback route is introduced.
+
+The existing 031 attempt history, source leases, 429 due retry, explicit
+actor-bound redrive and UNKNOWN policy also cover the new v4 wallet-credit
+intents. The bounded original-source scheduler includes both service and
+retained-credit reports. Historical v1 packets retain their one-shot
+disposition. No additional migration is needed for this slice.
+Receipt/card targets and recipient authorization are revalidated before
+dispatch, and a successful or uncertain Telegram result cannot repeat
+money, debit, reservation, Native execution or report creation.
+
+Disposable PHP 8.5.12 / MariaDB: service execution 106/106 (518 owned
+loopback HTTP requests, 52 CREATE POSTs), funding 56/56, hosted 18/18,
+manual 16/16, migrated-account recovery 16/16. The added cases cover
+one report for a confirmed bulk, funded versus retained late receipt,
+pay-only 429 recovery, hosted renew/time/volume completion, atomic report
+insertion failure and exact original manual-receipt edit after target
+tampering is rejected. The receipt and service rollback/lost-ACK tests
+show no duplicate money or Native execution. No live external effects.
+Presentation 57/57, wallet-report HTML 12/12 (22 fixture sends) and
+isolated log privacy 13/13 also passed. Runtime route and scheduler
+activation, multipart 018 recovery and remaining #204 gates remain open.
+
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 
 `python3 tools/test_wallet_first_native_write_fence.py --run-disposable`

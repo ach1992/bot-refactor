@@ -20,6 +20,8 @@ declare(strict_types=1);
 mysqli_report($argv[4]==='strict'?MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT:MYSQLI_REPORT_OFF);
 require $argv[1].'/src/Finance/FundingCheckout.php';
 $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$GLOBALS['telegramWebhookSecret']='SyntheticFundingReportKey_2026';
+$GLOBALS['admin']=9001;$GLOBALS['botState']=[];
 $c=json_decode($argv[5],true,512,JSON_THROW_ON_ERROR);$out=[];
 try {
     if (!$db->begin_transaction()) throw new RuntimeException('fixture_begin');
@@ -63,7 +65,9 @@ def main():
                   '007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql',
                   '014_api_payment_evidence.sql','022_gateway_review_archive.sql',
                   '023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',
-                  '025_wallet_receipt_credit.sql','026_service_operations.sql'):
+                  '025_wallet_receipt_credit.sql','026_service_operations.sql',
+                  '008_referral_awards.sql','020_payment_followup_intents.sql','029_service_purchase_referral.sql',
+                  '030_service_followup_sources.sql','031_service_followup_attempts.sql'):
             sql((ROOT/'migrations/post-v9'/m).read_text())
         sql("""INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password)
             VALUES (2,'https://fixture.invalid','127.0.0.1','','none','','','none','{}','pasarguard','fixture','fixture'),
@@ -108,7 +112,8 @@ def main():
                 'SELECT id,source_kind,source_ref,delta_toman FROM wallet_entries ORDER BY id',
                 'SELECT id,ucount FROM server_info ORDER BY id',
                 'SELECT id,stage,COALESCE(debit_entry_id,0),reserved_count FROM service_operations ORDER BY id',
-                'SELECT id,COALESCE(wallet_credit_entry_id,0),COALESCE(wallet_funding_result,"") FROM payment_attempts ORDER BY id'))
+                'SELECT id,COALESCE(wallet_credit_entry_id,0),COALESCE(wallet_funding_result,"") FROM payment_attempts ORDER BY id',
+                'SELECT id,pay_row_id,stage,role,recipient,payload_sha256 FROM payment_followup_intents ORDER BY id'))
         def balance():return int(sql('SELECT wallet FROM users WHERE userid=1001'))
         def capacity(sid=2):return int(sql(f'SELECT ucount FROM server_info WHERE id={sid}'))
         def cmd(op,**kw):return dict(op=op,**kw)
@@ -140,7 +145,7 @@ def main():
         # Source-owned extension proof, never a production adapter or runtime
         # injection. Copy only current runtime members into the owned sandbox.
         fixture=work/'adapter-extension-source'
-        members=set(package.members())|{'src/Panel/PasarGuardServiceExecution.php','src/Panel/PasarGuardServiceTarget.php','src/Finance/ReceiptMethods.php','src/Finance/HostedMethods.php','src/Finance/HostedReceipt.php'}
+        members=set(package.members())|{'src/Panel/PasarGuardServiceExecution.php','src/Panel/PasarGuardServiceTarget.php','src/Finance/ReceiptMethods.php','src/Finance/HostedMethods.php','src/Finance/HostedReceipt.php','src/Finance/ReceiptReports.php'}
         for member in members:
             target=fixture/member;target.parent.mkdir(parents=True,exist_ok=True)
             shutil.copyfile(ROOT/member,target)
@@ -274,6 +279,19 @@ function achbotFixtureVerifyGatewayLocked(mysqli $db,array $pay,array $attempt,a
             settle=invoice(mode,mode+'-topup');b=balance()
             assert php(mode,settle)['out'][0]['funding']=='wallet_only'
             assert balance()==b+100;case('topup')
+            pid=settle['pay']
+            assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin'
+            assert php(mode,settle)['out'][0]['credit']['replayed']
+            assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid}")=='2'
+            settle=invoice(mode,mode+'-report-rollback');pid=settle['pay'];before=snap()
+            sql("CREATE TRIGGER fixture_report_fail BEFORE INSERT ON payment_followup_intents FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture rollback'")
+            try:fail(mode,settle)
+            finally:sql('DROP TRIGGER fixture_report_fail')
+            assert snap()==before
+            b=balance();php(mode,settle,lost_ack=True)
+            assert php(mode,settle)['out'][0]['credit']['replayed'] and balance()==b+100
+            assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='wallet_credit'")=='2'
+            case('receipt_report_atomic_rollback_lost_ack_no_duplicate')
             # Same common commands; only the fixture source registrations and
             # fixture-specific proof/identity callbacks differ.
             sql("UPDATE server_config SET type='fixture_native' WHERE id=3")

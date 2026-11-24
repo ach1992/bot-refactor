@@ -9,26 +9,9 @@ require_once __DIR__.'/FundingCheckout.php';
  * eligible. A direct Wallet purchase, unrelated top-up, cancelled quote,
  * or second/later receipt cannot create a purchase referral reward. */
 function achbotServiceReferralReceiptLocked(mysqli $db,array $op): ?array {
-    $id=(int)$op['id'];$buyer=(int)$op['userid'];
-    $s=achbotProviderStatement($db,"SELECT pay_row_id FROM payment_attempts
-        WHERE service_operation_id=? AND wallet_funding_result='funded'
-        ORDER BY id LIMIT 2 FOR UPDATE",'i',[$id]);
-    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
-    if (!$rows) return null;
-    if (count($rows)!==1 || $op['kind']!=='BUY' || (int)$op['price_toman']<=0)
-        throw new RuntimeException('service_referral_funding_conflict');
-    [$pay,$a]=achbotCreditInvoiceLocked($db,(int)$rows[0]['pay_row_id'],$buyer);
-    if ((int)$a['service_operation_id']!==$id || $a['wallet_funding_result']!=='funded' ||
-        $a['wallet_credit_basis']===null || $a['wallet_credit_entry_id']===null ||
-        !is_string($a['wallet_invoice_sha256']) || $a['wallet_invoice_sha256']==='' ||
-        !hash_equals($a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$a)) ||
-        $pay['state']!=='paid' || (int)$pay['price']!==(int)$op['price_toman'])
-        throw new RuntimeException('service_referral_receipt_conflict');
-    $entry=achbotWalletFindEntryLocked($db,(int)$op['user_row_id'],$buyer,
-        'payment_credit',(string)$pay['id'],0,(int)$pay['price']);
-    if (!$entry || $entry['id']!==(int)$a['wallet_credit_entry_id'])
-        throw new RuntimeException('service_referral_receipt_journal_missing');
-    return $pay;
+    if ($op['kind']!=='BUY') throw new RuntimeException('service_referral_kind_conflict');
+    $source=achbotServiceFundingReceiptLocked($db,$op);
+    return $source===null?null:$source['pay'];
 }
 
 /** Reserve the original reward decision in the same local COMMIT as the

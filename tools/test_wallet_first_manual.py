@@ -20,6 +20,7 @@ PHP=evidence.DRIVER[:evidence.DRIVER.index("switch($spec['op'])")].replace(
 )+r"""
 require_once dirname($argv[1]).'/ManualReceipt.php';
 require_once dirname($argv[1]).'/ApiPayments.php';
+$GLOBALS['admin']=9001;
 $GLOBALS['paymentKeys']=$keys+['bankAccount'=>'fixture-bank','holderName'=>'fixture-holder',
     'giftCardUrl'=>'https://fixture.invalid/gift','manualUsdtNetwork'=>'ERC20',
     'manualUsdtWalletERC20'=>'0x'.str_repeat('1',40),'manualUsdtRateToman'=>100000,
@@ -58,7 +59,9 @@ def main():
         for m in ('001_marzban_panel_group_id.sql','003_payment_attempts.sql','007_service_effects.sql',
                   '011_provider_identity.sql','012_shared_provider_storage.sql','014_api_payment_evidence.sql',
                   '022_gateway_review_archive.sql','023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',
-                  '025_wallet_receipt_credit.sql','026_service_operations.sql'):
+                  '025_wallet_receipt_credit.sql','026_service_operations.sql',
+                  '008_referral_awards.sql','020_payment_followup_intents.sql','029_service_purchase_referral.sql',
+                  '030_service_followup_sources.sql','031_service_followup_attempts.sql'):
             sql((ROOT/'migrations/post-v9'/m).read_text())
         sql("""INSERT INTO setting(type,value) VALUES ('BOT_STATES','{"cartToCartAutoAcceptState":"on","cartToCartAutoAcceptTime":5,"cartToCartAutoAcceptType":2}');
             INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password)
@@ -92,6 +95,8 @@ def main():
                 token=result(mode,'begin',pid,method=method,file=file,api=api)
                 assert isinstance(token,str) and len(token)==32,token
                 assert result(mode,'finish',pid,method=method,file=file,token=token,api=api) is True
+            def roles(pid):
+                return sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")
             for mode in ('strict','off'):
                 def case(name):cases.append(mode+':'+name)
                 for method in ('bank_transfer','gift_card','manual_usdt','manual_trx'):
@@ -110,6 +115,7 @@ def main():
                     r=result(mode,'approve',pid,actor=9001)
                     assert r['funding']=='wallet_only' and balance()==b+1000 and not r['credit']['replayed'],r
                     assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+1000
+                    assert roles(pid)=='customer,receipt_primary,service_admin',roles(pid)
                     case(method+'_actual_issue_and_manual_approval')
                 pid=seed(mode+'-orphan',kind='BUY_SUB')
                 assert run(mode,'issue',pid,method='bank_transfer')['reason']=='checkout_service_invoice_missing'
@@ -120,6 +126,7 @@ def main():
                 submit(mode,pid,'bank_transfer','fixture-timer')
                 b=balance()
                 assert result(mode,'approve',pid,basis='bank_timer',actor=0)['funding']=='wallet_only' and balance()==b+1000
+                assert roles(pid)=='customer,receipt_primary',roles(pid)
                 case('actual_explicit_timer')
                 # The real bank checker must find and consume exactly the
                 # provider-owned original SMS, then use the common funding
@@ -143,6 +150,7 @@ def main():
                 assert result(mode,'check',pid)=='settled' and balance()==b+100 and server.consumes[ident]==1
                 assert sql(f'SELECT wallet_funding_result FROM payment_attempts WHERE pay_row_id={pid}')=='request_invalidated'
                 sql('UPDATE server_info SET active=1 WHERE id=2')
+                assert roles(pid)=='customer,receipt_primary',roles(pid)
                 case('actual_bank_scan_lost_remote_ack_service_invalidated')
                 pid=seed(mode+'-gift-api',price=1000)
                 result(mode,'issue',pid,method='gift_card',api=True)
@@ -162,6 +170,7 @@ def main():
                 sql(f'UPDATE payment_attempts SET review_archived_at=NOW() WHERE pay_row_id={pid}')
                 assert result(mode,'check',pid)=='settled' and balance()==b+1000
                 assert result(mode,'check',pid)=='settled' and balance()==b+1000
+                assert roles(pid)=='customer',roles(pid)
                 case('actual_gift_proven_local_rollback_then_archive')
             assert sum(server.consumes.values())==2 and server.gift_consumes==2
         finally:server.shutdown();server.server_close();thread.join(timeout=5)

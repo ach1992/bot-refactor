@@ -30,6 +30,7 @@ declare(strict_types=1);
 mysqli_report($argv[4]==='strict'?MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT:MYSQLI_REPORT_OFF);
 $telegramWebhookSecret='SyntheticHostedEvidenceSecret_2026';
 $GLOBALS['telegramWebhookSecret']=$telegramWebhookSecret;
+$GLOBALS['admin']=9001;$GLOBALS['botState']=[];
 $GLOBALS['loopback']=$argv[6];
 class SoapClient {
     function __construct($wsdl,$opts){
@@ -86,7 +87,9 @@ def main():
                   '007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql',
                   '014_api_payment_evidence.sql','022_gateway_review_archive.sql',
                   '023_scoped_payment_lock_indexes.sql','024_wallet_entries.sql',
-                  '025_wallet_receipt_credit.sql','026_service_operations.sql'):
+                  '025_wallet_receipt_credit.sql','026_service_operations.sql',
+                  '008_referral_awards.sql','020_payment_followup_intents.sql','029_service_purchase_referral.sql',
+                  '030_service_followup_sources.sql','031_service_followup_attempts.sql'):
             sql((ROOT/'migrations/post-v9'/m).read_text())
         sql("""INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password)
             VALUES (2,'https://fixture.invalid','127.0.0.1','','none','','','none','{}','pasarguard','fixture','fixture');
@@ -122,7 +125,7 @@ def main():
         thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
         base='http://127.0.0.1:'+str(server.server_port)
         try:
-            source=work/'source';members=set(package.members())|{'src/Panel/PasarGuardServiceExecution.php','src/Finance/HostedMethods.php','src/Finance/HostedReceipt.php'}
+            source=work/'source';members=set(package.members())|{'src/Panel/PasarGuardServiceExecution.php','src/Finance/HostedMethods.php','src/Finance/HostedReceipt.php','src/Finance/ReceiptReports.php'}
             for member in members:
                 target=source/member;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(ROOT/member,target)
             for file,replacements in {
@@ -202,6 +205,7 @@ def main():
                 replay=verify(mode,pid,'nextpay',ref)
                 assert replay['credit']['replayed'] and len(calls)==start and bal()==b+100
                 assert sql(f"SELECT p.state,a.stage FROM pays p JOIN payment_attempts a ON p.id=a.pay_row_id WHERE p.id={pid}")=='paid\tdone'
+                assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin'
                 case('nextpay_receipt_once')
                 pid=seed(mode+'-zarin');ref=mode+'-authority'
                 responses['/soap/issue']=(200,dict(Status=100,Authority=ref))
@@ -221,6 +225,7 @@ def main():
                 assert verify(mode,pid,'zarinpal',ref)['status']=='credited' and bal()==b+100
                 assert calls[-1][2]==dict(MerchantID='zarin-original',Authority=ref,Amount=100)
                 assert verify(mode,pid,'zarinpal',ref)['credit']['replayed'] and bal()==b+100
+                assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin'
                 case('zarinpal_101_after_local_rollback')
                 pid=seed(mode+'-np');ref=mode+'-invoice';child=mode+'-child'
                 responses['/np/issue']=(200,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
@@ -243,6 +248,7 @@ def main():
                 responses['/np/payment/'+child2]=(200,payload2)
                 assert verify(mode,pid,'nowpayments',child2)['credit']['replayed'] and bal()==b+100
                 assert sql(f"SELECT COUNT(*) FROM payment_transactions t JOIN payment_attempts a ON a.id=t.attempt_id WHERE a.pay_row_id={pid}")=='2'
+                assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin'
                 case('signed_child_verified_exact_quote_once')
                 pid=seed(mode+'-uncertain')
                 responses['/next/issue']=(503,dict(code=-1,trans_id='lost-reference'))

@@ -29,6 +29,7 @@ define('ACHBOT_PG_TEST_LOOPBACK',true);
 require_once $argv[1].'/src/Panel/ProviderRuntime.php';
 require_once $argv[1].'/src/Services/Execution.php';
 $GLOBALS['telegramWebhookSecret']='SyntheticHistoricalServiceDeliveryKey_2026';
+$GLOBALS['admin']=9001;$GLOBALS['botState']=[];
 $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $db->set_charset('utf8mb4');
 $spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
@@ -220,6 +221,8 @@ def isolated_case(mode: str) -> list[str]:
             "023_scoped_payment_lock_indexes.sql", "024_wallet_entries.sql",
             "025_wallet_receipt_credit.sql", "026_service_operations.sql",
             "027_service_delivery_sources.sql", "028_service_mutations.sql",
+            "020_payment_followup_intents.sql", "029_service_purchase_referral.sql",
+            "030_service_followup_sources.sql", "031_service_followup_attempts.sql",
         ):
             sql((ROOT / "migrations/post-v9" / name).read_text())
         prior_mutation=sql("SELECT provider_mutation_snapshot FROM service_effects WHERE id="+str(effect_id))

@@ -70,6 +70,8 @@ function achbotCheckoutSettleReceiptLocked(mysqli $db,int $payId,int $userId,str
     // and its delivery have their own result; paid never means provisioned.
     $s=achbotProviderStatement($db,"UPDATE pays SET state='paid' WHERE id=?",'i',[$payId]);$s->close();
     $s=achbotProviderStatement($db,"UPDATE payment_attempts SET stage='done' WHERE id=?",'i',[(int)$attempt['id']]);$s->close();
+    require_once __DIR__.'/ReceiptReports.php';
+    achbotReceiptReportStageLocked($db,$payId,$userId);
     return ['credit'=>$entry,'operation'=>$operation,'funding'=>$result];
 }
 

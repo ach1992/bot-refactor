@@ -207,7 +207,7 @@ function achbotManualFinalReceiptKeyboard(mysqli $db,int $payId,string $subject)
     return achbotApiPaymentFinalKeyboard($pay,'',false,['subject'=>$subject]);
 }
 
-function achbotApiPaymentFinalKeyboard(array $pay,string $fallback,bool $automatic,array $presentation): string {
+function achbotApiPaymentFinalKeyboard(array $pay,string $fallback,bool $automatic,array $presentation,?bool $walletSubject=null): string {
     $hash=(string)($pay['hash_id']??'');
     $actor=(int)($pay['approved_by']??0);
     $approver=$automatic?achbotMessage('manual_payment.api_payment.auto_approved'):
@@ -219,7 +219,7 @@ function achbotApiPaymentFinalKeyboard(array $pay,string $fallback,bool $automat
     if (preg_match('/\A.{57}/us',$subject)) {
         if (preg_match('/\A(.{1,55})/us',$subject,$short))$subject=$short[1].'...';
     }
-    $subjectButton=($pay['type']??'')==='INCREASE_WALLET'?$subject:
+    $subjectButton=($walletSubject??(($pay['type']??'')==='INCREASE_WALLET'))?$subject:
         achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.last_remark_for_admin_msg.2b262756e6',
             ['lastRemarkForAdminMsg'=>$subject]);
     return inlineKeyboard([
