@@ -1169,15 +1169,13 @@ snapshots, duplicate owners, incomplete existing journals and failed
 insertion are rejected. No receipt, debit, subscription or Native effect
 is recreated by that opening operation.
 
-**Activation is not authorized.** These migrations and source changes
-are development/rehearsal only. Legacy historical funded/processing
-payments, capacity reservations, automatic-renewal claims and uncertain
-Native effects must still be reconciled and adopted from actual original
-evidence without crediting or debiting twice. An inventory is not a
-historical-import result. The old source branches and direct writers
-remain in the candidate; schema absence still selects some legacy paths.
-Removal of those writers and the Marzban runtime, exact payment policy
-and UI parity, and the full historical adoption/retirement rehearsal
-remain required by #204. Do not install 033 or 034 separately on any bot.
-The prior delayed Native write counterexample remains an explicit
-limitation of the existing provider API, not a test of safe remote CAS.
+**Activation is not authorized.** The runtime no longer includes the
+parallel payment-specific service executors or Marzban implementation.
+The original provider/payment state is retained solely to preserve and
+reconcile historical evidence. New checkout admission requires the new
+schema and rejects incomplete migration rather than selecting an old
+writer. Owner-authorized manual transfer is a separate cutover activity.
+Do not install 033 or 034 separately on any bot. The prior delayed Native
+write counterexample remains an explicit limitation of the existing
+provider API, not a test of safe remote CAS. Exact candidate validation,
+independent review and installed acceptance remain separate gates.

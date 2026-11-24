@@ -139,8 +139,15 @@ if (preg_match('/^attentionReport([CS])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/
     $id=(int)$reviewAction[2];$actor=(int)$from_id;
     try {
         $r=achbotProviderRow($connection,'SELECT * FROM payment_followup_intents WHERE id=?','i',[$id]);
-        $pay=$r?achbotProviderRow($connection,'SELECT id,user_id FROM pays WHERE id=? OR checkout_operation_id=? LIMIT 1',
-            'ii',[(int)$r['pay_row_id'],(int)$r['service_operation_id']]):null;
+        $receiptId=(int)($r['pay_row_id']??0);
+        $operationId=(int)($r['service_operation_id']??0);
+        // Each report owns exactly one immutable source. Never resolve a
+        // contradictory journal through whichever side of an OR matches first.
+        $pay=null;
+        if ($receiptId>0 && $operationId===0)
+            $pay=achbotProviderRow($connection,'SELECT id,user_id FROM pays WHERE id=?','i',[$receiptId]);
+        elseif ($operationId>0 && $receiptId===0)
+            $pay=achbotProviderRow($connection,'SELECT id,user_id FROM pays WHERE checkout_operation_id=?','i',[$operationId]);
         if (!$r || !$pay || !achbotGatewayAttentionCaseOpen($connection,(int)$pay['id']))
             throw new RuntimeException('followup_review_stale');
         $token=achbotFollowupRedriveToken($r,$actor);$payId=(int)$pay['id'];$rows=[];

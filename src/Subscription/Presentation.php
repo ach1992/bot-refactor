@@ -356,11 +356,6 @@ function messageParts(string $html, int $limit = 4096): array {
     return $parts;
 }
 
-function configLinks($acc_link, $botState, $unusedIndexes) {
-    return present('marzban', ['links' => $acc_link], $botState,
-        ['policy' => []])['config_html'];
-}
-
 function configMessage($template, $enableText, $remark, $configLinks, $subLink, $backupSection, bool $hideConfigs = false): string {
     if ($hideConfigs || $configLinks === '') {
         $template = str_replace(\achbotMessage('subscription.presentation.config_message.text.2953f9a4ad'), '', $template);

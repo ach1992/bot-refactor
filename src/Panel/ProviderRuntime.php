@@ -1156,7 +1156,7 @@ function achbotProviderRegistryEntryValid($type,$adapter): bool {
     foreach ($required as $operation)
         if (!is_string($adapter[$operation]??null) || !is_callable($adapter[$operation]))
             return false;
-    // During the refactor legacy adapters have no new service admission.
+    // A registered paid service kind must have both execution and finalization.
     foreach (['service_target','service_checkout_pin','service_account_lock','service_auto_observe','service_auto_reserve'] as $operation)
         if (array_key_exists($operation,$adapter) &&
             (!is_string($adapter[$operation]) || !is_callable($adapter[$operation]))) return false;
@@ -1172,6 +1172,10 @@ function achbotProviderRegistryEntryValid($type,$adapter): bool {
                 if (!is_string($callbacks[$callback]??null) || !is_callable($callbacks[$callback])) return false;
         }
     }
+    $execution=array_keys($adapter['service_execution']??[]);
+    $finalization=array_keys($adapter['service_finalization']??[]);
+    sort($execution);sort($finalization);
+    if ($execution!==$finalization || ($execution && !isset($adapter['service_target']))) return false;
     $lookup=array_key_exists('import_lookup',$adapter);$adopt=array_key_exists('import_adopt',$adapter);
     if ($lookup!==$adopt) return false;
     if ($lookup) foreach (['import_lookup','import_adopt'] as $operation)

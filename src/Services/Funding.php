@@ -68,7 +68,8 @@ function achbotServiceLocalTargetLocked(mysqli $db,int $userId,array $q,bool $is
         !in_array((int)$s['state'],$buy?[1]:[1,2],true))
         throw new DomainException('service_server_unavailable');
     $adapter=achbotProviderDefinition($s['type']);
-    if ($adapter===null || !isset($adapter['service_target']))
+    if ($adapter===null || !isset($adapter['service_target'],
+        $adapter['service_execution'][$q['kind']],$adapter['service_finalization'][$q['kind']]))
         throw new DomainException('service_server_unavailable');
     $o=null;$p=null;
     if ($q['order_id']>0) {

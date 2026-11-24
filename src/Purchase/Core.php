@@ -517,7 +517,7 @@ if (!function_exists('buildRemark')) {
         } elseif ($remarkMode === "manual") {
             return $description;
         } else {
-            $rnd = rand(1111, 99999);
+            $rnd = rand(10000, 99999);
             return "{$srv_remark}-{$userId}-{$rnd}";
         }
     }

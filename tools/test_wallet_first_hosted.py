@@ -48,11 +48,37 @@ class SoapClient {
     function PaymentRequest($args){return $this->request('issue',$args);}
     function PaymentVerification($args){return $this->request('verify',$args);}
 }
+$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$db->set_charset('utf8mb4');
+$c=json_decode($argv[5],true,512,JSON_THROW_ON_ERROR);
+$connection=$db;$botUrl='https://bot.fixture.invalid/';$botUsername='fixture_bot';
+$paymentKeys=['nextpay'=>'next-original','zarinpal'=>'zarin-original','nowpayment'=>'np-original','manualUsdtRateToman'=>100];
+$nowpaymentsIpnSecret='fixture-ipn';
+$botState=json_decode($db->query("SELECT value FROM setting WHERE type='BOT_STATES' LIMIT 1")->fetch_row()[0]??'{}',true);
+function sendMessage(...$args){return (object)['ok'=>true,'result'=>(object)['message_id'=>572]];}
+if ($c['op']==='browser_issue') {
+    // The actual public script calls exit; capture its final status without
+    // following redirects to real providers. Only merchant endpoints in the
+    // disposable copy point to our owned loopback.
+    $_GET=[$c['flag']=>'', 'hash_id'=>$c['hash']];
+    ob_start();
+    register_shutdown_function(static function(){
+        $body=ob_get_clean();
+        echo json_encode(['ok'=>true,'result'=>['status'=>http_response_code()?:200,'body'=>strlen($body)]]);
+    });
+    require $argv[1].'/pay/checkout.php';
+    exit;
+}
+if ($c['op']==='browser_return') {
+    $_GET=$c['query'];
+    ob_start();
+    require $argv[1].'/src/Finance/GatewayReturn.php';
+    $body=ob_get_clean();
+    echo json_encode(['ok'=>true,'result'=>['status'=>http_response_code()?:200,'body'=>strlen($body)]]);
+    exit;
+}
 define('ACHBOT_NP_RECONCILE_ONLY',true);
 require $argv[1].'/src/Finance/HostedReceipt.php';
 require $argv[1].'/src/Finance/GatewayReturn.php';
-$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$db->set_charset('utf8mb4');
-$c=json_decode($argv[5],true,512,JSON_THROW_ON_ERROR);
 try {
     $id=(int)($c['id']??0);$owner=(int)($c['owner']??1001);
     $r=match ($c['op']) {
@@ -323,6 +349,46 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                 assert sql(f"SELECT merchant_verified_at IS NOT NULL FROM payment_transactions WHERE payment_id='{child}'")=='1'
                 assert result(mode,'maintain')['completed']==0 and bal()==b+100
                 case('actual_admission_lost_creation_original_secret_ipn_recovery_and_poll_once')
+                # Source-real public checkout and browser return controllers.
+                sql("DELETE FROM setting WHERE type IN ('BOT_STATES','PAYMENT_KEYS'); INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"nowPaymentWallet\":\"on\",\"nextpay\":\"on\",\"zarinpal\":\"on\"}'),('PAYMENT_KEYS','{\"nextpay\":\"next-original\",\"zarinpal\":\"zarin-original\",\"nowpayment\":\"np-original\",\"manualUsdtRateToman\":100}')")
+                for flag,method in [('nextpay','nextpay'),('zarinpal','zarinpal'),('nowpayment','nowpayments')]:
+                    name=mode+'-browser-'+flag;pid=seed(name,price=205)
+                    ref=mode+'-browser-'+flag+'-ref';child=ref+'-child';b=bal()
+                    if flag=='nextpay':
+                        responses['/next/issue']=(200,dict(code=-1,trans_id=ref))
+                        responses['/next/verify']=(200,dict(code=0))
+                        query=dict(nextpay='',trans_id=ref,hash_id=name)
+                    elif flag=='zarinpal':
+                        responses['/soap/issue']=(200,dict(Status=100,Authority=ref))
+                        responses['/soap/verify']=(200,dict(Status=100,RefID=123))
+                        query=dict(zarinpal='',Authority=ref,hash_id=name)
+                    else:
+                        responses['/np/issue']=(200,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
+                        query=dict(nowpayment='',NP_id=child,hash_id=name)
+                    start=len(calls)
+                    assert result(mode,'browser_issue',flag=flag,hash=name)['status']==302
+                    assert sql(f"SELECT provider FROM payment_attempts WHERE pay_row_id={pid}")==method
+                    assert result(mode,'browser_issue',flag=flag,hash=name)['status']==302
+                    assert len(calls)==start+1 and bal()==b
+                    # Invalid browser references cannot verify/credit another invoice.
+                    result(mode,'browser_return',query=dict(query,hash_id='wrong-'+name))
+                    assert len(calls)==start+1 and bal()==b
+                    result(mode,'browser_return',query=query)
+                    if flag=='nowpayment':
+                        assert len(calls)==start+1 and bal()==b
+                        payload=dict(payment_id=child,invoice_id=ref,order_id=name,price_amount='2.05',price_currency='usd',payment_status='confirmed')
+                        assert result(mode,'ipn',**sign(payload))==200
+                        responses['/np/payment/'+child]=(200,payload)
+                        assert verify(mode,pid,method,child)['status']!='credited' and bal()==b
+                        responses['/np/payment/'+child]=(200,dict(payload,payment_status='finished',order_id='wrong-order'))
+                        assert verify(mode,pid,method,child)['status']=='review' and bal()==b
+                        responses['/np/payment/'+child]=(200,dict(payload,payment_status='finished'))
+                        assert verify(mode,pid,method,child)['status']=='credited'
+                    assert bal()==b+205,(flag,b,bal())
+                    result(mode,'browser_return',query=query)
+                    assert bal()==b+205
+                    case('actual_public_'+flag+'_checkout_and_return')
+
             assert not errors,errors
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
     report=dict(complete=True,cases=len(checks),checks=checks,owned_loopback_requests=len(calls),

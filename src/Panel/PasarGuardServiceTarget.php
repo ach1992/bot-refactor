@@ -62,8 +62,14 @@ function achbotPasarGuardServiceTargetLocked(mysqli $db,array $q,?array $o,?arra
             if ($buy) $target['groups']=achbotProviderGroups($p['provider_group_ids']);
         }
         if ($buy) {
-            achbotStyledAccountRemark($q['remark'],'pasarguard','service:quote-check',
-                1,$q['quantity'],$q['naming_mode'],$q['explicit_name']);
+            try {
+                // Check the largest ordinal too: its suffix can be longer.
+                foreach (array_unique([1,$q['quantity']]) as $ordinal)
+                    achbotStyledAccountRemark($q['remark'],'pasarguard','service:quote-check',
+                        $ordinal,$q['quantity'],$q['naming_mode'],$q['explicit_name']);
+            } catch (InvalidArgumentException $e) {
+                throw new DomainException('service_account_name_invalid',0,$e);
+            }
         }
         return $target;
     } catch (RuntimeException $invalid) {

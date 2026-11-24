@@ -1,0 +1,191 @@
+{
+  "baseline": "484c80e6ee030e8656da96edc3000311d10327b5",
+  "added_without_direct_send": [
+    "src/Finance/CheckoutAdmission.php",
+    "src/Finance/CheckoutRoutes.php",
+    "src/Finance/DeliveryParts.php",
+    "src/Finance/FollowupAttempts.php",
+    "src/Finance/FundingCheckout.php",
+    "src/Finance/HostedMethods.php",
+    "src/Finance/HostedReceipt.php",
+    "src/Finance/ManualReceipt.php",
+    "src/Finance/ManualReceiptIntent.php",
+    "src/Finance/PaymentCredit.php",
+    "src/Finance/ReceiptMethods.php",
+    "src/Finance/ReceiptReports.php",
+    "src/Finance/ServiceDelivery.php",
+    "src/Finance/ServicePurchaseReferral.php",
+    "src/Finance/ServiceReports.php",
+    "src/Panel/AccountNaming.php",
+    "src/Panel/PasarGuardServiceEdit.php",
+    "src/Panel/PasarGuardServiceExecution.php",
+    "src/Panel/PasarGuardServiceTarget.php",
+    "src/Presentation/MainMenu.php",
+    "src/Services/AutomaticRenewal.php",
+    "src/Services/EditFinalization.php",
+    "src/Services/Execution.php",
+    "src/Services/Funding.php",
+    "src/Services/HistoricalFunding.php",
+    "src/Services/Ownership.php",
+    "src/Wallet/Ledger.php"
+  ],
+  "removed": [
+    "src/Finance/BankPurchase.php",
+    "src/Finance/ManualEditRecovery.php",
+    "src/Finance/PaidAccountRecovery.php",
+    "src/Finance/RecoveryInspection.php",
+    "src/Finance/RecoveryTransport.php",
+    "src/Finance/RenewalHelper.php",
+    "src/Finance/Routes/RenewalPlan.php",
+    "src/Finance/Routes/RenewalSelection.php",
+    "src/Finance/WalletAddonNotices.php",
+    "src/Finance/WalletEditRecovery.php",
+    "src/Finance/WalletOriginalRecovery.php",
+    "src/Finance/WalletRenewalRecovery.php",
+    "src/Finance/WalletSettlement.php",
+    "src/Panel/Accounts.php",
+    "src/Panel/MarzbanPlanAccess.php"
+  ],
+  "changes": {
+    "bot.php": {
+      "before_count": 200,
+      "after_count": 191,
+      "before_sha256": "cff48d8a700a865d62d8c96389da43e7a2d34431deff1f650f3bd4b107808baa",
+      "after_sha256": "ae449b9a6289bcd27264ef2b8d4d8649d0269259094e21d9678a4a666466d8af",
+      "reason": "Retired Marzban wizard and external renewal selection."
+    },
+    "src/Finance/ApiPaymentPresentation.php": {
+      "before_count": 1,
+      "after_count": 0,
+      "before_sha256": "938e2d727dfbbad538ec697c2e31463850ddc74dfdc117a8193cda455e9cdd31",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Receipt completion notification moves to frozen followup packet."
+    },
+    "src/Finance/AutomaticReceipts.php": {
+      "before_count": 13,
+      "after_count": 0,
+      "before_sha256": "cf6a29c9629beb58f0950adee44d7edd2d7c9ae50b0c18772183877958ae9d37",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Common receipt credit and durable service/report dispatch replace inline bank notices."
+    },
+    "src/Finance/AutomaticRenewal.php": {
+      "before_count": 2,
+      "after_count": 0,
+      "before_sha256": "56141b7ca01b2b075bb196ec1af4203dcf6c8b414d1e76010551063edeebc6c5",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Scheduled admission uses shared service command and frozen delivery."
+    },
+    "src/Finance/DeliveryLedger.php": {
+      "before_count": 1,
+      "after_count": 0,
+      "before_sha256": "7faee14d1deb59b40793ed9e75924cc88d9228c5ee3bf3bdabcb0637a93bc431",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "One durable per-part dispatch owner; old whole-packet sender retired."
+    },
+    "src/Finance/Discounts.php": {
+      "before_count": 13,
+      "after_count": 14,
+      "before_sha256": "6895b524dcc7fbef044102999af033e94803d234b41f05c7c27315cedc85f5a6",
+      "after_sha256": "b4994bb00ffa380bedf4358b038e643e52bbf9f396fc29a73fd1e01a69d68209",
+      "reason": "Correct invalid-discount notice in shared quote flow."
+    },
+    "src/Finance/GatewayReturn.php": {
+      "before_count": 6,
+      "after_count": 0,
+      "before_sha256": "0376bec05bcc52461e74ab2d5a69d9875203eae494565558dc645b5935bf95a4",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Browser return no longer performs native operation or inline completion messages."
+    },
+    "src/Finance/ReceiptHelpers.php": {
+      "before_count": 6,
+      "after_count": 5,
+      "before_sha256": "a5b5ce5c92c2a86efa446fa6fe0bb66c54651c88d0c879bb7b06a023ed53b428",
+      "after_sha256": "ff7912038eda15c04ae92be794b2e3c092d41e6f5d12ddb08b3f4aee3bf0fb11",
+      "reason": "Remove obsolete payment-path refund notice."
+    },
+    "src/Finance/ReferralReward.php": {
+      "before_count": 1,
+      "after_count": 0,
+      "before_sha256": "c4881bf727146876eee31a90e64002b2ba826206434bd7e9fd6c7009bd6e6bde",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Referral credit notices are durable source-owned reports."
+    },
+    "src/Finance/Routes/AutomaticGatewayReview.php": {
+      "before_count": 49,
+      "after_count": 34,
+      "before_sha256": "4fb93a55e1bbfc7cdab723e0c4153b9d6f5e87c178b741f86ff79ed88a23c8af",
+      "after_sha256": "ebad254e4527ed4832ae79ed68eae5a974a834bade1090b6f0d5c21313d92116",
+      "reason": "Common resume and original packet confirmation replace payment-method-specific recovery actions."
+    },
+    "src/Finance/Routes/Checkout.php": {
+      "before_count": 15,
+      "after_count": 13,
+      "before_sha256": "87aa9564ac301428ae9513a81af203cb095982481a24171f13b81af88ab939fc",
+      "after_sha256": "3f7d8d466ff0f50ee8eb99df89737633780d10dff12a047b7be2f224cb13cf45",
+      "reason": "Success delivery owned by shared command; remove obsolete inline wallet notices."
+    },
+    "src/Finance/Routes/Extensions.php": {
+      "before_count": 25,
+      "after_count": 19,
+      "before_sha256": "9ba80f3c2290c756f396e7171ad030eb5d5cf4f60009600ddce7d058b6fc32b7",
+      "after_sha256": "c62906cd56a2c9c8ec6ee1fc5384a2a6a988277a659eb74e22b0f3f6d8dba6df",
+      "reason": "Same shared command and delivery for day and volume."
+    },
+    "src/Finance/Routes/ManualApproval.php": {
+      "before_count": 2,
+      "after_count": 0,
+      "before_sha256": "64b8a4d1b9ebd51d1264852c588531f7cc4ddf54f3028e6e0a65cefd2fbbe152",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Manual approval credits receipt, then advances same shared service command."
+    },
+    "src/Finance/Routes/ManualReceipts.php": {
+      "before_count": 18,
+      "after_count": 12,
+      "before_sha256": "210476cf38cd0651367be92805048be760e098a4dba269cf5893ee268f8c7cee",
+      "after_sha256": "a56b96558c3b434e1187eb32b8938f4c539a34cd8357406a8b6c83f4c7783b4a",
+      "reason": "Shared review/approval and durable original receipt/customer/operator packets."
+    },
+    "src/Finance/Routes/RenewalCheckout.php": {
+      "before_count": 24,
+      "after_count": 16,
+      "before_sha256": "9ed2ba8682b3d73714fdb16169453d6e192042357453cba395fa3733c4398809",
+      "after_sha256": "c2c30ff3f9bcb936fe29f896d3d42d2af940df9d9e0706db942e15a43e72b0be",
+      "reason": "Shared renewal service and delivery replace old inline recovery and unsupported external branch."
+    },
+    "src/Finance/Routes/RenewalPlan.php": {
+      "before_count": 1,
+      "after_count": 0,
+      "before_sha256": "a4e512838412f6f109c09ea6c5d4b15510f7bafd61f624406d21cf1a95993000",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Retired external renewal."
+    },
+    "src/Finance/Routes/RenewalSelection.php": {
+      "before_count": 2,
+      "after_count": 0,
+      "before_sha256": "8274b998492de98ceb9d1d4fa64f42155530d43d2c7a30e37643a4aef97c0596",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Retired external renewal."
+    },
+    "src/Purchase/Catalogue.php": {
+      "before_count": 18,
+      "after_count": 17,
+      "before_sha256": "f834fa0961d4d1557238d2cf9efe9d2bb94b7bbf971887697ace11d9258b7400",
+      "after_sha256": "55584b55c58f78387f0db9c0e7efb2e2433954f67b768d821e42c687fc2c7a79",
+      "reason": "Remove duplicate invalid naming branch."
+    },
+    "src/Subscription/Delivery.php": {
+      "before_count": 2,
+      "after_count": 2,
+      "before_sha256": "4b2b4a5c52f6fc8d2b0d802382fd457531f567f9adda9716873dc9169573681a",
+      "after_sha256": "05db9abff930d4ba2e0255c4a1f6198d7fd20f8d323f0be4b6df08ee947f9d4c",
+      "reason": "Send arguments come from immutable per-part packet; fixture verifies wire fields."
+    },
+    "src/Subscription/OrderManagement.php": {
+      "before_count": 33,
+      "after_count": 29,
+      "before_sha256": "77aa64673ce8da62ffcecc02d50f00579503b2868690b154b52844b96e357b05",
+      "after_sha256": "e28f0f269b8b58e17d724bad8b34bb864f85e1e9e907c6d29e70f9fe3639de17",
+      "reason": "Retire local Marzban token/UUID mutations and retain stale callback denial; PasarGuard order management unchanged."
+    }
+  }
+}

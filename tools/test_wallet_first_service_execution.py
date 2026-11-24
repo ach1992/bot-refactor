@@ -33,6 +33,9 @@ require_once $argv[1].'/src/Finance/FundingCheckout.php';
 $data='';
 require_once $argv[1].'/src/Subscription/AccountDeletion.php';
 $GLOBALS['telegramWebhookSecret']='SyntheticServiceDeliveryKey_2026';
+function setUser(...$args) {}
+function alert(...$args) {$GLOBALS['fixtureAlerts'][]=$args;}
+function answerCallbackQuery(...$args) {$GLOBALS['fixtureAlerts'][]=$args;}
 function fixtureDeliverySend(string $kind,int $uid,?string $text,?string $keys,?string $mode,$photo=null) {
     global $db,$x;
     $ctx=$GLOBALS['achbotTelegramDiagnosticContext'];
@@ -104,6 +107,12 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
 }
 function achbotNotifyAdmins(...$args) {return true;}
 function editKeys($keys,$msgId,$ci) {return sendMessage($keys,null,'edit:'.$msgId,$ci);}
+function editText($msgId,$text,$keys=null,$mode=null,$uid=null) {
+    if (($GLOBALS['x']['op']??'')!=='telegram_review') throw new RuntimeException('fixture_unexpected_edit');
+    $GLOBALS['fixtureReview'][]=['message'=>$msgId,'body'=>$text,'keys'=>json_decode($keys??'null',true),'mode'=>$mode,'user'=>$uid];
+    return (object)['ok'=>true];
+}
+
 function fixtureAlias(mysqli $db,int $order): int {
     $ctx=achbotPgOrderContext($db,$order,true);$o=$ctx['order'];$a=$ctx['account'];
     $id=insertOrder($db,9002,'',0,2,0,$o['remark'],'alias-'.$o['uuid'],
@@ -170,6 +179,33 @@ try {
             'cutover_adopt'=>walletFirstCutoverAdoptWalletBuy($db,$x['pay'],$x['expected']),
             'legacy_reserve'=>fixtureLegacyReserve($db,$x['pay'])
         };
+    }
+    elseif ($x['op']==='telegram_wallet') {
+        $from_id=(int)($x['sender']??1001);$chat_id=$from_id;$callbackId='fixture-callback';$message_id=721;
+        $userInfo=achbotProviderRow($db,'SELECT * FROM users WHERE userid=?','i',[$from_id]);
+        $text='';$botUrl='https://bot.fixture.invalid/';$botUsername='fixture_bot';
+        $botState=$GLOBALS['botState']+['walletState'=>'on','remark'=>'digits'];
+        $data=$x['callback'];$GLOBALS['fixtureAlerts']=[];
+        $update=(object)['update_id'=>123456,'callback_query'=>(object)['id'=>$callbackId,'from'=>(object)['id'=>$from_id],
+            'data'=>$data,'message'=>(object)['message_id'=>$message_id,'chat'=>(object)['id'=>$chat_id,'type'=>'private']]]];
+        if ($x['missing_key']??false) $GLOBALS['telegramWebhookSecret']=null;
+        $route=match($x['route']) {'buy','custom'=>'Checkout','renew'=>'RenewalCheckout','day','volume'=>'Extensions',
+            default=>throw new RuntimeException('fixture_invalid_route')};
+        require $argv[1].'/src/Finance/Routes/'.$route.'.php';
+        $r=$GLOBALS['fixtureAlerts'];
+    }
+    elseif ($x['op']==='telegram_review') {
+        $from_id=(int)$x['actor'];$chat_id=(int)($x['chat']??$from_id);
+        $callbackId='fixture-review';$message_id=889;$data=$x['callback'];
+        $GLOBALS['fixtureAlerts']=[];$GLOBALS['fixtureReview']=[];
+        require $argv[1].'/src/Finance/Routes/AutomaticGatewayReview.php';
+        $r=['alerts'=>$GLOBALS['fixtureAlerts'],'review'=>$GLOBALS['fixtureReview']];
+    }
+    elseif ($x['op']==='retired_callback') {
+        require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
+        $p=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[$x['pay']]);
+        $r=['modes'=>array_map(static fn($mode)=>achbotWalletModeMatchesRequest($p,$mode),['standard','custom','renew','day','volume','sconfig']),
+            'provider'=>achbotSupportsProviderType('marzban'),'subject'=>achbotProviderPaymentSubjectServer($db,$p)];
     }
     elseif ($x['op']==='checkout_insert') {
         require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
@@ -540,7 +576,7 @@ def main():
                     return None
                 assert p.returncode==0,(p.returncode,p.stdout,p.stderr)
                 for line in p.stderr.splitlines():
-                    assert line.startswith(('[AChBot] ','achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_')) or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
+                    assert line.startswith(('[AChBot] ','achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_')) or (op=='telegram_wallet' and line.startswith(('achbot_checkout_wallet_route_deferred','achbot_admin_'))) or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
                 try:r=json.loads(p.stdout)
                 except ValueError as e:raise AssertionError((op,p.stdout,p.stderr)) from e
                 if 'expect_error' in kw:
@@ -1710,6 +1746,70 @@ DELIMITER ;
                     for stage in ('progressed','applied','completed'):step(mode,op,stage)
                     assert php(mode,'checkout_approve',hash=h,mode=kind)['credit']['replayed']
                     cases.append(mode+'_actual_scoped_'+kind+'_manual_checkout_draft')
+                # Real Telegram callbacks through the current dispatch files,
+                # not direct service-function-only evidence.
+                def callback(suffix,typ,kind,prefix,**kw):
+                    h,pid=insert_checkout(suffix,typ,**kw)
+                    before=finance();wire=len(requests)
+                    # Wrong customer and missing outbox key must fail without
+                    # reserving the command, wallet or Native capacity.
+                    php(mode,'telegram_wallet',route=kind,callback=prefix+h,sender=9002)
+                    assert finance()==before and len(requests)==wire
+                    php(mode,'telegram_wallet',route=kind,callback=prefix+h,missing_key=True)
+                    assert finance()==before and len(requests)==wire
+                    assert sql(f"SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}")=='1'
+                    php(mode,'telegram_wallet',route=kind,callback=prefix+h)
+                    op=int(sql(f"SELECT checkout_operation_id FROM pays WHERE id={pid}"))
+                    assert sql(f"SELECT state FROM pays WHERE id={pid}")=='paid_with_wallet'
+                    assert sql(f"SELECT stage FROM service_operations WHERE id={op}")=='completed'
+                    assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{op}'")=='1'
+                    after=finance();native=posts()
+                    php(mode,'telegram_wallet',route=kind,callback=prefix+h)
+                    assert finance()==after and posts()==native
+                    return op
+                op=callback('cb-buy','BUY_SUB','buy','payBuyWithWallet')
+                order_cb=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}'"))
+                callback('cb-custom','BUY_SUB','custom','payCustomWithWallet',days=10,volume=3,description=mode+'-actual-custom')
+                callback('cb-renew','RENEW_ACCOUNT','renew','payRenewWithWallet',order=order_cb)
+                for kind,table,prefix in [('day','increase_day','payIncreaseDayWithWallet'),('volume','increase_plan','payIncreaseWithWallet')]:
+                    offer=int(sql(f"SELECT id FROM {table} WHERE volume=97 AND server_id IS NULL"))
+                    callback('cb-'+kind,f"INCREASE_{kind.upper()}_{order_cb}_{offer}",kind,prefix,order=order_cb,
+                        days=97 if kind=='day' else 0,volume=97 if kind=='volume' else 0,addon_kind=kind,offer=offer)
+                cases.append(mode+'_five_real_wallet_callbacks_owner_schema_and_replay_fences')
+                # New insufficient funds leave the actual draft usable.
+                h,pid=insert_checkout('cb-low','BUY_SUB')
+                wallet=int(sql('SELECT wallet FROM users WHERE userid=1001'))
+                sql('UPDATE users SET wallet=0 WHERE userid=1001')
+                before=finance();wire=len(requests)
+                php(mode,'telegram_wallet',route='buy',callback='payBuyWithWallet'+h)
+                assert finance()==before and len(requests)==wire
+                assert sql(f"SELECT CONCAT(state,':',checkout_operation_id IS NULL) FROM pays WHERE id={pid}")=='pending:1'
+                assert php(mode,'checkout_manual',pay=pid,submit=True)
+                r=php(mode,'checkout_approve',hash=h)
+                assert r['funding']=='funded' and php(mode,'checkout_approve',hash=h)['credit']['replayed']
+                for stage in ('applied','completed'):step(mode,r['operation'],stage)
+                sql(f'UPDATE users SET wallet={wallet} WHERE userid=1001')
+                cases.append(mode+'_actual_low_wallet_callback_switch_to_manual')
+                # Names that the current Native CREATE would reject are
+                # rejected at the local admission boundary, before debit.
+                for i,name in enumerate(['x','ab','a--b','a__b','a-_b','a'*101]):
+                    h,pid=insert_checkout('bad-name-'+str(i),'BUY_SUB',days=10,volume=3,description=name)
+                    before=finance();wire=len(requests)
+                    php(mode,'telegram_wallet',route='custom',callback='payCustomWithWallet'+h)
+                    assert finance()==before and len(requests)==wire
+                    assert sql(f"SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}")=='1'
+                cases.append(mode+'_invalid_native_names_never_debit_or_allocate')
+                # Retired external renewal and unsupported panel: reject
+                # all current wallet families without making Native calls.
+                sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id) VALUES ('{mode}-retired',1001,'RENEW_SCONFIG',100,UNIX_TIMESTAMP(),'pending',2,7)")
+                pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{mode}-retired'"))
+                before=finance();wire=len(requests)
+                assert php(mode,'retired_callback',pay=pid)==dict(modes=[False]*6,provider=False,subject=None)
+                for kind,prefix in [('buy','payBuyWithWallet'),('custom','payCustomWithWallet'),('renew','payRenewWithWallet'),('day','payIncreaseDayWithWallet'),('volume','payIncreaseWithWallet')]:
+                    php(mode,'telegram_wallet',route=kind,callback=prefix+mode+'-retired')
+                assert finance()==before and len(requests)==wire
+                assert sql(f"SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}")=='1'
+                cases.append(mode+'_retired_external_renewal_and_provider_denied')
                 h,pid=insert_checkout('reject','BUY_SUB')
                 assert php(mode,'checkout_manual',pay=pid,submit=True)
                 op=int(sql(f"SELECT checkout_operation_id FROM pays WHERE id={pid}"))
@@ -1733,6 +1833,45 @@ DELIMITER ;
                 assert sql(f"SELECT COUNT(*) FROM payment_followup_attempts WHERE intent_id={rid}")=='2'
                 assert finance()==prior and len(requests)==before
                 cases.append(mode+'_manual_rejection_cancels_original_and_recovers_notice_without_money')
+                # Source-real operator confirmation and unknown delivery
+                # recovery. Never construct an independent finance command.
+                h,pid=insert_checkout('operator-redrive','BUY_SUB')
+                php(mode,'telegram_wallet',route='buy',callback='payBuyWithWallet'+h,unknown_ack=True)
+                op=int(sql(f"SELECT checkout_operation_id FROM pays WHERE id={pid}"))
+                assert sql(f"SELECT stage FROM service_operations WHERE id={op}")=='completed'
+                d=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={op}"))
+                part=int(sql(f"SELECT part_no FROM payment_delivery_parts WHERE intent_id={d} AND state='unknown' LIMIT 1"))
+                before=finance();wire=len(requests)
+                def review(cb,actor=9001,**kw):
+                    return php(mode,'telegram_review',actor=actor,callback=cb,**kw)
+                def confirmation(r,prefix):
+                    assert len(r['review'])==1 and r['review'][0]['mode']=='HTML',r
+                    return next(b['callback_data'] for row in r['review'][0]['keys']['inline_keyboard']
+                                for b in row if b['callback_data'].startswith(prefix))
+                cb=f'attentionDeliveryC_{d}_{part}'
+                assert not review(cb,actor=1001)['review']
+                assert not review(cb,chat=-100123)['review']
+                confirm=confirmation(review(cb),'attentionDeliveryS_')
+                count=int(sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={d} AND part_no={part}"))
+                assert not review(confirm,actor=1001)['review']
+                assert int(sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={d} AND part_no={part}"))==count
+                review(confirm)
+                review(confirm)
+                assert int(sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={d} AND part_no={part}"))==count+1
+                assert sql(f"SELECT state FROM payment_delivery_parts WHERE intent_id={d} AND part_no={part}")=='acknowledged'
+                # The same attention case can recover an original frozen
+                # customer/admin report, not merely a part of the subscription.
+                rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={op} AND state='unknown' LIMIT 1"))
+                cb=f'attentionReportC_{rid}'
+                assert not review(cb,actor=1001)['review']
+                confirm=confirmation(review(cb),'attentionReportS_')
+                count=int(sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}"))
+                review(confirm);review(confirm)
+                assert int(sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}"))==count+1
+                assert sql(f"SELECT state FROM payment_followup_intents WHERE id={rid}")=='acknowledged'
+                assert finance()==before and len(requests)==wire
+                cases.append(mode+'_actual_private_operator_delivery_and_report_confirmation_once')
+
                 assert not faults and not errors,(faults,errors)
         finally:
             release.set();server.shutdown();server.server_close();thread.join(5)

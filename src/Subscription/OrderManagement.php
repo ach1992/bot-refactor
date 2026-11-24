@@ -187,12 +187,6 @@ if (preg_match('/^selectOrderByRemark_userid_(\d+)_tempId_(.+)/', $data, $match)
     showOrderManagementPanel($order);
 }
 
-function achbotManagementIdentityProvider(mysqli $db,int $id): string {
-    $stmt=$db->prepare('SELECT c.type FROM orders_list o JOIN server_config c ON c.id=o.server_id WHERE o.id=?');
-    $stmt->bind_param('i',$id);$stmt->execute();$row=$stmt->get_result()->fetch_assoc();$stmt->close();
-    return (string)($row['type']??'');
-}
-
 /** Warning processing and the deletion grace are lifecycle state, never an ON/OFF preference. */
 function achbotOrderWarningPresentation(array $order): array {
     $value=(int)$order['notif'];
@@ -231,30 +225,22 @@ function showOrderManagementPanel($order, $msgId = null,string $notice=''){
     $keyboard = [
         [["text" => \achbotMessage('admin_settings.management.local_delete'), "callback_data" => "deleteOrder_{$order['id']}"]],
         [["text" => \achbotMessage('admin_settings.management.local_expiry'), "callback_data" => "changeExpireDate_{$order['id']}"]],
-        [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.7256e018bd'), "callback_data" => "changeToken_{$order['id']}"]],
         [
             ["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.8824464622'), "callback_data" => "changeServerId_{$order['id']}"],
             ["text" => \achbotMessage('admin_settings.management.local_plan'), "callback_data" => "changeFileId_{$order['id']}_{$order['server_id']}"]
         ],
-        [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.8851b5ce4f'), "callback_data" => "changeUUID_{$order['id']}"]],
 		[["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.72e5322e9a', ['agentStatus' => $agentStatus]), "callback_data" => "toggleAgent_{$order['id']}"]],
         [["text"=>$warning['label'],"callback_data"=>"orderWarningStatus_{$order['id']}"]],
 		[["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.bf169ddbf3'), "callback_data" => "quickUserOrderDetails_{$order['id']}"]],
         [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.087a5a43b1'), "callback_data" => "managePanel"]],
     ];
 
-    if ($provider!=='marzban') {
-        $keyboard=array_values(array_filter($keyboard,static function($row) {
-            $callback=$row[0]['callback_data']??'';
-            return !str_starts_with($callback,'changeToken_') && !str_starts_with($callback,'changeUUID_');
-        }));
-    }
     if ($provider==='pasarguard')
         array_splice($keyboard,1,0,[[['text'=>\achbotMessage('subscription.order_management.show_order_management_panel.button.198b410113'),'callback_data'=>'pgResetAccount'.(int)$order['id']]]]);
 
     // Offer the GET-only recovery action only for an exact originating
     // dispatched plan journal. Older installs without 017 retain their UI.
-    if (in_array($provider,['marzban','pasarguard'],true)) {
+    if ($provider==='pasarguard') {
         try {
         require_once __DIR__.'/../Admin/Access.php';
         if (achbotAdminCanFor($GLOBALS['connection'],(int)($GLOBALS['from_id']??0),
@@ -266,7 +252,7 @@ function showOrderManagementPanel($order, $msgId = null,string $notice=''){
             if ($table && $table['TABLE_TYPE']==='BASE TABLE' &&
                 strcasecmp((string)$table['ENGINE'],'InnoDB')===0) {
                 $q=$GLOBALS['connection']->prepare("SELECT id FROM service_plan_changes
-                    WHERE source_order_id=? AND provider IN ('marzban','pasarguard')
+                    WHERE source_order_id=? AND provider='pasarguard'
                     AND state='dispatching' ORDER BY id DESC LIMIT 1");
                 $orderId=(int)$order['id'];$q->bind_param('i',$orderId);$q->execute();
                 $pending=$q->get_result()->fetch_assoc();$q->close();
@@ -461,74 +447,15 @@ if (preg_match('/^awaitingExpireChange_(\\d+)/', $userInfo['step'], $match) && $
     setUser();
 }
 
-if (preg_match('/^changeToken_(\\d+)/', $data, $match)) {
-    $id = intval($match[1]);
-    $identityProvider=achbotManagementIdentityProvider($connection,$id);
-    if ($identityProvider!=='marzban') {
-        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.3e801d365f'),true);
-        return;
-    }
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.f6d2b05a49'), $cancelKey, 'HTML');
-    setUser("awaitingToken_$id");
-}
-
-if (preg_match('/^awaitingToken_(\\d+)/', $userInfo['step'], $match) && $text != \achbotMessage('legacy_buttons.cancel')) {
-    $id = intval($match[1]);
-    $identityProvider=achbotManagementIdentityProvider($connection,$id);
-    if ($identityProvider!=='marzban') {
-        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.3e801d365f'),true);
-        return;
-    }
-    $stmt = $connection->prepare("UPDATE `orders_list` SET `token` = ? WHERE `id` = ?");
-    $stmt->bind_param("si", $text, $id);
-    $stmt->execute();
-    $stmt->close();
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.18947492b0'), null, 'HTML');
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $stmt->close();
-    $order = $result->fetch_assoc();
-    showOrderManagementPanel($order, $message_id);
-    setUser();
-}
-
-if (preg_match('/^changeUUID_(\\d+)/', $data, $match)) {
-    $id = intval($match[1]);
-    $identityProvider=achbotManagementIdentityProvider($connection,$id);
-    if ($identityProvider!=='marzban') {
-        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.3e801d365f'),true);
-        return;
-    }
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.1ea9c7448e'), $cancelKey, 'HTML');
-    setUser("awaitingUUID_$id");
-}
-
-if (preg_match('/^awaitingUUID_(\\d+)/', $userInfo['step'], $match) && $text != \achbotMessage('legacy_buttons.cancel')) {
-    $id = intval($match[1]);
-    $identityProvider=achbotManagementIdentityProvider($connection,$id);
-    if ($identityProvider!=='marzban') {
-        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.3e801d365f'),true);
-        return;
-    }
-    $stmt = $connection->prepare("UPDATE `orders_list` SET `uuid` = ? WHERE `id` = ?");
-    $stmt->bind_param("si", $text, $id);
-    $stmt->execute();
-    $stmt->close();
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.3688781e63'), null, 'HTML');
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $stmt->close();
-    $order = $result->fetch_assoc();
-    showOrderManagementPanel($order, $message_id);
-    setUser();
+// Old cached identity-edit buttons/steps are denied, never executable.
+if (preg_match('/^(?:changeToken|changeUUID)_[0-9]+$/D',(string)($data??'')) ||
+    preg_match('/^(?:awaitingToken|awaitingUUID)_[0-9]+$/D',(string)($userInfo['step']??''))) {
+    alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.3e801d365f'),true);
+    return;
 }
 
 // An admin may change the logical service label only within one verified
-// Marzban panel. Cached callbacks are revalidated against current SQL state.
+// PasarGuard connection. Cached callbacks are revalidated against current SQL state.
 if (preg_match('/^changeServerId_(\d+)$/D', (string)($data ?? ''), $match)) {
     if (!($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
         alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.057ec5448c'), true);

@@ -268,15 +268,8 @@ function achbotManualCryptoReceiptProviderByHash(mysqli $db, string $hashId): st
 }
 
 /**
- * A pre-003 receipt may be reviewed against its original pays/operator
- * message only if both 003 ledger tables are PROVEN absent. Missing privileges,
- * SQL failures or an incomplete/partial migration are never treated as legacy.
- */
-/**
- * Current additive-003 schema must be all present and structurally usable.
- * A malformed/one-sided installation is NEVER interpreted as legacy.
- * The original 23-table schema is supported only when both tables are absent.
- * Read-only fail-closed schema preflight under the original pays row lock.
+ * Historical evidence remains readable only through a verified ledger schema.
+ * Missing or partially installed payment tables cannot authorize service changes.
  */
 function achbotManualLedgerMode(mysqli $db): string {
     try {
@@ -287,7 +280,6 @@ function achbotManualLedgerMode(mysqli $db): string {
         $result->free();
         $hasAttempt=isset($tables['payment_attempts']);
         $hasTransaction=isset($tables['payment_transactions']);
-        if (!$hasAttempt && !$hasTransaction) return 'legacy';
         if (!$hasAttempt || !$hasTransaction) return 'invalid';
 
         $columns=[

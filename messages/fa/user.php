@@ -29,7 +29,6 @@ return [
         'out_of_connection_capacity' => '⚠️ ظرفیت این کانکشن پر شده است.',
         'out_of_server_capacity' => '⚠️ ظرفیت این سرور پر شده است.',
         'can_create_specific_account' => '📋 روی این پلن فقط AMOUNT اکانت میشه ساخت',
-        'invite_buy_new_account' => ' 💳 خرید کارت به کارت توسط زیرمجموعه' . "\n" . '' . "\n" . '🎫 شناسه عددی: USER-ID' . "\n" . '👤 اسم کاربر: NAME' . "\n" . '🔖 نام کاربری: @USERNAME' . "\n" . '💰 مبلغ پرداختی: PRICE تومان' . "\n" . '✏️ نام اشتراک یا پلن: REMARK' . "\n" . 'شناسه پرداخت: HASHID',
         'waiting_message' => '⏳ در حال انتظار ...',
         'join_channel_message' => '⭕️ لطفا اول در کانال زیر عضو شوید و بعد روی دکمه عضو شدم بزنید.' . "\n" . '⚠️ برای عضویت روی دکمه <b>عضویت در کانال</b> بزنید.' . "\n" . '' . "\n" . '💬 پشتیبانی: SUPPORTID' . "\n" . '',
         'bot_is_updating' => '⏳ ربات در حال بروزرسانی می باشد ...',
@@ -228,22 +227,11 @@ return [
         'wallet_transfer.wallet_transfer_restart.text.8e5e1ee663' => ' تومان به کیف پول کاربر مورد نظر شما انتقال یافت.',
         'wallet_transfer.wallet_transfer_restart.text.b059640ccc' => 'لطفا یکی از کلید های زیر را انتخاب کنید.',
         // wallet_settlement.process_wallet_payment
-        'wallet_settlement.process_wallet_payment.alert.244ca46c8f' => '⛔️ پرداخت این اشتراک در حال حاضر امکان‌پذیر نیست؛ مبلغی از کیف پول کسر نشد.',
-        'wallet_settlement.process_wallet_payment.alert.669afe458a' => '⛔️ این سفارش متعلق به شما نیست.',
         'wallet_settlement.process_wallet_payment.alert.978c658074' => '⏳ وضعیت درخواست هنوز در حال بررسی است. لطفاً وضعیت سفارش را کنترل کنید و پیش از ثبت دوباره با پشتیبانی هماهنگ شوید.',
-        'wallet_settlement.process_wallet_payment.alert.86fa6b6506' => '⛔️ روش پرداخت این سفارش قبلاً تعیین شده یا در حال بررسی است.',
-        'wallet_settlement.process_wallet_payment.alert.98b1616048' => '⛔️ پرداخت این سفارش از کیف پول در حال حاضر امکان‌پذیر نیست. وضعیت سفارش را بررسی کنید.',
-        'wallet_settlement.process_wallet_payment.alert.2d688eba81' => '⚠️ مبلغ این سفارش معتبر نیست؛ موجودی کیف پول تغییر نکرد.',
-        'wallet_settlement.process_wallet_payment.alert.b691af4dc7' => '⛔️ این سفارش قبلاً با روش دیگری آغاز شده است؛ پرداخت دوباره انجام ندهید.',
-        'wallet_settlement.process_wallet_payment.alert.5d2e89e5ed' => '⛔️ روش خرید با مشخصات این سفارش مطابقت ندارد؛ مبلغی از کیف پول کسر نشد.',
         'wallet_settlement.process_wallet_payment.alert.ae55877021' => '❌ موجودی کیف پول شما کافی نیست.' . "\n" . '',
         'wallet_settlement.process_wallet_payment.alert.4092b19ef1' => '💰 موجودی فعلی: ',
         'wallet_settlement.process_wallet_payment.alert.f82b5605a9' => '🔺 مورد نیاز: ',
-        'wallet_settlement.process_wallet_payment.alert.95b8db0b7f' => '⛔️ نام یا مشخصات این سفارش معتبر نیست؛ مبلغی از کیف پول کسر نشد.',
-        'wallet_settlement.process_wallet_payment.alert.b05ed79353' => '⛔️ مشخصات این سفارش معتبر نیست؛ مبلغی از کیف پول کسر نشد.',
         'wallet_settlement.process_wallet_payment.alert.0b74ab3f2e' => '⛔️ ظرفیت این سفارش کافی نیست؛ مبلغی از کیف پول کسر نشد.',
-        'wallet_settlement.process_wallet_payment.alert.9538721ade' => '⚠️ وضعیت درخواست پرداخت نیاز به بررسی دارد. لطفاً وضعیت سفارش و پرداخت را بررسی کنید و پیش از تکرار با پشتیبانی هماهنگ شوید.',
-        // wallet_start.start_wallet_payment
         'wallet_start.start_wallet_payment.button.e729457ba2' => '🧰 ارسال تتر یا ترون',
         'wallet_start.start_wallet_payment.message.1f46b2b87f' => '🧾 اطلاعات شارژ:' . "\n" . '💰 مبلغ: ',
         'wallet_start.start_wallet_payment.message.64ab796d01' => ' تومان' . "\n" . '' . "\n" . '💳 لطفاً روش پرداخت را انتخاب کنید:',
@@ -507,15 +495,10 @@ return [
         // extensions.message
         'extensions.message.c346a0d62e' => '📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.',
         // extensions.alert
-        'extensions.alert.7a08f2df0b' => '⛔️ این افزایش زمان رسید دستی معتبر و در انتظار تأیید ندارد.',
-        // extensions.button
         'extensions.hash_id.2899228604' => ['text' => '🆔 {hash_id}', 'parameters' => ['hash_id']],
         // extensions.message
         'extensions.message.24dea9b122' => ['text' => '✅ مدت <b>{volume}</b> روز به مدت زمان اشتراک <code>{remark}</code> اضافه شد.', 'parameters' => ['volume', 'remark']],
         // extensions.alert
-        'extensions.alert.ba92f03500' => '⚠️ نتیجه افزایش زمان نیاز به بررسی دارد. وضعیت اشتراک و پرداخت را کنترل کنید؛ از اجرای مجدد خودکار خودداری کنید.',
-        'extensions.alert.9b6f1fa91f' => '⛔️ این سفارش متعلق به شما نیست یا روش پرداخت دیگری برای آن ثبت شده است؛ دوباره پرداخت نکنید.',
-        'extensions.alert.31d13e9866' => '⛔️ افزایش اشتراک در حال حاضر امکان‌پذیر نیست. اگر پرداختی انجام داده‌اید، وضعیت آن را با پشتیبانی بررسی کنید.',
         'extensions.alert.39c72d8044' => '❌ موجودی کیف پول کافی نیست.' . "\n" . '💰 موجودی فعلی: ',
         'extensions.alert.71a2507661' => ' تومان' . "\n" . '🔺 مورد نیاز: ',
         // extensions.message
@@ -523,8 +506,6 @@ return [
         // extensions.button
         'extensions.button.aba3054570' => '⏳ افزایش زمان اشتراک',
         // extensions.message
-        'extensions.message.ba8adc7121' => '⚠️ وضعیت درخواست مشخص نیست. لطفاً وضعیت اشتراک و پرداخت را بررسی کنید و پیش از ثبت دوباره با پشتیبانی هماهنگ شوید.',
-        // extensions.alert
         'extensions.alert.65fc393064' => '⚠️ امکان تغییر پلن برای این نوع اشتراک وجود ندارد.',
         // extensions.message
         'extensions.message.655234a584' => '⚠️ هیچ پلنی برای این سرور وجود ندارد.',
@@ -548,12 +529,8 @@ return [
         // extensions.text
         'extensions.text.4123904480' => 'حجم',
         // extensions.alert
-        'extensions.alert.733308c9fe' => '⛔️ این افزایش حجم رسید دستی معتبر و در انتظار تأیید ندارد.',
-        // extensions.message
         'extensions.message.d5b6a4e6e7' => ['text' => '✅ حجم <b>{volume}</b> گیگ به حجم اشتراک <code>{remark}</code> اضافه شد.', 'parameters' => ['volume', 'remark']],
         // extensions.alert
-        'extensions.alert.36f9c089de' => '⚠️ نتیجه افزایش حجم نیاز به بررسی دارد. وضعیت اشتراک و پرداخت را کنترل کنید؛ از اجرای مجدد خودکار خودداری کنید.',
-        // extensions.message
         'extensions.message.2d27ba4eea' => ['text' => '✅ حجم {volume} گیگ به حجم اشتراک شما اضافه شد.', 'parameters' => ['volume']],
         // extensions.button
         'extensions.button.9a3cb8176f' => '⏳ افزایش حجم اشتراک',
@@ -579,25 +556,12 @@ return [
         'renewal_checkout.message.2c9a5e948c' => '⏳ مهلت این خرید به پایان رسیده است.' . "\n" . '♻️ لطفاً مجدداً روی دکمه تمدید اشتراک کلیک کرده و خرید جدیدی ثبت کنید.',
         'renewal_checkout.message.aaa858e3e6' => '❗️پلن شما از زمان شروع پرداخت تا ارسال رسید تغییر کرده است.' . "\n" . '♻️ لطفاً دوباره روی دکمه تمدید اشتراک کلیک کرده و پرداخت جدید انجام دهید.',
         // renewal_checkout.alert
-        'renewal_checkout.alert.259244b81a' => '⛔️ این تمدید رسید دستی معتبر و در انتظار تأیید ندارد.',
-        // renewal_checkout.message
         'renewal_checkout.message.47b1149fb0' => ['text' => '✅ اشتراک <code>{remark}</code> با موفقیت تمدید شد.', 'parameters' => ['remark']],
         // renewal_checkout.alert
-        'renewal_checkout.alert.3955ffc5de' => '⚠️ نتیجه تمدید نیاز به بررسی دارد. وضعیت اشتراک و پرداخت را کنترل کنید؛ پیش از اقدام مجدد با پشتیبانی هماهنگ شوید.',
-        'renewal_checkout.alert.0e312f38cb' => '⚠️ وضعیت این تمدید نیاز به بررسی دارد. لطفاً وضعیت اشتراک و پرداخت را با پشتیبانی بررسی کنید.',
-        // renewal_checkout.message
         'renewal_checkout.message.cca1075329' => ['text' => '✅ اشتراک {remark} با موفقیت تمدید شد.', 'parameters' => ['remark']],
         // renewal_checkout.button
         'renewal_checkout.button.7deb81ef97' => '♻️ تمدید اشتراک',
         // renewal_checkout.text
-        'renewal_checkout.text.6295c35212' => 'کیف پول',
-        // renewal_plan.alert
-        'renewal_plan.alert.b1e40557e8' => '⛔️ طرح انتخابی با اشتراک شما سازگار نیست.',
-        // renewal_selection.text
-        'renewal_selection.text.bfb7221456' => ' تومان ',
-        // renewal_selection.message
-        'renewal_selection.message.51ab077156' => '📋 مرحلهٔ سوم' . "\n" . '' . "\n" . '🤲 یکی از پلن هارو انتخاب کنید.' . "\n" . '➕ اگر سرویس مورد نظر شما در لیست زیر نیست لازم هست اول اشتراک را به لیست اشتراک های خودتان اضافه کنید و بعد با زدن دکمه ← 🔄 تغییر پلن، پلن انتخاب کنید تا بتوانید اشتراک خودتان را تمدید و یا شارژ کنید. ',
-        'renewal_selection.message.5223e5a747' => '💡 پلنی در این دسته بندی وجود ندارد. ',
     ],
 
     // ── خرید، پرداخت و تخفیف ──
@@ -663,11 +627,6 @@ return [
         // checkout.button
         'checkout.button.e401f3d5a2' => '🛍 خرید اشتراک جدید',
         // checkout.hash_id_local
-        'checkout.hash_id_local.09f20c4022' => ['text' => '🆔 {hashIdLocal}', 'parameters' => ['hashIdLocal']],
-        // checkout.message
-        'checkout.message.2a6cba0152' => '⚠️ تحویل خرید سفارشی کیف پول نیازمند بررسی است. ',
-        'checkout.message.4f5582ec37' => 'پرداخت و سرویس ثبت شده‌اند؛ ساخت مجدد خودکار ممنوع است.',
-        // checkout.alert
         'checkout.alert.7f1f245514' => '⛔️ اطلاعات این اشتراک در حال حاضر قابل نمایش نیست.',
         'checkout.alert.bfa5553444' => '⛔️ لینک اشتراک در حال حاضر در دسترس نیست.',
         'checkout.alert.baff5f2488' => '⛔️ کانفیگ قابل نمایش در دسترس نیست.',
@@ -683,34 +642,6 @@ return [
         // checkout.message
         'checkout.message.c346a0d62e' => '📥 تصویر برای پیگیری ثبت شده اما تأیید دریافت آن مشخص نیست. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.',
         // checkout.alert
-        'checkout.alert.873a4950ab' => '⛔️ تأیید پرداخت در این مرحله امکان‌پذیر نیست.',
-        'checkout.alert.e733abf9ba' => '⛔️ این خرید رسید معتبر و در انتظار تأیید ندارد.',
-        // checkout.message
-        'checkout.message.3b8e6e3a15' => '⚠️ تأیید خرید نیازمند بررسی سرویس و پرداخت است. از اجرای دوباره خودکار خودداری کنید.',
-        'checkout.message.eccb64d3cb' => '' . "\n" . '🎫 ',
-        // checkout.alert
-        'checkout.alert.6fa04cd4c0' => '⚠️ نتیجه تأیید هنوز مشخص نیست؛ وضعیت سرویس را پیش از اقدام مجدد کنترل کنید.',
-        // checkout.message
-        'checkout.message.c97c0eb0f0' => '⚠️ تحویل سرویس پس از ثبت سفارش هنوز در انتظار بررسی است.',
-        'checkout.message.6cee937835' => '' . "\n" . 'سرویس را بدون تطبیق مجدد ایجاد نکنید.',
-        'checkout.message.5c1a932720' => '✅ اشتراک ثبت شده است.',
-        // checkout.button
-        'checkout.hash_id.2899228604' => ['text' => '🎫 شناسه پیگیری: {hash_id}', 'parameters' => ['hash_id']],
-        // checkout.message
-        'checkout.message.3f598b595a' => '⚠️ پرداخت و سفارش ثبت شده‌اند، اما اطلاع‌رسانی نیازمند بررسی است.',
-        'checkout.message.cfed3110bf' => '' . "\n" . 'سرویس یا پاداش را بدون تطبیق دوباره صادر نکنید.',
-        // checkout.text
-        'checkout.text.cca1075329' => ['text' => '✅ اشتراک {remark} با موفقیت تمدید شد.', 'parameters' => ['remark']],
-        // checkout.message
-        'checkout.message.54c81d71b7' => '⚠️ پرداخت هنوز نهایی نشده؛ ارسال انجام نشد.' . "\n" . '',
-        // checkout.hash_id
-        'checkout.hash_id.286c7d3faf' => ['text' => '🆔 {hashId}', 'parameters' => ['hashId']],
-        // checkout.message
-        'checkout.message.c150d2e039' => '⚠️ تحویل اشتراک کیف پول نیاز به بررسی دارد.',
-        'checkout.message.e09fe6fd6b' => '' . "\n" . '🔢 موارد: ',
-        'checkout.message.7aa67614a5' => '⚠️ پرداخت و سرویس ثبت شده‌اند، اما گزارش مشخصات خرید نیازمند بررسی است.',
-        'checkout.message.f8ec758aca' => '' . "\n" . 'سفارش را با سرویس صادرشده تطبیق دهید؛ آن را دوباره ایجاد نکنید.',
-        // pre_payment.alert
         'pre_payment.alert.8fbaa8aebc' => 'این سفارش برای شما قابل مشاهده نیست.',
         // pre_payment.text
         'pre_payment.text.ea9faa7b63' => 'ترون دستی (TRX)',
@@ -782,19 +713,7 @@ return [
         // automatic_receipts.message
         'automatic_receipts.message.38dd599e83' => 'افزایش حساب شما با موفقیت تایید شد.' . "\n" . '✅ مبلغ ',
         'automatic_receipts.message.6f42cf1050' => ' تومان به حساب شما اضافه شد.',
-        'automatic_receipts.message.809aa9e256' => '⚠️ پرداخت ثبت شده است، اما تکمیل ساخت اشتراک هنوز قطعی نیست. ',
-        'automatic_receipts.message.c0b5e951d8' => 'برای بررسی با پشتیبانی تماس بگیرید؛ خرید را تکرار نکنید.',
         'automatic_receipts.message.cca1075329' => ['text' => '✅ اشتراک {remark} با موفقیت تمدید شد.', 'parameters' => ['remark']],
-        'automatic_receipts.message.ca1eaa01e6' => '⚠️ نتیجهٔ تمدید هنوز قطعی نیست. پرداخت ثبت شده و سرویس نیازمند تطبیق است؛ پرداخت یا تمدید را تکرار نکنید.',
-        'automatic_receipts.message.7c7851027c' => ['text' => '✅ مدت {volume} روز به مدت اشتراک شما اضافه شد.', 'parameters' => ['volume']],
-        'automatic_receipts.message.6223bac2fc' => '⚠️ نتیجهٔ افزایش روز هنوز قطعی نیست. پرداخت محفوظ است؛ درخواست را تکرار نکنید.',
-        'automatic_receipts.message.1660fa3e00' => ['text' => '✅ حجم {volume} گیگ به حجم اشتراک شما اضافه شد.', 'parameters' => ['volume']],
-        'automatic_receipts.message.530f1966b8' => '⚠️ نتیجهٔ افزایش حجم هنوز قطعی نیست. پرداخت محفوظ است؛ درخواست را تکرار نکنید.',
-        'automatic_receipts.message.16c2ec4018' => '⚠️ نتیجهٔ تمدید هنوز قطعی نیست. وضعیت پرداخت محفوظ است؛ درخواست را تکرار نکنید.',
-        'automatic_receipts.message.39254abe63' => '⚠️ پرداخت شما محفوظ است، اما نتیجهٔ ساخت اشتراک قطعی نیست. برای بررسی با پشتیبانی تماس بگیرید؛ پرداخت را تکرار نکنید.',
-        // receipt_helpers.refund_to_wallet_and_notify
-        'receipt_helpers.refund_to_wallet_and_notify.user_msg.a5b15e454e' => '✅ مبلغ ',
-        // receipt_helpers.manual_label
         'receipt_helpers.manual_label.text.3904ef0f3d' => 'گیفت‌کارت',
         'receipt_helpers.manual_label.text.2f1fd66193' => 'تتر دستی (USDT)',
         'receipt_helpers.manual_label.text.ea9faa7b63' => 'ترون دستی (TRX)',
@@ -857,106 +776,27 @@ return [
         'gateway_initiation.mark_checkout_uncertain.message.32573bc25a' => 'این روش پرداخت برای حساب شما فعال نیست؛ اگر فاکتور قبلی صادر شده با پشتیبانی وضعیت آن را پیگیری کنید.',
         'gateway_initiation.mark_checkout_uncertain.message.2d6b333856' => 'مهلت استفاده از لینک این فاکتور پایان یافته است. وضعیت پرداخت در حال پیگیری است؛ وجه را دوباره ارسال نکنید.',
         'gateway_initiation.mark_checkout_uncertain.message.eaf7a98f3e' => 'وضعیت فاکتور آنلاین نیازمند بررسی است؛ پرداخت مجدد انجام ندهید.',
-        'gateway_initiation.mark_checkout_uncertain.message.c2f74dfd7e' => 'پرداخت این اشتراک در حال حاضر امکان‌پذیر نیست؛ برای راهنمایی با پشتیبانی تماس بگیرید.',
-        'gateway_initiation.mark_checkout_uncertain.message.c6fe64557e' => 'پلن مورد نظر یافت نشد.',
-        'gateway_initiation.mark_checkout_uncertain.message.09d73ebed8' => 'ظرفیت این کانکشن پر شده است.',
-        'gateway_initiation.mark_checkout_uncertain.message.bdc1d950b2' => 'ظرفیت این سرور پر شده است.',
-        'gateway_initiation.mark_checkout_uncertain.message.091b17d805' => ['text' => 'روی این پلن فقط {acount} اشتراک میشه ساخت.', 'parameters' => ['acount']],
-        'gateway_initiation.mark_checkout_uncertain.type.e6343571a4' => 'خرید اشتراک',
-        'gateway_initiation.mark_checkout_uncertain.type.df1c62b99e' => 'تمدید اشتراک',
-        'gateway_initiation.mark_checkout_uncertain.type.991ae08d64' => 'شارژ کیف پول',
-        'gateway_initiation.mark_checkout_uncertain.type.884cfdce97' => 'افزایش زمان اشتراک',
-        'gateway_initiation.mark_checkout_uncertain.type.160a34aa6d' => 'افزایش حجم اشتراک',
-        'gateway_initiation.mark_checkout_uncertain.message.71632f6c74' => 'پیکربندی پیگیری امن پرداخت هنوز تکمیل نشده است.',
-        'gateway_initiation.mark_checkout_uncertain.message.f4702323f6' => 'فاکتور این سفارش در حال صدور است؛ از ایجاد درخواست تکراری جلوگیری شد.',
-        'gateway_initiation.mark_checkout_uncertain.message.7de7c0e3e6' => 'پرداخت برای این فاکتور شناسایی شده است و در حال بررسی است. برای مشاهده وضعیت به ربات مراجعه کنید.',
-        'gateway_initiation.mark_checkout_uncertain.message.eda31ba620' => 'لینک فاکتور نیاز به بررسی پشتیبانی دارد.',
-        'gateway_initiation.mark_checkout_uncertain.message.cdfa4a6049' => 'برای این سفارش قبلاً فاکتور صادر شده است؛ از ایجاد فاکتور تکراری جلوگیری شد.',
-        'gateway_initiation.mark_checkout_uncertain.message.c4414cfacc' => 'این روش پرداخت فعلاً در دسترس نیست؛ روش دیگری را انتخاب کنید یا با پشتیبانی تماس بگیرید.',
-        'gateway_initiation.mark_checkout_uncertain.message.7f6fcbdd9d' => 'این روش پرداخت فعلاً در دسترس نیست؛ روش دیگری را انتخاب کنید یا با پشتیبانی تماس بگیرید.',
-        'gateway_initiation.mark_checkout_uncertain.message.df2a7c68c7' => 'این روش پرداخت فعلاً در دسترس نیست؛ روش دیگری را انتخاب کنید یا با پشتیبانی تماس بگیرید.',
-        'gateway_initiation.mark_checkout_uncertain.message.868477ce4f' => 'مبلغ فاکتور معتبر نیست.',
-        'gateway_initiation.mark_checkout_uncertain.message.d591bf832a' => 'این روش پرداخت فعلاً در دسترس نیست؛ لطفاً روش دیگری را انتخاب کنید.',
-        'gateway_initiation.mark_checkout_uncertain.message.b0a8fa5e67' => 'فاکتور این سفارش در حال صدور یا نیازمند بررسی است؛ درخواست تکراری ایجاد نشد.',
-        'gateway_initiation.mark_checkout_uncertain.message.f3414a91d3' => 'وضعیت صدور فاکتور درگاه نامشخص است؛ درخواست جدید صادر نمی‌شود و به بررسی نیاز دارد.',
-        'gateway_initiation.mark_checkout_uncertain.message.5e673fef71' => 'صدور فاکتور درگاه تأیید نشد؛ برای جلوگیری از فاکتور تکراری بررسی لازم است.',
-        'gateway_initiation.mark_checkout_uncertain.message.9c2d3b3672' => 'پاسخ صدور فاکتور ناقص بود؛ درخواست جدید خودکار صادر نمی‌شود.',
-        'gateway_initiation.mark_checkout_uncertain.message.8196433946' => 'هویت یا لینک فاکتور درگاه نامعتبر است و به بررسی نیاز دارد.',
-        'gateway_initiation.mark_checkout_uncertain.message.0c31b5ab6a' => 'فاکتور صادر شد اما اتصال ایمن آن به سفارش نیازمند بررسی است؛ درخواست جدید صادر نمی‌شود.',
         'gateway_initiation.mark_checkout_uncertain.button.f81a8cfcdd' => '💳 پرداخت فاکتور',
         'gateway_initiation.mark_checkout_uncertain.button.f0137e1007' => '🧾 بررسی وضعیت سفارش',
         'gateway_initiation.mark_checkout_uncertain.message.cd27d14216' => '🧾 فاکتور ثبت شد.' . "\n" . '',
         'gateway_initiation.mark_checkout_uncertain.message.0c4a9612f7' => '⚠️ پرداخت فقط پس از تأیید درگاه و ثبت نتیجه در ربات نهایی است؛ ',
         'gateway_initiation.mark_checkout_uncertain.message.0a2e0bc7bc' => 'پردازش ممکن است بیش از چند دقیقه طول بکشد.',
-        'gateway_initiation.mark_checkout_uncertain.message.9dfdbeaa81' => 'یک درخواست پرداخت برای این سفارش قبلاً صادر شده است؛ تغییر درگاه نیازمند بررسی است.',
-        'gateway_initiation.mark_checkout_uncertain.message.1f2efee2e5' => 'وضعیت صدور فاکتور نامشخص است؛ برای جلوگیری از پرداخت تکراری نیاز به بررسی دارد.',
-        'gateway_initiation.mark_checkout_uncertain.message.afca7c1801' => 'وضعیت ایجاد تراکنش نامشخص است؛ درخواست پرداخت جدید خودکار صادر نمی‌شود.',
-        // gateway_return.np_reconcile_batch
-        'gateway_return.np_reconcile_batch.message.f8a82e5394' => 'کد پرداخت نامعتبر است.',
         'gateway_return.np_reconcile_batch.message.f48a802b77' => 'خطا!',
-        'gateway_return.np_reconcile_batch.message.e898fa59b8' => 'تایید این پرداخت برای سرویس غیرقابل پشتیبانی متوقف شد؛ با پشتیبانی تماس بگیرید.',
-        'gateway_return.np_reconcile_batch.message.28954419df' => 'خطا',
-        'gateway_return.np_reconcile_batch.message.678120fc1c' => 'درخواست پرداخت ثبت شده و بدون نیاز به این صفحه، خودکار بررسی می‌شود.',
         'gateway_return.np_reconcile_batch.message.da0bc406d8' => 'پیگیری پرداخت',
-        'gateway_return.np_reconcile_batch.message.bd2edf700f' => 'این فاکتور قدیمی نیازمند بررسی تایید مبلغ توسط پشتیبانی است؛ وضعیت آن بدون تغییر محفوظ ماند.',
         'gateway_return.np_reconcile_batch.message.0116c30fc4' => 'پرداخت شما ثبت شده است؛ نتیجه و لینک سرویس در ربات ارسال می‌شود.',
         'gateway_return.np_reconcile_batch.message.5cf3e172d8' => 'پرداخت ثبت‌شده',
         'gateway_return.np_reconcile_batch.message.e46087af54' => 'پرداخت در حال بررسی خودکار است؛ برای دریافت سرویس نیازی به زدن دکمه بازگشت نیست.',
         'gateway_return.np_reconcile_batch.message.f71cd91dad' => 'در حال بررسی',
         'gateway_return.np_reconcile_batch.message.c4374c5a30' => 'نتیجه پرداخت در این صفحه قابل تایید نیست؛ وضعیت سفارش را در ربات پیگیری کنید.',
-        'gateway_return.np_reconcile_batch.message.cf271d9662' => 'شناسه پرداخت زرین پال با سفارش مطابقت ندارد؛ نیازمند بررسی است.',
-        'gateway_return.np_reconcile_batch.message.c0199d5243' => 'درگاه زرین پال',
-        'gateway_return.np_reconcile_batch.message.e72296ca09' => 'این پرداخت نیازمند تطبیق امن با سفارش است.',
-        'gateway_return.np_reconcile_batch.message.67fa35fa63' => 'شناسه پرداخت نیازمند بررسی پشتیبانی است؛ سفارش محفوظ ماند.',
-        'gateway_return.np_reconcile_batch.message.498c9fb2b1' => 'شناسه تراکنش یکتا نیست؛ تسویه برای بررسی متوقف شد.',
-        'gateway_return.np_reconcile_batch.message.965bc59eaf' => 'وضعیت تراکنش از پذیرنده قابل تایید نبود؛ سفارش محفوظ است.',
-        'gateway_return.np_reconcile_batch.message.858b02ccfe' => 'پیگیری زرین پال',
-        'gateway_return.np_reconcile_batch.message.26b2f2ff4c' => 'نتیجه تراکنش نیازمند تطبیق با پذیرنده است؛ سفارش لغو نشد.',
-        'gateway_return.np_reconcile_batch.message.2a57015571' => 'هویت یا مبلغ این پرداخت نیازمند بررسی است.',
-        'gateway_return.np_reconcile_batch.message.149dd8c934' => 'شناسه تراکنش نیازمند تطبیق پشتیبانی است؛ سفارش محفوظ ماند.',
-        'gateway_return.np_reconcile_batch.message.faca1dabd3' => 'کد پرداخت یافت نشد یا یکتا نیست.',
-        'gateway_return.np_reconcile_batch.message.cef6ec0c00' => 'این پرداخت قبلاً بررسی شده است.',
-        'gateway_return.np_reconcile_batch.message.d9ed0f4231' => 'وضعیت پرداخت تغییر کرده است؛ با پشتیبانی تماس بگیرید.',
-        'gateway_return.np_reconcile_batch.message.4406d657a1' => 'پرداخت شما انجام نشد!',
-        'gateway_return.np_reconcile_batch.message.26003a476f' => 'درگاه نکست پی',
-        'gateway_return.np_reconcile_batch.message.463d7338a5' => 'وضعیت پرداخت هنوز قطعی نیست یا استعلام در دسترس نیست؛ لطفاً بعداً دوباره بررسی کنید.',
         'gateway_return.np_reconcile_batch.message.1d15981671' => 'درگاه پرداخت شناسایی نشد.',
         // gateway_return.np_defer_uncertain_remote_effect
-        'gateway_return.np_defer_uncertain_remote_effect.message.adae4bb365' => 'پرداخت تایید شده است اما نتیجه عملیات سرویس هنوز قطعی نیست. وضعیت برای بررسی امن ثبت می‌شود و بازپرداخت خودکار انجام نمی‌شود.',
-        // gateway_return.perform_payment_effect
         'gateway_return.perform_payment_effect.text.275b4903d9' => '↪️ بازگشت به منوی اصلی',
-        'gateway_return.perform_payment_effect.message.c79ed0ecc0' => 'مبلغ سفارش پس از صدور فاکتور تغییر کرده است؛ تحویل متوقف شد.',
-        'gateway_return.perform_payment_effect.message.a64929caf4' => 'پرداخت تأیید شده است اما ثبت نتیجهٔ سفارش تکمیل نشده است. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.',
-        'gateway_return.perform_payment_effect.message.e3ee1490e9' => 'این پرداخت در حال پردازش یا قبلاً نهایی شده است.',
-        'gateway_return.perform_payment_effect.message.bd952e9bc9' => '⚠️ پرداخت ثبت شده ولی بازگشت اعتبار کیف پول تأیید نشد؛ پشتیبانی باید بررسی کند.',
-        'gateway_return.perform_payment_effect.message.cf0e1ca461' => 'پرداخت شما انجام شد ولی ظرفیت این کانکشن پر شده است، مبلغ ',
-        'gateway_return.perform_payment_effect.message.606f350948' => ' تومان به کیف پول شما اضافه شد.',
-        'gateway_return.perform_payment_effect.message.6ae4e71c95' => '⚠️ پرداخت شما با موفقیت انجام شد. ولی اتصال به سرور برقرار نیست لطفا مدیر رو در جریان بزار ... مبلغ ',
-        'gateway_return.perform_payment_effect.message.c042799f80' => ' به کیف پولت اضافه شد.',
-        'gateway_return.perform_payment_effect.message.3768e94d51' => ['text' => '✅ پرداخت شما با موفقیت انجام شد، اما اشتراک آماده نشد. مبلغ ', 'parameters' => []],
-        'gateway_return.perform_payment_effect.message.3828187c8e' => ' به کیف پول شما اضافه شد.',
-        'gateway_return.perform_payment_effect.message.7ea4d9ee52' => '⚠️ پرداخت شما با موفقیت انجام شد. ولی خطا داد لطفا به مدیر اطلاع دهید ... مبلغ ',
-        'gateway_return.perform_payment_effect.message.a0b19d8503' => ' تومان به کیف پولت اضافه شد.',
-        'gateway_return.perform_payment_effect.message.effdee0c2d' => '✅ پرداخت تأیید شد؛ وضعیت تحویل سرویس را در ربات بررسی کنید.',
         'gateway_return.perform_payment_effect.button.b9d052f74c' => ['text' => '💳 خرید از درگاه {gateType}', 'parameters' => ['gateType']],
         'gateway_return.perform_payment_effect.hash_id.2899228604' => ['text' => '🆔 {hash_id}', 'parameters' => ['hash_id']],
-        'gateway_return.perform_payment_effect.message.bbf27ebefd' => '✅ پرداخت شما با موفقیت انجام شد، مبلغ ',
         'gateway_return.perform_payment_effect.message.dd866497c7' => ['text' => ' تومان به حساب شما اضافه شد.' . "\n" . '' . "\n" . '<blockquote>' . "\n" . '⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:' . "\n" . '' . "\n" . '🛒 <b>خرید اشتراک جدید</b>' . "\n" . 'یا <b>🔄 مشاهده اشتراک‌ها</b>' . "\n" . '' . "\n" . 'و در مرحله پرداخت روی دکمه زیر بزنید:' . "\n" . '' . "\n" . '💰 <b>پرداخت با موجودی</b>' . "\n" . '' . "\n" . '</blockquote>' . "\n" . '💬 پشتیبانی: {supportID}', 'parameters' => ['supportID']],
         'gateway_return.perform_payment_effect.message.a3b46e7d37' => ['text' => '✅ پرداخت شما با موفقیت انجام شد. اشتراک {remark} با موفقیت تمدید شد.', 'parameters' => ['remark']],
         'gateway_return.perform_payment_effect.message.8ab1d455cf' => ['text' => '✅ پرداخت شما با موفقیت انجام شد. {plusDays} روز به مدت زمان اشتراک شما اضافه شد.', 'parameters' => ['plusDays']],
-        'gateway_return.perform_payment_effect.message.9f4f326fa4' => '⚠️ پرداخت شما با موفقیت انجام شد ولی به دلیل مشکل فنی امکان افزایش حجم نیست. لطفا به مدیریت اطلاع بدید یا 5 دقیقه دیگر دوباره تست کنید مبلغ ',
         'gateway_return.perform_payment_effect.message.20ac3e8049' => ['text' => '✅ پرداخت شما با موفقیت انجام شد. {plusVolume} گیگ به حجم اشتراک شما اضافه شد.', 'parameters' => ['plusVolume']],
-        'gateway_return.perform_payment_effect.message.28ba281162' => '⚠️ پرداخت شما با موفقیت انجام شد ولی مشکل فنی در ارتباط با سرور، لطفا سلامت سرور را بررسی کنید مبلغ ',
-        'gateway_return.perform_payment_effect.button.82f7af5445' => 'صفحه اصلی 🏘',
-        'gateway_return.perform_payment_effect.reason.3b9fd32170' => 'پرداخت انجام شد ولی تمدید به دلیل خطای سرور انجام نشد.' . "\n" . '',
-        'gateway_return.perform_payment_effect.text.9eb6edd609' => 'لطفاً به مدیریت اطلاع دهید.' . "\n" . '',
-        'gateway_return.perform_payment_effect.text.c957e6dfa7' => 'کد خطا: ',
-        'gateway_return.perform_payment_effect.message.68e2abdadb' => 'پرداخت شما با موفقیت انجام شد ولی مشکل فنی در تمدید.' . "\n" . 'مبلغ ',
-        'gateway_return.perform_payment_effect.message.81c4bb3acb' => '✅ پرداخت شما با موفقیت انجام شد.',
-        // gateway_return.do_action
-        'gateway_return.do_action.text.83188c9e00' => 'پرداخت تأیید شده است اما نتیجهٔ تکمیل سفارش هنوز قطعی نیست. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.',
-        'gateway_return.do_action.text.30e9647ee1' => 'پرداخت تأیید شده است اما ثبت نتیجهٔ سفارش هنوز قطعی نیست. لطفاً دوباره پرداخت نکنید، مشخصات پرداخت را نگه دارید و با پشتیبانی تماس بگیرید.',
-        // payment_page.render_payment_page
         'payment_page.render_payment_page.text.0134bd87ce' => 'وضعیت پرداخت',
         'payment_page.render_payment_page.text.e5b6190b3e' => 'عملیات ثبت و تکمیل شد',
         'payment_page.render_payment_page.text.0aa6b2235a' => 'پرداخت انجام نشد',

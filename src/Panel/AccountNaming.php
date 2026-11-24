@@ -10,9 +10,10 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
  * Byte-length is intentional: Native usernames are ASCII identifiers.
  */
 function achbotEffectValidUsername(string $username,?string $provider=null): bool {
-    $max=100;
-    return strlen($username)>=1 && strlen($username)<=$max &&
-        preg_match('/^[a-zA-Z0-9_-]+$/D',$username)===1;
+    return ($provider===null || $provider==='pasarguard') &&
+        strlen($username)>=3 && strlen($username)<=100 &&
+        preg_match('/^[a-zA-Z0-9_-]+$/D',$username)===1 &&
+        preg_match('/[-_]{2}/',$username)!==1;
 }
 
 /**
@@ -46,10 +47,16 @@ function achbotStyledAccountRemark(string $base,string $provider,string $source,
         $suffix='_'.$token.'_'.$ordinal;
         $room=$max-strlen($suffix);
         if ($room<1) throw new InvalidArgumentException('account_name_too_long');
-        $name=substr($base,0,$room).$suffix;
+        $name=rtrim(substr($base,0,$room),'_-').$suffix;
     } elseif (!$adminBulk && $count===1) {
-        // Preserve the unmodified generated single-account name on PasarGuard.
+        // Preserve the visible shape; shorten only a long generated prefix.
         $name=$base;
+        if (strlen($base)>$max) {
+            $pattern=$mode==='digits'?'/^(.+)(-[0-9]{5})$/D':'/^(.+)(-[1-9][0-9]*-[0-9]{5})$/D';
+            if (preg_match($pattern,$base,$parts)!==1 || strlen($parts[2])>=$max)
+                throw new InvalidArgumentException('account_name_generated_invalid');
+            $name=rtrim(substr($parts[1],0,$max-strlen($parts[2])),'_-').$parts[2];
+        }
     } else {
         // New bulk generated names bind to the immutable source and ordinal.
         if (preg_match('/^(.+)-([0-9]{4,5})$/D',$base,$matches)!==1 ||
@@ -60,18 +67,17 @@ function achbotStyledAccountRemark(string $base,string $provider,string $source,
         if ($mode==='digits') {
             $room=$max-strlen($numeric)-1;
             if ($room<1) throw new InvalidArgumentException('account_name_too_long');
-            $name=substr($matches[1],0,$room).'-'.$numeric;
+            $name=rtrim(substr($matches[1],0,$room),'_-').'-'.$numeric;
         } else {
             if (preg_match('/^(.+)-([1-9][0-9]*)$/D',$matches[1],$parts)!==1)
                 throw new InvalidArgumentException('account_name_generated_invalid');
             $tail='-'.$parts[2].'-'.$numeric;
             $room=$max-strlen($tail);
             if ($room<1) throw new InvalidArgumentException('account_name_too_long');
-            $name=substr($parts[1],0,$room).$tail;
+            $name=rtrim(substr($parts[1],0,$room),'_-').$tail;
         }
     }
-    if (strlen($name)>$max ||
-        preg_match('/^[A-Za-z0-9_-]+$/D',$name)!==1)
+    if (!achbotEffectValidUsername($name,$provider))
         throw new InvalidArgumentException('account_name_provider_invalid');
     return $name;
 }

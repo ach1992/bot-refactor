@@ -294,7 +294,6 @@ def source_call_inventory(sources: dict[str, str]) -> dict[str, dict]:
         ("src/Finance/ReceiptHelpers.php", "$codeKey"),
         ("src/Finance/ReceiptHelpers.php", "$key"),
         ("src/Finance/Routes/AutomaticGatewayReview.php", "$key"),
-        ("src/Finance/WalletAddonNotices.php", "$button"),
         ("src/Subscription/AccountDeletion.php", "$key"),
         ("src/Subscription/OrderManagement.php", "$key"),
     }
@@ -347,13 +346,6 @@ def finite_indirect_qualified_keys(scans: dict[str, dict]) -> set[str]:
           "qualified_management_key_sink_changed")
     producer = re.search(r"\$key\s*=\s*\$correct\s*&&.*?;", management, re.S)
     check(producer is not None, "qualified_management_producer_changed")
-    result.update(QUALIFIED.findall(producer.group()))
-
-    wallet = scans["src/Finance/WalletAddonNotices.php"]["clean"]
-    check("achbotMessage($button)" in wallet,
-          "qualified_wallet_button_sink_changed")
-    producer = re.search(r"\$button\s*=\s*\$kind\s*===.*?;", wallet, re.S)
-    check(producer is not None, "qualified_wallet_button_producer_changed")
     result.update(QUALIFIED.findall(producer.group()))
 
     gateway = scans["src/Finance/Routes/AutomaticGatewayReview.php"]["clean"]
@@ -426,7 +418,7 @@ def verify_live_subscription_status_labels(sources: dict[str, str]) -> int:
     $buttons=achbotMessages('legacy_buttons');
     $expected=['active'=>'🟢 فعال','disabled'=>'🔴 غیرفعال'];
     $passes=0;
-    foreach (['marzban','pasarguard'] as $provider) {
+    foreach (['pasarguard'] as $provider) {
         foreach ($expected as $status=>$label) {
             if (!array_key_exists($status==='active'?'active':'deactive',$buttons))
                 throw new RuntimeException('catalog_subscription_label_missing:'.$status);
@@ -442,7 +434,7 @@ def verify_live_subscription_status_labels(sources: dict[str, str]) -> int:
     """
     proof=json.loads(subprocess.check_output(
         ["php", "-n", "-r", script], cwd=ROOT))
-    check(proof["passes"] == 4, "source_real_subscription_status_labels_failed")
+    check(proof["passes"] == 2, "source_real_subscription_status_labels_failed")
     return proof["passes"]
 
 
@@ -548,7 +540,7 @@ def main() -> None:
     plan_menu = sources["config.php"].split("function getPlanDetailsKeys(", 1)[1].split(
         "// BEGIN create user and admin get order detail", 1
     )[0]
-    check("marzbanHostSettings" in plan_menu and "pgPlanGroups" in plan_menu,
+    check("marzbanHostSettings" not in plan_menu and "pgPlanGroups" in plan_menu,
           "native_plan_selector_missing")
     paths = sorted(sources)
     tokens = json.loads(subprocess.check_output(

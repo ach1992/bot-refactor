@@ -11,7 +11,6 @@ return [
 
     // ── پروندهٔ مشترک مشکلات واقعی پرداخت و عملیات سرویس ──
     'automatic_gateway_review' => [
-        'unlimited_expiry' => 'نامحدود',
         'menu' => '💳 پرداخت‌های نیازمند بررسی',
         'provider_nowpayments' => 'NOWPayments',
         'provider_zarinpal' => 'زرین‌پال',
@@ -21,30 +20,6 @@ return [
         'open_case' => '🔎 بررسی پرونده',
         'recover' => '🔄 بررسی و بازیابی عملیات',
         'service_action' => '✅ تأیید و تکمیل عملیات',
-        'service_execute' => '✅ تأیید و اجرای عملیات',
-        'service_override_execute' => '✅ اعمال دقیق سفارش و پذیرش تغییرات',
-        'service_override_confirm' => ['text' => "⚠️ تغییر مستقل سرویس در پنل شناسایی شد
-
-🧾 پرونده: <code>{payment}</code>
-
-📅 انقضای فعلی: <code>{currentExpiry}</code>
-📅 انقضای سفارش اصلی: <code>{targetExpiry}</code>
-📦 حجم فعلی: <code>{currentVolume}</code> GiB
-📦 حجم سفارش اصلی: <code>{targetVolume}</code> GiB
-⚙️ وضعیت فعلی: <code>{currentStatus}</code>
-👥 گروه‌های فعلی: <code>{currentGroups}</code>
-
-⚠️ در صورت تأیید، ربات مقادیر حجم و انقضای سفارش پرداخت‌شده را روی همین حساب اعمال می‌کند؛ تغییرات مستقل ممکن است جایگزین شوند. گروه‌های فعلی حفظ می‌شوند؛ تمدید ممکن است ترافیک مصرف‌شده را Reset و وضعیت حساب را فعال کند.
-
-✅ وجه مجدد کسر نمی‌شود. این تصمیم با شناسهٔ ادمین ثبت می‌شود. در صورت عدم موافقت، به پرونده بازگردید.", 'parameters' => [
-            'payment','currentExpiry','targetExpiry','currentVolume','targetVolume',
-            'currentStatus','currentGroups']],
-        'service_override_changed' => '⚠️ وضعیت حساب در پنل تغییر کرده است. از پرونده، پیش‌نمایش جدید بگیرید.',
-        'service_confirm' => ['text' => "📋 تکمیل عملیات سرویس
-
-🧾 شماره پرداخت: <code>{payment}</code>
-
-⚠️ ابتدا وضعیت واقعی حساب را در پنل بررسی کنید. در صورت نیاز، ربات ادامهٔ همان عملیات یا تلاش مجدد را انجام می‌دهد. پرداخت دوباره دریافت نمی‌شود.", 'parameters' => ['payment']],
         'api_status' => ['text' => '🧾 وضعیت بررسی API: <code>{evidence}</code> | عملیات سرویس: <code>{fulfillment}</code>', 'parameters' => ['evidence','fulfillment']],
         'api_warning' => '🔎 وضعیت واقعی رسید، شواهد API و عملیات سرویس را بررسی کنید. ثبت پرداخت یا ساخت سرویس تکراری مجاز نیست.',
         'manual_warning' => '⚠️ وضعیت عملیات سرویس و سابقهٔ پرداخت دستی را بررسی کنید. عملیات نامطمئن را تکرار نکنید؛ در صورت رسیدگی مستقل مدیر، پرونده را بایگانی کنید.',
@@ -107,34 +82,6 @@ return [
         'renew' => 'تمدید اشتراک',
         'wallet' => 'افزایش موجودی کیف پول',
         'wallet_provider' => 'کیف پول',
-        'wallet_original_action' => '🔎 بررسی اثر اصلی Wallet',
-        'wallet_original_ready' => ['text' => '✅ هر {count} حساب اصلی Native برای پرداخت <code>{payment}</code> با شواهد عملیات اصلی مطابقت دارند. با تأیید شما، رکوردهای محلی ناقص بازیابی و همان پرداخت نهایی می‌شود؛ بدون ساخت حساب Native، کسر کیف پول یا تخصیص مجدد ظرفیت.', 'parameters' => ['count','payment']],
-        'wallet_original_confirm' => '✅ تکمیل همین پرداخت و ثبت پیام‌های اولیه',
-        'wallet_original_line' => ['text' => '▫️ ردیف {ordinal} | Effect: <code>{effect}</code> | Operation: <code>{operation}</code> | حساب: <code>{account}</code> | سفارش: <code>{order}</code> | وضعیت: {status} | انقضا: {expiry} | حجم: {bytes} بایت', 'parameters' => ['ordinal','effect','operation','account','order','status','expiry','bytes']],
-        'wallet_original_lines_truncated' => ['text' => 'ℹ️ نمایش {visible} ردیف از {total} ردیف؛ پیش از تأیید، همهٔ ردیف‌ها در Native بررسی می‌شوند.', 'parameters' => ['visible','total']],
-        'wallet_original_status_linked' => '✅ حساب و سفارش اصلی تأیید شد',
-        'wallet_original_status_unlinked' => '🧾 حساب Native تأیید شد؛ رکورد محلی اصلی قابل بازیابی است',
-        'wallet_original_status_unverified' => '⚠️ پاسخ Native یا هویت حساب تأیید نشد',
-        'wallet_original_status_missing' => '⏳ عملیات اصلی به سفارش معتبر متصل نشده است',
-        'wallet_report_state_pending' => '⏳ در صف ارسال اولیه',
-        'wallet_report_state_dispatching' => '⏳ ارسال اولیه در جریان یا نامطمئن',
-        'wallet_report_state_manual_dispatching' => '⏳ ارسال دستی در جریان یا نامطمئن',
-        'wallet_report_state_unknown' => '⚠️ تحویل نامعلوم یا ناقص',
-
-        'wallet_original_hold' => ['text' => '⚠️ پرداخت <code>{payment}</code> هنوز قابل نهایی‌سازی نیست. دلیل: <code>{reason}</code>. نتیجهٔ نامعلوم Native اجازهٔ ساخت حساب یا تخصیص ظرفیت دوباره نیست.', 'parameters' => ['payment','reason']],
-        'wallet_original_done' => '✅ همان پرداخت Wallet نهایی شد؛ رکوردهای محلیِ لازم بازیابی و پیام‌های اولیهٔ هر حساب و گزارش ادمین ثبت شد. هیچ حساب Native، ظرفیت یا بدهی تازه‌ای ایجاد نشد.',
-        'wallet_marzban_evidence' => ['text' => "⚠️ بررسی تمدید اصلی Marzban (بدون ژورنال قطعی)
-🧾 پرداخت: <code>{payment}</code> | سفارش: <code>{order}</code>
-📦 پلن: <code>{plan}</code> | سرور: <code>{server}</code> | مبلغ اصلی: {price} تومان
-🎯 خرید ثبت‌شده در پرداخت: {original_days} روز / {original_volume} گیگابایت
-👤 حساب Native: <code>{account}</code>
-🔗 Fingerprint مقصد فعلی: <code>{endpoint}</code>
-🔍 نتیجهٔ GET: {observed}
-📊 دادهٔ فعلی Native: وضعیت <code>{native_state}</code>، انقضا <code>{native_expiry}</code>، حجم <code>{native_bytes}</code> بایت
-📅 مقادیر پلن فعلی (نه اثبات خرید قدیمی): {days} روز / {volume} گیگابایت
-
-این GET فقط وضعیت فعلی را نشان می‌دهد و اجرای همان تمدید اصلی را اثبات نمی‌کند. برای تصمیم انسانی باید سابقهٔ پرداخت، مقصد اصلی و عملیات Native مستقلاً بررسی شود. هیچ RESET/PUT یا کسر Wallet دوباره اجرا نمی‌شود.", 'parameters' => ['payment','order','plan','server','price','original_days','original_volume','account','endpoint','observed','native_state','native_expiry','native_bytes','days','volume']],
-        'wallet_report_status' => ['text' => '📨 گزارش اصلی مدیر، پرداخت <code>{payment}</code>، وضعیت Telegram: <code>{state}</code>، تلاش‌ها: {attempts}', 'parameters' => ['payment','state','attempts']],
         'wallet_report_action' => '🔎 بررسی گزارش ادمین',
         'wallet_report_confirm' => ['text' => "⚠️ تأیید تلاش مجدد برای گزارش اصلی ادمین
 
@@ -144,24 +91,8 @@ return [
         'wallet_report_send' => '✅ تأیید ارسال گزارش اصلی',
         'wallet_report_ack' => '✅ تلاش دستی گزارش اصلی ادمین با تأیید Telegram ثبت شد. عملیات مالی یا سرویس تکرار نشد.',
         'wallet_report_unknown' => '⚠️ تلاش دستی گزارش ثبت شد اما تحویل Telegram نامعلوم یا ناقص است. پرونده برای بررسی مستقل باقی می‌ماند؛ ارسال دیگری انجام نمی‌شود.',
-        'wallet_report_pending' => '⏳ گزارش اصلی در صف ارسال اولیه است؛ ارسال مجدد دستی مجاز نیست.',
         'wallet_report_hold' => '⚠️ وضعیت گزارش اصلی هنوز نامعلوم است. ارسال دستی قبلاً استفاده شده یا پردازش قبلی ممکن است انجام شده باشد؛ مدارک Telegram را مستقل بررسی کنید.',
-        'wallet_review_action' => '🔎 بررسی تمدید کیف پول',
-        'wallet_review_ready' => ['text' => "✅ عملیات تمدید اصلی روی PasarGuard با مدارک Native تأیید شد.\n\n🧾 شناسه پرداخت: <code>{payment}</code>\n\n✅ با تأیید، فقط ثبت مالی/محلی و پیام اصلی مشتری تکمیل می‌شود؛ مبلغ مجدد کسر و تمدید دیگری اجرا نمی‌شود.", 'parameters' => ['payment']],
-        'wallet_review_confirm' => '✅ تأیید و تکمیل ثبت',
-        'wallet_review_hold' => '⚠️ نتیجهٔ اصلی عملیات روی سرویس قابل تأیید نیست یا وضعیت آن تغییر کرده است. وجه دیگری کسر یا تمدید دیگری اجرا نشد. پرونده برای بررسی باقی می‌ماند.',
-        'wallet_review_done' => '✅ تمدید قبلی بدون کسر وجه یا اجرای دوباره سرویس، در دیتابیس تکمیل شد. پیام اصلی مشتری و گزارش ادمین برای ارسالِ یک‌باره ثبت شدند.',
-        'wallet_addon_review_action' => '🔎 بررسی افزایش زمان/حجم کیف پول',
-        'wallet_addon_ready' => ['text' => "✅ افزایش زمان/حجم قبلی بر اساس مدارک اصلی و وضعیت زندهٔ PasarGuard تأیید شد.\n\n🧾 شناسه پرداخت: <code>{payment}</code>\n\nبا تأیید، فقط ثبت مالی و اطلاع‌رسانی اولیه کامل می‌شود؛ هیچ افزایشی دوباره اجرا یا وجهی کسر نمی‌شود.", 'parameters' => ['payment']],
-        'wallet_addon_done' => '✅ افزایش زمان/حجم قبلی بدون اجرای دوباره روی سرویس، در دیتابیس ثبت نهایی شد. پیام اصلی مشتری و گزارش ادمین برای ارسال یک‌باره ثبت شدند.',
-
-        'wallet_review_stale' => '⚠️ وضعیت پرونده یا مدارک تغییر کرده است. از فهرست دوباره بررسی کنید.',
-        'wallet_retry_action' => '✅ ادامهٔ همان تمدید اصلی',
-        'wallet_retry_done' => '✅ عملیات همان تمدید اصلی روی حساب قبلی انجام و ثبت شد؛ وجه دیگری کسر نشد. پیام اصلی مشتری و گزارش ادمین برای ارسال یک‌باره ثبت شدند.',
         'wallet_review_warning' => '⚠️ وجه از کیف پول قبلاً کسر شده است. پیش از هر تصمیم، هویت حساب و وضعیت واقعی PasarGuard را بررسی کنید. تمدید با همان سفارش و تأیید مجدد مدیر مجاز است؛ افزایش حجم/زمان یا ساخت اکانت تکراری نیست.',
-        'wallet_native_evidence' => ['text' => '🔍 عملیات سرویس: <code>{operation}</code> / وضعیت: <code>{state}</code>', 'parameters' => ['operation','state']],
-
-
         'days' => 'افزایش مدت اشتراک',
         'volume' => 'افزایش حجم اشتراک',
         'unknown' => 'ثبت نشده',
@@ -179,7 +110,6 @@ return [
 
     // #147 — Verified bulk source reports (source-pinned in test catalog).
     'bulk_reporting' => [
-        'unknown_confirmed' => 'نامشخص',
         'complete' => ['text' => '✅ ساخت و ثبت اکانت‌ها: {confirmed} از {requested}', 'parameters' => ['confirmed', 'requested']],
         'needs_review' => ['text' => '⚠️ ساخت گروهی نیازمند بررسی است. ثبت محلی تأییدشده: {confirmed} از {requested}. عملیات نامشخص را تکرار نکنید.', 'parameters' => ['confirmed', 'requested']],
         'names' => '🧩 اکانت‌های ثبت و تأییدشده:',
@@ -360,11 +290,6 @@ return [
         'bot.process_callback_query.message.ed098f7f93' => '📝 لطفا اسم دکمه را وارد کنید',
         'bot.process_callback_query.message.0caee5986d' => '📝 لطفا فقط متن بفرستید',
         'bot.process_callback_query.message.ea8c224138' => '📝 لطفا پاسخ دکمه را وارد کنید',
-        'bot.process_callback_query.message.2c4ec0c4cc' => 'لطفا نوع شبکه های این پلن را انتخاب کنید.',
-        'bot.process_callback_query.save_btn.b3a82cd642' => 'ذخیره ✅',
-        'bot.process_callback_query.text.64554c955e' => ' ✅',
-        'bot.process_callback_query.text.1d456424c3' => '✅',
-        'bot.process_callback_query.message.e3bd301365' => 'با موفقیت ذخیره شد.',
         'bot.process_callback_query.alert.c0aaf0af38' => '⚠️ در حال حاضر هیچ سرور فعالی برای هدیه دادن وجود ندارد.',
         'bot.process_callback_query.message.997b4e1b83' => ' 📍 لطفا برای هدیه دادن, یکی از سرورها را انتخاب کنید👇',
         'bot.process_callback_query.button.e2a9773071' => '🎁 هدیه به همه کاربران',
@@ -415,8 +340,6 @@ return [
         'bot.add_marzban_panel_group.alert.cc8538eba9' => 'گروه پیدا نشد یا هنوز به سرور متصل است؛ ابتدا سرورها را از آن خارج کنید.',
         'bot.add_marzban_panel_group.message.def9f141f2' => '🗂 مدیریت گروه‌های مشترک پنل',
         // bot.add_new_marzban_panel
-        'bot.addserver_name.alert.f1fb84ec27' => '⚠️ این نوع پنل دیگر پشتیبانی نمی‌شود.',
-        'bot.addserver_name.message.4a29ff45e6' => '⏳ در حال ورود به اکانت ...',
         'bot.addserver_name.alert.27e6f9c466' => '⚠️ نوع پنل این سرور برای گروه‌بندی پشتیبانی نمی‌شود.',
         'bot.addserver_name.message.c31e264971' => '🏷 گروه پنل این سرور را انتخاب کنید. این گروه را مدیر برای سرورهای متعلق به یک پنل فیزیکی یکسان تعیین می‌کند؛ حتی اگر آدرس یا اطلاعات ورود آن‌ها متفاوت باشد.',
         'bot.addserver_name.alert.48259ae799' => '⚠️ شناسه سرور معتبر نیست.',
@@ -424,11 +347,6 @@ return [
         'bot.addserver_name.alert.a5625b915f' => '⛔️ ذخیره گروه پنل انجام نشد. معتبر بودن گروه و سرور را بررسی کنید و دوباره تلاش کنید.',
         'bot.addserver_name.message.9495c6622a' => '✅ گروه پنل سرور به‌روزرسانی شد.',
         'bot.addserver_name.message.8dc219842f' => 'روش گروه‌بندی تغییر کرده است؛ گروه را از فهرست تعریف‌شده انتخاب کنید.',
-        'bot.addserver_name.message.adf1de6a42' => '▪️ لطفا آدرس پنل را وارد کنید:',
-        'bot.addserver_name.message.bae567d2c7' => '▪️ لطفا یوزر پنل را وارد کنید:',
-        'bot.addserver_name.message.530a9525e2' => '▪️ لطفا پسورد پنل را وارد کنید:',
-        'bot.addserver_name.message.c7ea45277d' => '⚠️ اطلاعاتی که وارد کردی اشتباهه 😂',
-        'bot.addserver_name.message.bf4ac7e119' => '✅ اطلاعات ورود سرور با موفقیت عوض شد.',
         'bot.addserver_name.button.13159f8c74' => '✅ بله',
         'bot.addserver_name.button.f47dddc181' => '❌ نخير',
         'bot.addserver_name.txt.437acc9f7f' => 'اسم',
@@ -506,10 +424,6 @@ return [
         'wallet_transfer.wallet_transfer_restart.failed_roles_failed_roles.dbaa3d3e0e' => ['text' => 'گیرندگان ناموفق: <code>{failedRoles}</code>' . "\n" . '', 'parameters' => ['failedRoles']],
         'wallet_transfer.wallet_transfer_restart.transfer_already_committed_status_code.abb8981186' => ['text' => 'انتقال قبلاً ثبت شده است: <code>{status_code}</code>' . "\n" . '', 'parameters' => ['status_code']],
         // wallet_settlement.process_wallet_payment
-        'wallet_settlement.process_wallet_payment.admin_err.51996ec850' => '⚠️ خطا در پرداخت با کیف پول' . "\n" . '' . "\n" . '',
-        'wallet_settlement.process_wallet_payment.hash__i_d_hash_id.e73fee2172' => ['text' => '🎫 شناسه پیگیری: {hashId}' . "\n" . '', 'parameters' => ['hashId']],
-        'wallet_settlement.process_wallet_payment.user_from_id.45aa9ea684' => ['text' => '👤 کاربر: {from_id}' . "\n" . '', 'parameters' => ['from_id']],
-        'wallet_settlement.process_wallet_payment.external_effect_unverified_verify_before.10e2ccf8a3' => '🔎 نتیجه عملیات سرویس تأیید نشده است؛ پیش از تکرار یا جبران، آن را بررسی کنید.' . "\n" . '📄 علت بررسی‌شده: ',
     ],
 
     // ── ساخت و خرید اشتراک ──
@@ -601,9 +515,7 @@ return [
         // order_management.show_order_management_panel
         'order_management.show_order_management_panel.text.44f1a0048c' => '🔘 نیست',
         'order_management.show_order_management_panel.text.e0b20b49a2' => '✅ هست',
-        'order_management.show_order_management_panel.button.7256e018bd' => '🔑 تغییر Token',
         'order_management.show_order_management_panel.button.8824464622' => '🖥 تغییر Server ID',
-        'order_management.show_order_management_panel.button.8851b5ce4f' => '🧬 تغییر UUID',
         'order_management.show_order_management_panel.button.72e5322e9a' => ['text' => '💎 خرید همکار ←  {agentStatus}', 'parameters' => ['agentStatus']],
         'order_management.show_order_management_panel.button.bf169ddbf3' => '💡 مشاهده مشخصات اشتراک',
         'order_management.show_order_management_panel.button.087a5a43b1' => '↪️ بازگشت به مدیریت',
@@ -617,10 +529,6 @@ return [
         'order_management.show_order_management_panel.message.606600ccca' => ['text' => '✅ سفارش از دیتابیس حذف شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{userid}</code>' . "\n" . '🔄 نام کاربری اشتراک: <code>{remark}</code>' . "\n" . '' . "\n" . 'برای مدیریت سفارش دیگر، دوباره «ویرایش سفارش در دیتابیس» را بزنید.', 'parameters' => ['userid', 'remark']],
         'order_management.show_order_management_panel.admin_message.c7c4748cee' => ['text' => '🗑 سفارش از دیتابیس حذف شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{userid}</code>' . "\n" . '🔄 نام کاربری اشتراک: <code>{remark}</code>' . "\n" . '👤 مدیر: <code>{from_id}</code>', 'parameters' => ['userid', 'remark', 'from_id']],
         'order_management.show_order_management_panel.message.86c15dd0ed' => '✅ تاریخ انقضا با موفقیت ویرایش شد.',
-        'order_management.show_order_management_panel.message.f6d2b05a49' => '🔐 لطفا مقدار جدید Token را وارد کنید:',
-        'order_management.show_order_management_panel.message.18947492b0' => '✅ مقدار Token با موفقیت تغییر یافت.',
-        'order_management.show_order_management_panel.message.1ea9c7448e' => '🧬 لطفا مقدار جدید UUID را وارد کنید:',
-        'order_management.show_order_management_panel.message.3688781e63' => '✅ مقدار UUID با موفقیت تغییر یافت.',
         'order_management.show_order_management_panel.alert.057ec5448c' => '⛔️ دسترسی لازم وجود ندارد.',
         'order_management.show_order_management_panel.alert.3e801d365f' => '⛔️ سفارش مرزبان معتبر نیست.',
         'order_management.show_order_management_panel.alert.7a6ebab798' => '⚠️ هیچ سرور دیگری با همان پنل مرزبان وجود ندارد.',
@@ -650,9 +558,6 @@ return [
         'server_display_settings.server_display_prompt.text.dc76b33303' => 'اگر تعداد کانفیگ‌های واقعی از چه عددی بیشتر شد، متن کانفیگ و QR آن مخفی شود؟ عدد 0 تا 1000 بفرستید؛ برای غیرفعال‌کردن /off را بفرستید.',
         'server_display_settings.server_display_prompt.text.43b25df873' => 'نام پروتکل‌ها را با کاما بفرستید؛ مثلاً vless,trojan. ترتیب انتخاب حفظ می‌شود و فقط لینک‌های واقعیِ منطبق نشان داده می‌شوند.',
         'server_display_settings.server_display_prompt.text.44c7e97137' => 'نام دقیق کانفیگ‌ها را هر کدام در یک خط بفرستید. ترتیب نام‌ها حفظ می‌شود؛ نام ناموجود با کانفیگ دیگری جایگزین نمی‌شود.',
-        'server_display_settings.server_display_prompt.text.4750c0b8eb' => 'موقعیت‌های نمایش مرزبان را با کاما بفرستید؛ مثلاً 2,4. شماره از 1 شروع می‌شود و فقط برای بیش از 3 کانفیگ اعمال می‌شود. برای فهرست خالی /empty را بفرستید.',
-        'server_display_settings.server_display_prompt.text.4408da75e8' => 'موقعیت‌های تحویل مرزبان را با کاما بفرستید؛ مثلاً 0,2. شماره از 0 شروع می‌شود؛ موقعیت ناموجود به اولین کانفیگ برمی‌گردد. برای فهرست خالی /empty را بفرستید.',
-        // server_display_settings.server_display_guide
         'server_display_settings.server_display_guide.guide.80a3795e36' => '🛠 <b>تنظیم نمایش لینک‌های این سرور</b>' . "\n" . 'برای تغییر کامل تنظیمات، یک سند JSON مانند نمونه بفرستید.' . "\n" . '',
         'server_display_settings.server_display_guide.mode_native_policy.4b6249e7e9' => 'حالت معمول: مقدار <code>mode</code> برابر <code>native</code> است.' . "\n" . '',
         'server_display_settings.server_display_guide.text.07b6a43417' => 'نمایش کانفیگ و لینک اشتراک: مقدار <code>show_configs</code> و <code>show_subscription</code> را <code>true</code> یا <code>false</code> بگذارید.' . "\n" . '',
@@ -662,16 +567,11 @@ return [
         'server_display_settings.server_display_guide.text.700a492c3b' => 'تطبیق نام دقیق است. تگ فقط از مشخصات واقعی کانفیگ گرفته می‌شود؛ نام یا گروه دسترسی، تگ محسوب نمی‌شود.' . "\n" . '',
         'server_display_settings.server_display_guide.text.a585d74e4d' => 'محتوای QR فقط شامل لینک‌های مجاز برای نمایش است. مخفی‌کردن لینک در پیام، دسترسی خود لینک اشتراک را محدود نمی‌کند.' . "\n" . '',
         'server_display_settings.server_display_guide.text.9cc423134a' => 'نمونه تنظیمات معمول:' . "\n" . '<pre>',
-        'server_display_settings.server_display_guide.guide.bdbed004bb' => '' . "\n" . 'روش قدیمی مرزبان: گزینه <code>showIndexes</code> شماره‌های نمایش را از 1 می‌شمارد؛ گزینه <code>linkIndices</code> شماره‌های تحویل را از 0 می‌شمارد. در این حالت، QR کانفیگ همه لینک‌های خام را دارد.' . "\n" . 'نمونه:' . "\n" . '<pre>',
-        // server_display_settings.handle_server_display_admin
         'server_display_settings.handle_server_display_admin.text.ed95738546' => '✅ ذخیره شد.' . "\n" . '',
         'server_display_settings.handle_server_display_admin.body.97ea2ac3c4' => '🔗 کد QR تحویل را انتخاب کنید. کد QR اشتراک فقط لینک اشتراک قابل‌نمایش را دارد؛ بدون QR یعنی ارسال متن اشتراک.',
         'server_display_settings.handle_server_display_admin.button.ddeef82ae5' => '⚙️ بر اساس پروتکل',
         'server_display_settings.handle_server_display_admin.button.9397b410f0' => '⚙️ بر اساس نام دقیق',
         'server_display_settings.handle_server_display_admin.body.dc1a09d9ef' => '⚙️ روش انتخاب کانفیگ‌های واقعی را تعیین کنید. انتخاب تازه جایگزین انتخاب قبلی می‌شود. شرط‌های ترکیبی و تگ واقعی در ویرایش پیشرفته در دسترس است.',
-        'server_display_settings.handle_server_display_admin.text.50539a0548' => 'انتخاب بومی (پیشنهادی)',
-        'server_display_settings.handle_server_display_admin.text.19adf0f6e6' => 'سازگاری موقعیت‌های مرزبان',
-        'server_display_settings.handle_server_display_admin.body.fccad7f96a' => '⚠️ روش انتخاب را تغییر دهید. با تغییر روش، انتخاب قبلی پاک می‌شود. در سازگاری مرزبان، کد QR کانفیگ همه لینک‌های خام را تا سقف نمایش دارد، حتی اگر متن مخفی باشد.',
         'server_display_settings.handle_server_display_admin.button.63b4398cc3' => '↪️ بازگشت به نمایش همین سرور',
         'server_display_settings.handle_server_display_admin.message.b57e3f0cb1' => '⚠️ تنظیمات نمایش تأیید نشد. دسترسی و قالب مقادیر را بررسی و ویرایش را از تنظیمات همان سرور دوباره آغاز کنید.',
         // sub_link_settings.message
@@ -698,33 +598,10 @@ return [
                              'days','volume','payment_ref']
         ],
         // automatic_renewal.auto_renew_alert_review
-        'extensions.alert.135aa8877f' => '⛔️ تایید دستی افزایشی برای این پنل مجاز نیست.',
-        // extensions.err
-        'extensions.err.28163d77c1' => '⚠️ خطا در تایید افزایش زمان (کارت‌به‌کارت)' . "\n" . '' . "\n" . '',
-        // extensions.hash__i_d_match_1
-        'extensions.hash__i_d_match_1.3abb834966' => ['text' => '🎫 شناسه پیگیری: {match_1}' . "\n" . '', 'parameters' => ['match_1']],
-        // extensions.admin_from_id
-        'extensions.admin_from_id.748897de00' => ['text' => '👤 مدیر: {from_id}' . "\n" . '', 'parameters' => ['from_id']],
-        // extensions.external_effect_unverified_verify_before
-        'extensions.external_effect_unverified_verify_before.10e2ccf8a3' => '🔎 نتیجه عملیات سرویس تأیید نشده است؛ پیش از تکرار یا جبران، آن را بررسی کنید.' . "\n" . '📄 علت بررسی‌شده: ',
-        // extensions.msg
         'extensions.msg.bfc1b46322' => ['text' => '' . "\n" . '🔋 افزایش زمان با (کیف پول)' . "\n" . '' . "\n" . '🎫 شناسه عددی: {from_id}' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🔄 نام کاربری اشتراک: {remark}' . "\n" . '📅 مدت افزایش: {volume} روز' . "\n" . '💰 قیمت: {price} تومان' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volume', 'price']],
         // extensions.admin_err
-        'extensions.admin_err.70cf66359f' => '⚠️ خطا در افزایش زمان با کیف پول' . "\n" . '' . "\n" . '',
-        // extensions.user_from_id
-        'extensions.user_from_id.45aa9ea684' => ['text' => '👤 کاربر: {from_id}' . "\n" . '', 'parameters' => ['from_id']],
-        // extensions.channel_message
-        'extensions.err.322385c9dd' => '⚠️ خطا در تایید افزایش حجم (کارت‌به‌کارت)' . "\n" . '' . "\n" . '',
-        // extensions.msg
         'extensions.msg.0e12e9ce3d' => ['text' => '' . "\n" . '🔋 افزایش حجم با (کیف پول)' . "\n" . '' . "\n" . '🎫 شناسه عددی: {from_id}' . "\n" . '👤 اسم کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '🔄 نام کاربری اشتراک: {remark}' . "\n" . '📦 حجم افزایش: {volume} گیگ' . "\n" . '💰 قیمت: {price} تومان' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'remark', 'volume', 'price']],
         // extensions.admin_err
-        'extensions.admin_err.128069a4b4' => '⚠️ خطا در افزایش حجم با کیف پول' . "\n" . '' . "\n" . '',
-        // renewal_checkout.alert
-        'renewal_checkout.alert.fbaa266905' => '⛔️ تأیید پرداخت این سرویس در مرزبان مجاز نیست.',
-        // renewal_checkout.err
-        'renewal_checkout.err.a6df2ab8a6' => '⚠️ خطا در تایید تمدید کارت‌به‌کارت' . "\n" . '' . "\n" . '',
-        // renewal_checkout.admin_err
-        'renewal_checkout.admin_err.7f953ff1fb' => '⚠️ خطا در تمدید با کیف پول' . "\n" . '' . "\n" . '',
     ],
 
     // ── خرید، پرداخت و تخفیف ──
@@ -765,20 +642,11 @@ return [
         'payment_lifecycle.pay_ux_audience_methods.text.349ece736f' => 'ترون دستی (TRX)',
         'payment_lifecycle.pay_ux_audience_methods.text.6295c35212' => 'کیف پول',
         // referral_reward.referral_warn_operator
-        'referral_reward.referral_warn_operator.message.5365cd589c' => '⚠️ وضعیت پاداش معرفی نیاز به بررسی دارد.',
-        'referral_reward.referral_warn_operator.pay__i_d.9ac91aa748' => '' . "\n" . '🎫 شناسه پرداخت: ',
-        'referral_reward.referral_warn_operator.message.69ec1d7580' => '' . "\n" . 'قبل از هر اصلاح، Ledger و موجودی را تطبیق دهید؛',
-        'referral_reward.referral_warn_operator.text.3ad839e956' => ' واریز مجدد خودکار انجام ندهید.',
-        // referral_reward.give_referral_reward
         'referral_reward.give_referral_reward.operator_msg.7c8cfd9d4f' => '👥 پاداش معرفی خرید ثبت شد.' . "\n" . 'شناسه پرداخت: ',
         'referral_reward.give_referral_reward.text.23d0786d9b' => '' . "\n" . 'شناسه خریدار: ',
         'referral_reward.give_referral_reward.text.6aaba1c235' => '' . "\n" . 'شناسه معرف: ',
         'referral_reward.give_referral_reward.text.534fd54cb9' => '' . "\n" . '💰 مبلغ: ',
         // checkout.user_i_d_uid_for_log
-        'checkout.user_i_d_uid_for_log.6a12f817c0' => ['text' => '🎫 شناسه عددی: {uidForLog}' . "\n" . '', 'parameters' => ['uidForLog']],
-        // checkout.text
-        'checkout.text.0ec6de536f' => '' . "\n" . 'پرداخت و سرویس ثبت شده‌اند؛ ساخت مجدد انجام نشود.',
-        // discount_administration.message
         'discount_administration.message.bfaa0cb7fb' => '🎁 مدیریت کدهای تخفیف',
         // discount_administration.add_discount_code
         'discount_administration.add_discount_code.message.4c228aa43c' => '🔘 لطفا کد تخفیف دلخواه خود را وارد کنید.' . "\n" . '',
@@ -915,22 +783,7 @@ return [
         'api_payment.status_evidence_only' => "پیامک دیررس ثبت شد؛ پرداخت قبلاً نهایی بود و عملیات مالی تکرار نشد",
         'api_payment.view_code' => "مشاهده کد گیفت‌کارت",
         // Existing API-assisted payments.
-        'automatic_receipts.text.ba58f1caaf' => '' . "\n" . '🎫 شناسه عددی: ',
-        'automatic_receipts.text.12646a1ad0' => '' . "\n" . '💰 مبلغ سفارش: ',
-        'automatic_receipts.text.e1cad19d95' => '' . "\n" . '📦 تعداد اشتراک: ',
-        // automatic_receipts.message
-        'automatic_receipts.message.ba9287d8c1' => 'شناسه پرداخت: ',
-        // automatic_receipts.text
         'automatic_receipts.text.2898f8f112' => '✅ خودکار تأیید و اعمال شد',
-        'automatic_receipts.text.0f42c8d853' => '⚠️ در انتظار تطبیق سرویس',
-        // automatic_receipts.message
-        'automatic_receipts.message.1b315333c8' => '⚠️ تأیید رسید ثبت شده، اما تغییر واقعی سرویس یا ثبت نهایی سفارش قطعی نیست.' . "\n" . '',
-        'automatic_receipts.message.4624bd3d02' => '' . "\n" . 'بدون تطبیق سرویس، تمدید یا بازپرداخت را تکرار نکنید.',
-        'automatic_receipts.message.8c2e6c4f2e' => '⚠️ ساخت اشتراک با رسید بانکی نیازمند تطبیق است.' . "\n" . 'شناسه پرداخت: ',
-        'automatic_receipts.message.52406798d0' => '' . "\n" . 'از ساخت مجدد یا بازپرداخت خودکار تا بررسی شواهد خودداری کنید.',
-        // receipt_helpers.refund_to_wallet_and_notify
-        'receipt_helpers.refund_to_wallet_and_notify.text.32f7062209' => ['text' => ' تومان به کیف پول کاربر {userId} توسط درگاه {gateType} اضافه شد. ', 'parameters' => ['userId', 'gateType']],
-        // receipt_helpers.manual_caption
         'receipt_helpers.manual_caption.header.cc6f426145' => '💎 مقدار رمزارز: <code>',
         'receipt_helpers.manual_caption.text.1c777cb98d' => '</code> | شبکه: <b>',
         'receipt_helpers.manual_caption.header.12c0babe12' => '💵 مبلغ دقیق حواله: <code>',
@@ -942,34 +795,9 @@ return [
         'receipt_helpers.build_admin_keyboard_with_stats.button.e892623fb9' => '🔢 مجموع',
         'receipt_helpers.build_admin_keyboard_with_stats.hash_id.286c7d3faf' => ['text' => '🆔 {hashId}', 'parameters' => ['hashId']],
         // manual_approval.manual_standard_report_delivery
-        'manual_approval.manual_standard_report_delivery.chat.127f57d934' => ' گفت‌وگو:',
-        'manual_approval.manual_standard_report_delivery.additional_targets.83d6318b6e' => 'مقصدهای دیگر:',
-        'manual_approval.manual_standard_report_delivery.message.7c3a3ec221' => '✅ سفارش/سرویس ثبت شده است؛ اما اطلاع‌رسانی تعدادی از حساب‌ها یا مدیران نامطمئن است.' . "\n" . '🎫 ',
-        'manual_approval.manual_standard_report_delivery.message.be6b530354' => '' . "\n" . 'حساب‌ها و پیام‌ها را تطبیق دهید؛ عملیات سرویس/مالی را تکرار نکنید.',
-        'manual_approval.manual_standard_report_delivery.alert.9ca98e8676' => '⛔️ این درخواست قابل تأیید نیست؛ وضعیت رسید، روش پرداخت یا نوع سفارش را بررسی کنید.',
-        'manual_approval.manual_standard_report_delivery.alert.fd978f1d4d' => '⚠️ نتیجهٔ ثبت تأیید قطعی نیست. ابتدا وضعیت سفارش را بررسی کنید؛ تأیید را تکرار نکنید.',
-        'manual_approval.manual_standard_report_delivery.message.4194effbee' => ['text' => '⚠️ نتیجهٔ ثبت تمدید قطعی نیست و نیازمند بررسی است.' . "\n" . '🎫 شناسه پیگیری: {hash_id}' . "\n" . 'قبل از هر تأیید دوباره، سرویس و پرداخت را تطبیق دهید.', 'parameters' => ['hash_id']],
         'manual_approval.manual_standard_report_delivery.button.139c829462' => ['text' => '✅ تایید شد توسط {from_id}', 'parameters' => ['from_id']],
         'manual_approval.manual_standard_report_delivery.hash_id.2899228604' => ['text' => '🆔 {hash_id}', 'parameters' => ['hash_id']],
-        'manual_approval.manual_standard_report_delivery.message.60d43de4f9' => ['text' => '✅ تمدید ثبت شده است، اما به‌روزرسانی دکمه‌های پیام مدیر تأیید نشد.' . "\n" . '🎫 شناسه پیگیری: {hash_id}' . "\n" . 'وضعیت پیام را بررسی کنید؛ تمدید را دوباره تأیید نکنید.', 'parameters' => ['hash_id']],
-        'manual_approval.manual_standard_report_delivery.message.5eb93029eb' => ['text' => '⚠️ نتیجهٔ ساخت اکانت‌ها قطعی نیست و نیازمند بررسی است.' . "\n" . '🎫 شناسه پیگیری: {hash_id}' . "\n" . 'پرداخت را دوباره تأیید نکنید.', 'parameters' => ['hash_id']],
-        'manual_approval.manual_standard_report_delivery.message.6f4a274426' => ['text' => '⚠️ نتیجهٔ ثبت سفارش پس از عملیات سرویس قطعی نیست.' . "\n" . '🎫 شناسه پیگیری: {hash_id}' . "\n" . 'برای تطبیق اکانت‌ها و پرداخت بررسی دستی لازم است؛ دوباره تأیید نکنید.', 'parameters' => ['hash_id']],
         'manual_approval.manual_standard_report_delivery.last_remark_for_admin_msg.2b262756e6' => ['text' => '🔄 {lastRemarkForAdminMsg}', 'parameters' => ['lastRemarkForAdminMsg']],
-        'manual_approval.manual_standard_report_delivery.button.e401f3d5a2' => '🛍 خرید اشتراک جدید',
-        'manual_approval.manual_standard_report_delivery.text.1b02ee00d1' => '' . "\n" . '🔢 شماره حساب: ',
-        'manual_approval.manual_standard_report_delivery.text.29a5fe19ed' => '' . "\n" . '🎁 شناسه معرف: ',
-        'manual_approval.manual_standard_report_delivery.text.33f0297acd' => 'پیام تمدید مشتری',
-        'manual_approval.manual_standard_report_delivery.text.b24a7f8dca' => 'دکمه‌های تأیید مدیر',
-        'manual_approval.manual_standard_report_delivery.text.f91dbdba95' => 'ارسال اطلاعات سرویس مشتری',
-        'manual_approval.manual_standard_report_delivery.text.dccef59f47' => 'پیام مدیر',
-        'manual_approval.manual_standard_report_delivery.text.3345bdc147' => 'دکمه‌های مدیر',
-        'manual_approval.manual_standard_report_delivery.text.9e7605c2cd' => 'اعتبار یا پیام پاداش معرف',
-        'manual_approval.manual_standard_report_delivery.text.1b5f3e9a80' => 'اطلاع‌رسانی تکمیلی',
-        'manual_approval.manual_standard_report_delivery.message.797f106a46' => '✅ سفارش ثبت شده و عملیات سرویس در سیستم تأیید شده است، اما اطلاع‌رسانی یا پاداش در مرحلهٔ ',
-        'manual_approval.manual_standard_report_delivery.message.67ca045c30' => ['text' => ' ناقص/نامطمئن است.' . "\n" . '🎫 شناسه پیگیری: {hash_id}', 'parameters' => ['hash_id']],
-        'manual_approval.manual_standard_report_delivery.text.c46767b99f' => '' . "\n" . 'ارسال پیام یا اعتبار معرف را دستی تطبیق دهید؛ سرویس و اعتبار را دوباره اعمال نکنید.',
-        'manual_approval.manual_standard_report_delivery.message.79749fa46e' => ['text' => '⚠️ نتیجهٔ تکمیل سفارش هنوز قطعی نیست.' . "\n" . '🎫 شناسه پیگیری: {hash_id}' . "\n" . 'ابتدا پرداخت و اکانت‌های سرویس را بررسی کنید؛ تأیید را تکرار نکنید.', 'parameters' => ['hash_id']],
-        // manual_receipts.alert
         'manual_receipts.alert.0a23f88410' => 'این بخش فقط در گفتگوی خصوصی مدیر در دسترس است.',
         // manual_receipts.body
         'manual_receipts.alert.9e5ae0bfa1' => '⛔️ اطلاعات پرداخت پیدا نشد.',
@@ -1002,28 +830,12 @@ return [
     // ── درگاه‌ها و صفحه وضعیت پرداخت ──
     'gateway' => [
         // gateway_return.np_alert_operator
-        'gateway_return.perform_payment_effect.text.97b1eb9941' => 'میخواست اشتراک بخره، ظرفیت پر بود.',
-        'gateway_return.perform_payment_effect.text.bcbe393f99' => 'میخواست اشتراک بخره، اتصال به سرور برقرار نبود',
-        'gateway_return.perform_payment_effect.text.ed588b3bc9' => ['text' => 'میخواست اشتراک بخره، ولی اینباند پیدا نشد. شناسه ورودی: {inbound_id}', 'parameters' => ['inbound_id']],
-        'gateway_return.perform_payment_effect.admin_err.7ac91c73da' => 'خطای سرور ',
-        'gateway_return.perform_payment_effect.text.9d93e5efb8' => 'بدون پیام خطا',
-        'gateway_return.perform_payment_effect.text.e3675596f3' => 'میخواست اشتراک بخره، ولی خطا داد.',
         'gateway_return.perform_payment_effect.msg.8205ac68fa' => ['text' => '' . "\n" . '🛍 خرید جدید (درگاه {gateType})' . "\n" . '' . "\n" . '🎫 آیدی کاربر: {user_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '🔖 نام کاربری تلگرام: @{username}' . "\n" . '💰 مبلغ پرداختی: {amount} تومان' . "\n" . '🎈 نام اشتراک: {remark}' . "\n" . '📦 حجم اشتراک: {volume} گیگ' . "\n" . '📅 مدت اشتراک: {days} روز' . "\n" . '', 'parameters' => ['gateType', 'user_id', 'first_name', 'username', 'amount', 'remark', 'volume', 'days']],
         'gateway_return.perform_payment_effect.message.a5b15e454e' => '✅ مبلغ ',
         'gateway_return.perform_payment_effect.text.3908dcee07' => ['text' => ' تومان به کیف پول کاربر {user_id} توسط درگاه {gateType} اضافه شد.', 'parameters' => ['user_id', 'gateType']],
         'gateway_return.perform_payment_effect.msg.c281132242' => ['text' => '' . "\n" . '♻️ تمدید اشتراک (درگاه {gateType})' . "\n" . '' . "\n" . '🎫 آیدی کاربر: {user_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '🔖 نام کاربری تلگرام: @{username}' . "\n" . '💰 مبلغ پرداختی: {amount} تومان' . "\n" . '🎈 نام اشتراک: {remark}' . "\n" . '📦 حجم اشتراک: {volume} گیگ' . "\n" . '📅 مدت اشتراک: {days} روز' . "\n" . '' . "\n" . '', 'parameters' => ['gateType', 'user_id', 'first_name', 'username', 'amount', 'remark', 'volume', 'days']],
         'gateway_return.perform_payment_effect.msg.3337e72606' => ['text' => '' . "\n" . '📅 افزایش زمان اشتراک (درگاه {gateType})' . "\n" . '' . "\n" . '🎫 آیدی کاربر: {user_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '🔖 نام کاربری تلگرام: @{username}' . "\n" . '💰 مبلغ پرداختی: {amount} تومان' . "\n" . '🎈 نام اشتراک: {remark}' . "\n" . '🕚 زمان اضافه شده: {plusDays} روز' . "\n" . '', 'parameters' => ['gateType', 'user_id', 'first_name', 'username', 'amount', 'remark', 'plusDays']],
-        'gateway_return.perform_payment_effect.text.1d7ceca732' => 'میخواست زمان اشتراکشو افزایش بده',
         'gateway_return.perform_payment_effect.msg.05d5688689' => ['text' => '' . "\n" . '📦 افزایش حجم اشتراک (درگاه {gateType})' . "\n" . '' . "\n" . '🎫 آیدی کاربر: {user_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '🔖 نام کاربری تلگرام: @{username}' . "\n" . '💰 مبلغ پرداختی: {amount} تومان' . "\n" . '🎈 نام اشتراک: {remark}' . "\n" . 'حجم اضافه شده: {plusVolume} گیگ' . "\n" . '', 'parameters' => ['gateType', 'user_id', 'first_name', 'username', 'amount', 'remark', 'plusVolume']],
-        'gateway_return.perform_payment_effect.text.c7546a7b9b' => 'میخواست حجم اشتراکشو افزایش بده',
-        'gateway_return.perform_payment_effect.admin_text.b660a2780f' => ['text' => '✅ تمدید اشتراک (درگاه {gateType})' . "\n" . '' . "\n" . '', 'parameters' => ['gateType']],
-        'gateway_return.perform_payment_effect.user_i_d_user_id.8fd1cfbf5d' => ['text' => '🎫 شناسه عددی: {user_id}' . "\n" . '', 'parameters' => ['user_id']],
-        'gateway_return.perform_payment_effect.remark_remark.806b185dfd' => ['text' => 'نام اشتراک: {remark}' . "\n" . '', 'parameters' => ['remark']],
-        'gateway_return.perform_payment_effect.plan_i_d_fid.1471242965' => ['text' => 'شناسه پلن: {fid}' . "\n" . '', 'parameters' => ['fid']],
-        'gateway_return.perform_payment_effect.amount.ad7e6bbc81' => '💰 مبلغ: ',
-        'gateway_return.perform_payment_effect.text.a918020ba1' => ['text' => '📦 حجم اشتراک: {volume} گیگ' . "\n" . '', 'parameters' => ['volume']],
-        'gateway_return.perform_payment_effect.text.dc6dc4aa59' => ['text' => '📅 مدت اشتراک: {days} روز' . "\n" . '', 'parameters' => ['days']],
-        'gateway_return.perform_payment_effect.hash_i_d_hash_id.89efdc649b' => ['text' => 'شناسه پیگیری: {hash_id}', 'parameters' => ['hash_id']],
     ],
 
     // ── اعلان‌های اشتراک ──
@@ -1313,9 +1125,6 @@ return [
         'config.get_server_config_keys.text.176dbab285' => 'بدون گروه',
         'config.get_server_config_keys.button.2f6b3d0d80' => '❕نام سرور',
         'config.get_server_config_keys.button.d004e8d654' => '🚩 پرچم سرور',
-        'config.get_server_config_keys.button.e2c055db59' => '🏷 گروه پنل مشترک',
-        'config.get_server_config_keys.button.7ae29940f8' => '🔗 لینک اشتراک کمکی',
-        // config.get_server_list_keys
         'config.get_server_list_keys.button.68d7eb08ef' => 'ℹ️ وضعیت',
         'config.get_server_list_keys.button.6badcac8c1' => '⚙️ تنظیمات',
         'config.get_server_list_keys.button.b55501074d' => 'نوع',
@@ -1555,7 +1364,6 @@ return [
         'config.get_plan_details_keys.button.f2662557fe' => '✏️ ویرایش توضیحات',
         'config.get_plan_details_keys.button.433f647c69' => '💰 قیمت پلن',
         'config.get_plan_details_keys.button.c1c11f088f' => '♻️ دریافت لیست اکانت ها',
-        'config.get_plan_details_keys.button.51a75fa72c' => 'انتخاب Host',
         'config.get_plan_details_keys.button.6399e067cb' => '⚙️ گروه‌های دسترسی پلن (جایگزین پیش‌فرض)',
         'config.get_plan_details_keys.button.c3a5bc0cbd' => '✂️ حذف',
         'user_info.agent_percent' => ['text' => '🏷 درصد همکاری', 'parameters' => []],
@@ -2006,7 +1814,6 @@ return [
         'unavailable' => '⚠️ ذخیره یا بررسی دامنه تأیید نشد؛ تغییر مالی اعمال نشده است. وضعیت را بررسی کرده و دوباره تلاش کنید.',
     ],
     'manual_receipt_final' => [
-        'edit_unverified' => '⚠️ نتیجهٔ تغییر قبلی سرویس قطعی نیست یا اطلاعات تغییر کرده است؛ درخواست دوباره‌ای به پنل ارسال نمی‌شود.',
         'checking' => '⏳ در حال بررسی ادامهٔ پرداخت...',
         'back' => '↪️ بازگشت به لیست بررسی',
         'result' => ['text' => '📋 نتیجهٔ ادامهٔ پرداخت: {result}', 'parameters' => ['result']],

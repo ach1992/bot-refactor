@@ -63,7 +63,8 @@ if((preg_match('/^discountSelectPlan(\d+)_(\d+)_(\d+)/',$userInfo['step'],$match
         }         
     } 
     elseif(preg_match("/enterAccountName(\d+)_(\d+)/",$userInfo['step'])){ 
-        if(preg_match('/^[a-z]+[0-9]+$/',$text)){ 
+        require_once __DIR__.'/../Panel/AccountNaming.php';
+        if(is_string($text) && achbotEffectValidUsername($text,'pasarguard') && preg_match('/^[a-z]+[0-9]+$/D',$text)){
             $remark = $text; 
             setUser(); 
         } else{ 

@@ -184,6 +184,19 @@ function achbotCheckoutAdmitDraftLocked(mysqli $db,array $pay,?array $attempt,
             throw new DomainException('checkout_topup_method_invalid');
         return null;
     }
+    // New service admission must be able to journal and protect its original
+    // result before taking money. Existing issued receipts remain creditable
+    // independently of service readiness.
+    require_once __DIR__.'/ServiceDelivery.php';
+    require_once __DIR__.'/FollowupOutbox.php';
+    require_once __DIR__.'/../Services/EditFinalization.php';
+    if (!achbotServiceDeliverySchemaReady($db) || !achbotFollowupSchemaReady($db) ||
+        !achbotServiceMutationSchemaReady($db) || !achbotAddonSchema($db))
+        throw new RuntimeException('checkout_service_schema_unavailable');
+    if ($pay['type']==='BUY_SUB') {
+        require_once __DIR__.'/../Subscription/ServerDisplaySettings.php';
+        achbotRequireServerDisplay($db,(int)$pay['server_id'],achbotProviderType($db,(int)$pay['server_id']));
+    }
     if ($pay['checkout_operation_id']!==null) {
         [$op]=achbotCheckoutOriginalCommandLocked($db,$pay);
         if ($op['stage']!=='awaiting_funds') throw new DomainException('checkout_original_command_closed');

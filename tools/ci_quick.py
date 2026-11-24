@@ -28,41 +28,25 @@ NATIVE_TESTS = (
     ("wallet_first_cutover_openings", "test_wallet_first_cutover.py"),
     ("wallet_first_credit", "test_wallet_first_credit.py"),
     ("wallet_first_funding", "test_wallet_first_funding.py"),
+    ("wallet_first_retirement", "test_wallet_first_retirement.py"),
     ("wallet_first_hosted", "test_wallet_first_hosted.py"),
     ("wallet_first_manual", "test_wallet_first_manual.py"),
     ("wallet_first_service_execution", "test_wallet_first_service_execution.py"),
     # PASS characterizes the current unsafe remote ordering; not acceptance.
     ("native_write_counterexample", "test_wallet_first_native_write_fence.py"),
-    ("api_payments", "test_post_v9_scoped_api_pg.py"),
-    ("postcutover_recovery", "test_post_v9_pg_cutover_recovery.py"),
     ("native_import_name_reuse", "test_post_v9_import_name_reuse.py"),
     ("native_import_alias_duplicate", "test_post_v9_import_alias_duplicate.py"),
     ("delete_reconfirmation", "test_post_v9_delete_recovery.py"),
-    ("nowpayments_finality", "test_stable_nowpayments.py"),
     ("direct_gift_native", "test_post_v9_direct_gift_native.py"),
-    ("automatic_renewal", "test_post_v9_automatic_renewal.py"),
-    ("bank_purchase", "test_post_v9_bank_buy.py"),
     ("gateway_rules", "test_post_v9_gateway_rules.py"),
-    ("wallet_checkout", "test_post_v9_wallet_checkout.py"),
-    ("wallet_archive_schema_modes", "test_post_v9_wallet_archive_schema_modes.py"),
-    ("wallet_sconfig_finality", "test_post_v9_wallet_sconfig.py"),
-    ("wallet_marzban_target", "test_post_v9_wallet_marzban_target.py"),
-    ("wallet_pg_recovery", "test_post_v9_wallet_edit_recovery.py"),
-    ("wallet_original_renewal", "test_post_v9_wallet_renewal_recovery.py"),
-    ("wallet_original_buy_and_marzban", "test_post_v9_wallet_original_recovery.py"),
-    ("wallet_original_buy_pasarguard", "test_post_v9_wallet_pg_original_recovery.py"),
     ("indexed_payment_locks", "test_post_v9_payment_lock_scope.py"),
-    ("service_effects", "test_post_v9_service_effects.py"),
     ("pasarguard_http", "test_post_v9_pasarguard_client.py"),
-    ("low_wallet_reentry", "test_post_v9_low_wallet_reentry.py"),
     ("admin_wallet", "test_post_v9_admin_wallet.py"),
     ("payment_ux", "test_post_v9_payment_ux_lifecycle.py"),
     ("nonpaid_trial_bulk", "test_post_v9_nonpaid_routes.py"),
-    ("provider_registry", "test_unified_provider_registry.py"),
     ("subscription_status_copy", "test_post_v9_subscription_status_detail.py"),
     ("management_menu_context", "test_unified_management_menus.py"),
     ("payment_api_admin", "test_post_v9_payment_api_admin.py"),
-    ("scoped_pg_payments", "test_post_v9_scoped_pg_payments.py"),
     ("onboarding", "test_post_v9_onboarding.py"),
     ("agency_current", "test_post_v9_agency.py"),
     ("api_staff_permissions", "test_post_v9_api_staff_digest.py"),
@@ -74,9 +58,6 @@ OTHER_TESTS = (
     ("wallet_transfer", ("python3", "tools/test_post_v9_wallet_transfer.py",
         "--run-disposable", "--current-only"), "report"),
     ("evidence_http_privacy", ("python3", "tools/test_post_v9_evidence_http_diagnostics.py"), "report"),
-    ("manual_unknown_redrive",
-     ("python3", "tools/test_owner_r6_api_flow.py", "--run-disposable", "--ci-redrive"),
-     "report"),
     ("cron_runner", ("python3", "tools/test_post_v9_cron_runner.py"), "report"),
     ("payment_reference", ("python3", "tools/test_post_v9_payment_identity.py"), "stdout"),
     ("wallet_callback_dispatch", ("python3", "tools/test_post_v9_wallet_callback_dispatch.py"), "stdout"),
@@ -99,9 +80,60 @@ OTHER_TESTS = (
      ("python3", "tools/test_post_v9_telegram_html_management_gift.py"), "stdout"),
     ("telegram_html_plan_prompts",
      ("python3", "tools/test_post_v9_telegram_html_plan_prompts.py"), "stdout"),
-    ("marzban_bearer", ("python3", "tools/test_post_v9_marzban_bearer.py"), "stdout"),
 )
 
+
+# Replaced execution families must be covered by affirmative named cases,
+# not merely removed from the roster. See docs/post-v9/CI-VALIDATION.md.
+REQUIRED_CURRENT_CASES = {
+    "wallet_first_service_execution": (
+        "five_real_wallet_callbacks_owner_schema_and_replay_fences",
+        "actual_low_wallet_callback_switch_to_manual",
+        "invalid_native_names_never_debit_or_allocate",
+        "retired_external_renewal_and_provider_denied",
+        "actual_bulk_checkout_draft",
+        "actual_custom_draft_and_review_completion_truth",
+        "actual_renew_checkout_draft",
+        "actual_scoped_day_manual_checkout_draft",
+        "actual_scoped_volume_manual_checkout_draft",
+        "historical_prepaid_create_lost_response_completion_rollback_no_second_debit_or_capacity",
+        "historical_auto_alias_pending_and_terminal_cycle_fenced",
+        "automatic_renewal_alias_single_charge_original_notice",
+        "alias_fence_and_lost_put_absolute_addons",
+        "local_commit_failure_recovery",
+        "reset_ack_with_new_traffic_no_repeat_on_put_outage",
+        "manual_rejection_cancels_original_and_recovers_notice_without_money",
+        "actual_private_operator_delivery_and_report_confirmation_once",
+    ),
+    "wallet_first_manual": (
+        "bank_transfer_actual_issue_and_manual_approval",
+        "gift_card_actual_issue_and_manual_approval",
+        "manual_usdt_actual_issue_and_manual_approval",
+        "manual_trx_actual_issue_and_manual_approval",
+        "actual_explicit_timer",
+        "actual_bank_scan_lost_remote_ack_service_invalidated",
+        "superseded_submitted_api_receipt_credits_without_service",
+        "actual_gift_proven_local_rollback_then_archive",
+    ),
+    "wallet_first_hosted": (
+        "actual_public_nextpay_checkout_and_return",
+        "actual_public_zarinpal_checkout_and_return",
+        "actual_public_nowpayment_checkout_and_return",
+        "signed_child_verified_exact_quote_once",
+        "actual_admission_lost_creation_original_secret_ipn_recovery_and_poll_once",
+    ),
+    "wallet_first_funding": (
+        "registered_native_gateway_same_engines_once",
+        "registered_gateway_foreign_evidence_rejected_by_core",
+        "registered_new_manual_method_same_credit_once",
+    ),
+    "wallet_first_retirement": (
+        "checkout_command_schema_missing:wallet_schema_gate",
+        "checkout_command_schema_partial:wallet_schema_gate",
+        "checkout_command_schema_invalid:wallet_schema_gate",
+        "accepted:schema_accepted",
+    ),
+}
 
 def git(*args: str) -> str:
     return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
@@ -140,6 +172,14 @@ def validate_proof(name: str, raw: str) -> dict:
     if (proof.get("complete") is not True and proof.get("pass") is not True and
             proof.get("status") != "PASS" and proof.get("result") != "PASS"):
         raise ValueError(f"{name}: no affirmative current functional test result")
+    if name in REQUIRED_CURRENT_CASES:
+        reported = proof.get("checks", proof.get("case_names", []))
+        if not isinstance(reported, list):
+            raise ValueError(f"{name}: missing named current cases")
+        for case in REQUIRED_CURRENT_CASES[name]:
+            for mode in ("strict", "off"):
+                if f"{mode}:{case}" not in reported and f"{mode}_{case}" not in reported:
+                    raise ValueError(f"{name}: missing {mode}:{case}")
     cases = proof.get("cases")
     if type(cases) is int and cases <= 0:
         raise ValueError(f"{name}: empty test cases")
@@ -199,22 +239,12 @@ def main() -> int:
         temp_base = Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir())
         with tempfile.TemporaryDirectory(prefix="achbot-ci-stable-", dir=temp_base) as folder:
             work = Path(folder)
-            # The bank-purchase fixture seeds both original-schema databases.
-            # Running that seed concurrently with the long PHP/API MariaDB
-            # fixture loop can starve one genuine SQL import beyond its
-            # existing 30-second deadline on a small CI runner. Exercise the
-            # bank case once, alone, then retain parallelism for the rest.
-            # Never turn a timed-out/failed fixture into a synthetic PASS.
-            isolated = next((case for case in tests if case[0] == "bank_purchase"), None)
-            if isolated is None:
-                raise RuntimeError("bank_purchase acceptance missing")
-            early = run_case(isolated, work)
-            remaining = [case for case in tests if case[0] != isolated[0]]
-            with ThreadPoolExecutor(max_workers=min(workers, len(remaining))) as pool:
-                futures = [pool.submit(run_case, spec, work) for spec in remaining]
+            # The obsolete bank-purchase double-schema fixture no longer
+            # runs. Schedule the current service/Native suites directly.
+            with ThreadPoolExecutor(max_workers=min(workers, len(tests))) as pool:
+                futures = [pool.submit(run_case, spec, work) for spec in tests]
                 executed = {x["name"]: x for task in as_completed(futures)
                             for x in [task.result()]}
-            executed[isolated[0]] = early
             results.extend(executed[spec[0]] for spec in tests)
 
     success = all(item["status"] == "PASS" for item in results)

@@ -155,7 +155,11 @@ def main():
         path.write_text(raw.replace(needle,needle+'''
         'fixture_native'=>array_fill_keys(achbotProviderRequiredOperations(),'achbotFixtureUnexpectedLegacyCall')+[
             'label'=>'admin_settings.management.pasarguard',
-            'service_target'=>'achbotFixtureServiceTargetLocked'],
+            'service_target'=>'achbotFixtureServiceTargetLocked',
+            // Only funding is exercised by this fixture; declaration of both
+            // phases is required, and accidentally dispatching fails loudly.
+            'service_execution'=>['BUY'=>array_fill_keys(['prepare','perform','apply'],'achbotFixtureUnexpectedLegacyCall')],
+            'service_finalization'=>['BUY'=>array_fill_keys(['prepare','perform','apply'],'achbotFixtureUnexpectedLegacyCall')]],
 ''',1)+'''
 function achbotFixtureUnexpectedLegacyCall(...$args) {
     throw new RuntimeException('fixture_must_not_use_legacy_dispatch');

@@ -335,7 +335,7 @@ function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows,
     if (!$ids || count($ids)>10000)
         throw new RuntimeException('physical_payment_subject_invalid');
     $mode=achbotManualLedgerMode($db);
-    if (!in_array($mode,['legacy','current'],true))
+    if ($mode!=='current')
         throw new RuntimeException('physical_payment_ledger_unavailable');
     $apiColumns=false;
     if ($mode==='current') {
