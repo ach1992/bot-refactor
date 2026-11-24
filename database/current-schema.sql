@@ -234,8 +234,6 @@ CREATE TABLE `payment_attempts` (
   `evidence_review_sent_at` datetime DEFAULT NULL,
   `evidence_projection_checked_at` datetime DEFAULT NULL,
   `evidence_staff_digest` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  `review_archived_at` datetime DEFAULT NULL,
-  `review_archived_by` bigint(20) unsigned DEFAULT NULL,
   `wallet_invoice_sha256` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `wallet_merchant_profile` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `wallet_credit_entry_id` bigint(20) unsigned DEFAULT NULL,

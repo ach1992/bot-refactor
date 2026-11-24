@@ -12,22 +12,6 @@ require_once __DIR__.'/CheckoutRoutes.php';
 require_once __DIR__.'/HostedReceipt.php';
 require_once __DIR__.'/../Admin/Access.php';
 
-function achbotGatewayReviewReady(mysqli $db): bool {
-    try {
-        $q=$db->query('SELECT id,pay_row_id,provider,stage,provider_status,
-            review_archived_at,review_archived_by FROM payment_attempts LIMIT 0');
-        $q->free();
-        $q=$db->query("SHOW INDEX FROM payment_attempts WHERE Key_name='uq_payment_attempt_pay_row'");
-        $cols=[];
-        while ($r=$q->fetch_assoc()) {
-            if ((int)$r['Non_unique']!==0) return false;
-            $cols[(int)$r['Seq_in_index']]=(string)$r['Column_name'];
-        }
-        ksort($cols);
-        return array_values($cols)===['pay_row_id'];
-    } catch (Throwable $error) {return false;}
-}
-
 /** Current committed local state, NOT a claim that merchant funds settled.
  * A recorded remote CREATE/credit disqualifies all further decisions.
  * Aged unpaid invoices never enter the queue. Genuine provider evidence
@@ -36,8 +20,7 @@ function achbotGatewayReviewReady(mysqli $db): bool {
 function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
     string $decision,bool $lock=false): ?array {
     if ($attemptId<=0 || !in_array($decision,['approve','reject'],true)) return null;
-    $q=$db->prepare("SELECT pay_row_id FROM payment_attempts
-        WHERE id=? AND provider IN ('nowpayments','zarinpal','nextpay') LIMIT 1");
+    $q=$db->prepare('SELECT pay_row_id FROM payment_attempts WHERE id=? LIMIT 1');
     $q->bind_param('i',$attemptId);$q->execute();$r=$q->get_result()->fetch_assoc();$q->close();
     if (!$r) return null;
     $payId=(int)$r['pay_row_id'];$suffix=$lock?' FOR UPDATE':'';
@@ -47,8 +30,8 @@ function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
         FROM payment_attempts WHERE id=? AND pay_row_id=?'.$suffix);
     $q->bind_param('ii',$attemptId,$payId);$q->execute();
     $a=$q->get_result()->fetch_assoc();$q->close();
-    if (!$pay || !$a || ($a['review_archived_at']??null)!==null ||
-        !in_array((string)$pay['state'],['pending','send'],true) ||
+    if (!$pay || !$a ||
+        !in_array((string)$pay['state'],['pending','send','service_superseded'],true) ||
         (int)$pay['price']<=0 ||
         (int)$a['local_amount_toman']!==(int)$pay['price'] ||
         !hash_equals((string)$pay['hash_id'],(string)$a['order_hash']) ||
@@ -59,21 +42,15 @@ function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
     if ($a['wallet_credit_entry_id']!==null || !is_string($a['wallet_invoice_sha256']) ||
         !hash_equals($a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$a))) return null;
     $provider=(string)$a['provider'];
-    if ($provider==='nowpayments') {
-        if (strtolower((string)$a['quote_currency'])!=='usd' ||
-            !achbotNpDecimalAtLeast($a['quote_amount'],'0.00000001')) return null;
-    } else {
-        if (strtolower((string)$a['quote_currency'])!=='toman' ||
-            !achbotNpDecimalAtLeast($a['quote_amount'],(string)$pay['price']) ||
-            !achbotNpDecimalAtLeast((string)$pay['price'],$a['quote_amount']) ||
-            (string)($a['payment_id']??'')!=='') return null;
-    }
+    $hosted=achbotHostedReceiptDefinition($provider);
+    if (!$hosted || (!$hosted['child_transactions'] && (string)($a['payment_id']??'')!=='')) return null;
+    // The invoice fingerprint already invokes the registered quote validator.
     $stage=(string)$a['stage'];$status=(string)($a['provider_status']??'');
     // Staff cannot approve a waiting invoice on elapsed time alone or while
     // a real verifier is running. Human decision is only for a trusted
     // provider observation or a verified merchant-transport outage.
     if ($stage!=='review') return null;
-    if ($provider==='nowpayments') {
+    if ($hosted['child_transactions']) {
         // A merchant-confirmed refund permits closing the *original* local
         // quote as declined, never approving it or refunding anything again.
         if ($status==='refunded') {
@@ -98,7 +75,7 @@ function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
     foreach ($children as $child) {
         $childId=(string)$child['payment_id'];
         $seen=(string)$child['observed_status'];
-        if ($provider==='nowpayments' && $childId!==$primary &&
+        if ($hosted['child_transactions'] && $childId!==$primary &&
             in_array($seen,['confirming','confirmed','sending','partially_paid','finished'],true))
             return null;
         if ($decision==='reject' &&
@@ -116,13 +93,6 @@ function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
         'pay'=>$pay,'attempt'=>$a,'children'=>$children],
         JSON_THROW_ON_ERROR|JSON_UNESCAPED_SLASHES));
     return ['pay'=>$pay,'attempt'=>$a,'digest'=>$digest,'provider'=>$provider];
-}
-
-/** A committed receipt is not proof of completed service execution. */
-function achbotGatewayReviewCompletionStatus(mysqli $db,?int $operation): string {
-    if ($operation===null) return 'completed';
-    $row=achbotProviderRow($db,'SELECT stage,resolution_kind FROM service_operations WHERE id=?','i',[$operation]);
-    return ($row['stage']??null)==='completed' && $row['resolution_kind']===null?'completed':'unknown';
 }
 
 /** One human decision, serialized against receipt verification and using
@@ -152,18 +122,29 @@ function achbotGatewayReviewCommit(mysqli $db,int $actor,int $attemptId,
                         'merchant_profile_sha256'=>hash('sha256',$attempt['wallet_merchant_profile']),
                         'review_digest'=>$locked['digest']],$actor,$primaryOwner);
                 } else {
-                    $s=achbotProviderStatement($db,"UPDATE payment_attempts SET stage='done',provider_status='operator_rejected' WHERE id=?",
-                        'i',[$attemptId]);$s->close();
-                    $s=achbotProviderStatement($db,"UPDATE pays SET state='declined',approved_by=? WHERE id=?",
-                        'ii',[$actor,$id]);$s->close();
-                    if ($attempt['service_operation_id']!==null)
-                        achbotServiceCancelUnfundedLocked($db,$uid,(int)$attempt['service_operation_id']);
+                    $pay=achbotCheckoutRejectUnfundedLocked($db,$current,$attempt,$actor,$primaryOwner);
+                    require_once __DIR__.'/FollowupOutbox.php';
+                    achbotFollowupInsertLocked($db,$pay,'manual_reject','customer','send',(string)$uid,null,
+                        ['text'=>achbotMessageHtml('automatic_gateway_review.rejected_customer',
+                            ['hash'=>$pay['hash_id'],'amount'=>number_format((int)$pay['price'])]),'keys'=>null,'mode'=>'HTML']);
+                    achbotFollowupStageAdminReportLocked($db,$id,null,'manual_reject',
+                        achbotPaymentEvidencePayFingerprint($pay),$primaryOwner,(string)($GLOBALS['botState']['rewardChannel']??''),
+                        ['text'=>achbotMessageHtml('automatic_gateway_review.rejected_report',[
+                            'id'=>$attemptId,'user'=>$uid,'amount'=>number_format((int)$pay['price']),'hash'=>$pay['hash_id']]),
+                            'keys'=>null,'mode'=>'HTML']);
                 }
                 if (!$db->commit()) throw new RuntimeException('gateway_review_commit');
             } catch (Throwable $e) {$db->rollback();throw $e;}
-            if ($decision==='reject') return ['status'=>'rejected','pay'=>$pay];
+            if ($decision==='reject') {
+                try {achbotFollowupDispatchPending($db,$id,'manual_reject');}
+                catch (Throwable $e) {
+                    achbotDiagnosticEvent('achbot.finance.gateway_review_report',
+                        ['pay_id'=>$id,'class'=>get_class($e)],'warning');
+                }
+                return ['status'=>'rejected','pay'=>$pay];
+            }
             achbotCheckoutAdvance($db,$r['operation'],$id);
-            return ['status'=>achbotGatewayReviewCompletionStatus($db,$r['operation']),'pay'=>$pay];
+            return ['status'=>achbotCheckoutReceiptOutcome($db,$id),'pay'=>$pay];
         } finally {achbotOriginalDispatchLeaseEnd($db,$id,$lease);}
     } catch (Throwable $e) {
         achbotDiagnosticEvent('achbot.finance.gateway_review',['attempt_id'=>$attemptId,'class'=>get_class($e)],'warning');
@@ -173,14 +154,16 @@ function achbotGatewayReviewCommit(mysqli $db,int $actor,int $attemptId,
 
 /** Recovery uses the original encrypted merchant credential and shared verifier. */
 function achbotGatewayReviewRecover(mysqli $db,int $actor,int $attemptId,
-    int $primaryOwner,array $paymentKeys=[]): array {
+    int $primaryOwner): array {
     if (!achbotAdminCanFor($db,$actor,$primaryOwner,'payments')) return ['status'=>'denied'];
     $r=achbotProviderRow($db,"SELECT a.pay_row_id,p.user_id,a.provider,a.provider_reference,a.payment_id
         FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
-        WHERE a.id=? AND a.review_archived_at IS NULL AND a.wallet_invoice_sha256<>''",'i',[$attemptId]);
+        WHERE a.id=? AND a.wallet_invoice_sha256<>''",'i',[$attemptId]);
     if (!$r) return ['status'=>'stale'];
     $id=(int)$r['pay_row_id'];
-    $reference=$r['provider']==='nowpayments'?$r['payment_id']:$r['provider_reference'];
+    $hosted=achbotHostedReceiptDefinition($r['provider']);
+    if (!$hosted) return ['status'=>'stale'];
+    $reference=$hosted['child_transactions']?$r['payment_id']:$r['provider_reference'];
     if (!is_string($reference) || $reference==='') return ['status'=>'stale'];
     $lease=achbotOriginalDispatchLeaseBegin($db,$id);
     if ($lease!=='owned') return ['status'=>$lease==='busy'?'busy':'unavailable'];
@@ -189,63 +172,7 @@ function achbotGatewayReviewRecover(mysqli $db,int $actor,int $attemptId,
         $result=achbotHostedReceiptVerify($db,$id,(int)$r['user_id'],$r['provider'],$reference);
         if ($result['status']!=='credited') return ['status'=>'unknown'];
         achbotCheckoutAdvance($db,$result['operation'],$id);
-        return ['status'=>achbotGatewayReviewCompletionStatus($db,$result['operation'])];
+        return ['status'=>achbotCheckoutReceiptOutcome($db,$id)];
     } catch (Throwable $e) {return ['status'=>'unavailable'];}
     finally {achbotOriginalDispatchLeaseEnd($db,$id,$lease);}
-}
-
-/** Archive only local execution. Never reverse an existing debit or fabricate
- * a payment attempt. Both worker session locks fence the entire action. */
-function achbotCheckoutArchive(mysqli $db,int $actor,int $payId,int $primary,int $attemptId): string {
-    if (!achbotAdminCanFor($db,$actor,$primary,'payments')) return 'denied';
-    $lease=achbotOriginalDispatchLeaseBegin($db,$payId);
-    if ($lease!=='owned') return $lease==='busy'?'busy':'unavailable';
-    $lock=null;
-    try {
-        $loc=achbotProviderRow($db,'SELECT user_id,checkout_operation_id FROM pays WHERE id=?','i',[$payId]);
-        if (!$loc) return 'stale';
-        $opId=(int)$loc['checkout_operation_id'];
-        if ($opId>0) {
-            require_once __DIR__.'/../Services/Execution.php';
-            $name=achbotServiceExecutionLock($db,$opId);
-            $r=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
-            if ((int)($r['acquired']??0)!==1) return 'busy';
-            $lock=$name;
-        }
-        if (!$db->begin_transaction()) throw new RuntimeException('gateway_archive_begin');
-        try {
-            $pay=achbotCheckoutPayLocked($db,$payId,(int)$loc['user_id']);
-            $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
-            if ((int)$pay['checkout_operation_id']!==$opId ||
-                (!$a || (int)$a['id']!==$attemptId) ||
-                !achbotProviderRow($db,'SELECT p.id FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id
-                    WHERE p.id=? AND '.achbotGatewayAttentionReceiptScope(),'i',[$payId])) {$db->rollback();return 'stale';}
-            if (!achbotAdminCanLocked($db,$actor,$primary,'payments')) {$db->rollback();return 'denied';}
-            if ($opId>0) {
-                [$op]=achbotServiceReadLocked($db,(int)$loc['user_id'],$opId);
-                if ($op['stage']==='awaiting_funds')
-                    achbotServiceCancelUnfundedLocked($db,(int)$loc['user_id'],$opId);
-                elseif (in_array($op['stage'],['funded','prepared','dispatching','applied'],true)) {
-                    $db->rollback();return 'service_resolution_required';
-                }
-            }
-            if ($a!==null) {
-                $s=achbotProviderStatement($db,"UPDATE payment_attempts SET review_archived_at=UTC_TIMESTAMP(),review_archived_by=?
-                    WHERE id=? AND review_archived_at IS NULL",'ii',[$actor,$attemptId]);$s->close();
-            }
-            if (!$db->commit()) throw new RuntimeException('gateway_archive_commit');
-            return 'archived';
-        } catch (Throwable $e) {$db->rollback();throw $e;}
-    } catch (Throwable $e) {return 'unavailable';}
-    finally {
-        if ($lock!==null) {
-            $s=achbotProviderStatement($db,'SELECT RELEASE_LOCK(?)','s',[$lock]);$s->close();
-        }
-        achbotOriginalDispatchLeaseEnd($db,$payId,$lease);
-    }
-}
-function achbotGatewayReviewArchive(mysqli $db,int $actor,int $attemptId,int $primaryOwner): string {
-    if (!achbotAdminCanFor($db,$actor,$primaryOwner,'payments')) return 'denied';
-    $a=achbotProviderRow($db,'SELECT pay_row_id FROM payment_attempts WHERE id=?','i',[$attemptId]);
-    return $a?achbotCheckoutArchive($db,$actor,(int)$a['pay_row_id'],$primaryOwner,$attemptId):'stale';
 }

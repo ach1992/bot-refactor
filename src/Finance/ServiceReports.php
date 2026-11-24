@@ -210,7 +210,6 @@ function achbotServiceStageCompletionReportsLocked(mysqli $db,array $op,array $q
 function achbotServiceManualNoticeActor(array $source): ?int {
     $receipt=$source['receipt'];
     if ($receipt===null || $receipt['attempt']['wallet_credit_basis']!=='manual' ||
-        $receipt['attempt']['review_archived_at']!==null ||
         achbotReceiptReportGateway($receipt['attempt'])!==null) return null;
     $actor=$receipt['entry']['actor'];
     return $actor>0?$actor:null;

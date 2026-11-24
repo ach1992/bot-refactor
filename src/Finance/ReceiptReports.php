@@ -17,10 +17,10 @@ function achbotReceiptReportGateway(array $attempt): ?string {
 
 /** Original receipt copies have a distinct audience from unsolicited
  * financial reports. Current staff permission and exact message pair must
- * both hold. An archived receipt is not reopened by a late financial credit. */
+ * both hold. A late verified credit updates the original payment receipt. */
 function achbotReceiptReportEditAllowed(mysqli $db,array $source,array $r): bool {
     $pay=$source['pay'];$a=$source['attempt'];$role=$r['role'];
-    if ($a['review_archived_at']!==null || achbotReceiptReportGateway($a)!==null ||
+    if (achbotReceiptReportGateway($a)!==null ||
         $r['kind']!=='edit' || (int)$r['message_id']<=0 ||
         !in_array($role,['receipt_primary','receipt_mirror'],true)) return false;
     $who=(int)$r['recipient'];$message=(int)$r['message_id'];
@@ -41,7 +41,7 @@ function achbotReceiptReportEditAllowed(mysqli $db,array $source,array $r): bool
 function achbotReceiptReportStageEditsLocked(mysqli $db,array $source,?int $payId,?int $serviceId,
     string $stage,string $fingerprint,string $subject,bool $walletOnly=false): void {
     $pay=$source['pay'];$a=$source['attempt'];$basis=$a['wallet_credit_basis'];
-    if ($a['review_archived_at']!==null || achbotReceiptReportGateway($a)!==null) return;
+    if (achbotReceiptReportGateway($a)!==null) return;
     if ($basis==='bank_timer') {
         $keys=json_encode(['inline_keyboard'=>[[[
             'text'=>achbotMessage('manual_payment.automatic_receipts.text.2898f8f112'),

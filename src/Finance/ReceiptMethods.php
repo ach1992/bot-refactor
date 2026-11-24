@@ -72,6 +72,19 @@ function achbotCreditMethodDefinition(string $key): ?array {
     return $method;
 }
 
+/** Shared classification and SQL selectors derive from the same registered
+ * capabilities. Keys are source-owned and validated before SQL interpolation. */
+function achbotCreditMethodHas(string $key,string $capability): bool {
+    $method=achbotCreditMethodDefinition($key);
+    return isset($method[$capability]);
+}
+function achbotCreditMethodSqlList(string $capability): string {
+    $keys=[];
+    foreach (array_keys(achbotCreditMethodRegistry()) as $key)
+        if (achbotCreditMethodHas($key,$capability)) $keys[]="'".$key."'";
+    return $keys?implode(',',$keys):'NULL';
+}
+
 function achbotCreditValidateManualInvoice(array $pay,array $attempt): void {
     if ((string)($pay['payid']??'')!=='' ||
         achbotManualIntentDecode((string)($attempt['checkout_url']??''),(string)$attempt['provider'])===null)
@@ -189,7 +202,6 @@ function achbotCreditBankTimerEligibleLocked(mysqli $db,array $pay,array $attemp
 function achbotCreditValidateManualReceiptLocked(mysqli $db,array $pay,array $attempt): void {
     if (!in_array($pay['state'],['have_sent','service_superseded'],true) ||
         $attempt['stage']!=='review' ||
-        ($attempt['review_archived_at']??null)!==null ||
         (int)($pay['message_id']??0)<=0 || (int)($pay['chat_id']??0)===0)
         throw new RuntimeException('payment_credit_manual_receipt');
     $intent=achbotManualIntentDecode((string)$attempt['checkout_url'],(string)$attempt['provider']);
@@ -224,7 +236,7 @@ function achbotCreditVerifyTimerLocked(mysqli $db,array $pay,array $attempt,arra
     return null;
 }
 function achbotCreditVerifyApiLocked(mysqli $db,array $pay,array $attempt,array $proof,int $actor,int $primary): ?int {
-    if ($actor!==0 || !achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof,true))
+    if ($actor!==0 || !achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof))
         throw new RuntimeException('payment_credit_api_proof');
     return (int)$proof['transaction_id'];
 }

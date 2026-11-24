@@ -79,6 +79,7 @@ if ($c['op']==='browser_return') {
 define('ACHBOT_NP_RECONCILE_ONLY',true);
 require $argv[1].'/src/Finance/HostedReceipt.php';
 require $argv[1].'/src/Finance/GatewayReturn.php';
+require_once $argv[1].'/src/Finance/GatewayReview.php';
 try {
     $id=(int)($c['id']??0);$owner=(int)($c['owner']??1001);
     $r=match ($c['op']) {
@@ -88,6 +89,8 @@ try {
         'verify'=>achbotHostedReceiptVerify($db,$id,$owner,$c['method'],$c['ref']),
         'ipn'=>achbotHostedReceiptIngestIpn($db,$c['raw'],$c['sig']),
         'maintain'=>achbotHostedReceiptMaintain($db,3),
+        'review'=>achbotGatewayReviewCommit($db,(int)($c['actor']??9001),(int)$c['attempt'],$c['decision'],9001),
+        'outcome'=>achbotCheckoutReceiptOutcome($db,$id),
         default=>throw new RuntimeException('fixture_unknown_op')
     };
     if ($c['lost_ack']??false) exit(19);
@@ -298,6 +301,32 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                 assert bal()==b+100
                 sql("UPDATE server_info SET active=1 WHERE id=2")
                 case('actual_hosted_service_receipt_survives_disabled_panel')
+                oid=int(subprocess.check_output(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',str(qdriver),str(source),str(work/'mysql.sock'),DB,mode+'-rejected-service'],env=env,text=True))
+                pid=seed(mode+'-rejected',kind='BUY_SUB');ref=mode+'-rejected-id'
+                responses['/next/issue']=(200,dict(code=-1,trans_id=ref))
+                assert issue(mode,pid,'nextpay',service=oid)['status']=='issued'
+                responses['/next/verify']=(503,dict(code=0))
+                assert verify(mode,pid,'nextpay',ref)['status']=='unavailable'
+                aid=int(sql(f'SELECT id FROM payment_attempts WHERE pay_row_id={pid}'))
+                b=bal()
+                assert result(mode,'review',attempt=aid,decision='reject',actor=1001)['status']=='denied'
+                r=result(mode,'review',attempt=aid,decision='reject')
+                assert r['status']=='rejected',r
+                assert result(mode,'review',attempt=aid,decision='reject')['status']=='stale'
+                assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject'")=='2'
+                assert bal()==b
+                # A later unverified observation cannot reopen the declined receipt.
+                assert verify(mode,pid,'nextpay',ref)['status']=='unavailable'
+                assert sql(f'SELECT stage FROM payment_attempts WHERE id={aid}')=='done'
+                responses['/next/verify']=(200,dict(code=0))
+                r=verify(mode,pid,'nextpay',ref)
+                assert r['funding']=='request_invalidated' and bal()==b+100,r
+                assert result(mode,'outcome',id=pid)=='wallet_credited'
+                assert verify(mode,pid,'nextpay',ref)['credit']['replayed'] and bal()==b+100
+                assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
+                case('hosted_rejection_shared_outbox_late_verified_credit_no_service')
+
                 pid=seed(mode+'-lost-ack');ref=mode+'-ack-ref'
                 responses['/next/issue']=(200,dict(code=-1,trans_id=ref))
                 issue(mode,pid,'nextpay')

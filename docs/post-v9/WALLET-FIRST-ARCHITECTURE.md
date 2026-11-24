@@ -106,11 +106,11 @@ The approved recovery contract is recorded in [Issue #204](https://github.com/ac
 
 The common service attention surface is keyed by service operation, including scheduled renewals with no payment row. Retry continues the original operation immediately without another debit. Closing without a refund is available only for edits. Cancellation/refund is an explicit terminal decision: BUY retains each successfully recorded ordinal and its delivery intent, and returns only the unfulfilled original allocation through the common wallet ledger. Each ordinal is finalized before attempting the next. No refund may conceal an existing unrecorded Native account; reconcile it first. An uncertain outcome requires an explicit operator assertion based on external verification, not an assumption of failure. Remote requests are not guaranteed to be quiescent merely because a local request timed out. Automatic renewal refund disables automatic renewal until deliberately enabled again.
 
-Resolution, refund entry, capacity release, physical ownership release and reports are committed together. No service archive can hide nonterminal operations or retain stale ownership. Receipt archive is a separate financial intake decision, never service disposition. Subsequent verified receipts may credit the wallet but must not resurrect a resolved operation. Delivery and report recovery reuses immutable payloads, with a fresh actor-bound confirmation for an unknown send.
+Resolution, refund entry, capacity release, physical ownership release and reports are committed together. No archive action or state remains for receipts or services. Unverified receipts use explicit approval/rejection or evidence recheck; unresolved funded operations remain visible until an actual resolution. Subsequent verified receipts may credit the wallet but must not resurrect a resolved operation. Delivery and report recovery reuses immutable payloads, with a fresh actor-bound confirmation for an unknown send.
 
-The payment archive column, payment evidence, service-effect table and shared plan journal are mandatory current storage. Missing schema cannot authorize a mutation. Only current plan intent format 2 is executable; earlier plans are not replayed.
+Payment evidence, service-effect table and shared plan journal are mandatory current storage; both receipt archive columns are retired. Missing schema cannot authorize a mutation. Only current plan intent format 2 is executable; earlier plans are not replayed.
 
-035 is schema construction evidence only. Fresh installations use the consolidated empty current schema, not a migration chain. Preserve real account provenance and financial history during the separately authorized manual transfer; do not import obsolete interaction state as runnable work.
+035–037 are schema construction evidence only. Fresh installations use the consolidated empty current schema, not a migration chain. Preserve real account provenance and financial history during the separately authorized manual transfer; do not import obsolete interaction state as runnable work.
 
 ## 2. Single ownership / permitted dependency direction
 
@@ -398,9 +398,7 @@ Operator: maintain distinct receipt approval, dependency health, technical
 incident and delivery status. Alerts should be coalesced by dependency and
 actionable, not one mandatory review for each valid payment. Preserve current
 UI/callback/copy during development; present proposed UX delta for approval
-before wiring any new user-visible behavior. Archive must not turn a genuine
-received payment into uncredited money or invent refund/success; define
-conversion of legacy Archive stop semantics with exact original proof.
+before wiring any new user-visible behavior. The current receipt and service decisions must not turn genuine received money into uncredited money or invent refund/success. Historical archive records are evidence for manual transfer, not executable state.
 
 ## 7. Execution sequence and removal
 
@@ -532,7 +530,7 @@ or definition-of-done acceptance.
   decision enter one payment-credit source. Retain multiple authenticated
   hosted children without double credit. The existing timer policy is read
   under its exact settings-row lock; API-pinned invoices cannot use the
-  timer fallback. Archived already-proven API money is recognizable without
+  timer fallback. Already-proven API money is recognizable without
   authorizing new redemption. Actual hosted/manual/API route cutover,
   receiving-merchant-account scoping, and proof acquisition independent of
   Native eligibility are not yet complete.
@@ -605,8 +603,7 @@ Existing receipt acquisition and protected bank/gift evidence transport
 enter the common receipt sink. Staff decisions, the explicit existing
 bank timer, and API proof commit one credit and the optional funded
 service continuation. A service invoice cannot be issued without its
-original service operation. Archive cannot authorize another consume, nor
-discard definitive evidence from a previously dispatched operation. An
+original service operation. Rejection cannot authorize another consume or discard definitive evidence from a previously dispatched operation. An
 uncertain gift restored to active still cannot be automatically re-consumed
 without authoritative proof of the original consumption epoch.
 
@@ -621,7 +618,7 @@ Source-real PHP 8.5 / owned MariaDB checks: credit 78, funding 54, hosted
 manual 16 (actual receipt acknowledgement contract and existing SMS/gift
 HTTP evidence paths). Includes concurrent exact verify, local commit loss,
 remote consume ACK loss, provider unavailability, bank/gift proof recovery
-after service invalidation/Archive, exact method quotes and actor refusal.
+after service invalidation, exact method quotes and actor refusal.
 SOAP wire interoperability and actual merchant production behavior were
 not exercised. The existing route/UI/Cron entrypoints are not yet switched.
 Automatic fair receipt polling, gateway issuance uncertainty disposition,
@@ -1006,8 +1003,7 @@ Existing hosted owner/staff/channel notifications and manual top-up
 owner/staff notifications keep their respective audiences. API and timer
 approval edit existing authorized receipt cards without extra staff
 notifications. For a manual/API/timer-funded completed service, the
-original receipt message targets are checked again before editing; archived
-receipt cards are not reopened. Manual operator notices that assert
+original receipt message targets and current decision are checked again before editing; stale receipt cards cannot reactivate a service. Manual operator notices that assert
 customer delivery, and actor-context menu presentation, still belong to
 the subsequent delivery/route integration slice. Do not send a fabricated
 "delivered" notice before 018 acknowledges it. Current catalog wording is

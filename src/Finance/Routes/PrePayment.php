@@ -82,7 +82,7 @@ if (preg_match('/^renewPay_(nowpayment|zarinpal|nextpay)_([A-Za-z0-9_-]{1,50})$/
     $method=$payMethod==='nowpayment'?'nowpayments':$payMethod;
     try {
         $s=achbotProviderStatement($connection,"SELECT p.*,a.provider AS attempt_provider,
-            a.stage AS attempt_stage,a.review_archived_at AS attempt_archived
+            a.stage AS attempt_stage
             FROM pays p LEFT JOIN payment_attempts a ON a.pay_row_id=p.id
             WHERE p.hash_id=? AND p.user_id=? LIMIT 2",'si',[$hash_id,(int)$from_id]);
         $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
@@ -93,7 +93,6 @@ if (preg_match('/^renewPay_(nowpayment|zarinpal|nextpay)_([A-Za-z0-9_-]{1,50})$/
                 ? (!achbotPayUxUnclaimedDraftUsable($connection,$payInfo) ||
                    !achbotPayUxAudienceAllowed($connection,$method,(int)$from_id))
                 : ($payInfo['attempt_provider']!==$method ||
-                   $payInfo['attempt_archived']!==null ||
                    !in_array($payInfo['attempt_stage'],['creating','pending','checking'],true)))) {
             prepareStartFallback();
             return '__ACHBOT_V8_GOTO_START__';

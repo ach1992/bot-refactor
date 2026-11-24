@@ -37,10 +37,7 @@ function achbotEffectSafeFailure(Throwable $error): array {
         'pg_rate_limited','pg_vendor_unavailable','pg_request_rejected',
         'pg_dispatch_target_changed','pg_verify_begin','pg_verify_commit_unknown',
         'pg_effect_verification_unconfirmed','pg_credentials_changed',
-        'pg_create_invalid','pg_groups_required',
-        // Exact, trusted terminal-Archive refusal; never reduce an expected
-        // operator fence to an opaque runtime_error diagnostic.
-        'effect_original_archived'
+        'pg_create_invalid','pg_groups_required'
     ];
     $fallback='runtime_error';$depth=0;$source='runtime';
     for ($current=$error;$current!==null && $depth<8;$current=$current->getPrevious()) {

@@ -68,7 +68,7 @@ function achbotHostedReceiptReserveLocked(mysqli $db,int $payId,int $userId,stri
             // Reissue neither a paid nor an invalidated invoice. The route
             // can render its original status without reopening a checkout.
             return ['status'=>$pay['state']==='pending' && $a['stage']==='pending' &&
-                $a['wallet_credit_entry_id']===null && ($a['review_archived_at']??null)===null &&
+                $a['wallet_credit_entry_id']===null &&
                 empty($a['payment_id'])?'issued':'closed','url'=>$a['checkout_url']];
         }
         return ['status'=>'issuance_uncertain'];
@@ -222,8 +222,12 @@ function achbotHostedReceiptVerify(mysqli $db,int $payId,int $userId,string $met
                     if ($attempt['wallet_invoice_sha256']!==$a['wallet_invoice_sha256'] ||
                         !hash_equals($a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($current,$attempt)))
                         throw new RuntimeException('hosted_invoice_changed_after_verify');
+                    if ($current['state']==='declined') {
+                        if (!$db->commit()) throw new RuntimeException('hosted_observation_commit');
+                        return $verified;
+                    }
                     $s=achbotProviderStatement($db,"UPDATE payment_attempts SET stage='review',provider_status=?
-                        WHERE id=? AND wallet_credit_entry_id IS NULL AND review_archived_at IS NULL",
+                        WHERE id=? AND wallet_credit_entry_id IS NULL",
                         'si',[$status,(int)$a['id']]);$s->close();
                     if (!$db->commit()) throw new RuntimeException('hosted_observation_commit');
                 } catch (Throwable $e) {$db->rollback();throw $e;}
@@ -329,7 +333,7 @@ function achbotHostedReceiptIngestIpn(mysqli $db,string $raw,string $signature):
 
 /** Explicit bounded merchant reconciliation of admitted references. A known
  * late child is polled even when the original invoice has already been paid
- * or archived. An unknown issuance is NOT sent again. */
+ * or rejected. An unknown issuance is NOT sent again. */
 function achbotHostedReceiptMaintain(mysqli $db,int $limit=3): array {
     $limit=max(1,min(5,$limit));
     $done=['examined'=>0,'completed'=>0,'pending'=>0,'review'=>0];

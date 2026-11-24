@@ -54,7 +54,12 @@ if (!($spec['api']??false)) {$GLOBALS['botState']['smsApiVerifyState']='off';$GL
 try {
     $result=match ($spec['op']) {
         'attention'=>achbotGatewayAttentionCaseOpen($db,$id),
-        'archive'=>achbotCheckoutArchive($db,(int)($spec['actor']??9001),$id,9001,(int)$a['id']),
+        'reject'=>(static function() use ($db,$id,$pay,$spec) {
+            $db->begin_transaction();
+            $r=achbotCheckoutRejectReceiptLocked($db,$id,(int)$pay['user_id'],(int)($spec['actor']??9001),9001,$pay['hash_id']);
+            $db->commit();return $r['state'];
+        })(),
+        'outcome'=>achbotCheckoutReceiptOutcome($db,$id),
         'review'=>fixtureReview($db,$spec),
         'issue'=>achbotManualReceiptIssue($db,$id,(int)($spec['owner']??1001),$method,$spec['service']??null,$spec['network']??null),
         'begin'=>achbotManualBeginEvidence($db,$pay,$method,(int)($spec['owner']??1001),$spec['file']),
@@ -161,10 +166,10 @@ def main():
                     assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+1000
                     assert not result(mode,'review',pid,callback=cb)['sends']
                     assert result(mode,'attention',pid) is False
-                    sql(f"UPDATE payment_attempts SET review_archived_at=NOW() WHERE pay_row_id={pid}")
                     sql(f"UPDATE payment_followup_intents SET state='unknown' WHERE pay_row_id={pid} AND role='customer'")
                     assert result(mode,'attention',pid) is True
-                    assert result(mode,'archive',pid)=='stale'
+                    assert not result(mode,'review',pid,callback=f'gatewayReview_H_{pid}')['sends']
+                    assert result(mode,'outcome',pid)=='wallet_credited'
                     case(method+'_lost_receipt_ack_recovery_and_independent_report')
                 pid=seed(mode+'-recover-typed-gift')
                 result(mode,'issue',pid,method='gift_card',api=True)
@@ -179,16 +184,24 @@ def main():
                 assert result(mode,'approve',pid)['funding']=='wallet_only' and balance()==b+1000
                 assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+1000
                 case('typed_gift_lost_receipt_ack_recovery')
-                pid=seed(mode+'-archive-receiving')
+                pid=seed(mode+'-rejected-receipt')
                 result(mode,'issue',pid,method='bank_transfer')
                 token=result(mode,'begin',pid,file='original-photo')
                 sql(f'UPDATE payment_attempts SET review_notice_claimed_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={pid}')
-                assert result(mode,'archive',pid)=='archived'
+                aid=sql(f'SELECT id FROM payment_attempts WHERE pay_row_id={pid}')
+                assert result(mode,'attention',pid) is True
+                assert not result(mode,'review',pid,callback=f'gatewayReview_H_{aid}')['sends']
+                assert result(mode,'attention',pid) is True
+                assert result(mode,'review',pid,callback=f'attentionReceipt_{pid}')['sends']
+                b=balance()
+                assert run(mode,'reject',pid,actor=1001)['ok'] is False
+                assert result(mode,'reject',pid)=='declined'
                 assert result(mode,'attention',pid) is False
                 assert result(mode,'finish',pid,file='original-photo',token=token) is False
                 assert result(mode,'begin',pid,file='original-photo') is None
                 assert not result(mode,'review',pid,callback=f'attentionReceipt_{pid}')['sends']
-                case('archived_receipt_cannot_reopen')
+                assert run(mode,'approve',pid)['ok'] is False and balance()==b
+                case('rejected_receipt_cannot_reopen_archive_callback_inert')
                 pid=seed(mode+'-orphan',kind='BUY_SUB')
                 assert run(mode,'issue',pid,method='bank_transfer')['reason']=='checkout_service_invoice_missing'
                 assert sql(f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}')=='0'
@@ -242,6 +255,19 @@ def main():
                 assert sql(f"SELECT wallet_funding_result FROM payment_attempts WHERE pay_row_id={pid}")=='request_invalidated'
                 assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{oid}'")=='0'
                 case('superseded_submitted_api_receipt_credits_without_service')
+                # An unfunded superseded receipt must still allow a real reject,
+                # not require a removed archive or silently remain in review.
+                oid=result(mode,'quote',reference=mode+'-superseded-reject',request=q)
+                pid=seed(mode+'-superseded-reject',price=100,kind='BUY_SUB')
+                result(mode,'issue',pid,method='bank_transfer',service=oid)
+                submit(mode,pid,'bank_transfer','fixture-superseded-reject')
+                sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}")
+                b=balance()
+                assert result(mode,'attention',pid) is True
+                assert result(mode,'reject',pid)=='declined' and balance()==b
+                assert result(mode,'attention',pid) is False
+                assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
+                case('superseded_unfunded_receipt_reject_without_archive')
                 pid=seed(mode+'-gift-api',price=1000)
                 result(mode,'issue',pid,method='gift_card',api=True)
                 code=evidence.fixture_gift_code(mode+'-gift-api')
@@ -257,11 +283,11 @@ def main():
                     r=run(mode,'check',pid)
                     assert not r['ok'] and balance()==b,r
                 finally:sql('DROP TRIGGER fixture_credit_fail')
-                sql(f'UPDATE payment_attempts SET review_archived_at=NOW() WHERE pay_row_id={pid}')
+                assert run(mode,'reject',pid)['reason']=='manual_reject_original_evidence_pending'
                 assert result(mode,'check',pid)=='settled' and balance()==b+1000
                 assert result(mode,'check',pid)=='settled' and balance()==b+1000
-                assert roles(pid)=='customer',roles(pid)
-                case('actual_gift_proven_local_rollback_then_archive')
+                assert roles(pid)=='customer,receipt_primary',roles(pid)
+                case('actual_gift_proven_local_rollback_recovery_reject_denied')
             assert sum(server.consumes.values())==4 and server.gift_consumes==2
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
     report=dict(complete=True,cases=len(cases),checks=cases,owned_socket_mariadb=True,

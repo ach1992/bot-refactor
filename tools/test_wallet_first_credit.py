@@ -205,7 +205,7 @@ def main():
                         op['payment_id']=proof['payment_id']
                         rejected('cross_invoice_child',other,mode,'payment_credit_external_collision',basis=method,proof=op)
                 pid,proof=seed('nowpayments',mode+'-late',kind='BUY_SUB')
-                sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid};UPDATE payment_attempts SET review_archived_at=NOW() WHERE pay_row_id={pid}")
+                sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}")
                 accept('late_superseded_service',pid,mode,basis='nowpayments',proof=proof)
                 pid,_=seed('gift_card',mode+'-race')
                 old=balance()
@@ -241,8 +241,7 @@ def main():
                 assert php('reserve',pid,mode,row=row),pid
                 assert php('consume',pid,mode)['status']=='proven'
                 rejected('tampered_api_proof',pid,mode,'payment_credit_api_proof',basis='api',stored_proof=True,tamper=True)
-                sql(f"UPDATE payment_attempts SET review_archived_at=NOW() WHERE pay_row_id={pid}")
-                accept('consumed_sms_archived',pid,mode,basis='api',stored_proof=True)
+                accept('consumed_sms_proven',pid,mode,basis='api',stored_proof=True)
                 pid,_=seed('gift_card',mode+'-giftapi',api=True)
                 code=evidence.fixture_gift_code(mode+'-gift')
                 server.card=dict(card_uuid='CARD_'+mode,status='active',game_key='fixture',redeem_value_id=42,

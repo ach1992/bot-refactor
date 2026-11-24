@@ -193,7 +193,7 @@ function achbotPaymentEvidenceQuoteFingerprint(array $attempt): string {
 function achbotPaymentEvidenceSchemaReady(mysqli $db): bool {
     try {
         $required=[
-            'payment_attempts'=>['review_archived_at','evidence_profile','evidence_state','evidence_cursor_id','evidence_claim_token',
+            'payment_attempts'=>['evidence_profile','evidence_state','evidence_cursor_id','evidence_claim_token',
                 'evidence_claimed_at','evidence_next_check_at','evidence_invoice_chat_id',
                 'evidence_invoice_message_id','evidence_invoice_digest','evidence_code',
                 'evidence_code_sha256','evidence_review_sent_at','evidence_projection_checked_at',
@@ -697,7 +697,7 @@ function achbotPaymentEvidenceClaim(mysqli $db,int $payId): ?array {
         $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
         $q->bind_param('i',$payId); $q->execute(); $a=$q->get_result()->fetch_assoc(); $q->close();
         $p=$a?achbotPaymentEvidenceSnapshot($a):null;
-        if (!$pay || !$p || ($a['review_archived_at']??null)!==null ||
+        if (!$pay || !$p || $pay['state']==='declined' ||
             !hash_equals($p['pay_sha256'],achbotPaymentEvidencePayFingerprint($pay))) {
             $db->rollback(); return null;
         }
@@ -705,7 +705,7 @@ function achbotPaymentEvidenceClaim(mysqli $db,int $payId): ?array {
             !achbotPaymentEvidencePending($db,$payId) && !achbotPaymentEvidenceGetProof($db,$payId)){$db->rollback();return null;}
         $token=bin2hex(random_bytes(16)); $id=(int)$a['id'];
         $q=$db->prepare("UPDATE payment_attempts SET evidence_claim_token=?,evidence_claimed_at=NOW()
-            WHERE id=? AND evidence_profile IS NOT NULL AND review_archived_at IS NULL
+            WHERE id=? AND evidence_profile IS NOT NULL
             AND (evidence_next_check_at IS NULL OR evidence_next_check_at<=NOW())
             AND (evidence_claim_token IS NULL OR evidence_claimed_at IS NULL
                  OR evidence_claimed_at<NOW()-INTERVAL 2 MINUTE)");
@@ -727,7 +727,7 @@ function achbotPaymentEvidenceDefer(mysqli $db,int $payId,string $token,string $
             evidence_state=CASE WHEN evidence_state IN ('proven','invalid_code') THEN evidence_state ELSE ? END,
             evidence_next_check_at=DATE_ADD(NOW(),INTERVAL ? SECOND),
             evidence_claim_token=NULL,evidence_claimed_at=NULL
-            WHERE pay_row_id=? AND evidence_claim_token=? AND review_archived_at IS NULL");
+            WHERE pay_row_id=? AND evidence_claim_token=?");
         $q->bind_param('siis',$status,$seconds,$payId,$token); $q->execute();
         $ok=$q->affected_rows===1; $q->close(); return $ok;
     } catch (Throwable $e) { return false; }
@@ -761,7 +761,7 @@ function achbotPaymentEvidenceSaveGiftCode(mysqli $db,int $payId,int $actor,stri
         $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();$a=$q->get_result()->fetch_assoc();$q->close();
         $profile=$a?achbotPaymentEvidenceSnapshot($a):null;
-        if (!$pay || !$profile || $a['review_archived_at']!==null || $profile['method']!=='gift_card' ||
+        if (!$pay || !$profile || $profile['method']!=='gift_card' ||
             (int)$pay['user_id']!==$actor ||
             !in_array($pay['state'],['pending','have_sent'],true) ||
             !hash_equals($profile['pay_sha256'],achbotPaymentEvidencePayFingerprint($pay))) {
@@ -855,7 +855,7 @@ function achbotPaymentEvidenceReserve(mysqli $db,int $payId,array $evidence,stri
         $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();$a=$q->get_result()->fetch_assoc();$q->close();
         $p=$a?achbotPaymentEvidenceSnapshot($a):null;
-        if (!$pay || !$p || ($a['review_archived_at']??null)!==null ||
+        if (!$pay || !$p || $pay['state']==='declined' ||
             !hash_equals($p['pay_sha256'],achbotPaymentEvidencePayFingerprint($pay)) ||
             !in_array($pay['state'],['pending','have_sent','service_superseded','approved','auto_cart_approved','paid','paid_with_wallet'],true) ||
             ($pay['state']==='service_superseded' && !achbotPaymentEvidenceReviewReady($pay,$a))) {
@@ -960,9 +960,8 @@ function achbotPaymentEvidenceStoreOutcome(mysqli $db,array $handle,string $stat
         $q->bind_param('i',$payId);$q->execute();$q->get_result();$q->close();
         $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();$a=$q->get_result()->fetch_assoc();$q->close();
-        // Archive must prevent further dispatch, not discard a definitive
-        // response to an already-dispatched original evidence operation.
-        if (!$a || (($a['review_archived_at']??null)!==null && $state!=='proven')) {
+        // Persist the actual outcome of the original evidence operation.
+        if (!$a) {
             $db->rollback();return false;
         }
         $q=$db->prepare('SELECT * FROM payment_transactions WHERE id=? AND attempt_id=? AND evidence_operation=? FOR UPDATE');
@@ -1001,7 +1000,7 @@ function achbotPaymentEvidenceConsume(mysqli $db,array $handle): array {
         $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
         $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();$a=$q->get_result()->fetch_assoc();$q->close();
-        if (!$a || !$pay || ($a['review_archived_at']??null)!==null) {$db->rollback();return $bad;}
+        if (!$a || !$pay || $pay['state']==='declined') {$db->rollback();return $bad;}
         $q=$db->prepare('SELECT *,TIMESTAMPDIFF(SECOND,evidence_dispatched_at,NOW()) AS dispatch_age
             FROM payment_transactions WHERE id=? AND attempt_id=? AND evidence_operation=? FOR UPDATE');
         $q->bind_param('iis',$tid,$a['id'],$op);$q->execute();$t=$q->get_result()->fetch_assoc();$q->close();
@@ -1136,8 +1135,7 @@ function achbotPaymentEvidenceGetProof(mysqli $db,int $payId): ?array {
             'evidence'=>$payload['expected'],'consumption'=>$payload['proof']];
     } catch (Throwable $e) {return null;}
 }
-function achbotPaymentEvidenceValidateProofLocked(mysqli $db,array $pay,array $proof,
-    bool $allowArchivedReceipt=false): bool {
+function achbotPaymentEvidenceValidateProofLocked(mysqli $db,array $pay,array $proof): bool {
     if (!achbotPaymentEvidenceSchemaReady($db) || (int)($pay['id']??0)!==(int)($proof['pay_id']??0))
         return false;
     try {
@@ -1147,9 +1145,8 @@ function achbotPaymentEvidenceValidateProofLocked(mysqli $db,array $pay,array $p
         $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();$a=$q->get_result()->fetch_assoc();$q->close();
         $p=$a?achbotPaymentEvidenceSnapshot($a):null;
-        // A Wallet-first credit may recognize already-proven money after a
-        // service Archive. This never authorizes another evidence redemption.
-        if (!$p || (!$allowArchivedReceipt && ($a['review_archived_at']??null)!==null) ||
+        // Previously proven money stays valid even after service invalidation.
+        if (!$p ||
             $p['pay_sha256']!==achbotPaymentEvidencePayFingerprint($pay)) return false;
         $q=$db->prepare('SELECT * FROM payment_transactions WHERE id=? AND attempt_id=? FOR UPDATE');
         $q->bind_param('ii',$tid,$a['id']);$q->execute();$t=$q->get_result()->fetch_assoc();$q->close();

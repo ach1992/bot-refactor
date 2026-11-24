@@ -65,7 +65,7 @@ function achbotManualReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
         // Only publish the original invoice in an open state. Never return
         // encrypted API credentials or merchant configuration to a UI caller.
         $result=['status'=>$pay['state']==='pending' && $a['stage']==='pending' &&
-            ($a['review_archived_at']??null)===null && $a['wallet_credit_entry_id']===null?'issued':'closed',
+            $a['wallet_credit_entry_id']===null?'issued':'closed',
             'amount'=>(string)$a['quote_amount'],'currency'=>$a['quote_currency'],'intent'=>$intent];
         if (!$db->commit()) throw new RuntimeException('manual_issue_commit');
         return $result;
@@ -73,8 +73,8 @@ function achbotManualReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
 }
 
 /** API recovery owns evidence lookup/consumption, not service eligibility.
- * Persisted proven receipts are settled even after Archive. Archive still
- * prevents creating/repeating an unproven external consume operation. */
+ * Previously proven money settles once, independently of service validity.
+ * An explicitly rejected invoice cannot initiate new evidence consumption. */
 function achbotManualReceiptCheckApi(mysqli $db,int $payId): string {
     require_once __DIR__.'/ApiPayments.php';
     return achbotApiPaymentWithWorkerLock($db,$payId,static function() use ($db,$payId): string {
@@ -104,8 +104,7 @@ function achbotManualReceiptCheckApi(mysqli $db,int $payId): string {
             // A human may have credited the same receipt first. Verify its
             // durable journal before treating its financial projection as final.
             if ($a['wallet_credit_entry_id']!==null) $settle($db,$payId,[]);
-            if (($a['review_archived_at']??null)!==null)
-                return $a['wallet_credit_entry_id']!==null?'settled':'archived';
+            if ($pay['state']==='declined') return 'rejected';
             if (!achbotPaymentEvidenceReviewReady($pay,$a) &&
                 !achbotPaymentEvidencePending($db,$payId)) return 'awaiting_receipt';
             $claim=achbotPaymentEvidenceClaim($db,$payId);

@@ -47,10 +47,12 @@ function achbotPayUxHostedAttentionSeconds(): int {
     return 3600*achbotPayUxPolicyNumber('paymentHostedHours',6,1,72);
 }
 function achbotPayUxManualProvider(string $provider): bool {
-    return in_array($provider,['bank_transfer','gift_card','manual_usdt','manual_trx'],true);
+    require_once __DIR__.'/ReceiptMethods.php';
+    return achbotCreditMethodHas($provider,'manual_quote');
 }
 function achbotPayUxHostedProvider(string $provider): bool {
-    return in_array($provider,['nowpayments','zarinpal','nextpay'],true);
+    require_once __DIR__.'/ReceiptMethods.php';
+    return achbotCreditMethodHas($provider,'hosted');
 }
 
 /**

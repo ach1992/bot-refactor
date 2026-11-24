@@ -9,6 +9,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__.'/../Admin/Access.php';
 require_once __DIR__.'/ManualReceiptIntent.php';
+require_once __DIR__.'/ReceiptMethods.php';
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
 require_once __DIR__.'/../Purchase/OrderWrites.php';
 require_once __DIR__.'/../Services/Ownership.php';
@@ -330,13 +331,13 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
     if ((int)$payInfo['user_id'] !== $userId ||
         (string)$payInfo['state'] !== 'pending' ||
         (string)($payInfo['payid'] ?? '') !== '' ||
-        !in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true)) return false;
+        !achbotCreditMethodHas($method,'manual_quote')) return false;
     try {
         require_once __DIR__ . '/PaymentLifecycle.php';
         $api=function_exists('achbotApiPaymentContext') ? achbotApiPaymentContext($connection,(string)$payInfo['hash_id'],$userId) : null;
         if (function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($connection,(int)$payInfo['id']) && !$api) return false;
 
-        $stmt = $connection->prepare('SELECT provider,stage,checkout_url,provider_status,wallet_invoice_sha256,review_archived_at,
+        $stmt = $connection->prepare('SELECT provider,stage,checkout_url,provider_status,wallet_invoice_sha256,
             TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
         $id = (int)$payInfo['id'];
@@ -344,7 +345,7 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        $validWindow=$attempt && $attempt['review_archived_at']===null && achbotCurrentReceiptPin($attempt) && (
+        $validWindow=$attempt && achbotCurrentReceiptPin($attempt) && (
             $api!==null || $attempt['stage']==='receiving' ||
             (string)($attempt['provider_status']??'')==='receipt_started' ||
             ((string)($attempt['provider_status']??'')==='' &&
@@ -353,8 +354,7 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         return $validWindow &&
             (string)$attempt['provider'] === $method &&
             in_array((string)$attempt['stage'], ['pending','receiving'], true) &&
-            (!in_array($method, ['manual_usdt','manual_trx'], true) ||
-             achbotManualIntentDecode((string)$attempt['checkout_url'], $method) !== null);
+            achbotManualIntentDecode((string)$attempt['checkout_url'], $method) !== null;
     } catch (Throwable $error) {
         return false;
     }
@@ -370,7 +370,7 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
     if (!achbotManualReceiptAllowed($connection,$payInfo,$method,$userId)) return null;
     $typed=achbotManualTypedGift($connection,$payInfo,$method);
     if ($userId <= 0 || $fileId === '' || strlen($fileId) > ($typed?4096:1200) ||
-        !in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true)) return null;
+        !achbotCreditMethodHas($method,'manual_quote')) return null;
     if($typed){$saved=achbotPaymentEvidenceSaveGiftCode($connection,(int)$payInfo['id'],$userId,$fileId);if(!in_array($saved['status']??'',['saved','same'],true))return null;}
     try {
         $claimToken = bin2hex(random_bytes(16));
@@ -383,14 +383,14 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         $stmt->close();
         if (!$pay || (int)$pay['user_id'] !== $userId || $pay['state'] !== 'pending' ||
             (string)($pay['payid'] ?? '') !== '') { $connection->rollback(); return null; }
-        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,provider_status,wallet_invoice_sha256,review_archived_at,
+        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,provider_status,wallet_invoice_sha256,
             TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$attempt || $attempt['review_archived_at']!==null || !achbotCurrentReceiptPin($attempt) || (string)$attempt['provider'] !== $method ||
+        if (!$attempt || !achbotCurrentReceiptPin($attempt) || (string)$attempt['provider'] !== $method ||
             !in_array((string)$attempt['stage'], ['pending','receiving'], true)) {
             $connection->rollback(); return null;
         }
@@ -467,14 +467,13 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
             $connection->rollback(); return false;
         }
         $id = (int)$pay['id'];
-        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,review_notice_claim_token,wallet_invoice_sha256,review_archived_at
+        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,review_notice_claim_token,wallet_invoice_sha256
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$attempt || $attempt['review_archived_at']!==null || !achbotCurrentReceiptPin($attempt) || !in_array((string)$attempt['provider'],
-            ['bank_transfer','gift_card','manual_usdt','manual_trx'], true) ||
+        if (!$attempt || !achbotCurrentReceiptPin($attempt) || !achbotCreditMethodHas((string)$attempt['provider'],'manual_quote') ||
             $attempt['stage'] !== 'receiving' ||
             (string)$attempt['review_notice_claim_token'] !== $token) {
             $connection->rollback(); return false;
@@ -715,7 +714,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, int $priceToman,
                                     int $userId = 0, string $method = 'bank_transfer',
                                     string $hashId = ''): string {
     global $connection;
-    if (!in_array($method, ['bank_transfer','gift_card','manual_usdt','manual_trx'], true) ||
+    if (!achbotCreditMethodHas($method,'manual_quote') ||
         $hashId === '' || !($connection instanceof mysqli)) return '';
     try {
         require_once __DIR__.'/PaymentLifecycle.php';

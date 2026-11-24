@@ -75,7 +75,6 @@ function achbotCreditPinIssuedLocked(mysqli $db,int $payId,int $userId): void {
     if ($pay['state']!=='pending' || $attempt['stage']!=='pending' ||
         $attempt['wallet_invoice_sha256']!=='' ||
         $attempt['wallet_credit_entry_id']!==null ||
-        ($attempt['review_archived_at']??null)!==null ||
         ($pay['approved_by']??null)!==null)
         throw new RuntimeException('payment_credit_issue_not_new');
     $fingerprint=achbotCreditInvoiceFingerprint($pay,$attempt);

@@ -21,7 +21,7 @@ if (str_starts_with($adminCallback,'attentionInbox') ||
     str_starts_with($adminCallback,'attentionDelivery') ||
     str_starts_with($adminCallback,'attentionService') ||
     str_starts_with($adminCallback,'attentionReport') ||
-    str_starts_with($adminCallback,'gatewayReview_')) {
+    preg_match('/^gatewayReview_[ARV]_[1-9][0-9]{0,17}$/D',$adminCallback)===1) {
     require __DIR__.'/AutomaticGatewayReview.php';
     return;
 }
@@ -43,7 +43,7 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',
         $pay=achbotApiPaymentRow($connection,$payId);
         $attempt=$pay?achbotApiPaymentAttempt($connection,$payId):null;
         $proof=$pay?achbotPaymentEvidenceGetProof($connection,$payId):null;
-        if (!$pay || !$attempt || ($attempt['review_archived_at']??null)!==null) {
+        if (!$pay || !$attempt) {
             answerCallbackQuery($callbackId,achbotMessage('manual_receipt_final.status_stale'),true);
             return;
         }
@@ -52,7 +52,7 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',
         // invoice: the original coordinator dispatches only PENDING delivery
         // packets, never money/native effects or UNKNOWN Telegram sends.
         $terminalDeliveryOnly=achbotApiPaymentTerminal($pay) &&
-            in_array((string)$attempt['provider'],['bank_transfer','gift_card'],true) &&
+            achbotCreditMethodHas((string)$attempt['provider'],'api_checker') &&
             ($proof['mode']??null)==='settle';
         if ((!achbotApiPaymentCanResume($connection,$pay) && !$terminalDeliveryOnly) ||
             !is_array($proof)) {
@@ -61,28 +61,8 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',
         }
         answerCallbackQuery($callbackId,achbotMessage('manual_receipt_final.checking'));
         $outcome=achbotApiPaymentSettle($connection,$payId,$proof);
-        $result=achbotMessage('manual_receipt_final.status_unknown');
-        if (in_array($outcome,['confirmed','settled'],true)) {
-            $fresh=achbotApiPaymentAttempt($connection,$payId);
-            if ($fresh && $fresh['wallet_credit_entry_id']!==null) {
-                $serviceId=(int)($fresh['service_operation_id']??0);
-                if ($fresh['wallet_funding_result']!=='funded') {
-                    $result=achbotMessage('manual_receipt_final.status_wallet_credited');
-                } elseif ($serviceId>0) {
-                    $op=achbotProviderRow($connection,'SELECT stage,resolution_kind,kind,quote_payload FROM service_operations WHERE id=?','i',[$serviceId]);
-                    if ($op && $op['resolution_kind']!==null)
-                        $result=achbotMessage('automatic_gateway_review.status_stale');
-                    elseif ($op && $op['stage']==='completed') {
-                        $delivery=achbotProviderRow($connection,"SELECT COUNT(*) AS total,COALESCE(SUM(state='acknowledged'),0) AS ack
-                            FROM payment_delivery_intents WHERE service_operation_id=?",'i',[$serviceId]);
-                        $request=json_decode($op['quote_payload'],true,64,JSON_THROW_ON_ERROR)['request'];
-                        $expected=$op['kind']==='BUY'?(int)$request['quantity']:1;
-                        $complete=$expected>0 && (int)$delivery['total']===$expected && (int)$delivery['ack']===$expected;
-                        $result=achbotMessage(!$complete?'manual_receipt_final.status_delivery_unconfirmed':'manual_receipt_final.status_completed');
-                    } else $result=achbotMessage('manual_receipt_final.status_service_pending');
-                }
-            }
-        }
+        $result=achbotCheckoutReceiptOutcomeText(in_array($outcome,['confirmed','settled'],true)?
+            achbotCheckoutReceiptOutcome($connection,$payId):'unknown');
         // This action began inside the shared attention inbox. Its result
         // always returns there, even if the original case is now closed.
         $rows=[[['text'=>achbotMessage('manual_receipt_final.back'),
@@ -147,7 +127,7 @@ if (preg_match('/^declineAction_(.+)$/', $data, $match) && achbotAdminCanFor($co
             achbotFollowupDispatchPending($connection,(int)$payInfo['id'],'manual_reject');
         return;
     }
-    if ($payInfo['state'] !== 'have_sent') {
+    if (!in_array($payInfo['state'],['have_sent','service_superseded'],true)) {
         // Never reverse a potentially delivered Processing/native operation.
         alert(\achbotMessage('manual_payment.manual_receipts.alert.af4cc41dc0'));
         return;
@@ -198,7 +178,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
             achbotFollowupDispatchPending($connection,(int)$payInfo['id'],'manual_reject');
         return;
     }
-    if ($payInfo['state'] !== 'have_sent') {
+    if (!in_array($payInfo['state'],['have_sent','service_superseded'],true)) {
         alert(\achbotMessage('manual_payment.manual_receipts.alert.af4cc41dc0'));
         return;
     }
@@ -360,7 +340,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         if ($opened) try {$connection->rollback();} catch(Throwable $ignored) {}
         // Preserve a bounded, non-secret reason for operator diagnostics.
         $code=in_array($error->getMessage(),[
-            'manual_reject_stale','manual_reject_archived',
+            'manual_reject_stale',
             'manual_reject_actor_revoked','manual_reject_editor_stale',
             'manual_reject_cas_failed','manual_reject_original_evidence_pending',
         ],true)?$error->getMessage():'transaction_unconfirmed';

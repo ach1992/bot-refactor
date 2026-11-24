@@ -1951,10 +1951,9 @@ DELIMITER ;
                 prior=finance();before=len(requests)
                 assert php(mode,'checkout_reject',pay=pid,hash=h,actor=9002,expect_error='manual_reject_stale')
                 assert sql(f"SELECT state FROM pays WHERE id={pid}")=='have_sent'
-                sql(f"UPDATE payment_attempts SET review_archived_at=NOW() WHERE pay_row_id={pid}")
-                assert php(mode,'checkout_reject',pay=pid,hash=h,expect_error='manual_reject_stale')
+                aid=int(sql(f"SELECT id FROM payment_attempts WHERE pay_row_id={pid}"))
+                php(mode,'telegram_review',actor=9001,callback=f'gatewayReview_H_{aid}')
                 assert sql(f"SELECT state FROM pays WHERE id={pid}")=='have_sent' and finance()==prior
-                sql(f"UPDATE payment_attempts SET review_archived_at=NULL WHERE pay_row_id={pid}")
                 assert php(mode,'checkout_reject',pay=pid,hash=h)
                 assert sql(f"SELECT CONCAT(state,':',approved_by) FROM pays WHERE id={pid}")=='declined:9001'
                 assert sql(f"SELECT stage FROM service_operations WHERE id={op}")=='cancelled'

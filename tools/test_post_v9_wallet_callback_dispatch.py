@@ -108,7 +108,7 @@ def main() -> None:
             checked += 1
     for callback in (f'attentionWalletResume_{PAY}',f'attentionWalletArchive_{PAY}',
                      f'attentionWalletInspect_{PAY}',f'apiEvidenceExecute_{PAY}',
-                     f'apiEvidenceOverride_{PAY}'):
+                     f'apiEvidenceOverride_{PAY}',f'gatewayReview_H_{PAY}'):
         result=invoke(callback,'owner')
         assert result['capability'] is None and not result['events'],(callback,result)
         checked+=1

@@ -87,7 +87,7 @@ if (preg_match('/^attentionReceipt_([1-9][0-9]{0,17})$/D',(string)($data??''),$r
         $a=$pay?achbotApiPaymentAttempt($connection,$payId):null;
         if (!$a || !achbotPayUxManualProvider($a['provider']) ||
             !in_array($a['stage'],['receiving','review'],true) ||
-            $a['review_archived_at']!==null || $a['wallet_credit_entry_id']!==null ||
+            $a['wallet_credit_entry_id']!==null ||
             !hash_equals((string)$a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$a)))
             throw new DomainException('manual_review_stale');
         $intent=achbotManualIntentDecode((string)$a['checkout_url'],$a['provider']);
@@ -115,8 +115,7 @@ if (preg_match('/^attentionReceipt_([1-9][0-9]{0,17})$/D',(string)($data??''),$r
             achbotMessageHtml('automatic_gateway_review.api_quote',['amount'=>$a['quote_amount'],'currency'=>$a['quote_currency']]);
         $actions=[['text'=>achbotMessage('legacy_buttons.approve'),
             'callback_data'=>achbotManualApprovalPrefix($pay).$pay['hash_id']]];
-        if ($pay['state']!=='service_superseded')
-            array_unshift($actions,['text'=>achbotMessage('legacy_buttons.decline'),'callback_data'=>'declineAction_'.$pay['hash_id']]);
+        array_unshift($actions,['text'=>achbotMessage('legacy_buttons.decline'),'callback_data'=>'declineAction_'.$pay['hash_id']]);
         $keys=inlineKeyboard([$actions,[['text'=>achbotMessage('automatic_gateway_review.open_case'),
             'callback_data'=>'attentionCase_'.$payId]]]);
         if ($typed) {
@@ -447,12 +446,10 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                     'status'=>$observed['observed_status'],
                     'date'=>$observed['received_at']]);
             }
-            $manualCase=in_array((string)$item['provider'],
-                ['bank_transfer','gift_card','manual_usdt','manual_trx'],true);
+            $method=achbotCreditMethodDefinition((string)$item['provider']);
+            $manualCase=isset($method['manual_quote']);
             $apiAttempt=$manualCase?achbotApiPaymentAttempt($connection,$payId):null;
-            $apiCase=$manualCase &&
-                in_array((string)$item['provider'],['bank_transfer','gift_card'],true) &&
-                !empty($apiAttempt['evidence_profile']);
+            $apiCase=$manualCase && isset($method['api_checker']) && !empty($apiAttempt['evidence_profile']);
             if ($apiCase) {
                 $item['evidence_state']=$apiAttempt['evidence_state']??null;
                 $body.="\n".achbotMessageHtml('automatic_gateway_review.api_status',[
@@ -494,9 +491,8 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 if (achbotGatewayReviewEligible($connection,$attempt,'reject'))
                     $actions[]=['text'=>achbotMessage('automatic_gateway_review.reject'),
                         'callback_data'=>'gatewayReview_R_'.$attempt];
-                if ($item['provider']==='nowpayments' && $item['stage']==='review' &&
-                    $item['provider_status']==='amount_mismatch' &&
-                    in_array($item['state'],['pending','send'],true))
+                if (isset($method['hosted']) && (int)$item['financial_review']===1 &&
+                    !empty($method['hosted']['child_transactions']?$item['payment_id']:$item['provider_reference']))
                     $recover=['text'=>achbotMessage('automatic_gateway_review.recover'),
                         'callback_data'=>'gatewayReview_V_'.$attempt];
             } elseif ($apiCase) {
@@ -513,16 +509,13 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                         ?'automatic_gateway_review.open_case'
                         :'automatic_gateway_review.service_action'),
                         'callback_data'=>'apiEvidenceResume_'.$payId];
-                // An API-unproven receipt remains a human decision, using
-                // the SAME existing Approve/Reject callbacks and reason flow.
-                if ($item['state']==='have_sent' && !$proof) {
-                    $manual=json_decode(achbotApiPaymentReviewKeyboard($item),true);
-                    foreach ($manual['inline_keyboard']??[] as $buttons)
-                        foreach ($buttons as $button)
-                            if (preg_match('/^(?:approve|accept|accCustom|declineAction_)/D',
-                                (string)($button['callback_data']??''))===1)
-                                $actions[]=$button;
-                }
+            }
+            if ($manualCase && (int)$item['financial_review']===1 &&
+                in_array($item['state'],['have_sent','service_superseded'],true) && $item['stage']==='review' &&
+                (!$apiCase || !achbotPaymentEvidenceGetProof($connection,$payId))) {
+                $actions[]=['text'=>achbotMessage('legacy_buttons.approve'),
+                    'callback_data'=>achbotManualApprovalPrefix($item).$item['hash_id']];
+                $actions[]=['text'=>achbotMessage('legacy_buttons.decline'),'callback_data'=>'declineAction_'.$item['hash_id']];
             }
             if ($manualCase && (int)$item['financial_review']===1 &&
                 in_array($item['stage'],['receiving','review'],true)) {
@@ -543,11 +536,6 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
             $q->close();
             if (!$actions && !$recover)
                 $footer.="\n".achbotMessage('automatic_gateway_review.manual_hold');
-            if ((int)$item['financial_review']===1 && $attempt>0 && (!$operation || !in_array($operation['stage'],['funded','prepared','dispatching','applied'],true))) {
-                $rows[]=[['text'=>achbotMessage('automatic_gateway_review.archive'),
-                    'callback_data'=>'gatewayReview_H_'.$attempt]];
-                $footer.="\n".achbotMessage('automatic_gateway_review.archive_notice');
-            }
             $body=$gatewayFitCase($body,$optional,$footer);
             $rows[]=[['text'=>achbotMessage('automatic_gateway_review.back_list'),
                 'callback_data'=>'attentionInbox']];
@@ -565,14 +553,13 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
 
 // Same original financial effect, with one-shot provider-attempt claim.
 $gatewayAction=[];
-if (preg_match('/^gatewayReview_([ARHV])_([1-9][0-9]{0,17})$/D',
+if (preg_match('/^gatewayReview_([ARV])_([1-9][0-9]{0,17})$/D',
     (string)($data??''),$gatewayAction)===1) {
     if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
         (int)($chat_id??0)!==(int)$from_id) {
         answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.denied'),true);
         return;
     }
-    $archive=$gatewayAction[1]==='H';
     $recovery=$gatewayAction[1]==='V';
     require_once __DIR__.'/../PaymentLifecycle.php';
     require_once __DIR__.'/../GatewayReview.php';
@@ -584,63 +571,18 @@ if (preg_match('/^gatewayReview_([ARHV])_([1-9][0-9]{0,17})$/D',
     ]]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
     try {
         answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.checking'));
-        $result=$archive
-            ?['status'=>achbotGatewayReviewArchive(
-                $connection,(int)$from_id,$attempt,(int)$admin)]
-            :($recovery
-                ?achbotGatewayReviewRecover($connection,(int)$from_id,$attempt,
-                    (int)$admin,(array)($paymentKeys??[]))
-                :achbotGatewayReviewCommit(
-                    $connection,(int)$from_id,$attempt,$mode,(int)$admin));
+        $result=$recovery
+            ?achbotGatewayReviewRecover($connection,(int)$from_id,$attempt,(int)$admin)
+            :achbotGatewayReviewCommit($connection,(int)$from_id,$attempt,$mode,(int)$admin);
         $status=(string)($result['status']??'unavailable');
-        if ($archive && $status==='archived') {
-            // The old API receipt remains a stored admin message. Update its
-            // keyboard in place so it no longer offers a stale review action.
-            try {
-                $q=$connection->prepare('SELECT pay_row_id,provider FROM payment_attempts WHERE id=?');
-                $q->bind_param('i',$attempt);$q->execute();
-                $archivedSource=$q->get_result()->fetch_assoc();$q->close();
-                if ($archivedSource && in_array($archivedSource['provider'],
-                    ['bank_transfer','gift_card'],true)) {
-                    $original=achbotApiPaymentRow($connection,(int)$archivedSource['pay_row_id']);
-                    if ($original) achbotApiPaymentNotice($connection,$original,'archived',false);
-                }
-            } catch (Throwable $error) {
-                error_log('achbot_archive_receipt_projection_deferred attempt='.$attempt.
-                    ' class='.get_class($error));
-            }
-        }
-        if ($status==='rejected') {
-            // Closing the business order does not refund the merchant.
-            $pay=$result['pay'];
-            $params=['id'=>$attempt,'user'=>(int)$pay['user_id'],
-                'amount'=>number_format((int)$pay['price']),
-                'hash'=>(string)$pay['hash_id']];
-            try {
-                sendMessage(achbotMessageHtml('automatic_gateway_review.rejected_customer',[
-                    'hash'=>$params['hash'],'amount'=>$params['amount']]),
-                    null,'HTML',(int)$pay['user_id']);
-            } catch(Throwable $error) {
-                error_log('achbot_gateway_reject_customer_notice_unknown pay_id='.
-                    (int)$pay['id']);
-            }
-            try {
-                notifyAllAdminsSimple(achbotMessageHtml('automatic_gateway_review.rejected_report',
-                    $params),(int)$admin,'html',null,$botState['rewardChannel']??null);
-            } catch(Throwable $error) {
-                error_log('achbot_gateway_reject_report_unknown pay_id='.(int)$pay['id']);
-            }
-        }
         $text=match($status) {
-            'completed'=>achbotMessage('automatic_gateway_review.status_completed'),
+            'wallet_credited','service_pending','completed','delivery_unconfirmed','resolved'=>achbotCheckoutReceiptOutcomeText($status),
             'rejected'=>achbotMessage('automatic_gateway_review.status_rejected'),
-            'archived'=>achbotMessage('automatic_gateway_review.status_archived'),
             'busy'=>achbotMessage('automatic_gateway_review.status_busy'),
             'unknown'=>achbotMessage('automatic_gateway_review.status_unknown'),
             'stale'=>achbotMessage('automatic_gateway_review.status_stale'),
             'denied'=>achbotMessage('automatic_gateway_review.denied'),
             'unsupported'=>achbotMessage('automatic_gateway_review.status_unsupported'),
-            'service_resolution_required'=>achbotMessage('automatic_gateway_review.service_resolution_required'),
             default=>achbotMessage('automatic_gateway_review.status_unavailable'),
         };
         $body=achbotMessageHtml('automatic_gateway_review.result',['result'=>$text]);

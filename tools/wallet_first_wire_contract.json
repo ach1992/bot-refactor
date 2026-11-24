@@ -112,11 +112,11 @@
       "reason": "Referral credit notices are durable source-owned reports."
     },
     "src/Finance/Routes/AutomaticGatewayReview.php": {
-      "reason": "Owner-approved unified receipt/service review, exact private receipt recovery and independent delivery/report redrive; retired direct wallet recovery callbacks removed.",
+      "reason": "Shared operations inbox, receipt evidence/recheck, service disposition, delivery and report recovery; archive removed; hosted rejection notification staged through durable outbox instead of direct send.",
       "before_count": 49,
-      "after_count": 30,
+      "after_count": 29,
       "before_sha256": "4fb93a55e1bbfc7cdab723e0c4153b9d6f5e87c178b741f86ff79ed88a23c8af",
-      "after_sha256": "405d954a2a3df3c558d73046e83ba4076448b4b34cbda7cac4699b2677f728b0"
+      "after_sha256": "d56811d69095e8e7384bbdbde09201fb0d1864f2547052f3158a1e05ab29e3a3"
     },
     "src/Finance/Routes/Checkout.php": {
       "before_count": 15,

@@ -8,50 +8,28 @@ require_once __DIR__.'/ApiPaymentPresentation.php';
 if (is_file(__DIR__.'/PaymentEvidence.php')) require_once __DIR__.'/PaymentEvidence.php';
 
 /** Protect each original API payment throughout evidence redemption,
- * native fulfillment and pending message delivery. Archive checks the same
- * DB-scoped session lock. Nested settlement in a poll shares the existing lease.
+ * settlement and invoice projection. Human decisions share the same
+ * DB-scoped session lock.
  */
 function achbotApiPaymentWithWorkerLock(mysqli $db,int $payId,callable $action): string {
     if ($payId<=0) return 'review';
     require_once __DIR__.'/GatewayClient.php';
-    static $held=[];
-    $key=spl_object_id($db).':'.$payId;
-    if (isset($held[$key])) return $action();
-    try {
-        $name=achbotHostedWorkerLockName($db,$payId);
-        $q=$db->prepare('SELECT GET_LOCK(?,0) AS acquired');
-        $q->bind_param('s',$name);$q->execute();
-        $row=$q->get_result()->fetch_assoc();$q->close();
-        if ((int)($row['acquired']??0)!==1) {
-            achbotDiagnosticEvent('achbot.finance.worker_lock',
-                ['pay_id'=>$payId,'reason'=>'worker_busy'],'info');
-            return 'review';
-        }
-    } catch (Throwable $error) {
-        error_log('achbot_api_worker_lock_unavailable pay_id='.$payId.
-            ' class='.get_class($error));
+    $lease=achbotOriginalDispatchLeaseBegin($db,$payId);
+    if (!in_array($lease,['owned','borrowed'],true)) {
+        achbotDiagnosticEvent('achbot.finance.worker_lock',
+            ['pay_id'=>$payId,'reason'=>$lease==='busy'?'worker_busy':'lease_unavailable'],'info');
         return 'review';
     }
-    $held[$key]=true;
     try {return $action();}
-    finally {
-        unset($held[$key]);
-        try {
-            $q=$db->prepare('SELECT RELEASE_LOCK(?) AS released');
-            $q->bind_param('s',$name);$q->execute();$q->close();
-        } catch (Throwable $error) {
-            error_log('achbot_api_worker_unlock_unavailable pay_id='.$payId.
-                ' class='.get_class($error));
-        }
-    }
+    finally {achbotOriginalDispatchLeaseEnd($db,$payId,$lease);}
 }
 
 /** A recorded original proof can only resume its admitted invoice. */
 function achbotApiPaymentCanResume(mysqli $db,array $pay): bool {
     $id=(int)($pay['id']??0);$a=$pay['attempt']??null;
-    if ($id<=0 || !$a || ($a['review_archived_at']??null)!==null ||
+    if ($id<=0 || !$a ||
         !is_string($a['wallet_invoice_sha256']??null) || $a['wallet_invoice_sha256']==='' ||
-        !in_array($a['provider'],['bank_transfer','gift_card'],true)) return false;
+        !achbotCreditMethodHas($a['provider'],'api_checker')) return false;
     $proof=achbotPaymentEvidenceGetProof($db,$id);
     return ($proof['mode']??null)==='settle';
 }
@@ -130,19 +108,17 @@ function achbotApiPaymentTrackInvoice(mysqli $db,string $hash,int $actor,$respon
 }
 function achbotApiPaymentSyncInvoice(mysqli $db,array $c): bool {
     $id=(int)($c['pay']['id']??0);
-    // A customer invoice edit is itself a bot-owned post-payment effect.
-    // Serialize its whole Telegram request against original operator Archive,
-    // just as bank/gift API settlement and Native dispatch already are.
+    // Serialize projection with human receipt decisions and verification.
     return achbotApiPaymentWithWorkerLock($db,$id,
         static fn():string=>achbotApiPaymentSyncInvoiceLocked($db,$c)
             ?'synchronized':'unchanged')==='synchronized';
 }
 function achbotApiPaymentSyncInvoiceLocked(mysqli $db,array $c): bool {
     $p=$c['pay'];$a=$c['attempt'];$id=(int)$p['id'];
-    // A pre-lock read cannot authorize a post-Archive Telegram request.
-    $fresh=achbotApiPaymentAttempt($db,$id);
-    if (!$fresh || ($fresh['review_archived_at']??null)!==null ||
-        ($a['review_archived_at']??null)!==null) return false;
+    // Re-read the current state under the same session lease.
+    $current=achbotApiPaymentContext($db,(string)$p['hash_id'],(int)$p['user_id']);
+    if (!$current) return false;
+    $c=$current;$p=$c['pay'];$a=$c['attempt'];
     $chat=(int)($a['evidence_invoice_chat_id']??0);$message=(int)($a['evidence_invoice_message_id']??0);
     if ($chat!==(int)$p['user_id'] || $chat<=0 || $message<=0 || !function_exists('bot')) return false;
     if (achbotApiPaymentTerminal($p) || !in_array($p['state'],['pending','have_sent'],true))
@@ -243,13 +219,11 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
     $invalidCode=in_array($status,['used','revoked','expired','mismatch'],true);
     $status=in_array($status,['confirmed','settled','review','uncertain','evidence_only','used','revoked','expired','mismatch'],true)?$status:'review';
     $label=$invalidCode?achbotMessage('manual_payment.api_payment.code_'.$status):achbotMessage('manual_payment.api_payment.status_'.$status);
-    $archived=($a['review_archived_at']??null)!==null;
     require_once __DIR__.'/GatewayClient.php';
-    $actionable=!$archived && achbotGatewayAttentionCaseOpen($db,$id);
+    $actionable=achbotGatewayAttentionCaseOpen($db,$id);
     $automatic=achbotApiPaymentTerminal($pay) && (int)($pay['approved_by']??-1)===0 && ($proof['mode']??'')==='settle';
     if($automatic)$label=achbotMessage('manual_payment.api_payment.auto_approved');
     if($pay['state']==='declined')$label=achbotMessage('manual_payment.manual_receipts.button.51fdc91d69',['from_id'=>(int)$pay['approved_by']]);
-    if($archived)$label=achbotMessage('automatic_gateway_review.status_archived');
     $presentation=achbotApiPaymentPresentation($db,$pay,$a);
     $amount=achbotPaymentEvidenceIntegralQuote($a['quote_amount'])??(string)$a['quote_amount'];
     $body=achbotMessageHtml('manual_payment.api_payment.report',[
@@ -266,9 +240,9 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
     $refs=json_decode((string)($pay['admins_messages']??''),true);$refs=is_array($refs)?$refs:[];
     $refs[]=['chat_id'=>$pay['chat_id']??0,'message_id'=>$pay['message_id']??0];$seen=[];
     $keys=inlineKeyboard([[['text'=>$label,'callback_data'=>'noop_'.$hash]]]);
-    if(achbotApiPaymentTerminal($pay) && !$archived)
+    if(achbotApiPaymentTerminal($pay))
         $keys=achbotApiPaymentFinalKeyboard($pay,$label,$automatic,$presentation);
-    if($invalidCode && $pay['state']==='have_sent' && !$archived){
+    if($invalidCode && $pay['state']==='have_sent'){
         $rows=json_decode(achbotApiPaymentReviewKeyboard($pay),true)['inline_keyboard'];
         $rows[]=[['text'=>$label,'callback_data'=>'noop_'.$hash]];$keys=inlineKeyboard($rows);
     }
@@ -293,7 +267,7 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
     }
     $staffDigest=hash('sha256',$keys.json_encode($refs));
     if((achbotApiPaymentTerminal($pay) || in_array($pay['state'],['processing','declined'],true) ||
-        ($invalidCode && $pay['state']==='have_sent') || $actionable || $archived) &&
+        ($invalidCode && $pay['state']==='have_sent') || $actionable) &&
         ($a['evidence_staff_digest']??null)!==$staffDigest) {
         $ack=true;
         foreach($refs as $ref) {
@@ -619,7 +593,7 @@ function achbotApiPaymentCheck(mysqli $db,int $id): string {
                     achbotCheckoutAdvance($db,$attempt['service_operation_id']===null?null:(int)$attempt['service_operation_id'],$id);
                 }
             }
-            if ($pay && !in_array($status,['archived','awaiting_receipt'],true)) {
+            if ($pay && !in_array($status,['rejected','awaiting_receipt'],true)) {
                 if (in_array($status,['used','revoked','expired','mismatch'],true))
                     achbotApiPaymentNotice($db,$pay,$status);
                 elseif (in_array($status,['review','pending','unavailable'],true))
@@ -651,13 +625,13 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
     try {
         require_once __DIR__.'/CheckoutAdmission.php';
         achbotCheckoutRequireSchema($db);
-        $archivePredicate=' AND a.review_archived_at IS NULL';
-            $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
-                WHERE a.evidence_profile IS NOT NULL AND a.provider IN ('bank_transfer','gift_card')
+        $apiMethods=achbotCreditMethodSqlList('api_checker');
+        $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
+                WHERE a.evidence_profile IS NOT NULL AND a.provider IN ($apiMethods)
                   AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>'' AND a.wallet_credit_entry_id IS NULL
                   AND (a.evidence_next_check_at IS NULL OR a.evidence_next_check_at<=NOW())
                   AND (a.evidence_state='proven' OR
-                       (a.review_archived_at IS NULL AND (a.evidence_state IS NULL OR a.evidence_state NOT IN ('invalid_code','manual')) AND
+                       (p.state<>'declined' AND (a.evidence_state IS NULL OR a.evidence_state NOT IN ('invalid_code','manual')) AND
                          ((p.state IN ('have_sent','service_superseded') AND p.message_id>0 AND p.chat_id>0) OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_operation IS NOT NULL))))
                 ORDER BY COALESCE(a.evidence_next_check_at,a.created_at),a.id LIMIT ".($limit+1));
         $rows=$q->fetch_all(MYSQLI_ASSOC);
@@ -677,7 +651,6 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
         // UI convergence is independent of evidence polling/finality/leases.
         $q=$db->query("SELECT p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
             WHERE a.evidence_profile IS NOT NULL
-              {$archivePredicate}
             ORDER BY CASE WHEN p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet')
                     AND (a.evidence_projection_checked_at IS NULL OR
                          a.updated_at>a.evidence_projection_checked_at)

@@ -48,6 +48,37 @@ function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null,bool 
     }
 }
 
+/** One outcome projection for every verified receipt. It never infers
+ * a service or delivery result from the fact that money was credited. */
+function achbotCheckoutReceiptOutcome(mysqli $db,int $payId): string {
+    $a=achbotProviderRow($db,'SELECT wallet_credit_entry_id,wallet_funding_result,service_operation_id
+        FROM payment_attempts WHERE pay_row_id=?','i',[$payId]);
+    if (!$a || $a['wallet_credit_entry_id']===null || $a['wallet_funding_result']===null) return 'unknown';
+    if ($a['wallet_funding_result']!=='funded') return 'wallet_credited';
+    $id=(int)$a['service_operation_id'];
+    if ($id<=0) return 'unknown';
+    $op=achbotProviderRow($db,'SELECT stage,resolution_kind,kind,quote_payload FROM service_operations WHERE id=?','i',[$id]);
+    if (!$op) return 'unknown';
+    if ($op['resolution_kind']!==null) return 'resolved';
+    if ($op['stage']!=='completed') return 'service_pending';
+    $delivery=achbotProviderRow($db,"SELECT COUNT(*) AS total,COALESCE(SUM(state='acknowledged'),0) AS ack
+        FROM payment_delivery_intents WHERE service_operation_id=?",'i',[$id]);
+    $request=json_decode($op['quote_payload'],true,64,JSON_THROW_ON_ERROR)['request'];
+    $expected=$op['kind']==='BUY'?(int)$request['quantity']:1;
+    return $expected>0 && (int)$delivery['total']===$expected && (int)$delivery['ack']===$expected?
+        'completed':'delivery_unconfirmed';
+}
+function achbotCheckoutReceiptOutcomeText(string $status): string {
+    return achbotMessage(match($status) {
+        'wallet_credited'=>'manual_receipt_final.status_wallet_credited',
+        'service_pending'=>'manual_receipt_final.status_service_pending',
+        'completed'=>'manual_receipt_final.status_completed',
+        'delivery_unconfirmed'=>'manual_receipt_final.status_delivery_unconfirmed',
+        'resolved'=>'automatic_gateway_review.status_stale',
+        default=>'manual_receipt_final.status_unknown',
+    });
+}
+
 /** Consume the original Wallet callback when the command schema is present.
  * Keep its original callback family, existing alerts and receipt reference. */
 function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,string $mode,array $states): void {
@@ -85,8 +116,8 @@ function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,string 
 function achbotCheckoutRejectReceiptLocked(mysqli $db,int $id,int $uid,int $actor,int $primary,string $hash): array {
     achbotCheckoutRequireSchema($db);
     [$pay,$attempt]=achbotCreditInvoiceLocked($db,$id,$uid);
-    if ($pay['state']!=='have_sent' || $pay['hash_id']!==$hash ||
-        $attempt['wallet_credit_entry_id']!==null || ($attempt['review_archived_at']??null)!==null ||
+    if (!in_array($pay['state'],['have_sent','service_superseded'],true) || $pay['hash_id']!==$hash ||
+        $attempt['wallet_credit_entry_id']!==null ||
         !achbotPayUxManualProvider($attempt['provider']) ||
         !is_string($attempt['wallet_invoice_sha256']) ||
         !hash_equals($attempt['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$attempt)) ||
@@ -96,19 +127,39 @@ function achbotCheckoutRejectReceiptLocked(mysqli $db,int $id,int $uid,int $acto
     if (achbotProviderRow($db,"SELECT id FROM payment_transactions WHERE attempt_id=?
         AND evidence_operation IS NOT NULL LIMIT 1 FOR UPDATE",'i',[(int)$attempt['id']]))
         throw new DomainException('manual_reject_original_evidence_pending');
+    return achbotCheckoutRejectUnfundedLocked($db,$pay,$attempt,$actor,$primary);
+}
+
+/** The same terminal financial decision for every method. Adapter-specific
+ * eligibility is checked by the caller under the same owner/invoice locks.
+ * A rejected payment cannot fund a service; actual late hosted proof may
+ * still credit its original Wallet source, independently of that service. */
+function achbotCheckoutRejectUnfundedLocked(mysqli $db,array $pay,array $attempt,int $actor,int $primary): array {
+    $id=(int)$pay['id'];$uid=(int)$pay['user_id'];
+    if ($attempt['wallet_credit_entry_id']!==null || $attempt['stage']!=='review' ||
+        !in_array($pay['state'],['pending','send','have_sent','service_superseded'],true) ||
+        !is_string($attempt['wallet_invoice_sha256']) ||
+        !hash_equals($attempt['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$attempt)) ||
+        !achbotAdminCanLocked($db,$actor,$primary,'payments'))
+        throw new DomainException('manual_reject_stale');
     $operation=$attempt['service_operation_id']===null?null:(int)$attempt['service_operation_id'];
     if ($operation!==null) {
-        achbotCheckoutOriginalCommandLocked($db,$pay);
-        if ((int)$pay['checkout_operation_id']!==$operation)
-            throw new RuntimeException('manual_reject_original_command_changed');
+        [$op]=achbotServiceReadLocked($db,$uid,$operation);
+        if ($op['command_kind']==='checkout') {
+            achbotCheckoutOriginalCommandLocked($db,$pay);
+            if ((int)$pay['checkout_operation_id']!==$operation)
+                throw new RuntimeException('manual_reject_original_command_changed');
+        }
         achbotServiceCancelUnfundedLocked($db,$uid,$operation);
     } elseif ($pay['type']!=='INCREASE_WALLET') {
         throw new RuntimeException('manual_reject_original_command_missing');
     }
     $s=achbotProviderStatement($db,"UPDATE payment_attempts SET stage='done',provider_status='operator_rejected'
-        WHERE id=? AND wallet_credit_entry_id IS NULL",'i',[(int)$attempt['id']]);$s->close();
-    $s=achbotProviderStatement($db,"UPDATE pays SET state='declined',approved_by=? WHERE id=? AND state='have_sent'",
-        'ii',[$actor,$id]);
+        WHERE id=? AND stage='review' AND wallet_credit_entry_id IS NULL",'i',[(int)$attempt['id']]);
+    $n=$s->affected_rows;$s->close();
+    if ($n!==1) throw new RuntimeException('manual_reject_cas_failed');
+    $s=achbotProviderStatement($db,"UPDATE pays SET state='declined',approved_by=? WHERE id=? AND state=?",
+        'iis',[$actor,$id,$pay['state']]);
     $n=$s->affected_rows;$s->close();
     if ($n!==1) throw new RuntimeException('manual_reject_cas_failed');
     $pay['state']='declined';$pay['approved_by']=$actor;
@@ -133,17 +184,9 @@ function achbotCheckoutApproveReceipt(mysqli $db,string $hash,int $actor,int $pr
             [$pay,$a]=achbotCreditInvoiceLocked($db,$id,$uid);
             if (!achbotAdminCanLocked($db,$actor,$primary,'payments'))
                 throw new DomainException('manual_receipt_actor_invalid');
-            $valid=match($mode) {
-                'topup'=>$pay['type']==='INCREASE_WALLET',
-                'standard'=>$pay['type']==='BUY_SUB' && (int)$pay['day']===0 && (int)$pay['volume']===0,
-                'custom'=>$pay['type']==='BUY_SUB' && (int)$pay['day']>0 && (int)$pay['volume']>0,
-                'renew'=>$pay['type']==='RENEW_ACCOUNT',
-                'day'=>preg_match('/\AINCREASE_DAY_[1-9][0-9]*_[1-9][0-9]*\z/D',$pay['type'])===1,
-                'volume'=>preg_match('/\AINCREASE_VOLUME_[1-9][0-9]*_[1-9][0-9]*\z/D',$pay['type'])===1,
-                default=>false,
-            };
+            $valid=achbotCheckoutModeMatchesRequest($pay,$mode);
             if (!$valid || $pay['hash_id']!==$hash || !in_array($pay['state'],['have_sent','service_superseded','paid'],true) ||
-                !achbotPayUxManualProvider($a['provider']) || ($a['review_archived_at']??null)!==null ||
+                !achbotPayUxManualProvider($a['provider']) ||
                 !is_string($a['wallet_invoice_sha256']??null) || $a['wallet_invoice_sha256']==='')
                 throw new DomainException('manual_receipt_original_unadmitted');
             $result=achbotCheckoutSettleReceiptLocked($db,$id,$uid,'manual',[],$actor,$primary);

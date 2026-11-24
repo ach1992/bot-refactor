@@ -61,9 +61,8 @@ function achbotCheckoutSettleReceiptLocked(mysqli $db,int $payId,int $userId,str
     $result='wallet_only';
     if ($operation!==null) {
         // The original quote cannot be replaced with a different plan.
-        // Service-superseded/expired/archived requests keep received value.
-        if (in_array($pay['state'],['service_superseded','expired','expired_have_sent','mismatched_plan'],true) ||
-            ($attempt['review_archived_at']??null)!==null) $result='request_invalidated';
+        // Invalidated or explicitly rejected requests keep verified received value.
+        if (in_array($pay['state'],['service_superseded','expired','expired_have_sent','mismatched_plan','declined'],true)) $result='request_invalidated';
         else {
             [$op]=achbotServiceReadLocked($db,$userId,$operation);
             if ($op['command_kind']==='checkout') {

@@ -21,7 +21,7 @@ function achbotHostedWorkerLockName(mysqli $db,int $payId): string {
 
 /** Dispatch workers borrow an already-held original payment session lease,
  * or acquire their own for the entire external request and its acknowledgement.
- * Archive checks the same lock. Never keep an InnoDB transaction across HTTP.
+ * Human receipt decisions share the lock. Never keep an InnoDB transaction across HTTP.
  * A lease borrowed from a hosted/API/manual parent must NOT be released here.
  */
 function achbotOriginalDispatchLeaseBegin(mysqli $db,int $payId): string {
@@ -64,27 +64,23 @@ function achbotOriginalDispatchLeaseEnd(mysqli $db,int $payId,string $lease): vo
     }
 }
 
-/** One source of truth for active operator-attention cases. Archival is
- * a terminal LOCAL automation fence, not a merchant settlement or refund.
- * Late signed IPN evidence is separate from the immutable archived attempt.
- */
 /** Financial review and delivery failures are independent. A submitted
  * manual receipt exists even when its first Telegram delivery lost its ACK.
  * Mere awaiting-payment invoices never enter this queue. */
 function achbotGatewayAttentionReceiptScope(): string {
-    return "(a.review_archived_at IS NULL AND a.wallet_credit_entry_id IS NULL
+    require_once __DIR__.'/ReceiptMethods.php';
+    $hosted=achbotCreditMethodSqlList('hosted');
+    $manual=achbotCreditMethodSqlList('manual_quote');
+    return "(a.wallet_credit_entry_id IS NULL
         AND a.wallet_invoice_sha256<>'' AND (
-            (a.stage='review' AND a.provider IN ('nowpayments','nextpay','zarinpal')
+            (p.state IN ('pending','send','service_superseded') AND a.stage='review' AND a.provider IN ($hosted)
                 AND a.provider_status IN ('partially_paid','confirming','confirmed','sending','finished','refunded','amount_mismatch','multiple_payments','verification_unavailable'))
-            OR (a.provider IN ('bank_transfer','gift_card','manual_usdt','manual_trx') AND (
+            OR (a.provider IN ($manual) AND (
                 (p.state IN ('have_sent','service_superseded') AND a.stage='review'
                     AND p.message_id>0 AND p.chat_id>0)
                 OR (p.state='pending' AND a.stage='receiving'
                     AND (a.review_notice_claim_token IS NULL OR a.review_notice_claimed_at IS NULL
                         OR a.review_notice_claimed_at<NOW()-INTERVAL 2 MINUTE))
-                OR (a.evidence_profile IS NOT NULL AND p.state IN ('have_sent','service_superseded') AND (
-                    a.evidence_state IN ('review','uncertain','manual','invalid_code')
-                    OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_state='proven')))
             ))
         ))";
 }

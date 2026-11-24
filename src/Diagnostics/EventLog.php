@@ -74,7 +74,7 @@ function achbotDiagnosticEvent(string $name,array $context=[],string $level='inf
                 // or raw upstream text. Only machine-shaped known diagnostic
                 // reasons can pass; retain class/HTTP/cURL for other failures.
                 if ($key==='reason' &&
-                    !in_array($value,['archived','pending','unknown','settled',
+                    !in_array($value,['pending','unknown','settled',
                         'review','unavailable','monitoring'],true) &&
                     preg_match('/\A(?:achbot|pg|provider|payment|wallet|manual|delivery|followup|addon|native|http|response|claim|check|schema|invoice|original|dispatch|maintenance|worker|batch|source|identity|service|recovery|transport|receipt|upstream|internal|already|operation|remote|awaiting|lease)_[a-z0-9_]{2,88}\z/D',$value)!==1)
                     continue;

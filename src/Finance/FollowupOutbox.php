@@ -131,6 +131,8 @@ function achbotFollowupRecipientAllowed(mysqli $db,array $pay,array $r): bool {
     $owner=(int)($GLOBALS['admin']??0);
     $recipient=(string)$r['recipient'];$who=(int)$recipient;
     $role=(string)$r['role'];
+    if ($r['stage']==='manual_reject' && in_array($role,['service_admin','service_channel'],true))
+        return achbotFollowupAdminReportAllowed($db,$r);
     if ($role==='customer') return $recipient===(string)(int)$pay['user_id'];
     if ($role==='receipt_primary')
         return achbotAdminStoredRecipientAllowed($db,$who,$owner) && $who===(int)$pay['chat_id'] && (int)$r['message_id']===(int)$pay['message_id'];
@@ -216,7 +218,7 @@ function achbotFollowupValidateLocked(mysqli $db,array $pay,array $r): ?array {
     $payId=(int)($pay['id']??0);
     $attempt=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
     require_once __DIR__.'/PaymentCredit.php';
-    if (!$attempt || ($attempt['review_archived_at']??null)!==null ||
+    if (!$attempt ||
         $attempt['wallet_credit_entry_id']!==null || $attempt['stage']!=='done' ||
         $attempt['provider_status']!=='operator_rejected' ||
         !is_string($attempt['wallet_invoice_sha256']) ||
