@@ -5,7 +5,7 @@ require_once __DIR__.'/../Diagnostics/EventLog.php';
 require_once __DIR__.'/ReceiptHelpers.php';
 require_once __DIR__.'/PaymentLifecycle.php';
 require_once __DIR__.'/ApiPaymentPresentation.php';
-if (is_file(__DIR__.'/PaymentEvidence.php')) require_once __DIR__.'/PaymentEvidence.php';
+require_once __DIR__.'/PaymentEvidence.php';
 
 /** Protect each original API payment throughout evidence redemption,
  * settlement and invoice projection. Human decisions share the same
@@ -356,7 +356,7 @@ function achbotApiPaymentSmsUniqueLocked(mysqli $db,array $evidence,int $id): bo
     } while (count($rows)===100);
     return count($matches)===1 && $matches[0]===$id;
 }
-/** A bounded page is revisited from its start. No unpersisted cursor can lose evidence. */
+/** Bounded work per tick, with a persisted cyclic search cursor. */
 function achbotApiPaymentCheckBank(mysqli $db,array $claim,callable $settle): string {
     $p=$claim['pay'];$a=$claim['attempt'];$profile=$claim['profile'];$id=(int)$p['id'];
     $existing=achbotPaymentEvidenceGetProof($db,$id);
@@ -409,39 +409,48 @@ function achbotApiPaymentCheckBank(mysqli $db,array $claim,callable $settle): st
     $filters=[['amount'=>(int)$quote,'display_unit'=>'toman','received_from'=>$issued-180]];
     if((int)$quote<=intdiv(PHP_INT_MAX,10))
         $filters[]=['amount'=>(int)$quote*10,'display_unit'=>'rial','received_from'=>$issued-180];
+    // Advance one shared frontier only after every supported unit has
+    // been checked through it. Exhausted units do not constrain the
+    // frontier; reaching the end restarts a cycle for late arrivals.
+    $after=max(0,(int)($a['evidence_cursor_id']??0));
+    $saveCursor=static function(int $next) use ($db,$id,$claim): void {
+        $q=achbotProviderStatement($db,'UPDATE payment_attempts SET evidence_cursor_id=? WHERE pay_row_id=? AND evidence_claim_token=?',
+            'iis',[$next,$id,$claim['token']]);
+        $q->close();
+    };
     $legacy=false;
-    foreach($filters as $filter) {
-        $after=0;
-        for($page=0;$page<4;$page++) {
+    for($page=0;$page<4;$page++) {
+        $frontiers=[];
+        foreach($filters as $index=>$filter) {
             $result=achbotPaymentEvidenceSmsList($profile,$after,$filter);
-            if(($result['status']??'')==='ambiguous_time' &&
-                isset($filter['received_from'])) {
-                // WP site DATETIME during a timezone rollback may be ambiguous.
-                // Amount/unit filtering remains indexed; source-SMS transfer-time
-                // admission is still enforced locally to the original 180s gate.
-                unset($filter['received_from']);$page--;continue;
+            if(($result['status']??'')==='ambiguous_time' && isset($filter['received_from'])) {
+                // The source transfer-time check remains authoritative
+                // when the upstream ingestion timezone is ambiguous.
+                unset($filter['received_from']);
+                $filters[$index]=$filter;
+                $result=achbotPaymentEvidenceSmsList($profile,$after,$filter);
             }
             if(($result['status']??'')==='unsupported') {
-                // Older WP versions can accept unknown query args with HTTP 200.
-                // Preserve availability without treating an unfiltered page as
-                // exhaustive or weakening exact match/financial proof guards.
                 $legacy=true;break 2;
             }
             if(empty($result['ok']))return 'unavailable';
             $outcome=$inspect($result['data']);
             if($outcome!==null)return $outcome;
-            if(empty($result['has_more']))break;
-            $next=(int)$result['next_after_id'];
-            if($next<=$after)return 'review';
-            if($page===3)return 'review'; // Too many same-amount candidates.
-            $after=$next;
+            if(!empty($result['has_more'])) {
+                $next=(int)$result['next_after_id'];
+                if($next<=$after)return 'review';
+                $frontiers[]=$next;
+            }
         }
+        $next=$frontiers?min($frontiers):0;
+        $saveCursor($next);
+        if($next===0)break;
+        $after=$next;
     }
     if(!$legacy)return 'monitoring';
 
-    // Backward-compatible fallback only for a demonstrably unsupported API.
-    // Current Blinko 1.0.16 uses the fast path and never scans old unrelated SMS.
-    $after=max(0,(int)($a['evidence_cursor_id']??0));
+    // An externally deployed API that does not implement the filter
+    // contract still uses the same bounded, cyclic evidence search.
     for($page=0;$page<4;$page++) {
         $result=achbotPaymentEvidenceSmsList($profile,$after);
         if(empty($result['ok']))return 'unavailable';
@@ -449,8 +458,7 @@ function achbotApiPaymentCheckBank(mysqli $db,array $claim,callable $settle): st
         if($outcome!==null)return $outcome;
         $next=empty($result['has_more'])?0:(int)($result['next_after_id']??0);
         if($next!==0 && $next<=$after)return 'review';
-        $cursor=$db->prepare('UPDATE payment_attempts SET evidence_cursor_id=? WHERE pay_row_id=? AND evidence_claim_token=?');
-        $cursor->bind_param('iis',$next,$id,$claim['token']);$cursor->execute();$cursor->close();
+        $saveCursor($next);
         if($next===0)break;$after=$next;
     }
     return 'monitoring';
@@ -645,29 +653,53 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
                 ['pay_id'=>$overflowId,'reason'=>'batch_size'],'info');
         foreach($rows as $row){
             if(microtime(true)-$started>=35)break;
-            $outcome=achbotApiPaymentCheck($db,(int)$row['pay_row_id']);
-            $checked++;
+            $id=(int)$row['pay_row_id'];
+            try {
+                achbotApiPaymentCheck($db,$id);
+            } catch (Throwable $e) {
+                achbotDiagnosticEvent('achbot.finance.evidence_check',['pay_id'=>$id,
+                    'reason'=>'maintenance_check_deferred','class'=>get_class($e)],'warning');
+            } finally {
+                // Pre-claim failures and busy leases may leave a row due.
+                // Rotate without overriding provider backoff or evidence.
+                $stamp=achbotProviderStatement($db,"UPDATE payment_attempts
+                    SET evidence_next_check_at=DATE_ADD(NOW(),INTERVAL 60 SECOND),updated_at=updated_at
+                    WHERE pay_row_id=? AND wallet_credit_entry_id IS NULL
+                      AND (evidence_next_check_at IS NULL OR evidence_next_check_at<=NOW())",'i',[$id]);
+                $stamp->close();$checked++;
+            }
         }
         // UI convergence is independent of evidence polling/finality/leases.
-        $q=$db->query("SELECT p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
-            WHERE a.evidence_profile IS NOT NULL
-            ORDER BY CASE WHEN p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet')
+        $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
+            WHERE a.evidence_profile IS NOT NULL AND a.provider IN ($apiMethods)
+              AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>''
+            ORDER BY CASE WHEN p.state='paid'
                     AND (a.evidence_projection_checked_at IS NULL OR
                          a.updated_at>a.evidence_projection_checked_at)
                 THEN 0 ELSE 1 END,
                 a.evidence_projection_checked_at IS NOT NULL,
                 a.evidence_projection_checked_at,a.id LIMIT {$limit}");
         foreach($q->fetch_all(MYSQLI_ASSOC) as $row){
-            $c=achbotApiPaymentContext($db,(string)$row['hash_id']);if(!$c)continue;
-            if(achbotApiPaymentSyncInvoice($db,$c))$edited++;
-            $p=$c['pay'];$a=$c['attempt'];$proof=achbotPaymentEvidenceGetProof($db,(int)$p['id']);
-            if(achbotApiPaymentTerminal($p))achbotApiPaymentNotice($db,$p,($proof['mode']??'')==='evidence_only'?'evidence_only':(($a['wallet_credit_entry_id']??null)!==null?'confirmed':'settled'));
-            elseif(($a['evidence_state']??'')==='invalid_code'){
-                $d=achbotPaymentEvidenceUnprotect('code:'.$a['id'].':'.$p['id'],(string)$a['evidence_code']);
-                if(in_array($d['last_status']??'',['used','revoked','expired','mismatch'],true))achbotApiPaymentNotice($db,$p,$d['last_status']);
+            $id=(int)$row['pay_row_id'];
+            try {
+                $c=achbotApiPaymentContext($db,(string)$row['hash_id']);
+                if (!$c) {achbotDiagnosticEvent('achbot.finance.evidence_projection',['pay_id'=>$id,'reason'=>'original_context_unavailable'],'warning');continue;}
+                if(achbotApiPaymentSyncInvoice($db,$c))$edited++;
+                $p=$c['pay'];$a=$c['attempt'];$proof=achbotPaymentEvidenceGetProof($db,(int)$p['id']);
+                if(achbotApiPaymentTerminal($p))achbotApiPaymentNotice($db,$p,($proof['mode']??'')==='evidence_only'?'evidence_only':(($a['wallet_credit_entry_id']??null)!==null?'confirmed':'settled'));
+                elseif(($a['evidence_state']??'')==='invalid_code'){
+                    $d=achbotPaymentEvidenceUnprotect('code:'.$a['id'].':'.$p['id'],(string)$a['evidence_code']);
+                    if(in_array($d['last_status']??'',['used','revoked','expired','mismatch'],true))achbotApiPaymentNotice($db,$p,$d['last_status']);
+                }
+                elseif(in_array($a['evidence_state']??'',['review','uncertain'],true)||$p['state']==='processing')achbotApiPaymentNotice($db,$p,($a['evidence_state']??'')==='uncertain'?'uncertain':'review');
+            } catch (Throwable $e) {
+                achbotDiagnosticEvent('achbot.finance.evidence_projection',['pay_id'=>$id,
+                    'reason'=>'projection_deferred','class'=>get_class($e)],'warning');
+            } finally {
+                // Scheduling stamp, not a successful delivery assertion.
+                $stamp=achbotProviderStatement($db,'UPDATE payment_attempts SET evidence_projection_checked_at=NOW(),updated_at=updated_at WHERE pay_row_id=?','i',[$id]);
+                $stamp->close();
             }
-            elseif(in_array($a['evidence_state']??'',['review','uncertain'],true)||$p['state']==='processing')achbotApiPaymentNotice($db,$p,($a['evidence_state']??'')==='uncertain'?'uncertain':'review');
-            $stamp=$db->prepare('UPDATE payment_attempts SET evidence_projection_checked_at=NOW(6) WHERE pay_row_id=?');$stamp->bind_param('i',$p['id']);$stamp->execute();$stamp->close();
         }
     }catch(Throwable $e){
         achbotDiagnosticEvent('achbot.finance.evidence_tick_exception',

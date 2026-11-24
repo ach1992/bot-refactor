@@ -144,6 +144,17 @@ gateway/admin/financial tests. Source-only CI never proves installed
 configuration, merchant verification, payment settlement or production
 authorization. No SQL migration is needed for these editor changes.
 
+## Current Wallet-first receipt policy
+
+The Wallet-first architecture and canonical installation schema supersede
+the historical optional-schema and route-specific settlement descriptions
+below. The configured duplicate-receipt cooldown values remain intact;
+the current implementation uses admitted manual receipts, the actual
+manual credit basis and review/rejection state, not retired payment
+states. Original receiving recovery is not a new payment. Current-schema
+coverage is owned by `tools/test_wallet_first_manual.py`. Historical
+23-table UI fixtures do not exercise new monetary acceptance.
+
 ## Acceptance
 
 tools/test_post_v9_payment_ux_lifecycle.py --run-disposable exercises actual current PHP on owned original 23-table MariaDB plus only the optional disposable 003 and 006 migrations, with no external provider or Telegram network requests. It checks expiry, supersession, provenance, several messages edited, Telegram retry, manual receipt evidence and competing PHP/MySQLi clients. The [current CI policy](CI-VALIDATION.md) owns required automated selection; historical V0–V9 execution is not a current acceptance requirement. Installed E2E payment/provider and any real SQL activation require separate approval.

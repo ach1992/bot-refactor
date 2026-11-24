@@ -337,17 +337,27 @@ function achbotHostedReceiptIngestIpn(mysqli $db,string $raw,string $signature):
 function achbotHostedReceiptMaintain(mysqli $db,int $limit=3): array {
     $limit=max(1,min(5,$limit));
     $done=['examined'=>0,'completed'=>0,'pending'=>0,'review'=>0];
+    $single=[];$child=[];
+    foreach (array_keys(achbotCreditMethodRegistry()) as $method) {
+        $def=achbotHostedReceiptDefinition($method);
+        if (!$def) continue;
+        // Validated registry keys are source-owned and safe for SQL lists.
+        if ($def['child_transactions']) $child[]="'".$method."'";
+        else $single[]="'".$method."'";
+    }
+    $singleSql=$single?implode(',',$single):'NULL';
+    $childSql=$child?implode(',',$child):'NULL';
     $q=$db->query("SELECT a.pay_row_id,p.user_id,a.provider,a.provider_reference AS reference,
         NULL AS child_id,COALESCE(a.last_checked_at,a.created_at) AS due
         FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
-        WHERE a.provider IN ('nextpay','zarinpal') AND a.wallet_invoice_sha256<>'' AND a.wallet_credit_entry_id IS NULL
+        WHERE a.provider IN ($singleSql) AND a.wallet_invoice_sha256<>'' AND a.wallet_credit_entry_id IS NULL
           AND (a.last_checked_at IS NULL OR a.last_checked_at<DATE_SUB(NOW(),INTERVAL 60 SECOND))
         UNION ALL
         SELECT a.pay_row_id,p.user_id,a.provider,t.payment_id AS reference,t.id AS child_id,
           COALESCE(t.merchant_checked_at,t.received_at) AS due
         FROM payment_transactions t JOIN payment_attempts a ON a.id=t.attempt_id
         JOIN pays p ON p.id=a.pay_row_id
-        WHERE t.provider='nowpayments' AND a.wallet_invoice_sha256<>'' AND t.merchant_verified_at IS NULL
+        WHERE t.provider=a.provider AND t.provider IN ($childSql) AND a.wallet_invoice_sha256<>'' AND t.merchant_verified_at IS NULL
           AND t.observed_status NOT IN ('refunded','failed','expired')
           AND (t.merchant_checked_at IS NULL OR t.merchant_checked_at<DATE_SUB(NOW(),INTERVAL 60 SECOND))
         ORDER BY due,pay_row_id,child_id LIMIT ".$limit);

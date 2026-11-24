@@ -1,5 +1,5 @@
 <?php
-/** AChBot V8: source-pinned financial compatibility module. */
+/** Scheduled bank receipt acceptance under the configured timer policy. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
@@ -12,7 +12,7 @@ require_once __DIR__.'/CheckoutAdmission.php';
 achbotCheckoutRequireSchema($connection);
 if (($botState['cartToCartAutoAcceptState']??'off')==='on') {
     $q=$connection->query("SELECT p.id,p.user_id FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id
-        WHERE p.state='have_sent' AND a.provider='bank_transfer' AND a.stage='review'
+        WHERE p.state IN ('have_sent','service_superseded') AND a.provider='bank_transfer' AND a.stage='review'
           AND a.wallet_invoice_sha256<>'' AND a.wallet_credit_entry_id IS NULL AND a.evidence_profile IS NULL
         ORDER BY COALESCE(a.last_checked_at,a.created_at),a.id LIMIT 12");
     foreach ($q->fetch_all(MYSQLI_ASSOC) as $row) {

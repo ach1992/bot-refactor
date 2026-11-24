@@ -78,7 +78,7 @@ function achbotGatewayAttentionReceiptScope(): string {
             OR (a.provider IN ($manual) AND (
                 (p.state IN ('have_sent','service_superseded') AND a.stage='review'
                     AND p.message_id>0 AND p.chat_id>0)
-                OR (p.state='pending' AND a.stage='receiving'
+                OR (p.state IN ('pending','service_superseded') AND a.stage='receiving'
                     AND (a.review_notice_claim_token IS NULL OR a.review_notice_claimed_at IS NULL
                         OR a.review_notice_claimed_at<NOW()-INTERVAL 2 MINUTE))
             ))

@@ -171,12 +171,6 @@ function achbotPaymentEvidencePayFingerprint(array $pay): string {
     // A new scoped quote binds its immutable metadata to every API receipt.
     if (isset($pay['addon_scope_snapshot']))
         $out['addon_scope_snapshot']=(string)$pay['addon_scope_snapshot'];
-    // Historical RC26 evidence includes these immutable 021 fields only
-    // when they were populated. New installs without 021 remain compatible.
-    if (isset($pay['issued_entitlement_days']) || isset($pay['issued_entitlement_gb'])) {
-        $out['issued_entitlement_days']=(string)($pay['issued_entitlement_days']??'');
-        $out['issued_entitlement_gb']=(string)($pay['issued_entitlement_gb']??'');
-    }
     return hash('sha256',json_encode($out,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
 }
 function achbotPaymentEvidenceQuoteFingerprint(array $attempt): string {
@@ -748,47 +742,43 @@ function achbotPaymentEvidenceGiftCodeFormatValid(string $code): bool {
 function achbotPaymentEvidenceCodeDigest(string $code): string {
     return hash_hmac('sha256',"AChBot/payment-evidence/code/v1\0".$code,achbotPaymentEvidenceKey());
 }
-function achbotPaymentEvidenceSaveGiftCode(mysqli $db,int $payId,int $actor,string $code): array {
+/** Store typed evidence under the same locked original receipt transaction
+ * that reserves its delivery claim. No independent commit or replay owner. */
+function achbotPaymentEvidenceSaveGiftCodeLocked(mysqli $db,array $pay,array $a,int $actor,string $code): array {
     $bad=['status'=>'invalid'];
-    $code=trim($code);
-    if ($payId<=0 || $actor<=0 ||
-        !achbotPaymentEvidenceGiftCodeFormatValid($code) ||
-        !achbotPaymentEvidenceSchemaReady($db)) return $bad;
-    try {
-        achbotPaymentEvidenceRequireAutocommit($db); $db->begin_transaction();
-        $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
-        $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
-        $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
-        $q->bind_param('i',$payId);$q->execute();$a=$q->get_result()->fetch_assoc();$q->close();
-        $profile=$a?achbotPaymentEvidenceSnapshot($a):null;
-        if (!$pay || !$profile || $profile['method']!=='gift_card' ||
-            (int)$pay['user_id']!==$actor ||
-            !in_array($pay['state'],['pending','have_sent'],true) ||
-            !hash_equals($profile['pay_sha256'],achbotPaymentEvidencePayFingerprint($pay))) {
-            $db->rollback();return $bad;
-        }
-        $digest=achbotPaymentEvidenceCodeDigest($code);
-        if (is_string($a['evidence_code_sha256']) &&
-            hash_equals($a['evidence_code_sha256'],$digest)) {
-            $read=achbotPaymentEvidenceUnprotect('code:'.$a['id'].':'.$payId,(string)$a['evidence_code']);
-            $db->rollback();
-            return ['status'=>($read['code']??null)===$code?'same':'locked'];
-        }
-        if ($a['evidence_code']!==null && ($a['evidence_state']!=='invalid_code' || $a['evidence_review_sent_at']!==null)) {
-            $db->rollback();return ['status'=>'locked'];
-        }
-        $aid=(int)$a['id'];
-        $q=$db->prepare('SELECT id FROM payment_transactions WHERE attempt_id=? AND evidence_operation IS NOT NULL FOR UPDATE');
-        $q->bind_param('i',$aid);$q->execute();$existing=$q->get_result()->num_rows;$q->close();
-        if ($existing) { $db->rollback();return ['status'=>'locked']; }
-        $sealed=achbotPaymentEvidenceProtect('code:'.$aid.':'.$payId,['code'=>$code,'actor'=>$actor]);
-        $q=$db->prepare("UPDATE payment_attempts SET evidence_code=?,evidence_code_sha256=?,
-            evidence_state='monitoring',evidence_review_sent_at=NULL
-            WHERE id=? AND evidence_profile IS NOT NULL");
-        $q->bind_param('ssi',$sealed,$digest,$aid);$q->execute();$ok=$q->affected_rows===1;$q->close();
-        if (!$ok || !$db->commit()) throw new RuntimeException('payment_evidence_code_commit_unknown');
-        return ['status'=>'saved'];
-    } catch (Throwable $e) {try{$db->rollback();}catch(Throwable $x){}return $bad;}
+    $payId=(int)$pay['id'];$code=trim($code);
+    $profile=achbotPaymentEvidenceSnapshot($a);
+    if ($payId<=0 || $actor<=0 || !achbotPaymentEvidenceGiftCodeFormatValid($code) ||
+        !$profile || $profile['method']!=='gift_card' ||
+        (int)$pay['user_id']!==$actor || (int)$a['pay_row_id']!==$payId ||
+        !in_array($a['stage'],['pending','receiving'],true) ||
+        !in_array($pay['state'],['pending','service_superseded'],true) ||
+        ($pay['state']==='service_superseded' && $a['stage']!=='receiving') ||
+        !hash_equals($profile['pay_sha256'],achbotPaymentEvidencePayFingerprint($pay)))
+        return $bad;
+    $digest=achbotPaymentEvidenceCodeDigest($code);
+    if (is_string($a['evidence_code_sha256']) && hash_equals($a['evidence_code_sha256'],$digest)) {
+        $read=achbotPaymentEvidenceUnprotect('code:'.$a['id'].':'.$payId,(string)$a['evidence_code']);
+        return ['status'=>($read['code']??null)===$code?'same':'locked'];
+    }
+    // Once receiving, only the exact original evidence may be recovered.
+    if ($a['stage']==='receiving' || ($a['evidence_code']!==null &&
+        ($a['evidence_state']!=='invalid_code' || $a['evidence_review_sent_at']!==null)))
+        return ['status'=>'locked'];
+    $aid=(int)$a['id'];
+    $q=$db->prepare('SELECT id FROM payment_transactions WHERE attempt_id=? AND evidence_operation IS NOT NULL FOR UPDATE');
+    if (!$q || !$q->bind_param('i',$aid) || !$q->execute()) throw new RuntimeException('payment_evidence_code_lookup');
+    $existing=$q->get_result()->num_rows;$q->close();
+    if ($existing) return ['status'=>'locked'];
+    $sealed=achbotPaymentEvidenceProtect('code:'.$aid.':'.$payId,['code'=>$code,'actor'=>$actor]);
+    $q=$db->prepare("UPDATE payment_attempts SET evidence_code=?,evidence_code_sha256=?,
+        evidence_state='monitoring',evidence_review_sent_at=NULL
+        WHERE id=? AND evidence_profile IS NOT NULL");
+    if (!$q || !$q->bind_param('ssi',$sealed,$digest,$aid) || !$q->execute())
+        throw new RuntimeException('payment_evidence_code_write');
+    $ok=$q->affected_rows===1;$q->close();
+    if (!$ok) throw new RuntimeException('payment_evidence_code_write');
+    return ['status'=>'saved'];
 }
 function achbotPaymentEvidenceReadGiftCode(mysqli $db,int $payId): ?string {
     // This is authenticated historical evidence retrieval, not permission to

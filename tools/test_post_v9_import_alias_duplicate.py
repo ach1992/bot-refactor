@@ -21,10 +21,9 @@ import test_access_state as owned
 import test_unified_existing_subscriptions as imports
 import test_v6_native as native
 import test_v6_panels as bodies
-import test_v8_native as purchase
 
 ROOT = Path(__file__).resolve().parents[1]
-DB = purchase.SIDE[1]
+DB = owned.NAMES[1]
 # Reuse the source-real event driver, with one extra actual domain operation.
 DRIVER = imports.PHP.replace(
     " } elseif($op==='copy'){",
@@ -44,20 +43,19 @@ def run() -> list[str]:
     checks = []
     for provider in ('pasarguard',):
         fixture = imports.existing_panel
-        with owned.owned_database() as (work, env), fixture() as (vendor, url):
-            purchase.init(work, env, url)
+        with owned.owned_database(ROOT/'database/current-schema.sql') as (work, env), fixture() as (vendor, url):
             def db(sql: str) -> str:
                 return native.sql(work, env, sql, DB).strip()
 
-            for migration in ('001_marzban_panel_group_id.sql',
-                '003_payment_attempts.sql', '004_automatic_renewal_attempts.sql',
-                '006_payment_message_refs.sql', '007_service_effects.sql',
-                '011_provider_identity.sql', '012_shared_provider_storage.sql',
-                '016_remove_pasarguard_server_groups.sql',
-                '017_shared_plan_changes.sql','014_api_payment_evidence.sql','022_gateway_review_archive.sql',
-                '023_scoped_payment_lock_indexes.sql', '024_wallet_entries.sql',
-                '025_wallet_receipt_credit.sql', '026_service_operations.sql','035_service_resolution.sql'):
-                db((ROOT / 'migrations/post-v9' / migration).read_text())
+            # The actual supported transfer now retires current drafts. Use
+            # the complete fresh runtime schema, never a partial old chain.
+            db("INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,type,username,password)"
+               " VALUES(2,"+storage.text(url)+",'127.0.0.1','','none','','','none','{}','pasarguard','fixture-admin','fixture-private-key');"
+               "INSERT INTO server_info(id,title,ucount,remark,flag,active,state)"
+               " VALUES(2,'Fixture purchase server',10,'buyfixture','',1,1);"
+               "INSERT INTO server_categories(id,server_id,title,parent,step,active) VALUES(1,'2','Fixture category',0,4,1);"
+               "INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids)"
+               " VALUES(7,'7',1,2,0,6,'Fixture','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]');")
             db("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,step)"
                " VALUES (1002,'B','b','0',50000,'1700000000',0,'sent','none'),"
                "(1003,'C','c','0',50000,'1700000000',0,'sent','none'),"

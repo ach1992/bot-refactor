@@ -54,6 +54,16 @@ if (!($spec['api']??false)) {$GLOBALS['botState']['smsApiVerifyState']='off';$GL
 try {
     $result=match ($spec['op']) {
         'attention'=>achbotGatewayAttentionCaseOpen($db,$id),
+        'maintain'=>achbotApiPaymentMaintain($db,(int)($spec['limit']??1)),
+        'duplicate_guard'=>(static function() use ($db,$pay,$spec) {
+            $GLOBALS['botState']=array_replace($GLOBALS['botState'],$spec['policy']??[]);
+            return duplicateReceiptGuard($db,$pay,(int)($spec['clock']??time()));
+        })(),
+        'timer_sweep'=>(static function() use ($db) {
+            $connection=$db;$botState=['cartToCartAutoAcceptState'=>'on'];
+            require dirname($GLOBALS['argv'][1]).'/AutomaticReceipts.php';
+            return true;
+        })(),
         'reject'=>(static function() use ($db,$id,$pay,$spec) {
             $db->begin_transaction();
             $r=achbotCheckoutRejectReceiptLocked($db,$id,(int)$pay['user_id'],(int)($spec['actor']??9001),9001,$pay['hash_id']);
@@ -218,6 +228,81 @@ def main():
                 # transaction even when the local service is invalidated.
                 q=dict(kind='BUY',variant='standard',price=100,server_id=2,plan_id=7,order_id=0,
                     quantity=1,days=30,volume=2,remark='fixture',uuid='',naming_mode='fixed',explicit_name=True)
+                # A committed service supersession between receipt claim and
+                # Telegram ACK must not lose the original evidence or reopen
+                # the retired service. All photo methods share this path.
+                for method in ('bank_transfer','gift_card','manual_usdt','manual_trx'):
+                    for lost in (False,True):
+                        name=mode+'-inflight-'+method+('-lost' if lost else '-ack')
+                        oid=result(mode,'quote',reference=name,request=q)
+                        pid=seed(name,price=100,kind='BUY_SUB')
+                        result(mode,'issue',pid,method=method,service=oid)
+                        token=result(mode,'begin',pid,method=method,file='original-inflight-photo')
+                        assert token
+                        sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}; UPDATE service_operations SET stage='cancelled' WHERE id={oid}")
+                        b=balance()
+                        if lost:
+                            sql(f"UPDATE payment_attempts SET review_notice_claimed_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={pid}")
+                            assert result(mode,'attention',pid) is True
+                            assert result(mode,'begin',pid,method=method,file='replacement-photo') is None
+                            recovered=result(mode,'review',pid,callback=f'attentionReceipt_{pid}',fail_send=True)
+                            assert len(recovered['sends'])==1
+                            assert sql(f"SELECT review_notice_claim_token IS NULL FROM payment_attempts WHERE pay_row_id={pid}")=='1'
+                            recovered=result(mode,'review',pid,callback=f'attentionReceipt_{pid}')
+                            assert len(recovered['sends'])==1 and recovered['sends'][0]['args'][0]=='original-inflight-photo'
+                        else:
+                            assert result(mode,'finish',pid,method=method,file='original-inflight-photo',token=token) is True
+                        assert sql(f"SELECT state FROM pays WHERE id={pid}")=='service_superseded'
+                        assert result(mode,'attention',pid) is True
+                        if method=='bank_transfer' and not lost:
+                            assert result(mode,'timer_sweep',pid)
+                            assert sql(f"SELECT wallet_credit_basis FROM payment_attempts WHERE pay_row_id={pid}")=='bank_timer'
+                        else:
+                            assert result(mode,'approve',pid)['funding']=='request_invalidated'
+                        assert balance()==b+100 and result(mode,'approve',pid)['credit']['replayed']
+                        assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
+                        assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{oid}'")=='0'
+                case('superseded_receiving_ack_and_recovery_all_photo_methods')
+                case('superseded_receipt_preserves_configured_timer_policy')
+                # Typed gift code and receipt claim must commit atomically.
+                name=mode+'-atomic-typed-gift'
+                oid=result(mode,'quote',reference=name,request=q)
+                pid=seed(name,price=100,kind='BUY_SUB')
+                result(mode,'issue',pid,method='gift_card',api=True,service=oid)
+                code=evidence.fixture_gift_code(name)
+                sql("""\nDELIMITER //
+CREATE TRIGGER fixture_receiving_fail BEFORE UPDATE ON payment_attempts
+FOR EACH ROW BEGIN
+    IF NEW.stage='receiving' THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture receiving rollback';
+    END IF;
+END//
+DELIMITER ;
+""")
+                try:
+                    assert result(mode,'begin',pid,method='gift_card',file=code,api=True) is None
+                    assert sql(f"SELECT CONCAT(stage,':',evidence_code IS NULL,':',review_notice_claim_token IS NULL) FROM payment_attempts WHERE pay_row_id={pid}")=='pending:1:1'
+                finally:sql('DROP TRIGGER fixture_receiving_fail')
+                assert result(mode,'begin',pid,method='gift_card',file=code,api=True)
+                sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}; UPDATE service_operations SET stage='cancelled' WHERE id={oid}; UPDATE payment_attempts SET review_notice_claimed_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={pid}")
+                assert result(mode,'attention',pid)
+                assert result(mode,'begin',pid,method='gift_card',file=evidence.fixture_gift_code(name+'-other'),api=True) is None
+                recovered=result(mode,'review',pid,callback=f'attentionReceipt_{pid}',api=True)
+                assert len(recovered['sends'])==1 and code in recovered['sends'][0]['args'][0]
+                assert sql(f"SELECT state FROM pays WHERE id={pid}")=='service_superseded'
+                b=balance()
+                assert result(mode,'approve',pid)['funding']=='request_invalidated' and balance()==b+100
+                assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+100
+                case('typed_gift_claim_atomic_and_superseded_recovery')
+                # No NEW evidence may start from an already-invalidated draft.
+                name=mode+'-unstarted-superseded'
+                oid=result(mode,'quote',reference=name,request=q)
+                pid=seed(name,price=100,kind='BUY_SUB')
+                result(mode,'issue',pid,method='bank_transfer',service=oid)
+                sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}")
+                assert result(mode,'begin',pid,file='new-photo') is None
+                assert result(mode,'attention',pid) is False
+                case('superseded_unstarted_receipt_not_reopened')
                 oid=result(mode,'quote',reference=mode+'-buy',request=q)
                 pid=seed(mode+'-sms',price=100,kind='BUY_SUB')
                 r=result(mode,'issue',pid,method='bank_transfer',api=True,service=oid)
@@ -288,7 +373,109 @@ def main():
                 assert result(mode,'check',pid)=='settled' and balance()==b+1000
                 assert roles(pid)=='customer,receipt_primary',roles(pid)
                 case('actual_gift_proven_local_rollback_recovery_reject_denied')
-            assert sum(server.consumes.values())==4 and server.gift_consumes==2
+
+                # Existing cooldown policy must use current receipt facts,
+                # not retired approved rows or automatic settlements.
+                price=5421 if mode=='strict' else 5422
+                now=int(datetime.now(timezone.utc).timestamp())
+                old=seed(mode+'-cooldown-paid',price=price)
+                sql(f'UPDATE pays SET request_date={now-500} WHERE id={old}')
+                result(mode,'issue',old,method='bank_transfer')
+                submit(mode,old,'bank_transfer','cooldown-paid-photo')
+                result(mode,'approve',old)
+                fresh=seed(mode+'-cooldown-fresh',price=price)
+                result(mode,'issue',fresh,method='bank_transfer')
+                msg=result(mode,'duplicate_guard',fresh,clock=now)
+                assert isinstance(msg,str) and 'تایید' in msg,msg
+                assert result(mode,'duplicate_guard',fresh,clock=now,policy={'receiptApprovedMinutes':5}) is None
+                assert result(mode,'duplicate_guard',fresh,clock=now,policy={'receiptApprovedMinutes':0})==msg
+                case('current_manual_approval_cooldown_preserves_configured_policy')
+
+                price+=100
+                old=seed(mode+'-cooldown-review',price=price)
+                sql(f'UPDATE pays SET request_date={now-500} WHERE id={old}')
+                result(mode,'issue',old,method='bank_transfer')
+                submit(mode,old,'bank_transfer','cooldown-review-photo')
+                fresh=seed(mode+'-cooldown-review-fresh',price=price)
+                result(mode,'issue',fresh,method='bank_transfer')
+                msg=result(mode,'duplicate_guard',fresh,clock=now)
+                assert isinstance(msg,str) and 'بررسی' in msg,msg
+                assert result(mode,'duplicate_guard',fresh,clock=now,policy={'receiptReviewMinutes':5}) is None
+                assert result(mode,'begin',fresh,file='same-recovery-photo')
+                assert result(mode,'duplicate_guard',fresh,clock=now) is None
+                assert result(mode,'reject',old)=='declined'
+                case('current_review_cooldown_does_not_block_original_recovery')
+
+                price+=100
+                old=seed(mode+'-cooldown-timer',price=price)
+                result(mode,'issue',old,method='bank_transfer')
+                submit(mode,old,'bank_transfer','cooldown-timer-photo')
+                result(mode,'approve',old,basis='bank_timer',actor=0)
+                historical=seed(mode+'-cooldown-historical',price=price)
+                sql(f"UPDATE pays SET state='approved',request_date={now-30} WHERE id={historical}")
+                fresh=seed(mode+'-cooldown-automatic-fresh',price=price)
+                result(mode,'issue',fresh,method='bank_transfer')
+                assert result(mode,'duplicate_guard',fresh,clock=now) is None
+                case('historical_and_automatic_payments_do_not_create_manual_cooldown')
+
+                # A corrupt current profile can fail before obtaining a claim.
+                # It must not permanently occupy the only worker/projection
+                # slot while another legitimate payment is ready.
+                sql("UPDATE payment_attempts SET evidence_next_check_at=DATE_ADD(NOW(),INTERVAL 1 DAY),evidence_projection_checked_at=NOW() WHERE evidence_profile IS NOT NULL")
+                historic=seed(mode+'-historical-projection',price=7381)
+                result(mode,'issue',historic,method='bank_transfer',api=True)
+                sql(f"UPDATE payment_attempts SET wallet_invoice_sha256=NULL WHERE pay_row_id={historic}")
+                bad=seed(mode+'-bad-profile',price=7382)
+                result(mode,'issue',bad,method='bank_transfer',api=True)
+                submit(mode,bad,'bank_transfer','bad-profile-photo',api=True)
+                sql(f"UPDATE payment_attempts SET evidence_profile='fixture-corrupt-profile',evidence_next_check_at=NOW()-INTERVAL 10 MINUTE WHERE pay_row_id={bad}")
+                good=seed(mode+'-healthy-behind-bad',price=7383)
+                r=result(mode,'issue',good,method='bank_transfer',api=True)
+                submit(mode,good,'bank_transfer','healthy-profile-photo',api=True)
+                ident='102' if mode=='strict' else '202'
+                nowdt=datetime.now(timezone.utc).replace(microsecond=0)
+                server.messages[ident]=dict(id=int(ident),public_uid='UID'+ident,provider='BANK_FIXTURE',provider_sms_id='sms'+ident,
+                    sender='BANK',mobile_source='phone',bank_key='fixture',rule_id=7,amount=int(float(r['amount'])),display_unit='toman',
+                    sms_date=nowdt.strftime('%Y-%m-%d'),sms_time=nowdt.strftime('%H:%M:%S'),created_at=nowdt.strftime('%Y-%m-%d %H:%M:%S'),status='ready')
+                sql(f"UPDATE payment_attempts SET evidence_next_check_at=NOW()-INTERVAL 1 MINUTE WHERE pay_row_id={good}")
+                b=balance()
+                assert result(mode,'maintain',good)['checked']==1
+                assert balance()==b
+                assert sql(f"SELECT evidence_next_check_at>NOW() AND evidence_projection_checked_at IS NOT NULL FROM payment_attempts WHERE pay_row_id={bad}")=='1'
+                assert sql(f"SELECT evidence_projection_checked_at IS NULL FROM payment_attempts WHERE pay_row_id={historic}")=='1'
+                assert result(mode,'maintain',good)['checked']==1
+                assert balance()==b+7383 and server.consumes[ident]==1
+                assert sql(f"SELECT evidence_projection_checked_at IS NOT NULL FROM payment_attempts WHERE pay_row_id={good}")=='1'
+                assert sql(f"SELECT wallet_credit_entry_id IS NULL AND evidence_profile='fixture-corrupt-profile' FROM payment_attempts WHERE pay_row_id={bad}")=='1'
+                case('api_maintenance_rotates_broken_pin_and_skips_historical_projection')
+
+                # More than four exact-amount pages is a scheduling budget,
+                # never an operator-only threshold or permanent first-page loop.
+                scan=seed(mode+'-paged-bank-proof',price=8371)
+                r=result(mode,'issue',scan,method='bank_transfer',api=True)
+                submit(mode,scan,'bank_transfer','paged-bank-photo',api=True)
+                first=10000 if mode=='strict' else 20000
+                unit='toman' if mode=='strict' else 'rial'
+                multiplier=1 if unit=='toman' else 10
+                from datetime import timedelta
+                nowdt=datetime.now(timezone.utc).replace(microsecond=0)
+                older=nowdt-timedelta(minutes=10)
+                for n in range(401):
+                    ident=str(first+n)
+                    transfer=nowdt if n==400 else older
+                    server.messages[ident]=dict(id=int(ident),public_uid='UID'+ident,provider='BANK_FIXTURE',provider_sms_id='sms'+ident,
+                        sender='BANK',mobile_source='phone',bank_key='fixture',rule_id=7,amount=int(float(r['amount']))*multiplier,display_unit=unit,
+                        sms_date=transfer.strftime('%Y-%m-%d'),sms_time=transfer.strftime('%H:%M:%S'),created_at=nowdt.strftime('%Y-%m-%d %H:%M:%S'),status='ready')
+                b=balance()
+                assert result(mode,'check',scan)=='monitoring'
+                assert balance()==b
+                assert int(sql(f"SELECT evidence_cursor_id FROM payment_attempts WHERE pay_row_id={scan}"))>=first+399
+                sql(f"UPDATE payment_attempts SET evidence_next_check_at=NOW() WHERE pay_row_id={scan}")
+                assert result(mode,'check',scan)=='settled' and balance()==b+8371
+                assert result(mode,'check',scan)=='settled' and server.consumes[str(first+400)]==1
+                for n in range(401):del server.messages[str(first+n)]
+                case('bank_filtered_search_resumes_after_page_budget')
+            assert sum(server.consumes.values())==8 and server.gift_consumes==2
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
     report=dict(complete=True,cases=len(cases),checks=cases,owned_socket_mariadb=True,
         actual_protected_api_http=True,actual_manual_receipt_ack_contract=True,external_requests=0,production_effects=0)

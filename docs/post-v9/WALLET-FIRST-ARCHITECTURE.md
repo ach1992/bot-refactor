@@ -392,6 +392,33 @@ API proof may succeed while panel is down; receipt still credits exactly once.
 No timer-only proof for an API-verified invoice; any existing explicit
 timer-based manual acceptance policy change needs Owner decision.
 
+Receipt submission and service validity are separate. A receipt already
+reserved as receiving may finish or recover its original evidence and
+Telegram reference even if the service is superseded concurrently. Its
+superseded financial state is retained: verified funds credit Wallet once
+and never revive the invalidated service. A superseded invoice without
+an original receiving claim cannot start new evidence submission. Typed
+gift-code storage and receiving reservation are one locked transaction;
+failure rolls back both. The configured timer remains applicable to
+eligible already-submitted non-API bank receipts, including superseded
+ones, without overriding the API evidence requirement.
+
+Configured receipt cooldowns are evaluated on current admitted manual
+receipts and actual manual credit basis. They do not turn historical
+states, automatic settlements or original evidence recovery into new
+manual-payment restrictions. Polling and message-projection scheduling
+rotate pre-claim failures and malformed current contexts without deleting
+evidence, asserting success or imposing lifetime retry limits. Historical
+unpinned records are not executable projection work. Bank SMS search
+advances the existing cyclic cursor across both exact amount/unit
+filters, with a bounded per-tick page budget; it never treats a long
+result set as permanent proof failure. A demonstrably unsupported
+external API filter contract uses the bounded unfiltered lookup, subject
+to the same original proof and uniqueness checks. Hosted polling
+derives its single-reference and child-transaction selectors from the
+validated receipt registry.
+
+
 Generalize existing 018/020 delivery journals rather than invent independent
 senders. New delivery identity is stable source (payment credit or service
 operation) plus purpose/ordinal/audience as needed; old pay/attempt/effect

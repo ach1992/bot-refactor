@@ -161,7 +161,7 @@ function achbotCreditHostedEvidenceLocked(mysqli $db,array $attempt,string $refe
  */
 function achbotCreditBankTimerEligibleLocked(mysqli $db,array $pay,array $attempt): bool {
     if ($attempt['provider']!=='bank_transfer' || $attempt['evidence_profile']!==null ||
-        $pay['state']!=='have_sent') return false;
+        !in_array($pay['state'],['have_sent','service_superseded'],true)) return false;
     // Match PaymentLifecycle's lock discipline: no unindexed locking
     // scan over unrelated Marzban group settings. The existing writer
     // mutex preserves the unique settings row's primary-key identity.

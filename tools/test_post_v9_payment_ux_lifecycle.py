@@ -70,11 +70,6 @@ if ($action==='expire') {
 } elseif ($action==='audience') {
     $before=achbotPayUxAudienceAllowed($connection,
         (string)($spec['provider']??'bank_transfer'),(int)($spec['actor']??1001));
-} elseif ($action==='duplicate_guard') {
-    $stmt=$connection->prepare('SELECT * FROM pays WHERE id=? LIMIT 1');
-    $stmt->bind_param('i',$id);$stmt->execute();
-    $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
-    $before=duplicateReceiptGuard($connection,$pay,(int)($spec['clock']??time()));
 } elseif ($action==='manual_allowed') {
     $stmt=$connection->prepare('SELECT * FROM pays WHERE id=? LIMIT 1');
     $stmt->bind_param('i',$id);$stmt->execute();
@@ -526,35 +521,8 @@ def main():
         assert run(w,e,dict(action='audience',actor=9501,provider='weSwap',
                             states={'gatewayAudience':{}}))['result'] is False
         cases.append('per_method_audience_all_agent_buyer_none_fail_closed')
-        # The duplicate-guard windows are presentation/policy cooldowns,
-        # not a replacement for exactly-once payment/receipt settlement.
-        current=int(time.time())
-        olderInvoice=add(w,e,'same-buyer-approved',who=9670,
-                         kind='BUY_SUB',old=current-500)
-        sql(w,e,f"UPDATE pays SET state='approved' WHERE id={olderInvoice}")
-        freshInvoice=add(w,e,'same-buyer-request',who=9670,
-                         kind='BUY_SUB',old=current)
-        default=run(w,e,dict(action='duplicate_guard',id=freshInvoice,
-                              clock=current))['result']
-        assert isinstance(default,str) and 'تایید' in default
-        shorter=run(w,e,dict(action='duplicate_guard',id=freshInvoice,
-            clock=current,states={'receiptApprovedMinutes':5}))['result']
-        assert shorter is None,(default,shorter)
-        invalid=run(w,e,dict(action='duplicate_guard',id=freshInvoice,
-            clock=current,states={'receiptApprovedMinutes':0}))['result']
-        assert isinstance(invalid,str)
-        cases.append('configurable_duplicate_approved_cooldown_keeps_safe_default')
-        pendingReceipt=add(w,e,'same-buyer-review',who=9671,
-                           kind='BUY_SUB',old=current-500)
-        sql(w,e,f"UPDATE pays SET state='have_sent' WHERE id={pendingReceipt}")
-        pendingNew=add(w,e,'same-buyer-pending',who=9671,kind='BUY_SUB',old=current)
-        default=run(w,e,dict(action='duplicate_guard',id=pendingNew,
-                             clock=current))['result']
-        assert isinstance(default,str) and 'بررسی' in default
-        shorter=run(w,e,dict(action='duplicate_guard',id=pendingNew,
-              clock=current,states={'receiptReviewMinutes':5}))['result']
-        assert shorter is None
-        cases.append('duplicate_receipt_review_window_configurable_only_inside_bounds')
+        # Current pinned-receipt cooldown policy is exercised in
+        # test_wallet_first_manual.py on the canonical installation schema.
         # The installed Hell incident had hundreds of historical payment
         # messages awaiting projection while a newly auto-approved payment
         # had four unsynced receipt/invoice copies. Reserve newer terminal

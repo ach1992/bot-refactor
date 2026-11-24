@@ -271,7 +271,7 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
 
 function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $method, int $userId): bool {
     if ((int)$payInfo['user_id'] !== $userId ||
-        (string)$payInfo['state'] !== 'pending' ||
+        !in_array((string)$payInfo['state'],['pending','service_superseded'],true) ||
         (string)($payInfo['payid'] ?? '') !== '' ||
         !achbotCreditMethodHas($method,'manual_quote')) return false;
     try {
@@ -294,6 +294,7 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
              (int)$attempt['age_seconds']<achbotPayUxManualDeadlineSeconds())
         );
         return $validWindow &&
+            ($payInfo['state']==='pending' || $attempt['stage']==='receiving') &&
             (string)$attempt['provider'] === $method &&
             in_array((string)$attempt['stage'], ['pending','receiving'], true) &&
             achbotManualIntentDecode((string)$attempt['checkout_url'], $method) !== null;
@@ -313,19 +314,18 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
     $typed=achbotManualTypedGift($connection,$payInfo,$method);
     if ($userId <= 0 || $fileId === '' || strlen($fileId) > ($typed?4096:1200) ||
         !achbotCreditMethodHas($method,'manual_quote')) return null;
-    if($typed){$saved=achbotPaymentEvidenceSaveGiftCode($connection,(int)$payInfo['id'],$userId,$fileId);if(!in_array($saved['status']??'',['saved','same'],true))return null;}
     try {
         $claimToken = bin2hex(random_bytes(16));
-        $connection->begin_transaction();
+        if (!$connection->begin_transaction()) throw new RuntimeException('manual_evidence_transaction_failed');
         $id = (int)$payInfo['id'];
-        $stmt = $connection->prepare('SELECT user_id,state,payid FROM pays WHERE id=? FOR UPDATE');
+        $stmt = $connection->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $pay = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$pay || (int)$pay['user_id'] !== $userId || $pay['state'] !== 'pending' ||
+        if (!$pay || (int)$pay['user_id'] !== $userId || !in_array($pay['state'],['pending','service_superseded'],true) ||
             (string)($pay['payid'] ?? '') !== '') { $connection->rollback(); return null; }
-        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,provider_status,wallet_invoice_sha256,
+        $stmt = $connection->prepare('SELECT *,
             TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
@@ -333,7 +333,8 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$attempt || !achbotCurrentReceiptPin($attempt) || (string)$attempt['provider'] !== $method ||
-            !in_array((string)$attempt['stage'], ['pending','receiving'], true)) {
+            !in_array((string)$attempt['stage'], ['pending','receiving'], true) ||
+            ($pay['state']==='service_superseded' && $attempt['stage']!=='receiving')) {
             $connection->rollback(); return null;
         }
         require_once __DIR__ . '/PaymentLifecycle.php';
@@ -348,7 +349,13 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], $method);
         if ($intent === null) { $connection->rollback(); return null; }
         if($typed) {
-            if(achbotPaymentEvidenceReadGiftCode($connection,$id)!==$fileId){$connection->rollback();return null;}
+            // Code and receiving claim are one transaction. Neither a plan
+            // change nor a failed claim can strand a saved code in pending.
+            $saved=achbotPaymentEvidenceSaveGiftCodeLocked($connection,$pay,$attempt,$userId,$fileId);
+            if(!in_array($saved['status']??'',['saved','same'],true) ||
+                achbotPaymentEvidenceReadGiftCode($connection,$id)!==$fileId) {
+                $connection->rollback();return null;
+            }
         } elseif ($attempt['stage'] === 'receiving') {
             if (($intent['receipt_file_id'] ?? null) !== $fileId) {
                 $connection->rollback(); return null;
@@ -384,7 +391,7 @@ function achbotManualReleaseEvidenceLease(mysqli $connection, string $hashId, st
         $stmt = $connection->prepare("UPDATE payment_attempts a
             JOIN pays p ON p.id=a.pay_row_id
             SET a.review_notice_claim_token=NULL, a.review_notice_claimed_at=NULL
-            WHERE p.hash_id=? AND p.state='pending'
+            WHERE p.hash_id=? AND p.state IN ('pending','service_superseded')
               AND a.stage='receiving' AND a.review_notice_claim_token=?");
         $stmt->bind_param('ss', $hashId, $token);
         $stmt->execute();
@@ -399,13 +406,13 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
                                     string $token, int $messageId, int $adminChatId): bool {
     if ($messageId <= 0 || $adminChatId <= 0 || $token === '') return false;
     try {
-        $connection->begin_transaction();
+        if (!$connection->begin_transaction()) throw new RuntimeException('manual_evidence_transaction_failed');
         $stmt = $connection->prepare('SELECT * FROM pays WHERE hash_id=? FOR UPDATE');
         $stmt->bind_param('s', $hashId);
         $stmt->execute();
         $pay = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$pay || $pay['state'] !== 'pending' || (string)($pay['payid'] ?? '') !== '') {
+        if (!$pay || !in_array($pay['state'],['pending','service_superseded'],true) || (string)($pay['payid'] ?? '') !== '') {
             $connection->rollback(); return false;
         }
         $id = (int)$pay['id'];
@@ -426,8 +433,8 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
                 achbotPaymentEvidenceReadGiftCode($connection,$id)!==$fileId) : ($intent['receipt_file_id'] ?? null) !== $fileId)) {
             $connection->rollback(); return false;
         }
-        $stmt = $connection->prepare("UPDATE pays SET state='have_sent',message_id=?,chat_id=?
-            WHERE id=? AND state='pending' AND (payid IS NULL OR payid='')");
+        $stmt = $connection->prepare("UPDATE pays SET state=IF(state='pending','have_sent',state),message_id=?,chat_id=?
+            WHERE id=? AND state IN ('pending','service_superseded') AND (payid IS NULL OR payid='')");
         $stmt->bind_param('iii', $messageId, $adminChatId, $id);
         $stmt->execute();
         $changed = $stmt->affected_rows;
@@ -441,7 +448,7 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
         $stmt->execute();
         $changed = $stmt->affected_rows;
         $stmt->close();
-        if($typed){$q=$connection->prepare('UPDATE payment_attempts SET evidence_review_sent_at=NOW() WHERE id=?');$q->bind_param('i',$attemptId);$q->execute();$q->close();}
+        if($typed){$q=$connection->prepare('UPDATE payment_attempts SET evidence_review_sent_at=NOW() WHERE id=?');$q->bind_param('i',$attemptId);if(!$q->execute())throw new RuntimeException('manual_evidence_review_stamp_failed');$q->close();}
         if ($changed !== 1 || !$connection->commit()) throw new RuntimeException('manual_evidence_commit_failed');
         return true;
     } catch (Throwable $error) {
@@ -760,124 +767,51 @@ function extractPhotoFileId($update): ?string {
 }
 
 function duplicateReceiptGuard(mysqli $connection, array $payInfo, int $nowTs): ?string {
-    $userId   = (int)$payInfo['user_id'];
-    $type     = (string)$payInfo['type'];
-    $planId   = (int)($payInfo['plan_id'] ?? 0);
-    $serverId = (int)($payInfo['server_id'] ?? 0);
-    $orderId  = (int)($payInfo['order_id'] ?? 0);
-    $price    = (int)($payInfo['price'] ?? 0);
-    $hashId   = (string)$payInfo['hash_id'];
-
-    if (in_array($payInfo['state'], ['have_sent', 'approved'], true)) {
+    require_once __DIR__.'/PaymentLifecycle.php';
+    $id=(int)$payInfo['id'];$userId=(int)$payInfo['user_id'];
+    // Original receipt recovery is not a new payment.
+    $own=achbotProviderRow($connection,'SELECT stage,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id=?','i',[$id]);
+    if ($own && achbotCurrentReceiptPin($own) && $own['stage']==='receiving') return null;
+    if (in_array($payInfo['state'],['have_sent','paid'],true))
         return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.2ea72e23b7');
-    }
 
-    // BOT_STATES bounds prevent malformed settings from weakening legacy
-    // duplicate/payment/review safeguards. Financial idempotency is separate.
-    require_once __DIR__ . '/PaymentLifecycle.php';
-    $isSpecial = ($type === 'BUY_SUB' || $type === 'INCREASE_WALLET');
-    $approvedMinutes=$isSpecial
+    $type=(string)$payInfo['type'];
+    $special=in_array($type,['BUY_SUB','INCREASE_WALLET'],true);
+    $approved=60*($special
         ? achbotPayUxPolicyNumber('receiptApprovedMinutes',10,1,1440)
-        : achbotPayUxPolicyNumber('receiptApprovedOtherMinutes',60,1,1440);
-    $windowApproved = 60*$approvedMinutes;
-    $windowHaveSent = 60*achbotPayUxPolicyNumber('receiptReviewMinutes',360,1,1440);
-    $windowDeclined = 60*achbotPayUxPolicyNumber('receiptDeclinedMinutes',3,1,1440);
-
-    $lookback = max($windowApproved, $windowHaveSent, $windowDeclined);
-    $minTs = $nowTs - $lookback;
-
-    if ($type === 'INCREASE_WALLET') {
-        $sql = "
-            SELECT `state`, `request_date`
-            FROM `pays`
-            WHERE `user_id` = ?
-              AND `hash_id` <> ?
-              AND `type` = ?
-              AND IFNULL(`price`,0) = ?
-              AND `request_date` >= ?
-            ORDER BY `request_date` DESC
-            LIMIT 200
-        ";
-        $stmt = $connection->prepare($sql);
-        $stmt->bind_param("issii", $userId, $hashId, $type, $price, $minTs);
-
-    } elseif ($type === 'BUY_SUB') {
-        $sql = "
-            SELECT `state`, `request_date`
-            FROM `pays`
-            WHERE `user_id` = ?
-              AND `hash_id` <> ?
-              AND `type` = ?
-              AND IFNULL(`plan_id`,0) = ?
-              AND IFNULL(`server_id`,0) = ?
-              AND IFNULL(`price`,0) = ?
-              AND `request_date` >= ?
-            ORDER BY `request_date` DESC
-            LIMIT 200
-        ";
-        $stmt = $connection->prepare($sql);
-        $stmt->bind_param("issiiii", $userId, $hashId, $type, $planId, $serverId, $price, $minTs);
-
-    } else {
-        $sql = "
-            SELECT `state`, `request_date`
-            FROM `pays`
-            WHERE `user_id` = ?
-              AND `hash_id` <> ?
-              AND `type` = ?
-              AND IFNULL(`plan_id`,0) = ?
-              AND IFNULL(`server_id`,0) = ?
-              AND IFNULL(`order_id`,0) = ?
-              AND IFNULL(`price`,0) = ?
-              AND `request_date` >= ?
-            ORDER BY `request_date` DESC
-            LIMIT 200
-        ";
-        $stmt = $connection->prepare($sql);
-        $stmt->bind_param("issiiiii", $userId, $hashId, $type, $planId, $serverId, $orderId, $price, $minTs);
+        : achbotPayUxPolicyNumber('receiptApprovedOtherMinutes',60,1,1440));
+    $review=60*achbotPayUxPolicyNumber('receiptReviewMinutes',360,1,1440);
+    $declined=60*achbotPayUxPolicyNumber('receiptDeclinedMinutes',3,1,1440);
+    $minTs=$nowTs-max($approved,$review,$declined);
+    $methods=achbotCreditMethodSqlList('manual_quote');
+    // Preserve configured cooldowns using current pinned receipt facts,
+    // not historical states or automatic/Wallet-only settlements.
+    $where='p.user_id=? AND p.id<>? AND p.type=? AND IFNULL(p.price,0)=? AND p.request_date>=?';
+    $types='iisii';$values=[$userId,$id,$type,(int)$payInfo['price'],$minTs];
+    if ($type!=='INCREASE_WALLET') {
+        $where.=' AND IFNULL(p.plan_id,0)=? AND IFNULL(p.server_id,0)=?';
+        $types.='ii';$values[]=(int)($payInfo['plan_id']??0);$values[]=(int)($payInfo['server_id']??0);
+        if ($type!=='BUY_SUB') {
+            $where.=' AND IFNULL(p.order_id,0)=?';
+            $types.='i';$values[]=(int)($payInfo['order_id']??0);
+        }
     }
-
-    $stmt->execute();
-    $res = $stmt->get_result();
-    $stmt->close();
-
-    if (!$res || $res->num_rows == 0) return null;
-
-    $latestHaveSentDiff = null;
-    $latestApprovedDiff = null;
-    $latestDeclinedDiff = null;
-
-    while ($row = $res->fetch_assoc()) {
-        $st = (string)$row['state'];
-        $ts = (int)$row['request_date'];
-        $diff = $nowTs - $ts;
-
-        if ($st === 'have_sent' && $latestHaveSentDiff === null) $latestHaveSentDiff = $diff;
-        if ($st === 'approved'  && $latestApprovedDiff === null) $latestApprovedDiff = $diff;
-        if ($st === 'declined'  && $latestDeclinedDiff === null) $latestDeclinedDiff = $diff;
-
-        if ($latestHaveSentDiff !== null && $latestApprovedDiff !== null && $latestDeclinedDiff !== null) break;
-    }
-
-    if ($latestHaveSentDiff !== null && $latestHaveSentDiff < $windowHaveSent) {
-        $remain = $windowHaveSent - $latestHaveSentDiff;
-        $mins = (int)ceil($remain / 60);
-        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.2f5e71511d', ['mins' => $mins]);
-    }
-
-
-    if ($latestApprovedDiff !== null && $latestApprovedDiff < $windowApproved) {
-        $remain = $windowApproved - $latestApprovedDiff;
-        $mins = (int)ceil($remain / 60);
-        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.c571825a4a', ['mins' => $mins]);
-    }
-
-
-    if ($latestDeclinedDiff !== null && $latestDeclinedDiff < $windowDeclined) {
-        $remain = $windowDeclined - $latestDeclinedDiff;
-        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.a2fecf9749', ['remain' => $remain]);
-    }
-
+    $row=achbotProviderRow($connection,"SELECT
+        MAX(CASE WHEN p.state='have_sent' AND a.stage='review' THEN p.request_date END) AS review_at,
+        MAX(CASE WHEN p.state='paid' AND a.wallet_credit_entry_id IS NOT NULL AND a.wallet_credit_basis='manual' THEN p.request_date END) AS approved_at,
+        MAX(CASE WHEN p.state='declined' THEN p.request_date END) AS declined_at
+        FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id
+        WHERE $where AND a.provider IN ($methods)
+          AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>''",$types,$values);
+    if ($row['review_at']!==null && $nowTs-(int)$row['review_at']<$review)
+        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.2f5e71511d',
+            ['mins'=>(int)ceil(($review-$nowTs+(int)$row['review_at'])/60)]);
+    if ($row['approved_at']!==null && $nowTs-(int)$row['approved_at']<$approved)
+        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.c571825a4a',
+            ['mins'=>(int)ceil(($approved-$nowTs+(int)$row['approved_at'])/60)]);
+    if ($row['declined_at']!==null && $nowTs-(int)$row['declined_at']<$declined)
+        return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.a2fecf9749',
+            ['remain'=>$declined-$nowTs+(int)$row['declined_at']]);
     return null;
 }
 
@@ -960,7 +894,7 @@ function sendReceiptToAdminsAndUpdatePay(
         $typed=$pay && achbotManualTypedGift($connection,$pay,'gift_card') && achbotManualSelectedMethod($connection,$pay)==='gift_card';
         if($typed){$code=achbotPaymentEvidenceReadGiftCode($connection,(int)$pay['id']);if($code!==$fileid || !achbotPaymentEvidenceGiftCodeFormatValid($code))throw new RuntimeException('typed_receipt_evidence_mismatch');if(!achbotManualGiftReviewFits($caption,$code,$giftScreen))throw new RuntimeException('typed_receipt_message_too_long');$caption=achbotManualGiftReviewText($caption,$code,$giftScreen);}
         $response = $typed?sendMessage($caption,$adminKeyboard,'HTML',$adminChatId):sendPhoto($fileid, $caption, $adminKeyboard, 'HTML', $adminChatId);
-        $msgId = (int)($response->result->message_id ?? 0);
+        $msgId = ($response->ok??false)===true ? (int)($response->result->message_id ?? 0) : 0;
         if ($msgId <= 0 ||
             !achbotManualFinishEvidence($connection, $hashId, $fileid, $claimToken,
                                         $msgId, $adminChatId)) {
@@ -999,7 +933,13 @@ function sendReceiptToAdminsAndUpdatePay(
 /** Keep the familiar customer acknowledgement before optional verification. */
 function achbotManualAcknowledgeAndVerify(mysqli $db,array $pay,string $method,string $buttonText,string $botUsername): void {
     $current=function_exists('achbotApiPaymentContext')?achbotApiPaymentContext($db,(string)$pay['hash_id']):null;
-    if($current && !in_array($current['pay']['state'],['pending','have_sent'],true)){achbotApiPaymentSyncInvoice($db,$current);return;}
+    if($current && !in_array($current['pay']['state'],['pending','have_sent'],true)){
+        if ($current['pay']['state']==='service_superseded' &&
+            achbotPaymentEvidenceReviewReady($current['pay'],$current['attempt']))
+            achbotApiPaymentCheck($db,(int)$pay['id']);
+        else achbotApiPaymentSyncInvoice($db,$current);
+        return;
+    }
     try {
         sendWithStartButton(achbotManualAcknowledgement($pay,$method),$buttonText,$botUsername,'mainMenu','HTML',(string)$pay['hash_id']);
     } finally {

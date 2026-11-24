@@ -150,3 +150,17 @@ journal on a separate SQL connection: the affected draft is refused, but
 an unrelated physical account can still create a draft without a global
 journal lock. The retired pay-bound Native quote entrypoints must be absent
 from every runtime package member.
+
+
+Final receipt continuity acceptance runs actual current-schema source
+for all manual photo methods and typed gift codes in both MySQLi
+reporting modes. It covers supersession between receiving reservation
+and Telegram acknowledgement, lost acknowledgement recovery, atomic
+gift-code reservation rollback, timer settlement of superseded receipts,
+current manual cooldowns without historical or automatic-payment
+interference, isolated malformed evidence with healthy queue progress,
+and continued exact-amount SMS search beyond the per-tick page budget
+for both Toman and Rial. The shared Native import/alias regression also
+uses the canonical installation schema, including checkout draft
+invalidation. Tests inject faults and use owned loopback fixtures; no
+real customer, merchant or Native account is mutated.
