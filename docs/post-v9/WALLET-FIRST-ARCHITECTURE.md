@@ -82,8 +82,8 @@ The Owner explicitly permits abandoning unfinished operations whose actual
 remaining Native target is Marzban; record a durable retired-provider
 disposition without replay or pretending success, and do not import them as
 runnable new service operations. Do not infer this disposition merely from an
-old Marzban origin/snapshot: migrated live PasarGuard subscriptions and their
-valid pending PasarGuard operations remain supported. Preserve historical
+old Marzban origin/snapshot: migrated live PasarGuard subscriptions retain
+their identity and provenance, not executable historical pending workflows. Preserve historical
 identifiers, evidence, balances and legitimate payment verification/credit;
 abandoning Native execution does not authorize deleting financial records,
 taking received money, fabricating a refund or altering existing entitlements.
@@ -110,7 +110,7 @@ Resolution, refund entry, capacity release, physical ownership release and repor
 
 Payment evidence, service-effect table and shared plan journal are mandatory current storage; both receipt archive columns are retired. Missing schema cannot authorize a mutation. Only current plan intent format 2 is executable; earlier plans are not replayed.
 
-035–037 are schema construction evidence only. Fresh installations use the consolidated empty current schema, not a migration chain. Preserve real account provenance and financial history during the separately authorized manual transfer; do not import obsolete interaction state as runnable work.
+035–038 are schema construction evidence only. Fresh installations use the consolidated empty current schema, not a migration chain. Preserve real account provenance and financial history during the separately authorized manual transfer; do not import obsolete interaction state as runnable work.
 
 ## 2. Single ownership / permitted dependency direction
 
@@ -242,11 +242,12 @@ Reuse existing service_effects CREATE/physical identity rows for each original
 ordinal using source_kind/source_ref + ordinal rather than coupling to pay_row_id.
 Preserve existing unique operation ID, username/physical target, linked order,
 provider instance, marker and remote incarnation (id/created_at where supported).
-For new edits store one immutable before/target/dispatch/result per operation,
-with exact physical identity. Do not use an ever-growing consumed_keys JSON
+For new edits keep one before/target/dispatch/result journal per operation,
+with exact physical identity. A prepared observation may be refreshed until
+the first possible Native dispatch; then the intent is immutable. Do not use an ever-growing consumed_keys JSON
 or fixed 4096 limit: a durable unique operation record prevents replay. Replace
-the old account mutation history authority only after migrating its outstanding
-claims and preserving historical consumption evidence. Account-level ownership
+the old account mutation history authority while preserving historical
+consumption evidence offline; do not replay outstanding historical claims. Account-level ownership
 must cover paid, free, gift, change, deletion and other conflicting local
 mutations and all aliases of the physical subscription, not just order_id.
 Independent databases managing the same Native user are outside one local
@@ -734,17 +735,14 @@ audit evidence, registration rollback on reward failure, and generic
 profile-setter refusal. The current-only transfer mode is included in the
 representative CI roster without running its historical source there.
 Telegram wire parity remains 898/898. No production database, provider or
-Telegram effects. The remaining direct financial writers are in
-`ReferralReward.php`, `ReceiptHelpers.php`, `GatewayReturn.php`,
-`WalletSettlement.php`, `Routes/RenewalCheckout.php`,
-`Routes/Extensions.php` and `AutomaticRenewal.php`. Replace those through
-their real receipt/service/referral ownership, not a mechanical SQL wrapper
-that preserves the duplicate execution model.
+Telegram effects. The direct writers in those pre-cutover routes were replaced by the shared
+Wallet ledger, receipt, service and referral owners. This historical slice
+is evidence of the conversion, not a list of remaining runtime tasks.
 
 ### Shared RENEW / ADD_VOLUME / ADD_TIME and scheduled admission slice
 
-Migration 028 records the original mutation as one normalized row per service
-operation. Its immutable, hashed initial observation and absolute target,
+The current schema records one normalized mutation row per service operation.
+Its hashed observation and absolute target, first possible dispatch timestamp,
 verified reset acknowledgement, verified result, and original local audit ID
 replace growing mutation-key lists for the new executor. The real existing
 physical account effect is claimed as `mutating` under the common
@@ -756,9 +754,13 @@ historical migrated-account validator recognizes only a matching new journal
 and nonterminal operation; original provenance remains required.
 
 The PasarGuard adapter owns authenticated observations, Native identity,
-scope, reset and absolute PUT. RENEW freezes the original expiry/quota;
+scope, reset and absolute PUT. Before the first possible write, refresh
+the owned entitlement from current authenticated Native state; scheduled
+renewal must still meet its current lifecycle eligibility. Seal the exact
+intent and dispatch timestamp at the final pre-write boundary (038 offline
+construction evidence). After that boundary, RENEW freezes its expiry/quota;
 ADD_VOLUME writes only the fixed byte target and ADD_TIME only the fixed
-expiry. A verified reset ACK does not require traffic to remain zero
+expiry. An equal target before that boundary does not prove fulfillment. A verified reset ACK does not require traffic to remain zero
 afterwards. Once the ACK is recorded, later retry does not reset again.
 Current target readback is sufficient to finish an original unresolved
 edit; a conflicting entitlement does not authorize another relative

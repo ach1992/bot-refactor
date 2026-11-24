@@ -56,7 +56,8 @@ function achbotServiceResolutionPlanLocked(mysqli $db,array $op,array $quote,arr
     } else {
         $m=achbotServiceMutationRow($db,$id,true);
         if ($m) $mutation=['effect_id'=>(int)$m['account_effect_id'],'phase'=>$m['phase'],
-            'intent'=>$m['intent_sha256'],'result'=>$m['result_sha256'],'reset_ack'=>$m['reset_ack_at']];
+            'intent'=>$m['intent_sha256'],'result'=>$m['result_sha256'],'reset_ack'=>$m['reset_ack_at'],
+            'dispatch_started_at'=>$m['dispatch_started_at']];
     }
     $count=$buy?$q['quantity']-$retained:1;
     // Exact same allocation as order persistence, without iterating over

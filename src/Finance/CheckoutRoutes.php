@@ -51,22 +51,46 @@ function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null,bool 
 /** One outcome projection for every verified receipt. It never infers
  * a service or delivery result from the fact that money was credited. */
 function achbotCheckoutReceiptOutcome(mysqli $db,int $payId): string {
-    $a=achbotProviderRow($db,'SELECT wallet_credit_entry_id,wallet_funding_result,service_operation_id
-        FROM payment_attempts WHERE pay_row_id=?','i',[$payId]);
-    if (!$a || $a['wallet_credit_entry_id']===null || $a['wallet_funding_result']===null) return 'unknown';
-    if ($a['wallet_funding_result']!=='funded') return 'wallet_credited';
-    $id=(int)$a['service_operation_id'];
-    if ($id<=0) return 'unknown';
-    $op=achbotProviderRow($db,'SELECT stage,resolution_kind,kind,quote_payload FROM service_operations WHERE id=?','i',[$id]);
-    if (!$op) return 'unknown';
-    if ($op['resolution_kind']!==null) return 'resolved';
-    if ($op['stage']!=='completed') return 'service_pending';
-    $delivery=achbotProviderRow($db,"SELECT COUNT(*) AS total,COALESCE(SUM(state='acknowledged'),0) AS ack
-        FROM payment_delivery_intents WHERE service_operation_id=?",'i',[$id]);
-    $request=json_decode($op['quote_payload'],true,64,JSON_THROW_ON_ERROR)['request'];
-    $expected=$op['kind']==='BUY'?(int)$request['quantity']:1;
-    return $expected>0 && (int)$delivery['total']===$expected && (int)$delivery['ack']===$expected?
-        'completed':'delivery_unconfirmed';
+    $locator=achbotProviderRow($db,'SELECT p.user_id FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id
+        WHERE p.id=? AND a.wallet_credit_entry_id IS NOT NULL','i',[$payId]);
+    if (!$locator) return 'unknown';
+    // The same evidence reader that owns financial reports verifies the
+    // credit. Use one local snapshot; never equate a populated FK with money.
+    achbotPaymentEvidenceRequireAutocommit($db);
+    if (!$db->begin_transaction()) throw new RuntimeException('payment_outcome_begin');
+    try {
+        $uid=(int)$locator['user_id'];
+        $e=achbotReceiptCreditEvidenceLocked($db,$payId,$uid);
+        $a=$e['attempt'];
+        $status='wallet_credited';
+        if ($a['wallet_funding_result']==='funded') {
+            $id=(int)$a['service_operation_id'];
+            [$op,$quote,$owner]=achbotServiceReadLocked($db,$uid,$id);
+            achbotServiceVerifyFundingLocked($db,$op,$owner);
+            if ((int)$e['pay']['price']!==(int)$op['price_toman'] || (int)$op['price_toman']<=0 ||
+                ($op['command_kind']==='checkout' && (int)$e['pay']['checkout_operation_id']!==$id))
+                throw new RuntimeException('payment_outcome_funding_conflict');
+            if ($op['resolution_kind']!==null) $status='resolved';
+            elseif (in_array($op['stage'],['funded','prepared','dispatching','applied'],true)) $status='service_pending';
+            elseif ($op['stage']==='completed') {
+                require_once __DIR__.'/ServiceReports.php';
+                // Use the same immutable source and part-level acknowledgement
+                // proof as completion reports, not a parent status projection.
+                $source=achbotServiceCompletionReportSourceLocked($db,$op,$quote,true);
+                if ($source['receipt']===null || (int)$source['receipt']['pay']['id']!==$payId)
+                    throw new RuntimeException('payment_outcome_original_receipt_conflict');
+                $status=$source['delivered']?'completed':'delivery_unconfirmed';
+            } else throw new RuntimeException('payment_outcome_service_conflict');
+        }
+        if (!$db->commit()) throw new RuntimeException('payment_outcome_commit');
+        return $status;
+    } catch (Throwable $e) {
+        $db->rollback();
+        $reason=$e->getMessage();
+        achbotDiagnosticEvent('achbot.finance.receipt_outcome',['pay_id'=>$payId,'class'=>get_class($e),
+            'reason'=>preg_match('/\A(?:service|payment|wallet)_[a-z0-9_]{1,86}\z/D',$reason)?$reason:'payment_outcome_evidence_unavailable'],'warning');
+        return 'unknown';
+    }
 }
 function achbotCheckoutReceiptOutcomeText(string $status): string {
     return achbotMessage(match($status) {
@@ -144,13 +168,17 @@ function achbotCheckoutRejectUnfundedLocked(mysqli $db,array $pay,array $attempt
         throw new DomainException('manual_reject_stale');
     $operation=$attempt['service_operation_id']===null?null:(int)$attempt['service_operation_id'];
     if ($operation!==null) {
-        [$op]=achbotServiceReadLocked($db,$uid,$operation);
+        [$op,$quote,$owner]=achbotServiceReadLocked($db,$uid,$operation);
         if ($op['command_kind']==='checkout') {
             achbotCheckoutOriginalCommandLocked($db,$pay);
             if ((int)$pay['checkout_operation_id']!==$operation)
                 throw new RuntimeException('manual_reject_original_command_changed');
         }
-        achbotServiceCancelUnfundedLocked($db,$uid,$operation);
+        // The receipt is unpaid; that does not imply its service is unfunded.
+        // A separate original funding source must remain untouched.
+        if ($op['resolution_kind']===null && in_array($op['stage'],['awaiting_funds','cancelled'],true))
+            achbotServiceCancelUnfundedLocked($db,$uid,$operation);
+        else achbotServiceVerifyFundingLocked($db,$op,$owner);
     } elseif ($pay['type']!=='INCREASE_WALLET') {
         throw new RuntimeException('manual_reject_original_command_missing');
     }

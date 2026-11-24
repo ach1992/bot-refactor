@@ -30,7 +30,7 @@ function achbotPgServiceResolutionCheck(mysqli $db,array $op,array $quote,array 
     if ($decision==='refunded' && $plan['mutation']!==null) {
         $m=achbotServiceMutationRow($db,(int)$op['id']);
         if (!$m) throw new RuntimeException('service_resolution_mutation_missing');
-        if ($m['intent_sha256']!==null) $intent=achbotPgServiceEditDecode($op,$m,'intent');
+        if ($m['dispatch_started_at']!==null) $intent=achbotPgServiceEditDecode($op,$m,'intent');
     }
     // Capture actual current expiry if available. The explicitly authorized
     // operator decision is still possible after a provider identity/outage

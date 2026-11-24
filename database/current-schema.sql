@@ -683,6 +683,7 @@ CREATE TABLE `service_mutations` (
   `phase` varchar(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `intent_payload` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `intent_sha256` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `dispatch_started_at` datetime(6) DEFAULT NULL,
   `reset_ack_at` datetime(6) DEFAULT NULL,
   `result_payload` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `result_sha256` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
@@ -697,7 +698,8 @@ CREATE TABLE `service_mutations` (
   CONSTRAINT `ck_service_mutation_phase` CHECK (`phase` in ('observe','reset','modify','verified','completed')),
   CONSTRAINT `ck_service_mutation_intent` CHECK (`phase` = 'observe' and `intent_payload` is null and `intent_sha256` is null or `phase` <> 'observe' and `intent_payload` is not null and `intent_sha256` is not null and json_valid(`intent_payload`)),
   CONSTRAINT `ck_service_mutation_result` CHECK (`phase` in ('verified','completed') and `result_payload` is not null and `result_sha256` is not null and json_valid(`result_payload`) or `phase` not in ('verified','completed') and `result_payload` is null and `result_sha256` is null),
-  CONSTRAINT `ck_service_mutation_audit` CHECK (`phase` = 'completed' = (`audit_id` is not null))
+  CONSTRAINT `ck_service_mutation_audit` CHECK (`phase` = 'completed' = (`audit_id` is not null)),
+  CONSTRAINT `ck_service_mutation_dispatch` CHECK ((`phase` <> 'observe' or `dispatch_started_at` is null) and (`reset_ack_at` is null and `phase` not in ('verified','completed') or `dispatch_started_at` is not null))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

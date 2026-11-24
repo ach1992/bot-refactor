@@ -82,7 +82,9 @@ require $argv[1].'/src/Finance/GatewayReturn.php';
 require_once $argv[1].'/src/Finance/GatewayReview.php';
 try {
     $id=(int)($c['id']??0);$owner=(int)($c['owner']??1001);
+    if ($c['op']==='fund') $db->begin_transaction();
     $r=match ($c['op']) {
+        'fund'=>achbotServiceFundLocked($db,$owner,(int)$c['service']),
         'issue'=>achbotHostedReceiptIssue($db,$id,$owner,$c['method'],$c['service']??null,
             $c['quote']??[], $c['keys']??['nextpay'=>'next-original','zarinpal'=>'zarin-original','nowpayment'=>'np-original'],
             'https://bot.fixture.invalid/','Fixture description',$c['draft_states']??null,$c['ipn_secret']??'fixture-ipn'),
@@ -93,6 +95,7 @@ try {
         'outcome'=>achbotCheckoutReceiptOutcome($db,$id),
         default=>throw new RuntimeException('fixture_unknown_op')
     };
+    if ($c['op']==='fund' && !$db->commit()) throw new RuntimeException('fixture_fund_commit');
     if ($c['lost_ack']??false) exit(19);
     echo json_encode(['ok'=>true,'result'=>$r],JSON_THROW_ON_ERROR);
 } catch(Throwable $e) {
@@ -326,6 +329,30 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                 assert verify(mode,pid,'nextpay',ref)['credit']['replayed'] and bal()==b+100
                 assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
                 case('hosted_rejection_shared_outbox_late_verified_credit_no_service')
+
+                # A distinct issued receipt must not dispose an original
+                # service already funded independently by the common engine.
+                oid=int(subprocess.check_output(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',str(qdriver),str(source),str(work/'mysql.sock'),DB,mode+'-separately-funded-service'],env=env,text=True))
+                pid=seed(mode+'-separately-funded',kind='BUY_SUB');ref=mode+'-separately-funded-id'
+                responses['/next/issue']=(200,dict(code=-1,trans_id=ref))
+                assert issue(mode,pid,'nextpay',service=oid)['status']=='issued'
+                assert result(mode,'fund',service=oid)=='funded'
+                responses['/next/verify']=(503,dict(code=0))
+                assert verify(mode,pid,'nextpay',ref)['status']=='unavailable'
+                aid=int(sql(f'SELECT id FROM payment_attempts WHERE pay_row_id={pid}'))
+                service_before=sql(f'SELECT * FROM service_operations WHERE id={oid}')
+                b=bal()
+                assert result(mode,'review',attempt=aid,decision='reject')['status']=='rejected'
+                assert sql(f'SELECT * FROM service_operations WHERE id={oid}')==service_before and bal()==b
+                responses['/next/verify']=(200,dict(code=0))
+                assert verify(mode,pid,'nextpay',ref)['funding']=='request_invalidated'
+                assert result(mode,'outcome',id=pid)=='wallet_credited' and bal()==b+100
+                assert sql(f'SELECT * FROM service_operations WHERE id={oid}')==service_before
+                # A fabricated funding projection cannot report success.
+                sql(f"UPDATE payment_attempts SET wallet_funding_result='invalid_projection' WHERE id={aid}")
+                assert result(mode,'outcome',id=pid)=='unknown'
+                sql(f"UPDATE payment_attempts SET wallet_funding_result='request_invalidated' WHERE id={aid}")
+                case('hosted_rejection_preserves_independently_funded_service')
 
                 pid=seed(mode+'-lost-ack');ref=mode+'-ack-ref'
                 responses['/next/issue']=(200,dict(code=-1,trans_id=ref))

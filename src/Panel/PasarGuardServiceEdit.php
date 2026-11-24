@@ -25,8 +25,8 @@ function achbotPgServiceAutoObserve(mysqli $db,int $orderId): array {
 }
 
 /** Scheduled admission already owns the fresh authenticated observation.
- * Persist that exact first target in the same transaction as funding and
- * physical claim; a later external change is not a new renewal decision. */
+ * Prepare the initial observation with funding and the physical claim.
+ * It is not dispatch evidence: the first actual write revalidates it. */
 function achbotPgServiceAutoReserveLocked(mysqli $db,array $op,array $quote,array $live): void {
     if ($op['kind']!=='RENEW' || $op['command_kind']!=='automatic_renewal' ||
         ($live['target']??null)!==$quote['target'])
@@ -178,7 +178,20 @@ function achbotPgServiceEditPerform(mysqli $db,array $op,array $quote,array $row
         return ['success'=>true,'intent'=>$intent];
     }
     $intent=achbotPgServiceEditDecode($op,$row,'intent');
-    $beforeWrite=static function() use ($db,$op,$quote,$row,$ctx): void {
+    $first=$row['dispatch_started_at']===null;
+    $current=achbotPgServiceEditEntitlement($u,$op['kind']);
+    if ($first) {
+        // A prepared observation is not evidence of an external write.
+        // Refresh from current Native state, but never reprice the funded quote.
+        if ($op['command_kind']==='automatic_renewal') {
+            require_once __DIR__.'/ServiceLifecycle.php';
+            if (!achbotServiceLifecycle(achbotServiceObservation((object)$u,$quote['request']['remark']),time())['renew'])
+                return achbotPgFailure('pg_auto_renewal_not_due');
+        }
+        try {$intent=achbotPgServiceEditIntent($op,$quote,$u);}
+        catch (RuntimeException $e) {return achbotPgFailure($e->getMessage());}
+    }
+    $beforeWrite=static function() use ($db,$op,$quote,&$row,$ctx,$first,$intent): void {
         if (!achbotServiceExecutionOwnsLock($db,achbotServiceExecutionLock($db,(int)$op['id'])) ||
             !achbotServiceExecutionOwnsLock($db,achbotPgServiceAccountLock($db,$quote['request']['order_id'])))
             throw new RuntimeException('service_worker_ownership_lost');
@@ -188,8 +201,21 @@ function achbotPgServiceEditPerform(mysqli $db,array $op,array $quote,array $row
             array_intersect_key($ctx['panel'],array_flip(['id','instance_key','api_url','api_key'])) ||
             achbotServiceMutationRow($db,(int)$op['id'])!==$row)
             throw new RuntimeException('service_edit_dispatch_changed');
+        if ($first) {
+            // Last local boundary after authenticated provider preflight.
+            // Commit the exact intent before HTTP; no transaction spans I/O.
+            $body=achbotServiceJson($intent);$sha=hash('sha256',$body);
+            $s=achbotProviderStatement($db,"UPDATE service_mutations SET intent_payload=?,intent_sha256=?,
+                dispatch_started_at=NOW(6) WHERE service_operation_id=? AND phase=? AND intent_sha256=?
+                AND dispatch_started_at IS NULL",
+                'ssiss',[$body,$sha,(int)$op['id'],$row['phase'],$row['intent_sha256']]);
+            $n=$s->affected_rows;$s->close();
+            if ($n!==1) throw new RuntimeException('service_edit_dispatch_seal_failed');
+            $row=achbotServiceMutationRow($db,(int)$op['id']);
+            if (!$row || $row['dispatch_started_at']===null || $row['intent_sha256']!==$sha)
+                throw new RuntimeException('service_edit_dispatch_seal_unconfirmed');
+        }
     };
-    $current=achbotPgServiceEditEntitlement($u,$op['kind']);
     $baseline=$current===$intent['before'];$target=$current===$intent['target'];
     if ($row['phase']==='reset') {
         if ($op['kind']!=='RENEW' || $row['reset_ack_at']!==null || !$baseline)
@@ -201,13 +227,13 @@ function achbotPgServiceEditPerform(mysqli $db,array $op,array $quote,array $row
         if (!$r['success']) return $r;
         if (achbotPgServiceEditEntitlement($r['user'],$op['kind'])!==$intent['before'])
             return achbotPgFailure('pg_service_reset_entitlement_changed',true);
-        return ['success'=>true,'reset_ack'=>true];
+        return ['success'=>true,'reset_ack'=>true,'dispatch_row'=>$row];
     }
     if ($op['kind']==='RENEW' && $row['reset_ack_at']===null)
         throw new RuntimeException('service_edit_reset_ack_missing');
     if (!$target && !$baseline)
         return achbotPgFailure('pg_service_edit_entitlement_conflict');
-    if (!$target) {
+    if ($first || !$target) {
         $r=achbotPgModify($ctx['panel'],$ctx['identity'],$intent['changes'],$scope['groups'],
             $beforeWrite,achbotPgServiceEditExpectedNative($u,$op['kind']));
         if (!$r['success']) return $r;
@@ -216,12 +242,23 @@ function achbotPgServiceEditPerform(mysqli $db,array $op,array $quote,array $row
     if ($u['username']!==$quote['request']['remark'] ||
         achbotPgServiceEditEntitlement($u,$op['kind'])!==$intent['target'])
         return achbotPgFailure('pg_service_edit_target_unconfirmed',true);
-    return ['success'=>true,'result'=>['quote_sha256'=>$op['quote_sha256'],
+    return ['success'=>true,'dispatch_row'=>$row,'result'=>['quote_sha256'=>$op['quote_sha256'],
         'intent_sha256'=>$row['intent_sha256'],'entitlement'=>$intent['target']]];
 }
 function achbotPgServiceEditApplyLocked(mysqli $db,array $op,array $quote,array $row,array $result): bool {
     $ctx=achbotPgServiceEditContext($db,$op,$quote,true);
     $id=(int)$op['id'];$current=achbotServiceMutationRow($db,$id,true);
+    if ($row['phase']!=='observe') {
+        // The first write may have sealed a fresh observation during perform.
+        // The same session and physical lease own both sealing and apply.
+        $sealed=$result['dispatch_row']??null;
+        if (!is_array($sealed) || $sealed['dispatch_started_at']===null ||
+            ($row['dispatch_started_at']!==null && $sealed!==$row) ||
+            array_diff_key($sealed,array_flip(['intent_payload','intent_sha256','dispatch_started_at','updated_at']))!==
+            array_diff_key($row,array_flip(['intent_payload','intent_sha256','dispatch_started_at','updated_at'])))
+            throw new RuntimeException('service_edit_dispatch_result_invalid');
+        $row=$sealed;
+    }
     if ($current!==$row) throw new RuntimeException('service_edit_result_stale');
     achbotPgServiceEditClaimMatches($op,$ctx,$row);
     if ($row['phase']==='observe') {
@@ -243,7 +280,7 @@ function achbotPgServiceEditApplyLocked(mysqli $db,array $op,array $quote,array 
 }
 
 function achbotPgServiceEditVerified(array $op,array $row): array {
-    if ($row['phase']!=='verified' || $row['audit_id']!==null ||
+    if ($row['phase']!=='verified' || $row['audit_id']!==null || $row['dispatch_started_at']===null ||
         ($op['kind']==='RENEW')!==($row['reset_ack_at']!==null))
         throw new RuntimeException('service_edit_verified_phase');
     $intent=achbotPgServiceEditDecode($op,$row,'intent');

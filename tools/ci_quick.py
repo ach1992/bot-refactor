@@ -95,6 +95,9 @@ REQUIRED_CURRENT_CASES = {
         "retired_external_renewal_and_provider_denied",
         "actual_bulk_checkout_draft",
         "actual_custom_draft_and_review_completion_truth",
+        "receipt_projection_original_funding_service_and_delivery",
+        "receipt_projection_resolved_original_never_reopened",
+        "pre_dispatch_native_target_equality_not_our_effect",
         "actual_renew_checkout_draft",
         "actual_scoped_day_manual_checkout_draft",
         "actual_scoped_volume_manual_checkout_draft",
@@ -138,6 +141,7 @@ REQUIRED_CURRENT_CASES = {
     ),
     "wallet_first_hosted": (
         "hosted_rejection_shared_outbox_late_verified_credit_no_service",
+        "hosted_rejection_preserves_independently_funded_service",
         "actual_public_nextpay_checkout_and_return",
         "actual_public_zarinpal_checkout_and_return",
         "actual_public_nowpayment_checkout_and_return",

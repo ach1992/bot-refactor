@@ -55,18 +55,15 @@ function achbotApiPaymentPresentation(mysqli $db,array $pay,array $attempt): arr
             if (is_string($o['remark']??null) && $o['remark']!=='')
                 $display=(string)$o['remark'].' (#'.$orderId.')';
         }
-        if ($type==='BUY_SUB' && (int)($pay['id']??0)>0) {
-            $id=(int)$pay['id'];
-            // Current purchases own their effects through the immutable service
-            // operation. Historical receipts remain read-only audit projections.
-            $operation=(int)($pay['checkout_operation_id']??0);
-            if ($operation>0 && (int)($attempt['service_operation_id']??0)!==$operation)
+        $operation=(int)($attempt['service_operation_id']??0);
+        if ($type==='BUY_SUB' && $operation>0) {
+            // Current service ownership, never the retired pay-owned effect.
+            $checkout=(int)($pay['checkout_operation_id']??0);
+            if ($checkout>0 && $checkout!==$operation)
                 throw new RuntimeException('payment_presentation_source_mismatch');
-            $predicate=$operation>0
-                ?"source_kind='service_operation' AND source_ref=?"
-                :"pay_row_id=?";
-            $reference=$operation>0?(string)$operation:$id;
-            $bind=$operation>0?'s':'i';
+            $predicate="source_kind='service_operation' AND source_ref=?";
+            $reference=(string)$operation;
+            $bind='s';
             $q=$db->prepare("SELECT COUNT(*) AS count FROM service_effects
                 WHERE $predicate AND effect_kind='create' AND state='local_recorded'");
             $q->bind_param($bind,$reference);$q->execute();
@@ -84,11 +81,6 @@ function achbotApiPaymentPresentation(mysqli $db,array $pay,array $attempt): arr
             }
             if ($accountNames)$display=$accountNames[0].($recordedCount>1?' +'.($recordedCount-1):'');
             elseif ($planName!=='')$display=$planName;
-        } elseif($type==='RENEW_SCONFIG' && $display===$label) {
-            $decoded=json_decode((string)($pay['description']??''),true);
-            $remark=is_array($decoded)?($decoded['remark']??null):null;
-            if (is_string($remark) && $remark!=='' && strlen($remark)<=100)
-                $display=$remark;
         }
     } catch (Throwable $error) {
         error_log('achbot_api_presentation_read_deferred pay_id='.(int)($pay['id']??0).
@@ -110,7 +102,7 @@ function achbotApiPaymentPresentation(mysqli $db,array $pay,array $attempt): arr
     $templateKey=match(true) {
         $type==='INCREASE_WALLET'=>'increase_wallet_request_message',
         $type==='BUY_SUB'=>'buy_new_account_request',
-        in_array($type,['RENEW_ACCOUNT','RENEW_SCONFIG'],true)=>'renew_account_request_message',
+        $type==='RENEW_ACCOUNT'=>'renew_account_request_message',
         default=>''
     };
     $template=$templateKey!==''?achbotMessage('legacy_messages.'.$templateKey):'';

@@ -235,9 +235,9 @@ try {
         $r=achbotPayUxInsertDraft($db,$uid,$stmt,$scoped,$display,['remark'=>'digits']);
         $stmt->close();
     }
-    elseif ($x['op']==='gateway_review_status') {
-        require_once $argv[1].'/src/Finance/GatewayReview.php';
-        $r=achbotGatewayReviewCompletionStatus($db,$x['operation']);
+    elseif ($x['op']==='receipt_outcome') {
+        require_once $argv[1].'/src/Finance/CheckoutRoutes.php';
+        $r=achbotCheckoutReceiptOutcome($db,(int)$x['pay']);
     }
     elseif ($x['op']==='checkout_pin') {
         require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
@@ -438,12 +438,12 @@ def main():
                     path=self.path.split('/')
                     native_id=int(path[4])
                     phase='reset' if self.command=='POST' else 'modify'
-                    state=sql("SELECT CONCAT(e.provider_state,':',m.phase,':',o.stage) "
+                    state=sql("SELECT CONCAT(e.provider_state,':',m.phase,':',o.stage,':',m.dispatch_started_at IS NOT NULL) "
                         "FROM service_effects e JOIN service_mutations m "
                         "ON m.account_effect_id=e.id AND e.provider_mutation_key=CONCAT('service:',m.service_operation_id) "
                         "JOIN service_operations o ON o.id=m.service_operation_id "
                         f"WHERE e.provider_remote_user_id={native_id}")
-                    assert state=='mutating:'+phase+':dispatching',state
+                    assert state=='mutating:'+phase+':dispatching:1',state
                     body=json.loads(self.rfile.read(int(self.headers.get('Content-Length',0)))) if self.command=='PUT' else {}
                     with lock:
                         u=next(v for v in users.values() if v['id']==native_id)
@@ -764,7 +764,9 @@ def main():
                 # Explicit external closure releases the physical marker,
                 # does not manufacture a provider result or financial credit.
                 e=edit(mode,'resolution-close',oid,'ADD_VOLUME',volume=1);fund(mode,e)
-                step(mode,e,'progressed');native(oid)['data_limit']+=19
+                step(mode,e,'progressed');faults.append('modify_unavailable')
+                step(mode,e,'pending','pg_vendor_unavailable')
+                native(oid)['data_limit']+=19;retry(e)
                 step(mode,e,'pending','pg_service_edit_entitlement_conflict')
                 before=finance();n=len(writes())
                 assert resolve_op(e,'closed')['status']=='closed'
@@ -781,9 +783,12 @@ def main():
                 # the requested target was applied blocks a refund.
                 e=edit(mode,'resolution-edit-refund',oid,'ADD_VOLUME',volume=1);fund(mode,e)
                 step(mode,e,'progressed')
+                native(oid)['data_limit']+=1073741824
+                quota=native(oid)['data_limit'];n=len(writes())
                 bal=int(sql('SELECT wallet FROM users WHERE userid=1001'))
                 assert resolve_op(e)['status']=='refunded'
                 assert int(sql('SELECT wallet FROM users WHERE userid=1001'))==bal+100
+                assert native(oid)['data_limit']==quota and len(writes())==n
                 e=edit(mode,'resolution-edit-applied',oid,'ADD_VOLUME',volume=1);fund(mode,e)
                 step(mode,e,'progressed');faults.append('modify_lost')
                 step(mode,e,'pending','pg_vendor_unavailable')
@@ -798,7 +803,9 @@ def main():
                 sql(f"UPDATE orders_list SET notif=1,autoRenew='on' WHERE id={oid}")
                 native(oid)['used_traffic']=native(oid)['data_limit']
                 r=php(mode,'auto',order=oid);assert r['status']=='funded',r
-                aid=r['id'];native(oid)['data_limit']+=11
+                aid=r['id'];faults.append('reset_unavailable')
+                step(mode,aid,'pending','pg_vendor_unavailable')
+                native(oid)['data_limit']+=11;retry(aid)
                 step(mode,aid,'pending','pg_service_reset_baseline_conflict')
                 assert php(mode,'service_attention',id=aid)
                 assert sql(f'SELECT COUNT(*) FROM pays WHERE checkout_operation_id={aid}')=='0'
@@ -1058,11 +1065,12 @@ DELIMITER ;
                 native(order)['expire']=1800000000
                 renewal=edit(mode,'edit-renew',order,'RENEW',days=30,volume=2)
                 fund(mode,renewal);before=finance();n=len(writes())
-                step(mode,renewal,'progressed');original=mutation(renewal).split('\t')[1]
+                step(mode,renewal,'progressed')
                 assert mutation(renewal).startswith('reset\t')
                 faults.append('reset_traffic')
                 step(mode,renewal,'progressed')
                 assert mutation(renewal).startswith('modify\t') and mutation(renewal).split('\t')[2]
+                original=mutation(renewal).split('\t')[1]
                 assert native(order)['used_traffic']==123
                 faults.append('modify_unavailable')
                 # Freeze a different expiry to ensure a real PUT is needed:
@@ -1097,7 +1105,7 @@ DELIMITER ;
                 time_edit=edit(mode,'edit-time',alias,'ADD_TIME',days=3,owner=9002)
                 fund(mode,volume);assert php(mode,'fund',owner=9002,id=time_edit)=='funded'
                 before=finance();n=len(writes())
-                step(mode,volume,'progressed');original=mutation(volume).split('\t')[1]
+                step(mode,volume,'progressed')
                 reqs=len(requests)
                 step(mode,time_edit,'pending','service_edit_account_busy')
                 assert len(requests)==reqs
@@ -1105,6 +1113,7 @@ DELIMITER ;
                 quota=native(order)['data_limit']
                 step(mode,volume,'pending','pg_vendor_unavailable')
                 assert native(order)['data_limit']==quota+1073741824
+                original=mutation(volume).split('\t')[1]
                 retry(volume);step(mode,volume,'applied');step(mode,volume,'completed')
                 assert mutation(volume).split('\t')[1]==original
                 assert writes()[n:]==[('PUT',{'data_limit':quota+1073741824})]
@@ -1113,10 +1122,26 @@ DELIMITER ;
                 assert len(writes())==n+2 and set(writes()[-1][1])=={'expire'}
                 assert native(order)['data_limit']==quota+1073741824 and finance()==before
                 cases.append(mode+'_alias_fence_and_lost_put_absolute_addons')
-                # A different authoritative entitlement is never overwritten.
+                # Independent Native work before ANY write is not our result.
+                # Even exact equality with the old prepared target cannot prove it.
+                fresh=edit(mode,'edit-fresh-before-dispatch',order,'ADD_VOLUME',volume=1)
+                fund(mode,fresh);step(mode,fresh,'progressed')
+                faults.append('get_unavailable')
+                step(mode,fresh,'pending','pg_vendor_unavailable')
+                assert sql(f"SELECT dispatch_started_at IS NULL FROM service_mutations WHERE service_operation_id={fresh}")=='1'
+                native(order)['data_limit']+=1073741824
+                quota=native(order)['data_limit'];before=finance();n=len(writes())
+                retry(fresh);step(mode,fresh,'applied');step(mode,fresh,'completed')
+                assert native(order)['data_limit']==quota+1073741824 and finance()==before
+                assert writes()[n:]==[('PUT',{'data_limit':quota+1073741824})]
+                cases.append(mode+'_pre_dispatch_native_target_equality_not_our_effect')
+                # After a possible dispatch, a different authoritative
+                # entitlement is never overwritten or used for another delta.
                 conflict=edit(mode,'edit-drift',order,'ADD_VOLUME',volume=1)
                 fund(mode,conflict);step(mode,conflict,'progressed')
-                native(order)['data_limit']+=7
+                faults.append('modify_unavailable')
+                step(mode,conflict,'pending','pg_vendor_unavailable')
+                native(order)['data_limit']+=7;retry(conflict)
                 n=len(writes());before=finance()
                 step(mode,conflict,'pending','pg_service_edit_entitlement_conflict')
                 assert len(writes())==n and finance()==before
@@ -1252,8 +1277,8 @@ DELIMITER ;
                     assert php(mode,'followup',id=int(row))=='acknowledged'
                 cases.append(mode+'_auto_low_wallet_durable_notice_and_deliberate_reenable')
                 cases.append(mode+'_automatic_renewal_low_wallet_no_charge')
-                # The original fresh observation is frozen with funding,
-                # rather than recomputed after an independent native edit.
+                # Before the first possible reset, automatic renewal refreshes
+                # Native state; after that boundary, it cannot change the intent.
                 buy=issue(mode,'auto-drift');fund(mode,buy);step(mode,buy,'applied');step(mode,buy,'completed')
                 od=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
                 sql(f"UPDATE orders_list SET notif=1,autoRenew='on' WHERE id={od}")
@@ -1261,6 +1286,11 @@ DELIMITER ;
                 r=php(mode,'auto',order=od);assert r['status']=='funded',r
                 aid=r['id'];assert mutation(aid).startswith('reset')
                 native(od)['data_limit']+=7
+                faults.append('reset_unavailable')
+                step(mode,aid,'pending','pg_vendor_unavailable')
+                intent=json.loads(sql(f"SELECT intent_payload FROM service_mutations WHERE service_operation_id={aid}"))
+                assert intent['before']['data_limit']==native(od)['data_limit']
+                native(od)['data_limit']+=7;retry(aid)
                 before=finance();n=len(writes())
                 step(mode,aid,'pending','pg_service_reset_baseline_conflict')
                 assert finance()==before and len(writes())==n
@@ -1849,12 +1879,47 @@ DELIMITER ;
                 r=php(mode,'checkout_wallet',hash=h,mode='custom')
                 assert r['status']=='funded',r
                 op=r['operation']
-                assert php(mode,'gateway_review_status',operation=op)=='unknown'
+                # Wallet-funded service checkout has no external receipt.
+                # Its own operation can complete without inventing a receipt.
+                assert php(mode,'receipt_outcome',pay=pid)=='unknown'
                 for stage in ('applied','completed'):step(mode,op,stage)
-                assert php(mode,'gateway_review_status',operation=op)=='completed'
-                assert php(mode,'gateway_review_status',operation=None)=='completed'
+                assert php(mode,'receipt_outcome',pay=pid)=='unknown'
+                assert sql(f"SELECT stage FROM service_operations WHERE id={op}")=='completed'
+                assert php(mode,'receipt_outcome',pay=0)=='unknown'
                 order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}'"))
                 cases.append(mode+'_actual_custom_draft_and_review_completion_truth')
+                # The real current receipt projection distinguishes credit,
+                # original service finality and independently acknowledged delivery.
+                rh,rpid=insert_checkout('receipt-outcome','BUY_SUB')
+                assert php(mode,'checkout_manual',pay=rpid,submit=True)
+                assert php(mode,'receipt_outcome',pay=rpid)=='unknown'
+                rr=php(mode,'checkout_approve',hash=rh)
+                assert rr['funding']=='funded',rr
+                rop=rr['operation']
+                assert php(mode,'receipt_outcome',pay=rpid)=='service_pending'
+                for stage in ('applied','completed'):step(mode,rop,stage)
+                assert php(mode,'receipt_outcome',pay=rpid)=='delivery_unconfirmed'
+                did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={rop}"))
+                # A corrupt parent projection without acknowledged parts is
+                # not evidence of Telegram delivery. Restore fixture afterward.
+                sql(f"UPDATE payment_delivery_intents SET state='acknowledged',acknowledged_at=NOW(6),last_result='acknowledged' WHERE id={did}")
+                assert php(mode,'receipt_outcome',pay=rpid)=='unknown'
+                sql(f"UPDATE payment_delivery_intents SET state='pending',acknowledged_at=NULL,last_result=NULL WHERE id={did}")
+                assert php(mode,'deliver',id=did)=='acknowledged'
+                assert php(mode,'receipt_outcome',pay=rpid)=='completed'
+                assert php(mode,'checkout_approve',hash=rh)['credit']['replayed']
+                cases.append(mode+'_receipt_projection_original_funding_service_and_delivery')
+                rh,rpid=insert_checkout('receipt-resolution','BUY_SUB')
+                assert php(mode,'checkout_manual',pay=rpid,submit=True)
+                rr=php(mode,'checkout_approve',hash=rh)
+                assert rr['funding']=='funded',rr
+                rop=rr['operation']
+                plan=php(mode,'resolution_preview',id=rop,decision='refunded')
+                assert plan and php(mode,'resolve',id=rop,decision='refunded',token=plan['token'])['status']=='refunded'
+                assert php(mode,'receipt_outcome',pay=rpid)=='resolved'
+                assert php(mode,'checkout_approve',hash=rh)['credit']['replayed']
+                assert php(mode,'receipt_outcome',pay=rpid)=='resolved'
+                cases.append(mode+'_receipt_projection_resolved_original_never_reopened')
                 h,pid=insert_checkout('bulk','BUY_SUB',quantity=2)
                 r=php(mode,'checkout_wallet',hash=h)
                 assert r['status']=='funded',r
