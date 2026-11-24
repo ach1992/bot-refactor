@@ -412,6 +412,29 @@ runtime divergence must be reconciled against actual current installed hashes
 before selecting any cutover artifact. These incident references are evidence,
 not authorization to mutate them. No blanket reprocessing.
 
+The source-only adoption rehearsal now supports a proven never-dispatched,
+single custom BUY: its original positive amount, persisted units and name,
+provider pin, sole original wallet hold, owner and opening entry are all
+checked. A unique `historical_pay_id` is an alternative to a new debit, not
+a synthetic ledger movement. The same transaction transfers the already
+reserved capacity and binds the original payment; the shared executor
+finalizes its original payment only after verified creation. The importer
+rejects competing evidence, terminal claims and unknown entitlement/name
+values. The legacy auto-renewal journal remains a read-only conflict fence
+for all aliases of the same physical account and for an already claimed
+cycle. Neither helper is a complete migration or runtime activation gate.
+
+A subsequent read-only Hell reconciliation (2026-11-24) reconfirmed that
+#113457 has zero persisted day/volume, one untouched capacity hold, no CREATE,
+no bank quote, and no linked delivery/follow-up/referral claim. Current plan
+values are not proof of its original quote; binary logging is disabled.
+#113434 is still `review / remote_unconfirmed` with a different or missing
+original mutation key. #113445 remains monitoring without recorded approval;
+#113453 remains terminal. Recover authentic original evidence before running
+any of these historical operations; do not guess, automatically compensate,
+or replay the terminal purchase. Independent source replacement and actual
+route validation remain necessary even while historical evidence is missing.
+
 ## 8. Definition of done / measurable acceptance
 
 - Every supported payment adapter has real-source tests for valid evidence,
