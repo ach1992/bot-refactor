@@ -65,8 +65,9 @@ function achbotBulkReportAppend(string $base,array $proof,bool $html=false): str
     if ($expected<=0 || $known<0 || $known>$expected ||
         !is_array($proof['accounts']??null))
         throw new InvalidArgumentException('bulk_report_projection_invalid');
-    $head="\n\n".achbotMessage(($proof['complete']??false)
-        ?'bulk_reporting.complete':'bulk_reporting.needs_review',
+    $head="\n\n".achbotMessage(($proof['resolved']??false)
+        ?'bulk_reporting.resolved_retained':(($proof['complete']??false)
+        ?'bulk_reporting.complete':'bulk_reporting.needs_review'),
         ['confirmed'=>$known,'requested'=>$expected]);
     if ($known>0)$head.="\n".achbotMessage('bulk_reporting.names');
     // strlen is a conservative bound for UTF-16 Telegram characters.

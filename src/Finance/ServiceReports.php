@@ -299,7 +299,7 @@ function achbotServiceStageResolutionReportsLocked(mysqli $db,array $op,array $q
             $accounts[]=['ordinal'=>$i+1,'name'=>$body['binding']['remark'],'order_id'=>(int)$d['order_id']];
         }
         $content['text']=achbotBulkReportAppend($content['text'],['requested'=>$q['quantity'],'confirmed'=>$e['retained'],
-            'complete'=>false,'accounts'=>$accounts,'reference'=>'svc_'.$id],true);
+            'complete'=>false,'resolved'=>true,'accounts'=>$accounts,'reference'=>'svc_'.$id],true);
     }
     achbotFollowupStageAdminReportLocked($db,null,$id,$stage,$e['fingerprint'],$primary,
         (string)($GLOBALS['botState']['rewardChannel']??''),$content,(int)$op['resolved_by']);

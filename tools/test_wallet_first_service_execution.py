@@ -789,6 +789,11 @@ def main():
                 assert php(mode,'deliver',id=did)=='acknowledged'
                 step(mode,op,'completed')
                 assert posts()==n
+                report_id=int(sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={op} AND stage='service_resolution' AND role='service_admin'"))
+                assert php(mode,'followup',id=report_id)=='acknowledged'
+                wire=sql(f"SELECT text FROM fixture_followup WHERE intent_id={report_id}")
+                assert 'تعیین تکلیف شد' in wire and 'نیازمند بررسی است' not in wire,wire
+                assert rows(op)[0].split('\t')[2] in wire,wire
                 cases.append(mode+'_resolution_partial_buy_exact_allocation_and_delivery')
 
                 # Verified remote existence cannot be silently refunded.

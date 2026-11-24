@@ -161,6 +161,7 @@ return [
 
     // #147 — Verified bulk source reports (source-pinned in test catalog).
     'bulk_reporting' => [
+        'resolved_retained' => ['text' => '✅ پرونده خرید گروهی تعیین تکلیف شد؛ اشتراک‌های ساخته‌شده و حفظ‌شده: {confirmed} از {requested}', 'parameters' => ['confirmed', 'requested']],
         'complete' => ['text' => '✅ ساخت و ثبت اکانت‌ها: {confirmed} از {requested}', 'parameters' => ['confirmed', 'requested']],
         'needs_review' => ['text' => '⚠️ ساخت گروهی نیازمند بررسی است. ثبت محلی تأییدشده: {confirmed} از {requested}. عملیات نامشخص را تکرار نکنید.', 'parameters' => ['confirmed', 'requested']],
         'names' => '🧩 اکانت‌های ثبت و تأییدشده:',
