@@ -10,15 +10,6 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
-if (!function_exists('achbotReferralAwardStatus')) {
-    }
-
-if (!function_exists('achbotReferralWarnOperator')) {
-    }
-
-if (!function_exists('giveReferralReward')) {
-    }
-
 /** The accepted fixed reward is per original qualifying purchase, not per
  * ordinal, and zero/missing configuration disables it. */
 function achbotPurchaseReferralPolicyAmount(mysqli $db,string $prefix='referral_policy'): int {
