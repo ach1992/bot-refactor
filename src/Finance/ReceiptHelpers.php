@@ -1239,12 +1239,9 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,bool $bloc
     if ($mode==='invalid') return false;
     $payments=achbotServicePaymentRowsLocked($db,$ids);
     foreach ($payments as $payment) {
-        $attempt=null;
-        if ($mode==='current') {
-            $id=(int)$payment['id'];
-            $q=$db->prepare('SELECT stage FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
-            $q->bind_param('i',$id);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
-        }
+        $id=(int)$payment['id'];
+        $q=$db->prepare('SELECT stage FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+        $q->bind_param('i',$id);$q->execute();$attempt=$q->get_result()->fetch_assoc();$q->close();
         // Only the physical plan-change transaction may pass these exact
         // still-unpaid, identity-checked, 003/014-checked invoice IDs. They
         // remain in their ORIGINAL states until the verified local/native
@@ -1287,16 +1284,14 @@ function achbotSharedAccountWorkSettledLocked(mysqli $db,array $peers,bool $bloc
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'");
     if (!($result instanceof mysqli_result)) return false;
     $table=$result->fetch_assoc();
-    if ($table!==null) {
-        if ($result->num_rows!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
-            strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) return false;
-        $remark=(string)$peers[0]['remark'];
-        $q=$db->prepare("SELECT target_server_id FROM service_effects
-            WHERE BINARY remote_username=BINARY ? AND state NOT IN ('local_recorded','cancelled') FOR UPDATE");
-        $q->bind_param('s',$remark);$q->execute();$effects=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
-        foreach ($effects as $effect)
-            if (achbotAutoRenewSameAccount($db,(int)$peers[0]['server_id'],(int)$effect['target_server_id'])) return false;
-    }
+    if ($table===null || $result->num_rows!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
+        strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) return false;
+    $remark=(string)$peers[0]['remark'];
+    $q=$db->prepare("SELECT target_server_id FROM service_effects
+        WHERE BINARY remote_username=BINARY ? AND state NOT IN ('local_recorded','cancelled') FOR UPDATE");
+    $q->bind_param('s',$remark);$q->execute();$effects=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+    foreach ($effects as $effect)
+        if (achbotAutoRenewSameAccount($db,(int)$peers[0]['server_id'],(int)$effect['target_server_id'])) return false;
     return true;
 }
 
@@ -1321,15 +1316,12 @@ function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
         // These states are committed only with the verified local effect.
         // A manual receipt's attempt can legitimately remain stage=review.
         if (in_array($payment['state'],['approved','paid_with_wallet'],true)) continue;
-        $attempt=null;
-        if ($mode==='current') {
-            $payId=(int)$payment['id'];
-            $stmt=$db->prepare('SELECT stage FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
-            if (!$stmt) return false;
-            $stmt->bind_param('i',$payId);
-            if (!$stmt->execute()) {$stmt->close();return false;}
-            $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
-        }
+        $payId=(int)$payment['id'];
+        $stmt=$db->prepare('SELECT stage FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
+        if (!$stmt) return false;
+        $stmt->bind_param('i',$payId);
+        if (!$stmt->execute()) {$stmt->close();return false;}
+        $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
         // Unlike historical manual approvals, an auto-cart result needs
         // matching completed provider-attempt evidence if an attempt exists.
         // A contradictory unfinished attempt remains an actual deletion hold.
@@ -1346,20 +1338,18 @@ function achbotScheduledDeletionEffectsSettled(mysqli $db,array $order): bool {
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'");
     if (!($result instanceof mysqli_result)) return false;
     $table=$result->fetch_assoc();
-    if ($table!==null) {
-        if ($result->num_rows!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
-            strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) return false;
-        $remark=(string)$order['remark'];
-        $stmt=$db->prepare("SELECT target_server_id FROM service_effects
-            WHERE remote_username=? AND state NOT IN ('local_recorded','cancelled') FOR UPDATE");
-        if (!$stmt) return false;
-        $stmt->bind_param('s',$remark);
-        if (!$stmt->execute()) {$stmt->close();return false;}
-        $effects=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
-        foreach ($effects as $effect)
-            if (achbotAutoRenewSameAccount($db,(int)$order['server_id'],(int)$effect['target_server_id']))
-                return false;
-    }
+    if ($table===null || $result->num_rows!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
+        strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) return false;
+    $remark=(string)$order['remark'];
+    $stmt=$db->prepare("SELECT target_server_id FROM service_effects
+        WHERE remote_username=? AND state NOT IN ('local_recorded','cancelled') FOR UPDATE");
+    if (!$stmt) return false;
+    $stmt->bind_param('s',$remark);
+    if (!$stmt->execute()) {$stmt->close();return false;}
+    $effects=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
+    foreach ($effects as $effect)
+        if (achbotAutoRenewSameAccount($db,(int)$order['server_id'],(int)$effect['target_server_id']))
+            return false;
     return true;
 }
 
@@ -1428,10 +1418,7 @@ function achbotOrderCapacityServerLocked(mysqli $db,array $order,bool $finalizin
             WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'");
         if (!($r instanceof mysqli_result)) throw new RuntimeException('deletion_capacity_schema_unavailable');
         $table=$r->fetch_assoc();
-        // Original-schema positive-plan history keeps its established behavior;
-        // new imported references have explicit no-reservation provenance.
-        if ($table===null) return $origin===null && $positivePlan?$server:null;
-        if ($r->num_rows!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
+        if ($table===null || $r->num_rows!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
             strcasecmp((string)$table['ENGINE'],'InnoDB')!==0) throw new RuntimeException('deletion_capacity_schema_invalid');
         $id=(int)$order['id'];
         $q=$db->prepare("SELECT * FROM service_effects WHERE order_id=? LIMIT 2 FOR UPDATE");
@@ -1506,8 +1493,6 @@ function achbotAutoRenewFinalizeDeletion(
     if ($orderId<=0 || $serverId<=0) return false;
     try {
         $db->begin_transaction();
-        // Full current order includes provider_effect_id when installed;
-        // old Marzban-only schemas remain readable without assuming 012.
         $stmt=$db->prepare("SELECT * FROM orders_list WHERE id=? FOR UPDATE");
         $stmt->bind_param('i',$orderId);
         $stmt->execute();

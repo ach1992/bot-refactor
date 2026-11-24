@@ -108,6 +108,8 @@ The common service attention surface is keyed by service operation, including sc
 
 Resolution, refund entry, capacity release, physical ownership release and reports are committed together. No service archive can hide nonterminal operations or retain stale ownership. Receipt archive is a separate financial intake decision, never service disposition. Subsequent verified receipts may credit the wallet but must not resurrect a resolved operation. Delivery and report recovery reuses immutable payloads, with a fresh actor-bound confirmation for an unknown send.
 
+The payment archive column, payment evidence, service-effect table and shared plan journal are mandatory current storage. Missing schema cannot authorize a mutation. Only current plan intent format 2 is executable; earlier plans are not replayed.
+
 035 is schema construction evidence only. Fresh installations use the consolidated empty current schema, not a migration chain. Preserve real account provenance and financial history during the separately authorized manual transfer; do not import obsolete interaction state as runnable work.
 
 ## 2. Single ownership / permitted dependency direction

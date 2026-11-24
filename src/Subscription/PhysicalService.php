@@ -21,8 +21,7 @@ function achbotPhysicalLockName(mysqli $db,array $order): string {
  * strand an unfinished plan journal. This runs inside the administrator's
  * existing transaction after locking the target configuration.
  *
- * The table may be absent on an older installation before source-only 017;
- * an installed but malformed journal is not treated as absent.
+ * The current journal is mandatory; missing or malformed storage fails closed.
  */
 function achbotPhysicalAssertRebindSafe(mysqli $db,int $serverId,
     bool $wholeGroup=false,bool $denyActive=true): void {
@@ -55,8 +54,7 @@ function achbotPhysicalAssertRebindSafe(mysqli $db,int $serverId,
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_plan_changes'");
     if (!($r instanceof mysqli_result)) throw new RuntimeException('physical_rebind_journal_unavailable');
     $shape=$r->fetch_assoc();$count=$r->num_rows;$r->free();
-    if ($shape===null) return; // 017 not yet installed; no plan journal could have been created.
-    if ($count!==1 || $shape['TABLE_TYPE']!=='BASE TABLE' ||
+    if ($shape===null || $count!==1 || $shape['TABLE_TYPE']!=='BASE TABLE' ||
         strcasecmp((string)$shape['ENGINE'],'InnoDB')!==0)
         throw new RuntimeException('physical_rebind_journal_unavailable');
     $r=$db->query("SELECT server_id,intent_json FROM service_plan_changes
@@ -80,10 +78,8 @@ function achbotPhysicalAssertRebindSafe(mysqli $db,int $serverId,
 }
 
 /** Exact connected target evidence, persisted as a digest rather than secrets. */
-function achbotPhysicalTargetFingerprint(mysqli $db,array $order,bool $legacyVersion=false): string {
+function achbotPhysicalTargetFingerprint(mysqli $db,array $order): string {
     $server=(int)$order['server_id'];
-    // Marzban stays usable on its own post-V9 schema: optional PasarGuard
-    // provider_identity columns are NOT a prerequisite for this target pin.
     $s=$db->prepare('SELECT c.id,c.type,c.panel_url,c.username,c.password,
         i.panel_group_id FROM server_config c JOIN server_info i ON i.id=c.id
         WHERE c.id=? FOR UPDATE');
@@ -93,27 +89,18 @@ function achbotPhysicalTargetFingerprint(mysqli $db,array $order,bool $legacyVer
     $pin=[$row,(int)$order['id'],(string)$order['remark']];
     if ($row['type']==='pasarguard') {
         $p=achbotPgServerPanel($db,$server);
-        // New physical pins never include informational provider version metadata.
-        // The original version-bearing digest remains available ONLY for old
-        // immutable plan intents recorded before physical_target_format=2.
+        // Physical pins never include informational provider version metadata.
         $target=[(int)$p['id'],$p['instance_key'],$p['api_url']];
-        if ($legacyVersion) $target[]=$p['version'];
         $target[]=hash('sha256',$p['api_key']);
         $pin[]=$target;
     }
     return hash('sha256',json_encode($pin,JSON_THROW_ON_ERROR));
 }
-/** An absent format means an original v1 journal, whose exact version-bearing
- * hash must remain pinned. A future/unknown format is never guessed. */
+/** Only current plan intents are executable. */
 function achbotPhysicalTargetForIntent(mysqli $db,array $order,array $intent): string {
-    $provider=$intent['provider']??null;
-    $hasFormat=array_key_exists('physical_target_format',$intent);
-    if ($provider==='pasarguard') {
-        if ($hasFormat && $intent['physical_target_format']!==2)
-            throw new RuntimeException('physical_target_format_unverified');
-        return achbotPhysicalTargetFingerprint($db,$order,!$hasFormat);
-    }
-    throw new RuntimeException('physical_target_format_unverified');
+    if (($intent['provider']??null)!=='pasarguard' || ($intent['physical_target_format']??null)!==2)
+        throw new RuntimeException('physical_target_format_unverified');
+    return achbotPhysicalTargetFingerprint($db,$order);
 }
 function achbotPhysicalPgIdentityFingerprint(array $ctx): string {
     return hash('sha256',json_encode([
@@ -122,19 +109,17 @@ function achbotPhysicalPgIdentityFingerprint(array $ctx): string {
     ],JSON_THROW_ON_ERROR));
 }
 /**
- * Import is an account attachment, not a native mutation. On installations
- * with the source-only plan journal, serialize admission under the SAME
+ * Import is an account attachment, not a native mutation.
+ * Serialize admission under the SAME
  * physical single-flight lock. An already-linked PG account is identified by
  * its persisted provider reference, never by guessed URL/credentials.
- * Return null on older installations without migration 017.
  */
 function achbotPhysicalImportLease(mysqli $db,int $serverId,object $remote): ?string {
     $q=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_plan_changes'");
     if (!($q instanceof mysqli_result)) throw new RuntimeException('physical_import_journal_unavailable');
     $table=$q->fetch_assoc();$count=$q->num_rows;$q->free();
-    if ($table===null) return null;
-    if ($count!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
+    if ($table===null || $count!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
         strcasecmp((string)$table['ENGINE'],'InnoDB')!==0)
         throw new RuntimeException('physical_import_journal_unavailable');
     $type=achbotProviderType($db,$serverId);
@@ -337,25 +322,9 @@ function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows,
     $mode=achbotManualLedgerMode($db);
     if ($mode!=='current')
         throw new RuntimeException('physical_payment_ledger_unavailable');
-    $apiColumns=false;
-    if ($mode==='current') {
-        // 014 is optional on older installations; a partially applied 014 is
-        // not evidence that its existing receipt/fulfillment claims are absent.
-        $q=$db->query("SELECT COLUMN_NAME FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_attempts'
-              AND COLUMN_NAME IN ('evidence_claim_token','evidence_fulfillment_state')");
-        if (!($q instanceof mysqli_result))
-            throw new RuntimeException('physical_payment_evidence_unavailable');
-        $cols=array_column($q->fetch_all(MYSQLI_ASSOC),'COLUMN_NAME');$q->free();
-        if (count($cols)===1)
-            throw new RuntimeException('physical_payment_evidence_unavailable');
-        $apiColumns=count($cols)===2;
-        if ($apiColumns) {
-            require_once __DIR__.'/../Finance/PaymentEvidence.php';
-            if (!achbotPaymentEvidenceSchemaReady($db))
-                throw new RuntimeException('physical_payment_evidence_unavailable');
-        }
-    }
+    require_once __DIR__.'/../Finance/PaymentEvidence.php';
+    if (!achbotPaymentEvidenceSchemaReady($db))
+        throw new RuntimeException('physical_payment_evidence_unavailable');
     // One indexed locking reader also protects legacy add-ons (order_id=0).
     $payments=achbotServicePaymentRowsLocked($db,$ids);
     $retired=[];
@@ -380,42 +349,37 @@ function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows,
             throw new RuntimeException('physical_payment_subject_invalid');
         // Lock the exact attempt after its pays parent, in the same order
         // as authenticated provider/webhook/manual/finance claims.
-        if ($mode==='current') {
-            $payId=(int)$payment['id'];
-            $fields='id,stage,provider_status'.($apiColumns?
-                ',evidence_claim_token,evidence_fulfillment_state':'');
-            $q=$db->prepare("SELECT $fields FROM payment_attempts
-                WHERE pay_row_id=? FOR UPDATE");
-            $q->bind_param('i',$payId);$q->execute();
-            $attempt=$q->get_result()->fetch_assoc();$q->close();
-            if ($attempt) {
-                $stage=(string)$attempt['stage'];
-                $status=(string)($attempt['provider_status']??'');
-                // The original claim may already be inside Native/financial
-                // execution even if the parent payment was not finalized.
-                // Fail closed for any unrecognized state/progress marker.
-                $readOnlyStatuses=['','waiting','confirming','partially_paid',
-                    'pending','finished','failed','expired','receipt_started'];
-                $reviewOnlyStatuses=['verification_uncertain','multiple_payments',
-                    'identity_mismatch','amount_mismatch','receipt_started'];
-                if (($stage==='pending' && !in_array($status,$readOnlyStatuses,true)) ||
-                    ($stage==='review' && !in_array($status,$reviewOnlyStatuses,true)) ||
-                    !in_array($stage,['pending','review'],true))
-                    throw new RuntimeException('physical_pending_financial_effect');
-                if ($apiColumns) {
-                    if ($attempt['evidence_claim_token']!==null ||
-                        $attempt['evidence_fulfillment_state']!==null)
-                        throw new RuntimeException('physical_pending_financial_effect');
-                    $aid=(int)$attempt['id'];
-                    $q=$db->prepare('SELECT id FROM payment_transactions
-                        WHERE attempt_id=? AND evidence_operation IS NOT NULL
-                        LIMIT 1 FOR UPDATE');
-                    $q->bind_param('i',$aid);$q->execute();
-                    $operation=$q->get_result()->num_rows>0;$q->close();
-                    if ($operation)
-                        throw new RuntimeException('physical_pending_financial_effect');
-                }
-            }
+        $payId=(int)$payment['id'];
+        $fields='id,stage,provider_status,evidence_claim_token,evidence_fulfillment_state';
+        $q=$db->prepare("SELECT $fields FROM payment_attempts
+            WHERE pay_row_id=? FOR UPDATE");
+        $q->bind_param('i',$payId);$q->execute();
+        $attempt=$q->get_result()->fetch_assoc();$q->close();
+        if ($attempt) {
+            $stage=(string)$attempt['stage'];
+            $status=(string)($attempt['provider_status']??'');
+            // The original claim may already be inside Native/financial
+            // execution even if the parent payment was not finalized.
+            // Fail closed for any unrecognized state/progress marker.
+            $readOnlyStatuses=['','waiting','confirming','partially_paid',
+                'pending','finished','failed','expired','receipt_started'];
+            $reviewOnlyStatuses=['verification_uncertain','multiple_payments',
+                'identity_mismatch','amount_mismatch','receipt_started'];
+            if (($stage==='pending' && !in_array($status,$readOnlyStatuses,true)) ||
+                ($stage==='review' && !in_array($status,$reviewOnlyStatuses,true)) ||
+                !in_array($stage,['pending','review'],true))
+                throw new RuntimeException('physical_pending_financial_effect');
+            if ($attempt['evidence_claim_token']!==null ||
+                $attempt['evidence_fulfillment_state']!==null)
+                throw new RuntimeException('physical_pending_financial_effect');
+            $aid=(int)$attempt['id'];
+            $q=$db->prepare('SELECT id FROM payment_transactions
+                WHERE attempt_id=? AND evidence_operation IS NOT NULL
+                LIMIT 1 FOR UPDATE');
+            $q->bind_param('i',$aid);$q->execute();
+            $operation=$q->get_result()->num_rows>0;$q->close();
+            if ($operation)
+                throw new RuntimeException('physical_pending_financial_effect');
         }
         // An issued merchant payid or submitted receipt is *not* a refund.
         // Keep both immutable, only end this original product fulfillment.

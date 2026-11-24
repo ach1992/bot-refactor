@@ -86,7 +86,7 @@ function achbotServiceSubjectWorkSettledLocked(mysqli $db,array $peers,bool $ret
 
 /** A prepared plan journal precedes its Native mutation marker. A new
  * monetary claim must not get between that intent and local finality.
- * Absent 017 during isolated legacy-source verification is not a journal. */
+ * Missing current journal storage fails closed. */
 function achbotServicePlanChangePendingLocked(mysqli $db,string $lock): bool {
     $r=achbotProviderRow($db,"SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_plan_changes'");
