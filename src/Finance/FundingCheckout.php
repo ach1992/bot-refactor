@@ -21,6 +21,11 @@ function achbotCheckoutValidateOriginalLocked(mysqli $db,array $pay,int $userId,
         return;
     }
     [$op]=achbotServiceReadLocked($db,$userId,$operationId);
+    if ($op['command_kind']==='checkout') {
+        require_once __DIR__.'/CheckoutAdmission.php';
+        if ((int)($pay['checkout_operation_id']??0)!==$operationId) throw new DomainException('checkout_original_command_changed');
+        achbotCheckoutOriginalCommandLocked($db,$pay);
+    }
     if ($op['stage']!=='awaiting_funds' || (int)$op['price_toman']!==(int)$pay['price'])
         throw new DomainException('checkout_service_invoice_mismatch');
 }
@@ -59,7 +64,16 @@ function achbotCheckoutSettleReceiptLocked(mysqli $db,int $payId,int $userId,str
         // Service-superseded/expired/archived requests keep received value.
         if (in_array($pay['state'],['service_superseded','expired','expired_have_sent','mismatched_plan'],true) ||
             ($attempt['review_archived_at']??null)!==null) $result='request_invalidated';
-        else $result=achbotServiceFundLocked($db,$userId,$operation);
+        else {
+            [$op]=achbotServiceReadLocked($db,$userId,$operation);
+            if ($op['command_kind']==='checkout') {
+                require_once __DIR__.'/CheckoutAdmission.php';
+                achbotCheckoutOriginalCommandLocked($db,$pay);
+                if ((int)($pay['checkout_operation_id']??0)!==$operation)
+                    throw new RuntimeException('checkout_original_command_changed');
+            }
+            $result=achbotServiceFundLocked($db,$userId,$operation);
+        }
     }
     $s=achbotProviderStatement($db,'UPDATE payment_attempts SET wallet_funding_result=?
         WHERE id=? AND wallet_credit_entry_id=? AND wallet_funding_result IS NULL',
@@ -68,7 +82,8 @@ function achbotCheckoutSettleReceiptLocked(mysqli $db,int $payId,int $userId,str
     if ($n!==1) throw new RuntimeException('checkout_funding_result_write');
     // These are financial projections only. The durable service operation
     // and its delivery have their own result; paid never means provisioned.
-    $s=achbotProviderStatement($db,"UPDATE pays SET state='paid' WHERE id=?",'i',[$payId]);$s->close();
+    $s=achbotProviderStatement($db,"UPDATE pays SET state='paid',approved_by=IF(?=0,approved_by,?) WHERE id=?",
+        'iii',[$actor,$actor,$payId]);$s->close();
     $s=achbotProviderStatement($db,"UPDATE payment_attempts SET stage='done' WHERE id=?",'i',[(int)$attempt['id']]);$s->close();
     require_once __DIR__.'/ReceiptReports.php';
     achbotReceiptReportStageLocked($db,$payId,$userId);

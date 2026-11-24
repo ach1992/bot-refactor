@@ -133,6 +133,13 @@ function achbotServiceStageCompletionReportsLocked(mysqli $db,array $op,array $q
     $q=$quote['request'];$kind=$op['kind'];$id=(int)$op['id'];$uid=(int)$op['userid'];
     $receipt=$source['receipt'];$accounts=$source['accounts'];$stage='service_completed';
     $reference=$receipt===null?'svc_'.$id:(string)$receipt['pay']['hash_id'];
+    if ($op['command_kind']==='checkout') {
+        require_once __DIR__.'/CheckoutAdmission.php';
+        $original=achbotProviderRow($db,'SELECT * FROM pays WHERE checkout_operation_id=? FOR UPDATE','i',[$id]);
+        if (!$original) throw new RuntimeException('checkout_original_command_missing');
+        achbotCheckoutOriginalCommandLocked($db,$original);
+        $reference=(string)$original['hash_id'];
+    }
     $remark=$kind!=='BUY'?$q['remark']:
         ($q['quantity']>1?achbotMessage('bulk_reporting.bulk_subject'):$accounts[0]['name']);
     $gateway=$receipt===null?null:achbotReceiptReportGateway($receipt['attempt']);

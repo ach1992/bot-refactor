@@ -363,6 +363,12 @@ function handleAutoRenewCallback($data): void {
                     (string)$data,$m)) return;
     $userId=(int)$m[1];
     $orderId=(int)$m[2];
+    require_once __DIR__.'/CheckoutAdmission.php';
+    if (achbotCheckoutCommandsPresent($connection)) {
+        require_once __DIR__.'/../Services/AutomaticRenewal.php';
+        achbotServiceAutoRenewAdmit($connection,$orderId,$userId,$botState);
+        return;
+    }
     $claim=achbotAutoRenewReserve($connection,$orderId,$userId);
     if ($claim['status']==='insufficient_funds') {
         // The subscription has been durably disabled, with no debit/remote edit.
@@ -467,8 +473,17 @@ function achbotAutoRenewSweep(mysqli $db, array $botState): void {
     $stmt->execute();
     $orders=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
+    require_once __DIR__.'/CheckoutAdmission.php';
+    $walletFirst=achbotCheckoutCommandsPresent($db);
+    $deadline=hrtime(true)/1000000000+10.0;$examined=0;
     foreach ($orders as $order) {
-        $orderId=(int)$order['id'];
+        if ($walletFirst && hrtime(true)/1000000000>=$deadline) break;
+        $orderId=(int)$order['id'];$examined++;
+        if ($walletFirst) {
+            require_once __DIR__.'/../Services/AutomaticRenewal.php';
+            achbotServiceAutoRenewAdmit($db,$orderId,(int)$order['userid'],$botState);
+            continue;
+        }
         if (!achbotSupportsOrder($db,$orderId)) continue;
         $observation=achbotServiceObserve((int)$order['server_id'],(string)$order['remark']);
         if (achbotServiceLifecycle($observation,time())['renew']) {
@@ -477,7 +492,8 @@ function achbotAutoRenewSweep(mysqli $db, array $botState): void {
     }
     // A fulfilled row leaves this set. A keyset cursor cannot skip the next
     // eligible service when a successful renewal resets notif to zero.
-    $next=count($orders)<50 ? 0 : (int)$orders[count($orders)-1]['id'];
+    $next=$examined===count($orders) && count($orders)<50 ? 0 :
+        ($examined>0?(int)$orders[$examined-1]['id']:$cursor);
     $stringNext=(string)$next;
     if ($row) {
         $stmt=$db->prepare("UPDATE setting SET value=?

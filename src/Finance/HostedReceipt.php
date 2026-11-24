@@ -124,7 +124,7 @@ function achbotHostedReceiptBindLocked(mysqli $db,int $payId,int $userId,array $
     return ['status'=>$pay['state']==='pending'?'issued':'closed','url'=>$url];
 }
 function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $method,?int $operationId,
-    array $quote,array $paymentKeys,string $botUrl,string $description): array {
+    array $quote,array $paymentKeys,string $botUrl,string $description,?array $draftStates=null): array {
     achbotPaymentEvidenceRequireAutocommit($db);
     $def=achbotHostedReceiptDefinition($method);
     if ($def===null) throw new DomainException('hosted_method_unavailable');
@@ -132,6 +132,13 @@ function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
     $credential=(string)($paymentKeys[$def['credential_setting']]??'');
     if (!$db->begin_transaction()) throw new RuntimeException('hosted_issue_begin');
     try {
+        if ($draftStates!==null) {
+            require_once __DIR__.'/CheckoutAdmission.php';
+            if (!achbotCheckoutCommandsPresent($db)) throw new RuntimeException('checkout_command_schema_missing');
+            $pay=achbotCheckoutPayLocked($db,$payId,$userId);
+            $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
+            $operationId=achbotCheckoutAdmitDraftLocked($db,$pay,$a,$method,$draftStates);
+        }
         $r=achbotHostedReceiptReserveLocked($db,$payId,$userId,$method,$operationId,$quote,$credential);
         if (!$db->commit()) throw new RuntimeException('hosted_reservation_commit');
     } catch (Throwable $e) {$db->rollback();throw $e;}

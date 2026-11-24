@@ -385,6 +385,9 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
     $pay=$fresh;$storedRefs=json_decode((string)($pay['admins_messages']??''),true);$storedRefs=is_array($storedRefs)?$storedRefs:[];
     $pay['admins_messages']=json_encode(array_values(array_unique(array_merge($storedRefs,$incomingRefs),SORT_REGULAR)));
     $hash=(string)$pay['hash_id'];$a=achbotApiPaymentAttempt($db,$id);if(!$a)return;
+    // A new wallet credit owns durable receipt/report projection, including
+    // service completion. Never announce delivery from paid alone.
+    if (($a['wallet_credit_entry_id']??null)!==null) return;
     $proof=achbotPaymentEvidenceGetProof($db,$id);$pending=$proof?null:achbotPaymentEvidencePending($db,$id);
     $evidence=$proof['operation']??($pending['operation']??('invoice-'.$id));
     if(achbotApiPaymentTerminal($pay) && in_array($status,['used','revoked','expired','mismatch'],true))$status='settled';
@@ -645,6 +648,18 @@ function achbotApiPaymentSettle(mysqli $db,int $id,array $proof,
 }
 function achbotApiPaymentSettleLocked(mysqli $db,int $id,array $proof,
     int $operator=0,int $primaryOwner=0,?array $operatorOverride=null): string {
+    require_once __DIR__.'/CheckoutAdmission.php';
+    if (achbotCheckoutCommandsPresent($db)) {
+        $before=achbotApiPaymentRow($db,$id);
+        if (!$before || $operator!==0 || $operatorOverride!==null) return 'review';
+        try {
+            achbotCheckoutSettleReceipt($db,$id,(int)$before['user_id'],'api',$proof);
+            return 'settled';
+        } catch (Throwable $e) {
+            achbotDiagnosticEvent('achbot.finance.evidence_settlement',['pay_id'=>$id,'reason'=>'checkout_settlement_deferred','class'=>get_class($e)],'warning');
+            return 'review';
+        }
+    }
     require_once __DIR__.'/ServiceEffects.php';require_once __DIR__.'/BankPurchase.php';
     require_once __DIR__.'/DeliveryLedger.php';
     $before=achbotApiPaymentRow($db,$id);if(!$before)return 'review';
@@ -1226,6 +1241,15 @@ function achbotApiPaymentCheck(mysqli $db,int $id): string {
     $old=$GLOBALS[$key]??null;
     $GLOBALS[$key]=$id;
     try {
+        require_once __DIR__.'/CheckoutAdmission.php';
+        if (achbotCheckoutCommandsPresent($db)) {
+            require_once __DIR__.'/ManualReceipt.php';
+            try { return achbotManualReceiptCheckApi($db,$id); }
+            catch (Throwable $e) {
+                achbotDiagnosticEvent('achbot.finance.evidence_check',['pay_id'=>$id,'reason'=>'checkout_evidence_deferred','class'=>get_class($e)],'warning');
+                return 'review';
+            }
+        }
         return achbotApiPaymentWithWorkerLock($db,$id,
             static fn():string=>achbotApiPaymentWithBudget(15.0,
                 static fn():string=>achbotApiPaymentCheckWithinBudget($db,$id)));
@@ -1356,7 +1380,18 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
     }
     try {
         $archivePredicate=achbotApiPaymentArchivePredicate($db);
-        $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
+        require_once __DIR__.'/CheckoutAdmission.php';
+        $walletFirst=achbotCheckoutCommandsPresent($db);
+        if ($walletFirst) {
+            $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
+                WHERE a.evidence_profile IS NOT NULL AND a.provider IN ('bank_transfer','gift_card')
+                  AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>'' AND a.wallet_credit_entry_id IS NULL
+                  AND (a.evidence_next_check_at IS NULL OR a.evidence_next_check_at<=NOW())
+                  AND (a.evidence_state='proven' OR
+                       (a.review_archived_at IS NULL AND a.evidence_state NOT IN ('invalid_code','manual') AND
+                         (p.state='have_sent' OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_operation IS NOT NULL))))
+                ORDER BY COALESCE(a.evidence_next_check_at,a.created_at),a.id LIMIT ".($limit+1));
+        } else $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
             WHERE a.evidence_profile IS NOT NULL AND a.provider IN ('bank_transfer','gift_card')
               {$archivePredicate}
               AND ((p.state='have_sent' AND a.stage='review' AND p.message_id>0 AND p.chat_id>0)

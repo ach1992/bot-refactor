@@ -16,6 +16,9 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
     setUser();
 
     $hashId = trim($match[1] ?? '');
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    if (achbotCheckoutWalletCallback($connection,$hashId,(int)$from_id,'custom',$botState)) return;
+
     // Keep the original payment lease across Wallet debit, Native CREATE,
     // local finality AND direct QR/admin delivery in this same callback.
     $checkoutLease=achbotWalletCheckoutLeaseBegin(
@@ -482,6 +485,9 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
 }
 
 if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != \achbotMessage('legacy_buttons.cancel')) {
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    if (achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'custom')) return;
+
     if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
         alert(\achbotMessage('payment.checkout.alert.873a4950ab'), true);
         return;
@@ -741,6 +747,9 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
     setUser();
 
     $hashId = trim($match[1] ?? '');
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    if (achbotCheckoutWalletCallback($connection,$hashId,(int)$from_id,'standard',$botState)) return;
+
     // Match the custom Wallet route: settlement internally borrows this
     // same session-wide lease, while direct QR/Telegram uses its owner.
     $checkoutLease=achbotWalletCheckoutLeaseBegin(

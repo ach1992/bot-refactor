@@ -177,6 +177,9 @@ if (preg_match('/^apiEvidence(Resume|Execute|Override)_([1-9][0-9]{0,17})(?:_([a
 }
 
 if (preg_match('/^approvePayment(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    if (achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'topup')) return;
+
     $hash_id = $match[1];
     // Keep the existing receipt display identifiers for post-commit updates.
     $stmt = $connection->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');

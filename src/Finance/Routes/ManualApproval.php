@@ -82,6 +82,9 @@ if (
     require_once __DIR__ . '/../ReferralReward.php';
     require_once __DIR__ . '/../ApiPaymentPresentation.php';
     $hash_id = $match[1];
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    if (achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'standard')) return;
+
     $payInfo = null;
     $claimOpen = false;
     $reservedAccountCount=null;

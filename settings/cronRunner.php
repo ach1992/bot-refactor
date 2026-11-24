@@ -235,6 +235,17 @@ try {
             error_log('achbot_wallet_original_maintenance_deferred class='.
                 get_class($error));
         }
+        try {
+            require_once __DIR__.'/../src/Finance/CheckoutRoutes.php';
+            if (achbotCheckoutCommandsPresent($connection)) {
+                require_once __DIR__.'/../src/Services/Execution.php';
+                achbotServiceExecuteDue($connection,8,10.0,achbotCheckoutPresentation());
+                require_once __DIR__.'/../src/Finance/ServicePurchaseReferral.php';
+                achbotServiceReferralMaintainPending($connection,(int)$admin,4,5.0);
+            }
+        } catch (Throwable $error) {
+            error_log('achbot_service_command_maintenance_deferred class='.get_class($error));
+        }
         // Issue #117: crash-after-COMMIT first delivery only.  Keep this
         // separate from provider/financial maintenance, so one unavailable
         // subsystem cannot suppress an independently sealed customer packet.

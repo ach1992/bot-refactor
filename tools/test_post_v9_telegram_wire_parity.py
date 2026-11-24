@@ -59,6 +59,8 @@ NEW_RUNTIME_WITHOUT_TELEGRAM = frozenset({
     "src/Finance/ReceiptReports.php",
     "src/Finance/FollowupAttempts.php",
     "src/Finance/FundingCheckout.php",
+    "src/Finance/CheckoutAdmission.php",
+    "src/Finance/CheckoutRoutes.php",
     "src/Services/Funding.php",
     "src/Services/Execution.php",
     "src/Panel/PasarGuardServiceExecution.php",

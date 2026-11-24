@@ -145,6 +145,7 @@ def setup(root: Path) -> tuple[Path, Path]:
 
     # The services worker also invokes two Wallet maintenance functions.
     # These are inert stand-ins for the Cron coordination fixture.
+    (root/'src/Finance/CheckoutRoutes.php').write_text('<?php function achbotCheckoutCommandsPresent($db){return false;}')
     (root/'src/Finance/WalletEditRecovery.php').write_text(
         '<?php function achbotWalletAddonMaintain($db){return [];}' )
     (root/'src/Finance/WalletRenewalRecovery.php').write_text(

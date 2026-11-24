@@ -2035,6 +2035,9 @@ function achbotHostedPartialBulkNotice(mysqli $db,int $payId,string $gateType): 
 
 function doAction($payRowId, $gateType) {
     global $connection;
+    require_once __DIR__.'/CheckoutAdmission.php';
+    if (achbotCheckoutCommandsPresent($connection))
+        throw new RuntimeException('legacy_hosted_service_dispatch_retired');
     // A live-worker signal for the ENTIRE hosted attempt, including local
     // order linking and Telegram delivery after remote Native HTTP. It is
     // session-scoped, automatically cleared after PHP/connection death.

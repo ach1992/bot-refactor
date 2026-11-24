@@ -109,6 +109,8 @@ function achbotPgServiceEditIntent(array $op,array $quote,array $u): array {
         'ADD_VOLUME'=>['plus_volume'=>$q['volume']],
     };
     $anchor=time();
+    if ($op['kind']==='ADD_VOLUME' && ($u['expire']===null || $u['expire']<=$anchor))
+        throw new RuntimeException('pg_addon_expired_or_unlimited_time');
     $absolute=achbotPgEditChanges($u,$units,$anchor);
     $changes=match($op['kind']){
         'RENEW'=>array_intersect_key($absolute,array_flip(['expire','data_limit','status'])),

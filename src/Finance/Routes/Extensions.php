@@ -337,6 +337,9 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
 }
 
 if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    if (achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'day')) return;
+
     require_once __DIR__.'/../ManualEditRecovery.php';
     $resume=achbotManualPgResumeEdit($connection,(string)$match[1],(int)$from_id,'day',
         (int)$admin);
@@ -544,6 +547,9 @@ if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor(
 }
 
 if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    if (achbotCheckoutWalletCallback($connection,(string)$match[1],(int)$from_id,'day',$botState)) return;
+
     require_once __DIR__.'/../WalletSettlement.php';
     // One original-pay session lease spans debit, Native, local finality
     // and the direct Telegram report. Archive cannot win during an active
@@ -1233,6 +1239,9 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
 }
 
 if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    if (achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'volume')) return;
+
     require_once __DIR__.'/../ManualEditRecovery.php';
     $resume=achbotManualPgResumeEdit($connection,(string)$match[1],(int)$from_id,'volume',
         (int)$admin);
@@ -1440,6 +1449,9 @@ if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanF
 }
 
 if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    if (achbotCheckoutWalletCallback($connection,(string)$match[1],(int)$from_id,'volume',$botState)) return;
+
     require_once __DIR__.'/../WalletSettlement.php';
     // One original-pay session lease spans debit, Native, local finality
     // and the direct Telegram report. Archive cannot win during an active

@@ -356,6 +356,9 @@ if (preg_match('/wait(?:RenewCart|RenewGift|RenewUsdt)Receipt(.*)/', $userInfo['
 }
 
 if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')){
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    if (achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'renew')) return;
+
     require_once __DIR__.'/../ManualEditRecovery.php';
     $resume=achbotManualPgResumeEdit($connection,(string)$match[1],(int)$from_id,'renew',
         (int)$admin);
@@ -560,6 +563,9 @@ if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($conne
 }
 
 if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    if (achbotCheckoutWalletCallback($connection,(string)$match[1],(int)$from_id,'renew',$botState)) return;
+
     require_once __DIR__.'/../WalletSettlement.php';
     // One original-pay session lease spans debit, Native, local finality
     // and the direct Telegram report. Archive cannot win during an active

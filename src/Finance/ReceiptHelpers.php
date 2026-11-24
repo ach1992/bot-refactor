@@ -1428,6 +1428,21 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
                            ?string $chosenNetwork = null): bool {
     if (!in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt','manual_trx'], true) ||
         (int)$payInfo['user_id'] !== $userId) return false;
+    // With the candidate command schema every NEW selection uses the one
+    // original service command and money pin, including wallet-only topups.
+    // A failed new claim never falls through to the legacy debit/credit path.
+    try {
+        require_once __DIR__.'/CheckoutAdmission.php';
+        if (achbotCheckoutCommandsPresent($connection)) {
+            require_once __DIR__.'/ManualReceipt.php';
+            $result=achbotManualReceiptIssue($connection,(int)$payInfo['id'],$userId,$method,
+                null,$chosenNetwork,(array)($GLOBALS['botState']??[]));
+            return $result['status']==='issued';
+        }
+    } catch (Throwable $e) {
+        error_log('achbot_checkout_manual_admission_deferred pay_id='.(int)$payInfo['id'].' class='.get_class($e));
+        return false;
+    }
     // API issuance observes the complete provider/native subject before the
     // existing issuer transaction. Existing attempts keep their original pins.
     $apiSubjectPreflight=null;

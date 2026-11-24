@@ -1422,6 +1422,7 @@ function achbotProviderRegistry(): array {
             'dispatch'=>'achbotPasarGuardDispatchEffectAdapter','link'=>'achbotPasarGuardLinkEffectAdapter',
             'import_lookup'=>'achbotPasarGuardExistingUser','import_adopt'=>'achbotPasarGuardAdoptExistingLocked',
             'service_target'=>'achbotPasarGuardServiceTargetLocked',
+            'service_checkout_pin'=>'achbotPasarGuardCheckoutPinMatches',
             'service_account_lock'=>'achbotPgServiceAccountLock',
             'service_auto_observe'=>'achbotPgServiceAutoObserve',
             'service_auto_reserve'=>'achbotPgServiceAutoReserveLocked',
@@ -1443,12 +1444,12 @@ function achbotProviderRegistryEntryValid($type,$adapter): bool {
         !is_array($adapter) || !is_string($adapter['label']??null) ||
         preg_match('/^[a-z][a-z0-9_.]+$/D',$adapter['label'])!==1) return false;
     $required=achbotProviderRequiredOperations();
-    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt','service_target','service_execution','service_finalization','service_account_lock','service_auto_observe','service_auto_reserve'],$required))) return false;
+    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt','service_target','service_checkout_pin','service_execution','service_finalization','service_account_lock','service_auto_observe','service_auto_reserve'],$required))) return false;
     foreach ($required as $operation)
         if (!is_string($adapter[$operation]??null) || !is_callable($adapter[$operation]))
             return false;
     // During the refactor legacy adapters have no new service admission.
-    foreach (['service_target','service_account_lock','service_auto_observe','service_auto_reserve'] as $operation)
+    foreach (['service_target','service_checkout_pin','service_account_lock','service_auto_observe','service_auto_reserve'] as $operation)
         if (array_key_exists($operation,$adapter) &&
             (!is_string($adapter[$operation]) || !is_callable($adapter[$operation]))) return false;
     if (isset($adapter['service_auto_observe'])!==isset($adapter['service_auto_reserve']) ||

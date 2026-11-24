@@ -148,6 +148,29 @@ try {
         $r=achbotDeliveryPartRedriveToken($d,$p,$x['actor']);
     }
     elseif ($x['op']==='maintain_delivery') $r=achbotDeliveryMaintainPending($db,$x['limit'],10.0);
+    elseif ($x['op']==='checkout_pin') {
+        achbotProviderPinPayment($db,$x['pay']);$r=true;
+    }
+    elseif ($x['op']==='checkout_wallet') {
+        require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
+        $r=achbotCheckoutWallet($db,$x['hash'],(int)($x['actor']??1001),$x['mode']??'standard',
+            ['remark'=>'digits']);
+    }
+    elseif ($x['op']==='checkout_manual') {
+        require_once $argv[1].'/src/Finance/ManualReceipt.php';
+        $GLOBALS['botState']['cartToCartState']='on';
+        $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[$x['pay']]);
+        $r=achbotManualClaim($db,$pay,'bank_transfer',1001);
+        if ($r && ($x['submit']??false)) {
+            $token=achbotManualBeginEvidence($db,$pay,'bank_transfer',1001,'fixture-photo');
+            if (!$token || !achbotManualFinishEvidence($db,$pay['hash_id'],'fixture-photo',$token,222,9001))
+                throw new RuntimeException('fixture_manual_receipt');
+        }
+    }
+    elseif ($x['op']==='checkout_approve') {
+        require_once $argv[1].'/src/Finance/CheckoutRoutes.php';
+        $r=achbotCheckoutApproveReceipt($db,$x['hash'],(int)($x['actor']??9001),9001,$x['mode']??'standard');
+    }
     elseif ($x['op']==='manual_receipt') {
         require_once $argv[1].'/src/Finance/ManualReceipt.php';
         $pid=$x['pay'];$pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[$pid]);
@@ -404,6 +427,9 @@ def main():
             assert sql("SELECT id,pay_row_id,amount_toman,state,before_balance,after_balance FROM referral_awards")==original_award
             assert sql("SELECT id,pay_row_id,sealed_payload,state FROM payment_followup_intents")==original_report
             assert sql("SELECT COUNT(*) FROM referral_awards WHERE service_operation_id IS NOT NULL")=='0'
+            sql((ROOT/'migrations/post-v9/033_checkout_commands.sql').read_text())
+            assert sql("SELECT COUNT(*) FROM pays WHERE checkout_operation_id IS NOT NULL")=='0'
+
             sql("""CREATE TABLE fixture_followup(id INT AUTO_INCREMENT PRIMARY KEY,intent_id BIGINT UNSIGNED NOT NULL,
                 recipient VARCHAR(128),text TEXT,mode VARCHAR(20),keys_json TEXT) ENGINE=InnoDB""")
             sql("""CREATE TABLE fixture_telegram (
@@ -1417,6 +1443,41 @@ DELIMITER ;
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_manual_renewal_operator_independent_of_delivery_ack')
                 sql("UPDATE users SET isAdmin=0,is_agent=0,freetrial=NULL WHERE userid=9002; DELETE FROM setting WHERE type='ADMIN_ROLE_9002'")
+                # Actual persisted purchase draft -> Wallet command and manual
+                # receipt entry points. Old synthetic commands remain isolated.
+                sql("""DELETE FROM setting WHERE type='BOT_STATES'; INSERT INTO setting(type,value) VALUES ('BOT_STATES','{"walletState":"on","cartToCartState":"on"}')""")
+                sql("UPDATE users SET wallet=50000 WHERE userid=1001; UPDATE server_info SET ucount=100 WHERE id=2")
+                def draft(suffix,price=100,typ='BUY_SUB'):
+                    h=mode+'-checkout-'+suffix
+                    sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id,day,volume,agent_count,description) VALUES ('{h}',1001,'{typ}',{price},UNIX_TIMESTAMP(),'pending',2,7,0,0,1,'fixture')")
+                    pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{h}'"))
+                    assert php(mode,'checkout_pin',pay=pid)
+                    return h,pid
+                h,pid=draft('wallet')
+                before=len(requests)
+                assert php(mode,'checkout_wallet',hash=h,actor=9002,expect_error='checkout_draft_unavailable')
+                r=php(mode,'checkout_wallet',hash=h)
+                assert r['status']=='funded',r
+                op=r['operation']
+                assert len(requests)==before
+                assert sql(f"SELECT state,checkout_operation_id FROM pays WHERE id={pid}")==f'paid_with_wallet\t{op}'
+                assert php(mode,'checkout_wallet',hash=h)['status']=='already_funded'
+                assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{op}'")=='1'
+                for stage in ('applied','completed'):step(mode,op,stage)
+                cases.append(mode+'_real_wallet_draft_admission_and_execution')
+                h,pid=draft('low',1000000)
+                assert php(mode,'checkout_wallet',hash=h)['status']=='insufficient_funds'
+                assert sql(f"SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}")=='1'
+                assert php(mode,'checkout_manual',pay=pid,submit=True)
+                assert php(mode,'checkout_wallet',hash=h,expect_error='checkout_original_attempt_conflict')
+                r=php(mode,'checkout_approve',hash=h)
+                assert r['funding']=='funded',r
+                op=r['operation']
+                assert php(mode,'checkout_approve',hash=h)['credit']['replayed']
+                assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{op}'")=='1'
+                assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='payment_credit' AND source_ref='{pid}'")=='1'
+                for stage in ('applied','completed'):step(mode,op,stage)
+                cases.append(mode+'_declined_wallet_switches_to_manual_exactly_once')
                 assert not faults and not errors,(faults,errors)
         finally:
             release.set();server.shutdown();server.server_close();thread.join(5)

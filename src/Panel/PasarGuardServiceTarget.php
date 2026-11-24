@@ -75,3 +75,19 @@ function achbotPasarGuardServiceTargetLocked(mysqli $db,array $q,?array $o,?arra
         throw new DomainException($reason,0,$invalid);
     }
 }
+
+/** SQL-only comparison against the existing draft's original PG pin. */
+function achbotPasarGuardCheckoutPinMatches(array $pay,array $target,array $q): bool {
+    try {
+        $pin=json_decode((string)($pay['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
+        if (($pin['provider']??null)!=='pasarguard' ||
+            (int)($pin['panel_id']??0)!==$target['panel_id'] ||
+            'pg:'.($pin['instance_key']??'')!==$target['physical'] ||
+            ($pin['endpoint_sha256']??null)!==$target['endpoint']) return false;
+        if ($q['kind']==='BUY')
+            return achbotProviderGroups($pin['group_ids']??null)===$target['groups'];
+        foreach ($target['account']['native'] as $key=>$value)
+            if (!array_key_exists($key,$pin) || (string)$pin[$key]!== (string)$value) return false;
+        return true;
+    } catch (Throwable $e) {return false;}
+}
