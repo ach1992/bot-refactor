@@ -1159,7 +1159,8 @@ function achbotPaymentEvidenceGetProof(mysqli $db,int $payId): ?array {
             'evidence'=>$payload['expected'],'consumption'=>$payload['proof']];
     } catch (Throwable $e) {return null;}
 }
-function achbotPaymentEvidenceValidateProofLocked(mysqli $db,array $pay,array $proof): bool {
+function achbotPaymentEvidenceValidateProofLocked(mysqli $db,array $pay,array $proof,
+    bool $allowArchivedReceipt=false): bool {
     if (!achbotPaymentEvidenceSchemaReady($db) || (int)($pay['id']??0)!==(int)($proof['pay_id']??0))
         return false;
     try {
@@ -1169,7 +1170,9 @@ function achbotPaymentEvidenceValidateProofLocked(mysqli $db,array $pay,array $p
         $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
         $q->bind_param('i',$payId);$q->execute();$a=$q->get_result()->fetch_assoc();$q->close();
         $p=$a?achbotPaymentEvidenceSnapshot($a):null;
-        if (!$p || ($a['review_archived_at']??null)!==null ||
+        // A Wallet-first credit may recognize already-proven money after a
+        // service Archive. This never authorizes another evidence redemption.
+        if (!$p || (!$allowArchivedReceipt && ($a['review_archived_at']??null)!==null) ||
             $p['pay_sha256']!==achbotPaymentEvidencePayFingerprint($pay)) return false;
         $q=$db->prepare('SELECT * FROM payment_transactions WHERE id=? AND attempt_id=? FOR UPDATE');
         $q->bind_param('ii',$tid,$a['id']);$q->execute();$t=$q->get_result()->fetch_assoc();$q->close();

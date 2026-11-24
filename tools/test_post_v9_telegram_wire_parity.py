@@ -44,6 +44,12 @@ WALLET_ARCHIVE_UI_SHA256 = "66fa7313965c06b22e278136a88def18b19cefa9feb6ee55380a
 NEW_RUNTIME_WITHOUT_TELEGRAM = frozenset({
     "src/Finance/WalletRenewalRecovery.php",
     "src/Finance/WalletOriginalRecovery.php",
+    "src/Wallet/Ledger.php",
+    "src/Finance/ManualReceiptIntent.php",
+    "src/Finance/PaymentCredit.php",
+    "src/Finance/FundingCheckout.php",
+    "src/Services/Funding.php",
+    "src/Panel/AccountNaming.php",
 })
 LEGACY_DIRECT = re.compile(
     r"""\\achbotMessage\(['"]legacy_messages\.([a-z0-9_]+)['"]\)\Z"""

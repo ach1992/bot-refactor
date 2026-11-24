@@ -356,3 +356,72 @@ not authorization to mutate them. No blanket reprocessing.
   recovery instructions at cutover, retain useful audit history. No new
   parallel ledger authority, legacy runtime fallback or artificial cap.
 
+
+## 9. Development implementation boundary (2026-11-24)
+
+This checkpoint is an **inactive draft**, not an installed runtime, release,
+or definition-of-done acceptance.
+
+- 024 / `src/Wallet/Ledger.php`: the shared owner lock, exact journal lookup
+  (no-write on miss), and one transactional balance mutation. Existing
+  user balance writers have not yet been converged.
+- 025 / `src/Finance/PaymentCredit.php`: new-issuer-only invoice pin;
+  historical NULL cannot be promoted by normal issuance. Hosted and manual
+  receipt identity, persisted protected API proof and authorized manual
+  decision enter one payment-credit source. Retain multiple authenticated
+  hosted children without double credit. The existing timer policy is read
+  under its exact settings-row lock; API-pinned invoices cannot use the
+  timer fallback. Archived already-proven API money is recognizable without
+  authorizing new redemption. Actual hosted/manual/API route cutover,
+  receiving-merchant-account scoping, and proof acquisition independent of
+  Native eligibility are not yet complete.
+- 026 / `src/Services/Funding.php` / `src/Finance/FundingCheckout.php`:
+  independent unique original command and immutable quote; local subject and
+  physical target admission; one debit (or explicit zero-price funding),
+  BUY capacity, and the durable funded continuation in one transaction.
+  Original external invoice credit and optional service funding share one
+  transaction. A known invalidated/capacity-unavailable request retains the
+  verified credit; receipt replay returns the committed handoff, not another
+  funding attempt. Current business quote adapters, Native executor, account
+  fences, worker, cancellation/compensation after funding, delivery, migration
+  of historical funded claims, and old path removal remain incomplete.
+- Source-real disposable PHP 8.5.12 / socket-only MariaDB:
+  `test_wallet_first_ledger.py` 42 cases,
+  `test_wallet_first_credit.py` 78 cases (including loopback SMS and gift
+  evidence; hosted verified-response fixtures, not actual gateway HTTP),
+  `test_wallet_first_funding.py` 40 cases (local admission/funding, not
+  Native execution; standard/custom/bulk, managed/external renewal and
+  add-ons on Marzban, PasarGuard BUY, zero cost, concurrent receipt,
+  lost COMMIT ACK, deliberate late SQL failure, capacity and invalidation).
+  Both MySQLi strict and report-off modes. New modules have no direct
+  Telegram wire calls; existing exact wire-parity check retains that rule.
+
+### Verified Native feasibility gap, not an accepted retry contract
+
+`python3 tools/test_wallet_first_native_write_fence.py --run-disposable`
+executes the current real PHP PasarGuard HTTP adapter against an isolated
+synthetic peer implementing the reviewed unconditional assignment semantics.
+A first PUT to quota 200 reaches the peer but times out; an identical retry
+is acknowledged and read back at 200. A later PUT to 300 is also acknowledged
+and read back. Release the original delayed PUT: observed writes are
+`[200,300,200]`; final quota is 200. PASS of this **counterexample** means
+the failure was reproduced, not that Native write safety is accepted.
+
+At the [reviewed PasarGuard source](https://github.com/PasarGuard/panel/blob/eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43/app/db/crud/user.py#L1254-L1357),
+modify_user assigns expire/data_limit directly before committing; the current
+client sends an unconditional PUT by remote ID. At the
+[inspected Marzban source](https://github.com/Gozargah/Marzban/blob/7f396db3e703d71a28060bc9ce4a532ec64cb1f4/app/routers/user.py),
+PUT by username invokes
+[crud.update_user](https://github.com/Gozargah/Marzban/blob/7f396db3e703d71a28060bc9ce4a532ec64cb1f4/app/db/crud.py),
+which assigns expiry/quota directly. The existing GET checks are necessary
+but cannot be a remote commit fence. These are source observations at the
+specified references, not an inventory of every deployed provider/version
+or a claim that an actual installed account was mutated.
+
+A complete edit executor requires a proven remote-side conditional/idempotent
+operation contract or an independently verified single-writer/order/quiescence
+boundary including delayed requests and other mutators. No unconditional
+retry or fabricated exactly-once acceptance has been enabled. Provider-side
+changes/infrastructure beyond this repository need a separate Owner scope
+decision. Independent payment/Wallet/BUY and migration work remains possible.
+PR #233 retains its separate review/integration gate.

@@ -7,6 +7,67 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 /**
+ * A current unique owner row is the common lock for monetary commands.
+ * Acquire it before invoice/operation rows in the new financial paths.
+ */
+function achbotWalletLockOwnerLocked(mysqli $db,int $userId): array {
+    if ($userId<=0) throw new InvalidArgumentException('wallet_owner_invalid');
+    $tx = $db->query('SELECT @@in_transaction AS tx_active');
+    if (!$tx || (int)($tx->fetch_assoc()['tx_active'] ?? 0) !== 1) {
+        throw new LogicException('wallet_transaction_required');
+    }
+
+    // Lock the real owner before checking the source. The cutover will also
+    // require a unique userid; reject ambiguity rather than choosing LIMIT 1.
+    $q = $db->prepare('SELECT id,wallet FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? ORDER BY id LIMIT 2 FOR UPDATE');
+    if (!$q) throw new RuntimeException('wallet_owner_prepare');
+    $q->bind_param('i', $userId);
+    if (!$q->execute() || !($rows = $q->get_result())) {
+        $q->close();
+        throw new RuntimeException('wallet_owner_read');
+    }
+    $users = $rows->fetch_all(MYSQLI_ASSOC);
+    $q->close();
+    if (count($users) !== 1) throw new RuntimeException('wallet_owner_not_unique');
+    return ['id'=>(int)$users[0]['id'], 'wallet'=>(int)$users[0]['wallet']];
+}
+
+/**
+ * Internal exact-source lookup. The caller owns the transaction and has
+ * locked the unique user row. No INSERT or projection write on a miss.
+ */
+function achbotWalletFindEntryLocked(mysqli $db,int $rowId,int $userId,
+    string $sourceKind,string $sourceRef,int $leg,int $delta): ?array {
+    // A current locking read (not a stale consistent-read snapshot) allows
+    // original source replay after any subsequent valid balance movements.
+    $q = $db->prepare('SELECT id,user_row_id,userid,delta_toman,balance_before,balance_after,actor_userid
+        FROM wallet_entries WHERE source_kind=? AND source_ref=? AND leg=? FOR UPDATE');
+    if (!$q) throw new RuntimeException('wallet_entry_prepare');
+    $q->bind_param('ssi', $sourceKind, $sourceRef, $leg);
+    if (!$q->execute() || !($rows = $q->get_result())) {
+        $q->close();
+        throw new RuntimeException('wallet_entry_read');
+    }
+    $existing = $rows->fetch_assoc();
+    $q->close();
+    if ($existing !== null) {
+        if ((int)$existing['user_row_id'] !== $rowId ||
+            (int)$existing['userid'] !== $userId ||
+            (int)$existing['delta_toman'] !== $delta) {
+            throw new RuntimeException('wallet_entry_source_conflict');
+        }
+        return [
+            'id'=>(int)$existing['id'],
+            'before'=>(int)$existing['balance_before'],
+            'after'=>(int)$existing['balance_after'],
+            'actor'=>(int)$existing['actor_userid'],
+            'replayed'=>true,
+        ];
+    }
+    return null;
+}
+
+/**
  * Wallet-first financial primitive. The authenticated domain caller owns the
  * transaction and ALL other state (receipt, funding, transfer, etc.). On ANY
  * exception it must roll back the entire transaction, not commit a partial
@@ -36,52 +97,12 @@ function achbotWalletApplyLocked(
         ($allowDebt && $actor <= 0)) {
         throw new InvalidArgumentException('wallet_entry_invalid');
     }
-    $tx = $db->query('SELECT @@in_transaction AS tx_active');
-    if (!$tx || (int)($tx->fetch_assoc()['tx_active'] ?? 0) !== 1) {
-        throw new LogicException('wallet_transaction_required');
-    }
+    $owner = achbotWalletLockOwnerLocked($db,$userId);
+    $rowId = $owner['id'];
+    $before = $owner['wallet'];
 
-    // Lock the real owner before checking the source. The cutover will also
-    // require a unique userid; reject ambiguity rather than choosing LIMIT 1.
-    $q = $db->prepare('SELECT id,wallet FROM users WHERE userid=? ORDER BY id LIMIT 2 FOR UPDATE');
-    if (!$q) throw new RuntimeException('wallet_owner_prepare');
-    $q->bind_param('i', $userId);
-    if (!$q->execute() || !($rows = $q->get_result())) {
-        $q->close();
-        throw new RuntimeException('wallet_owner_read');
-    }
-    $users = $rows->fetch_all(MYSQLI_ASSOC);
-    $q->close();
-    if (count($users) !== 1) throw new RuntimeException('wallet_owner_not_unique');
-    $rowId = (int)$users[0]['id'];
-    $before = (int)$users[0]['wallet'];
-
-    // A current locking read (not a stale consistent-read snapshot) allows
-    // original source replay after any subsequent valid balance movements.
-    $q = $db->prepare('SELECT id,user_row_id,userid,delta_toman,balance_before,balance_after,actor_userid
-        FROM wallet_entries WHERE source_kind=? AND source_ref=? AND leg=? FOR UPDATE');
-    if (!$q) throw new RuntimeException('wallet_entry_prepare');
-    $q->bind_param('ssi', $sourceKind, $sourceRef, $leg);
-    if (!$q->execute() || !($rows = $q->get_result())) {
-        $q->close();
-        throw new RuntimeException('wallet_entry_read');
-    }
-    $existing = $rows->fetch_assoc();
-    $q->close();
-    if ($existing !== null) {
-        if ((int)$existing['user_row_id'] !== $rowId ||
-            (int)$existing['userid'] !== $userId ||
-            (int)$existing['delta_toman'] !== $delta) {
-            throw new RuntimeException('wallet_entry_source_conflict');
-        }
-        return [
-            'id'=>(int)$existing['id'],
-            'before'=>(int)$existing['balance_before'],
-            'after'=>(int)$existing['balance_after'],
-            'actor'=>(int)$existing['actor_userid'],
-            'replayed'=>true,
-        ];
-    }
+    $existing = achbotWalletFindEntryLocked($db,$rowId,$userId,$sourceKind,$sourceRef,$leg,$delta);
+    if ($existing !== null) return $existing;
 
     // Bounds belong to the actual existing signed INT schema, not a business
     // ceiling. Check before addition even for extreme PHP int inputs.
