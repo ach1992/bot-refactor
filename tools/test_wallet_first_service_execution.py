@@ -298,6 +298,7 @@ def main():
             original_award=sql("SELECT id,pay_row_id,amount_toman,state,before_balance,after_balance FROM referral_awards")
             original_report=sql("SELECT id,pay_row_id,sealed_payload,state FROM payment_followup_intents")
             sql((ROOT/'migrations/post-v9/029_service_purchase_referral.sql').read_text())
+            sql((ROOT/'migrations/post-v9/030_service_followup_sources.sql').read_text())
             assert sql("SELECT id,pay_row_id,amount_toman,state,before_balance,after_balance FROM referral_awards")==original_award
             assert sql("SELECT id,pay_row_id,sealed_payload,state FROM payment_followup_intents")==original_report
             assert sql("SELECT COUNT(*) FROM referral_awards WHERE service_operation_id IS NOT NULL")=='0'
@@ -664,8 +665,19 @@ DELIMITER ;
                 assert len(writes())==n and mutation(winner).startswith('reset')
                 before=finance()
                 step(mode,winner,'progressed');step(mode,winner,'applied')
+                reqs=len(requests)
+                sql("CREATE TRIGGER fixture_auto_report_fail BEFORE INSERT ON payment_followup_intents FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture rollback'")
+                try:
+                    step(mode,winner,'pending')
+                    assert mutation(winner).startswith('verified\t') and mutation(winner).endswith('\t0')
+                    assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE service_operation_id={winner}")=='0'
+                    assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE service_operation_id={winner}")=='0'
+                    assert finance()==before and len(requests)==reqs
+                finally:sql('DROP TRIGGER fixture_auto_report_fail')
+                retry(winner);php(mode,'step',id=winner,lost_ack=True)
                 step(mode,winner,'completed')
-                assert finance()==before and len(writes())==n+2
+                assert finance()==before and len(writes())==n+2 and len(requests)==reqs
+                cases.append(mode+'_auto_report_rollback_local_only_recovery')
                 assert sql("SELECT COUNT(*) FROM pays")==pays and sql("SELECT COUNT(*) FROM payment_attempts")==attempts
                 assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{winner}'")== '1'
                 loser=alias if owner_order==ao else ao
@@ -673,6 +685,18 @@ DELIMITER ;
                 did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={winner}"))
                 assert php(mode,'deliver',id=did)=='acknowledged'
                 assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={did} AND user_id={uid} AND caption LIKE '%rn_%'")=='1'
+                reports=sql(f"SELECT id,role,pay_row_id FROM payment_followup_intents WHERE service_operation_id={winner} ORDER BY id").splitlines()
+                assert len(reports)==2 and all(x.endswith('\tNULL') for x in reports),reports
+                report_id=int(reports[0].split('\t')[0])
+                php(mode,'followup',id=report_id,lost_ack=True)
+                assert php(mode,'followup',id=report_id)=='acknowledged'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={report_id} AND text LIKE '%rn_%'")=='1'
+                report_id=int(reports[1].split('\t')[0])
+                assert php(mode,'followup',id=report_id,unknown_ack=True)=='unknown'
+                assert php(mode,'followup',id=report_id)=='unknown'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={report_id}")=='1'
+                assert finance()==before and len(writes())==n+2
+                cases.append(mode+'_automatic_renewal_source_only_reports_independent_ack')
                 cases.append(mode+'_automatic_renewal_alias_single_charge_original_notice')
                 # Original low-balance policy: disable auto renewal, no debit,
                 # and no synthetic paid invoice or remote write.
@@ -683,11 +707,32 @@ DELIMITER ;
                 saved=sql("SELECT wallet FROM users WHERE userid=1001")
                 sql("UPDATE users SET wallet=0 WHERE userid=1001")
                 before=finance();n=len(writes())
-                r=php(mode,'auto',order=lo)
-                assert r['status']=='insufficient_funds' and r['amount']==100 and r['wallet']==0,r
+                sql("CREATE TRIGGER fixture_low_report_fail BEFORE INSERT ON payment_followup_intents FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture rollback'")
+                try:
+                    assert php(mode,'auto',order=lo)['status']=='deferred'
+                    assert sql(f"SELECT autoRenew FROM orders_list WHERE id={lo}")=='on'
+                    assert sql(f"SELECT COUNT(*) FROM service_operations WHERE command_kind='automatic_renewal_refusal' AND subject_order_id={lo}")=='0'
+                    assert finance()==before and len(writes())==n
+                finally:sql('DROP TRIGGER fixture_low_report_fail')
+                php(mode,'auto',order=lo,lost_ack=True)
+                cases.append(mode+'_auto_low_wallet_report_rollback_and_lost_commit_ack')
                 assert sql(f"SELECT autoRenew FROM orders_list WHERE id={lo}")=='off'
                 assert finance()==before and len(writes())==n
                 sql(f"UPDATE users SET wallet={saved} WHERE userid=1001")
+                refusal=int(sql(f"SELECT id FROM service_operations WHERE command_kind='automatic_renewal_refusal' AND subject_order_id={lo}"))
+                assert sql(f"SELECT CONCAT(stage,':',failure_code,':',COALESCE(debit_entry_id,0)) FROM service_operations WHERE id={refusal}")=='cancelled:wallet_balance_insufficient:0'
+                notice=int(sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={refusal} AND pay_row_id IS NULL AND stage='auto_renewal_low_wallet'"))
+                assert php(mode,'auto',order=lo)['status']=='ineligible'
+                assert php(mode,'followup',id=notice)=='acknowledged'
+                assert php(mode,'followup',id=notice)=='acknowledged'
+                assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={notice} AND recipient='1001'")=='1'
+                # A later intentional re-enable can still renew the original cycle.
+                sql(f"UPDATE orders_list SET autoRenew='on' WHERE id={lo}")
+                r=php(mode,'auto',order=lo);assert r['status']=='funded',r
+                aid=r['id'];step(mode,aid,'progressed');step(mode,aid,'applied');step(mode,aid,'completed')
+                for row in sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={aid}").splitlines():
+                    assert php(mode,'followup',id=int(row))=='acknowledged'
+                cases.append(mode+'_auto_low_wallet_durable_notice_and_deliberate_reenable')
                 cases.append(mode+'_automatic_renewal_low_wallet_no_charge')
                 # The original fresh observation is frozen with funding,
                 # rather than recomputed after an independent native edit.
@@ -717,6 +762,8 @@ DELIMITER ;
                 did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={aid}"))
                 assert php(mode,'deliver',id=did)=='acknowledged'
                 sql(f"UPDATE users SET wallet={saved},is_agent=0,discount_percent='' WHERE userid=1001")
+                for row in sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={aid}").splitlines():
+                    assert php(mode,'followup',id=int(row))=='acknowledged'
                 cases.append(mode+'_automatic_renewal_full_discount_signed_debt_no_wallet_write')
                 # A funded edit owns the original subject even BEFORE a
                 # Native mutation journal exists. Shared plan/transfer and

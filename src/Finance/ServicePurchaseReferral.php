@@ -66,7 +66,7 @@ function achbotServiceReferralReserveLocked(mysqli $db,array $op): void {
     $n=$s->affected_rows;$s->close();
     if ($n!==1) throw new RuntimeException('service_referral_reservation_failed');
     if ($state==='NEEDS_REVIEW') achbotDiagnosticEvent('achbot.finance.purchase_referral',[
-        'service_operation_id'=>$id,'pay_id'=>(int)$pay['id'],'reason'=>'inviter_identity_unavailable'],'warning');
+        'service_operation_id'=>$id,'pay_id'=>(int)$pay['id'],'reason'=>'service_referral_inviter_identity_unavailable'],'warning');
 }
 
 /** The original claim and the Wallet credit, projection, and sealed reports
@@ -105,7 +105,7 @@ function achbotServiceReferralComplete(mysqli $db,int $id,int $owner): string {
                 'i',[(int)$claim['id']]);$s->close();
             if (!$db->commit()) throw new RuntimeException('service_referral_review_commit');
             achbotDiagnosticEvent('achbot.finance.purchase_referral',[
-                'service_operation_id'=>$id,'pay_id'=>$payId,'reason'=>'inviter_identity_changed'],'warning');
+                'service_operation_id'=>$id,'pay_id'=>$payId,'reason'=>'service_referral_inviter_identity_changed'],'warning');
             return 'needs_review';
         }
         $entry=achbotWalletApplyLocked($db,$inviter,'purchase_referral',(string)$id,0,$amount);

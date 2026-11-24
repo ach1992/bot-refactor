@@ -101,9 +101,22 @@ function achbotServiceAutoRenewAdmit(mysqli $db,int $orderId,int $userId,array $
             $db->rollback();return ['status'=>'already_claimed','id'=>(int)$old['id']];
         }
         if ($amount>0 && $owner['wallet']<$amount) {
+            // A real refused command records this committed disable event.
+            // Do not consume the funded-cycle identity: a later deliberate
+            // re-enable can renew the same subscription when balance suffices.
+            $ref=$cycle.':'.$q['policy']['automatic_renewal']['reference'];
+            $refusal=achbotServiceIssueLocked($db,$userId,'automatic_renewal_refusal',$ref,$q);
+            achbotServiceCancelUnfundedLocked($db,$userId,$refusal);
+            $s=achbotProviderStatement($db,"UPDATE service_operations SET failure_code='wallet_balance_insufficient'
+                WHERE id=? AND stage='cancelled'",'i',[$refusal]);$n=$s->affected_rows;$s->close();
+            if ($n!==1) throw new RuntimeException('service_auto_refusal_write');
             $s=achbotProviderStatement($db,"UPDATE orders_list SET autoRenew='off' WHERE id=? AND userid=? AND autoRenew='on'",
                 'ii',[$orderId,$userId]);$n=$s->affected_rows;$s->close();
-            if ($n!==1 || !$db->commit()) throw new RuntimeException('service_auto_disable_unconfirmed');
+            if ($n!==1) throw new RuntimeException('service_auto_disable_unconfirmed');
+            [$refused,$original]=achbotServiceReadLocked($db,$userId,$refusal);
+            require_once __DIR__.'/../Finance/ServiceReports.php';
+            achbotServiceAutoRenewStageLowWalletLocked($db,$refused,$original);
+            if (!$db->commit()) throw new RuntimeException('service_auto_disable_unconfirmed');
             return ['status'=>'insufficient_funds','user_id'=>$userId,'remark'=>$o['remark'],
                 'amount'=>$amount,'wallet'=>$owner['wallet']];
         }

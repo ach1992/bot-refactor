@@ -53,6 +53,7 @@ NEW_RUNTIME_WITHOUT_TELEGRAM = frozenset({
     "src/Finance/ManualReceipt.php",
     "src/Finance/ServiceDelivery.php",
     "src/Finance/ServicePurchaseReferral.php",
+    "src/Finance/ServiceReports.php",
     "src/Finance/FundingCheckout.php",
     "src/Services/Funding.php",
     "src/Services/Execution.php",

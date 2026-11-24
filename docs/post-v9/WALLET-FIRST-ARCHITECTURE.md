@@ -836,6 +836,40 @@ the exact local-deletion-deferred reason is now admitted without changing
 rollback assertions, and automatic-renewal suite passes 77/77. No
 production funds, provider account or Telegram message touched.
 
+### Source-neutral automatic renewal reports and low-wallet decisions
+
+Draft 030 generalizes the existing 020 original-source journal: an intended
+report may have a real payment, a real service operation, or both. The
+historical payment key, source digest, foreign key, payload and states
+remain intact. New v3 sealed packets have a real service ID, no synthetic
+invoice or attempt, and a source fingerprint verified before dispatch.
+The original session-owner lease, claim, sender, acknowledgement, and
+bounded maintenance path are shared with 020; loss of acknowledgement or
+an abandoned claim remains unknown, not automatic resend.
+
+The automatic renewal's frozen cycle, reference, exact debit journal (or
+legitimate zero price), verified mutation and local audit determine both
+the existing customer success notice and independent owner/authorized
+staff/channel report. Record the report intents atomically with service
+completion. No mutable plan repricing, new debit or repeat Native write
+on report failure. A real low-wallet refusal is an unfunded cancelled
+service command with its immutable quote and original disable decision.
+Its durable existing customer notice and disabling autoRenew commit
+together; a rollback leaves neither. No invoice, debit, reservation or
+remote mutation is manufactured. The refusal does not claim the actual
+funded cycle: deliberate re-enable after restoring balance can renew it.
+Historical payment follow-ups retain their original validator.
+
+Local disposable execution: 82/82 in strict and report-off MySQLi,
+470 owned loopback requests and 52 CREATE POSTs. New cases include
+source-only per-recipient ACK/UNKNOWN, atomic rollback of reports during
+verified renewal finalization and local-only recovery after lost COMMIT
+ACK, low-wallet disable+notice rollback, lost COMMIT ACK, intentional
+re-enable, and unchanged zero-cost/debt policy. No live Telegram, panel
+or production database. Still outstanding: general BUY/RENEW/add-on
+reports and receipt-credit reports, per-part definite rejection and
+authorized delivery redrive, actual routes and scheduler activation.
+
 ### Verified Native limitation of existing APIs, not an accepted retry contract
 
 `python3 tools/test_wallet_first_native_write_fence.py --run-disposable`

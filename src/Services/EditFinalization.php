@@ -25,30 +25,9 @@ function achbotServiceEditFinalizePerform(mysqli $db,array $op,array $quote,arra
     // The automatic-renewal detail uses only the original committed debit
     // and the real service reference, not a synthetic payment invoice.
     if ($op['command_kind']==='automatic_renewal') {
-        $auto=$q['policy']['automatic_renewal']??null;
-        if (!is_array($auto) || $op['kind']!=='RENEW' ||
-            ($auto['cycle']??null)!==$op['command_ref'] ||
-            !is_string($auto['reference']??null) || !preg_match('/^rn_[a-f0-9]{32}$/D',$auto['reference']) ||
-            !is_int($auto['wallet_before']??null) || !is_int($auto['wallet_after']??null) ||
-            $auto['wallet_before']-$q['price']!==$auto['wallet_after'])
-            throw new RuntimeException('service_auto_notice_evidence');
-        if ($q['price']>0) {
-            $entry=achbotProviderRow($db,'SELECT user_row_id,userid,source_kind,source_ref,leg,delta_toman,balance_before,balance_after FROM wallet_entries WHERE id=?',
-                'i',[(int)$op['debit_entry_id']]);
-            if (!$entry || (int)$entry['user_row_id']!==(int)$op['user_row_id'] ||
-                (int)$entry['userid']!==(int)$op['userid'] || $entry['source_kind']!=='service_debit' ||
-                $entry['source_ref']!==(string)$op['id'] || (int)$entry['leg']!==0 ||
-                (int)$entry['delta_toman']!==-$q['price'] ||
-                (int)$entry['balance_before']!==$auto['wallet_before'] || (int)$entry['balance_after']!==$auto['wallet_after'])
-                throw new RuntimeException('service_auto_notice_debit_conflict');
-        }
-        $text=achbotMessageHtml('renewal.automatic_renewal.success_customer',[
-            'remark'=>$q['remark'],'amount'=>number_format($q['price']),
-            'wallet_before'=>number_format($auto['wallet_before']),'wallet_after'=>number_format($auto['wallet_after']),
-            'days'=>number_format($q['days']),
-            'volume'=>$q['volume']===0?achbotMessage('renewal.automatic_renewal.unlimited_volume'):
-                achbotMessage('renewal.automatic_renewal.finite_volume',['volume'=>number_format($q['volume'])]),
-            'payment_ref'=>$auto['reference']]);
+        require_once __DIR__.'/../Finance/ServiceReports.php';
+        $text=achbotMessageHtml('renewal.automatic_renewal.success_customer',
+            achbotServiceAutoRenewNoticeValues($db,$op,$quote));
     } else $text=match($op['kind']) {
         'RENEW'=>achbotMessageHtml('renewal.renewal_checkout.message.cca1075329',['remark'=>$q['remark']]),
         'ADD_TIME'=>achbotMessage('renewal.extensions.message.cce260f97e',['volume'=>$q['days']]),
@@ -92,4 +71,9 @@ function achbotServiceEditCommitLocalLocked(mysqli $db,array $op,array $quote,ar
     if ($n!==1) throw new RuntimeException('service_edit_complete_write');
     $completed=achbotServiceMutationRow($db,$id,true);
     achbotServiceEditDeliveryInsertLocked($db,$op,$quote,$completed,$packet);
+    if ($op['command_kind']==='automatic_renewal') {
+        require_once __DIR__.'/../Finance/ServiceReports.php';
+        achbotServiceAutoRenewStageReportsLocked($db,$op,$quote,(int)($GLOBALS['admin']??0),
+            (string)($GLOBALS['botState']['rewardChannel']??''));
+    }
 }
