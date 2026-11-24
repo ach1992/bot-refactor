@@ -184,14 +184,15 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, boo
             // selected service. The current add-on type and order_id must agree.
             if ($orderId<=0 || (int)$pay['user_id']!==$actor ||
                 ($addon && (int)$pay['order_id']!==$orderId) ||
-                achbotProviderPaymentSubjectServer($db,$pay)!==(int)$pay['server_id'])
+                achbotProviderPaymentSubjectServer($db,$pay,true)!==(int)$pay['server_id'])
                 throw new RuntimeException('draft_service_identity_changed');
-            require_once __DIR__.'/../Purchase/Core.php';
-            // A current locking read (not an earlier RR snapshot) closes the
-            // gap between Native-journal creation and advertised new quotes.
-            // The caller still owns the short users->pays transaction; any
-            // conflicting in-flight plan transition fails closed on rollback.
-            if (!achbotServicePaymentJournalClear($db,$orderId,true))
+            require_once __DIR__.'/../Subscription/PhysicalService.php';
+            require_once __DIR__.'/../Services/Ownership.php';
+            // Scope the current locking read to the same Native identity as
+            // funding and plan changes, including aliases. Unrelated journals
+            // never participate in this draft's admission.
+            $lease=achbotPhysicalLockName($db,['id'=>$orderId,'server_id'=>(int)$pay['server_id']],true);
+            if (achbotServicePlanChangePendingLocked($db,$lease))
                 throw new RuntimeException('draft_native_journal_unresolved');
         }
         if ($type!=='INCREASE_WALLET') {

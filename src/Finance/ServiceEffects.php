@@ -277,7 +277,7 @@ function achbotCreateNonPaymentAccount(
             (int)$locked['inbound_id']!==0 || !achbotSupportsAccount($locked['type'],0) ||
             (string)$locked['panel_url']==='')
             throw new RuntimeException('nonpaid_effect_target_changed');
-        $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,null,$locked);
+        $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,$locked);
         $group=$targetIdentity['group'];$endpoint=$targetIdentity['endpoint'];
         $credentials=$targetIdentity['credentials'];$targetKey=$targetIdentity['key'];
         $operation=bin2hex(random_bytes(16));

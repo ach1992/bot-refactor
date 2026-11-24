@@ -840,9 +840,12 @@ Draft 026 (not installed) derives indexed subject_order_id and target_server_id
 from the immutable quote. There is no additional writable target projection.
 Funding/readback cross-check those fields. The indexed current reads share
 the order/server row locks used by funding; no table-wide JSON scan.
-Missing 026 remains supported only for the inactive legacy test/runtime
-boundary. Final activation must require the new schema. Known incomplete
-plan journals and non-service Native mutation claims refuse new funding.
+The current schema is required. Draft creation and service admission use
+the same physical-account plan-journal key, including aliases; an unrelated
+unresolved or locked journal cannot hold a different account's draft.
+Known incomplete plan journals and non-service Native mutation claims refuse
+new funding. The retired pay-bound quote/preflight adapter is not in the
+Native registry; nonpaid effects retain their plan-only target adapter.
 A real plan change or reassignment atomically cancels only awaiting-funds
 quotes for the affected references; deletion cancels the selected reference's
 unfunded quotes within its original claim transaction. No credit, debit or

@@ -127,6 +127,7 @@ function fixtureAlias(mysqli $db,int $order): int {
 $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection=$db;$GLOBALS['admin']=9001;
 $x=json_decode($argv[5],true,512,JSON_THROW_ON_ERROR);
+if ($x['short_lock_timeout']??false) $db->query('SET SESSION innodb_lock_wait_timeout=2');
 if ($x['qr_local_fail']??false) {
     class QRcode {public static function png(...$args) {throw new RuntimeException('fixture_qr_prepare');}}
 }
@@ -570,7 +571,7 @@ def main():
                     return None
                 assert p.returncode==0,(p.returncode,p.stdout,p.stderr)
                 for line in p.stderr.splitlines():
-                    assert line.startswith(('[AChBot] ','achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_')) or (op=='telegram_wallet' and line.startswith(('achbot_checkout_wallet_route_deferred','achbot_admin_'))) or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
+                    assert line.startswith(('[AChBot] ','achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_')) or (op=='telegram_wallet' and line.startswith(('achbot_checkout_wallet_route_deferred','achbot_admin_'))) or (op=='checkout_insert' and line=='achbot_customer_draft_creation_deferred') or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
                 try:r=json.loads(p.stdout)
                 except ValueError as e:raise AssertionError((op,p.stdout,p.stderr)) from e
                 if 'expect_error' in kw:
@@ -1427,12 +1428,38 @@ DELIMITER ;
                 buy=issue(mode,'pending-plan');fund(mode,buy);step(mode,buy,'applied');step(mode,buy,'completed')
                 order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{buy}'"))
                 unpaid=edit(mode,'pending-plan-edit',order,'ADD_TIME',days=1)
+                unrelated_buy=issue(mode,'unrelated-plan-draft');fund(mode,unrelated_buy)
+                step(mode,unrelated_buy,'applied');step(mode,unrelated_buy,'completed')
+                unrelated_order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{unrelated_buy}'"))
                 faults.append('get_unavailable')
                 r=php(mode,'plan',order=order,plan=8);assert not r['success'],r
                 assert sql(f"SELECT COUNT(*) FROM service_plan_changes WHERE source_order_id={order} AND state<>'committed'")=='1'
                 f=finance()
                 assert php(mode,'fund',id=unpaid)=='request_invalidated' and finance()==f
                 cases.append(mode+'_unresolved_plan_intent_blocks_new_debit')
+                rejected_hash=mode+'-blocked-plan-draft'
+                assert php(mode,'checkout_insert',hash=rejected_hash,type='RENEW_ACCOUNT',price=100,order=order)==0
+                assert sql(f"SELECT COUNT(*) FROM pays WHERE hash_id='{rejected_hash}'")=='0'
+                # Lock the other account's actual unresolved journal using a
+                # separate connection. The old global FOR UPDATE scan could
+                # not create this unrelated draft within its short deadline.
+                journal=int(sql(f"SELECT id FROM service_plan_changes WHERE source_order_id={order} AND state<>'committed'"))
+                hold_php=('mysqli_report(MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT);'
+                    '$db=new mysqli("localhost","root","",$argv[2],0,$argv[1]);'
+                    '$db->begin_transaction();'
+                    '$r=$db->query("SELECT id FROM service_plan_changes WHERE id=".(int)$argv[3]." FOR UPDATE");'
+                    'if ($r->num_rows!==1) exit(3);echo "LOCKED\\n";flush();fgets(STDIN);$db->rollback();')
+                holder=subprocess.Popen(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-r',hold_php,
+                    str(work/'mysql.sock'),DB,str(journal)],env=env,text=True,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                try:
+                    assert holder.stdout.readline().strip()=='LOCKED'
+                    accepted=php(mode,'checkout_insert',hash=mode+'-unrelated-plan-draft',type='RENEW_ACCOUNT',
+                        price=100,order=unrelated_order,short_lock_timeout=True)
+                    assert accepted>0 and finance()==f
+                finally:
+                    _,err=holder.communicate('release\n',timeout=10)
+                    assert holder.returncode==0 and not err,err
+                cases.append(mode+'_current_draft_scoped_to_own_plan_journal')
                 # Actual externally funded BUY: one frozen reward for all
                 # ordinals, no reward on another late receipt or wallet BUY.
                 sql("UPDATE users SET refered_by=9002 WHERE userid=1001; INSERT INTO setting(type,value) VALUES ('INVITE_BANNER_AMOUNT','75')")

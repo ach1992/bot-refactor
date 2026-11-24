@@ -3,14 +3,14 @@
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 
 /** Stable process lock name shared by transfer and plan selection. */
-function achbotPhysicalLockName(mysqli $db,array $order): string {
+function achbotPhysicalLockName(mysqli $db,array $order,bool $lock=false): string {
     $server=(int)$order['server_id'];
     $type=achbotProviderType($db,$server);
     if ($type==='pasarguard') {
         // Direct admin transfer entrypoints load the shared provider runtime
         // without opening PG storage until needed. Resolve it lazily here.
         achbotPgLoad();
-        $account=achbotProviderAccountByOrder($db,(int)$order['id']);
+        $account=achbotProviderAccountByOrder($db,(int)$order['id'],$lock);
         if (!$account) throw new RuntimeException('physical_account_unverified');
         return 'achbot-plan-'.substr(hash('sha256','pg:'.$account['id']),0,40);
     }

@@ -68,6 +68,10 @@ def main():
     checks.append('old_executors_absent_from_runtime')
     for path in runtime:
         source=(ROOT/path).read_text()
+        for old_quote in ('achbotServicePaymentJournalClear','achbotUnissuedServiceOrderActive',
+                          'achbotSupportsPaymentSubject','achbotProviderQuoteEligible',
+                          'achbotPasarGuardQuoteAdapter','achbotPgQuote'):
+            assert old_quote+'(' not in source,(path,old_quote)
         for old in retired:
             # Include/require targets cannot refer to removed files.
             assert not any(('/'+old.rsplit('/',1)[1]) in line for line in source.splitlines()

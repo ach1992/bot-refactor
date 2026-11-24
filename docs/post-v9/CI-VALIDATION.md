@@ -144,3 +144,9 @@ Final attention hardening: the manual suite verifies actual private recovery of 
 Current receipt tests also verify shared hosted rejection/outbox, late authenticated money after rejection remaining in Wallet, and superseded unfunded receipt rejection without an archive. Registered capabilities drive the common receipt classifications and one receipt outcome projection separates settlement, service and delivery.
 
 Current physical ownership acceptance: scoped current-schema draft locking; plan/transfer/delete use common funded service/Native ownership, current draft invalidation, historical receipt inertness and verified late Wallet credit.
+
+The current draft-admission regression also holds an unresolved Native plan
+journal on a separate SQL connection: the affected draft is refused, but
+an unrelated physical account can still create a draft without a global
+journal lock. The retired pay-bound Native quote entrypoints must be absent
+from every runtime package member.

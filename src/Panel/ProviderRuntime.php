@@ -561,49 +561,11 @@ function achbotPgPinPayment(mysqli $db,int $payId): void {
     $s->bind_param('si',$json,$payId);
     if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_quote_pin_unconfirmed');$s->close();
 }
-function achbotPgQuote(mysqli $db,int $payId,bool $lock=false): array {
-    achbotPgLoad();
-    require_once __DIR__.'/../Plans/Addons.php';
-    achbotAddonSchema($db);
-    $columns='provider_snapshot,server_id,plan_id,type,order_id,addon_scope_snapshot';
-    $s=$db->prepare('SELECT '.$columns.' FROM pays WHERE id=?'.($lock?' FOR UPDATE':''));
-    $s->bind_param('i',$payId);$s->execute();$p=$s->get_result()->fetch_assoc();$s->close();
-    $snap=json_decode((string)($p['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
-    if (!is_array($snap) || ($snap['provider']??'')!=='pasarguard') throw new RuntimeException('pg_quote_snapshot_missing');
-    $panel=achbotProviderPanelForSnapshot($db,$snap);$current=achbotPgServerPanel($db,(int)$p['server_id']);
-    if ($current['id']!==$panel['id'] || $current['instance_key']!==$panel['instance_key']) throw new RuntimeException('pg_quote_panel_changed');
-    if ($p['type']!=='BUY_SUB') {
-        $oid=(int)$p['order_id'];
-        if ($oid<=0 && preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_/',(string)$p['type'],$m)) $oid=(int)$m[1];
-        $ctx=achbotPgOrderContext($db,$oid,$lock);
-        foreach ($ctx['identity'] as $key=>$identityValue)
-            if ((string)($snap[$key]??'')!==(string)$identityValue) throw new RuntimeException('pg_quote_account_changed');
-        $history=achbotPgMutationHistory($ctx['account']);
-        // A quote may still describe an already consumed payment; only a new
-        // mutation must append a key, and admission below the claim remains final.
-        if (count($history['consumed_keys'])>=4096 && !in_array('pay:'.$payId,$history['consumed_keys'],true))
-            throw new RuntimeException('pg_account_mutation_requires_review');
-        // The same existing native eligibility guard runs before a wallet claim,
-        // while the native mutation still reobserves after its durable fence.
-        $preflight=achbotPgRead($ctx['panel'],$ctx['identity']);
-        if (($preflight['success']??false)!==true) throw new RuntimeException('pg_quote_read_unverified');
-        if (!achbotPgManaged($preflight['user'])) throw new RuntimeException('pg_native_schedule_conflict');
-        if (preg_match('/^INCREASE_(?:DAY|VOLUME)_[1-9][0-9]*_[1-9][0-9]*$/D',(string)$p['type']) &&
-            ($p['addon_scope_snapshot']??null)!==null) {
-            $addon=json_decode($p['addon_scope_snapshot'],true,32,JSON_THROW_ON_ERROR);
-            if (!is_array($addon) || ($addon['version']??null)!==1 ||
-                !is_array($addon['native_groups']??null) ||
-                $addon['native_groups']!==$preflight['user']['group_ids'])
-                throw new RuntimeException('pg_addon_native_groups_changed');
-        }
-    }
-    return $snap;
-}
-function achbotEffectTargetIdentity(mysqli $db,int $serverId,?int $planId,?int $payId,array $row): array {
+function achbotEffectTargetIdentity(mysqli $db,int $serverId,?int $planId,array $row): array {
     $type=$row['panel_type']??$row['type']??null;
     $adapter=achbotProviderDefinition($type);
     if ($adapter===null) throw new RuntimeException('unsupported_effect_provider');
-    $target=($adapter['target'])($db,$serverId,$planId,$payId,$row);
+    $target=($adapter['target'])($db,$serverId,$planId,$row);
     if (!is_array($target) || !array_key_exists('group',$target) ||
         ($target['group']!==null && (!is_int($target['group']) || $target['group']<=0)) ||
         !is_string($target['endpoint']??null) || !preg_match('/^[a-f0-9]{64}$/D',$target['endpoint']) ||
@@ -613,8 +575,8 @@ function achbotEffectTargetIdentity(mysqli $db,int $serverId,?int $planId,?int $
     $target['provider']=$type;
     return $target;
 }
-function achbotPasarGuardEffectTargetAdapter(mysqli $db,int $serverId,?int $planId,?int $payId,array $row): array {
-    $snap=$payId===null?achbotPgPlanSnapshot($db,$serverId,(int)$planId):achbotPgQuote($db,$payId);
+function achbotPasarGuardEffectTargetAdapter(mysqli $db,int $serverId,?int $planId,array $row): array {
+    $snap=achbotPgPlanSnapshot($db,$serverId,(int)$planId);
     $panel=achbotProviderPanelForSnapshot($db,$snap);
     return ['group'=>null,'endpoint'=>$snap['endpoint_sha256'],'credentials'=>hash('sha256',$panel['api_key']),'key'=>'pg:'.$snap['instance_key'],'snapshot'=>$snap];
 }
@@ -1113,7 +1075,7 @@ function achbotOrderPresentation(mysqli $db,array $order,array $server,array $st
  */
 function achbotProviderRequiredOperations(): array {
     return ['plan','order','same_panel','user','user_info','deletion_target','action_preflight','action',
-        'edit','pin_payment','quote','target','reserve','dispatch','link'];
+        'edit','pin_payment','target','reserve','dispatch','link'];
 }
 function achbotProviderRegistry(): array {
     return [
@@ -1125,7 +1087,7 @@ function achbotProviderRegistry(): array {
             'action_preflight'=>'achbotPasarGuardActionPreflightAdapter',
             'action'=>'achbotPasarGuardActionAdapter','edit'=>'achbotPasarGuardServiceEditAdapter',
 
-            'pin_payment'=>'achbotPgPinPayment','quote'=>'achbotPasarGuardQuoteAdapter',
+            'pin_payment'=>'achbotPgPinPayment',
             'target'=>'achbotPasarGuardEffectTargetAdapter','reserve'=>'achbotPasarGuardReserveEffectAdapter',
             'dispatch'=>'achbotPasarGuardDispatchEffectAdapter','link'=>'achbotPasarGuardLinkEffectAdapter',
             'import_lookup'=>'achbotPasarGuardExistingUser','import_adopt'=>'achbotPasarGuardAdoptExistingLocked',
@@ -1261,24 +1223,6 @@ function achbotProviderPaymentSubjectServer(mysqli $db,array $pay,bool $lock=fal
         ((!is_int($pay['server_id']) && !is_string($pay['server_id'])) ||
          (string)$pay['server_id']!==(string)$sid)) return null;
     return $sid;
-}
-function achbotProviderQuoteEligible(mysqli $db,array $pay,bool $lock=false): bool {
-    try {
-        $sid=achbotProviderPaymentSubjectServer($db,$pay,$lock);
-        if ($sid===null) return false;
-        $type=(string)($pay['type']??'');
-        if (!achbotServerCommerceAvailable($db,$sid,$type==='BUY_SUB',$lock)) return false;
-        // A new purchase or external-plan checkout cannot select an inactive plan.
-        // Existing RENEW_ACCOUNT uses its already-bound order and saved plan.
-        if ($type==='BUY_SUB' &&
-            !achbotSupportsPlan($db,(int)($pay['plan_id']??0),0,$sid,$lock)) return false;
-        $adapter=achbotProviderDefinition(achbotProviderType($db,$sid));
-        $pay['server_id']=$sid;
-        return $adapter!==null && ($adapter['quote'])($db,$pay,$lock)===true;
-    } catch (Throwable $error) {return false;}
-}
-function achbotPasarGuardQuoteAdapter(mysqli $db,array $pay,bool $lock=false): bool {
-    achbotPgQuote($db,(int)($pay['id']??0),$lock);return true;
 }
 function achbotProviderReserveEffect(mysqli $db,int $effectId,array $target,string $remark,string $operation,int $expire,int $bytes): void {
     $adapter=achbotProviderDefinition($target['provider']??null);
