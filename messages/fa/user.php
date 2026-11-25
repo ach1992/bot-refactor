@@ -114,7 +114,7 @@ return [
         'my_info' => '🔐 حساب کاربری',
         'my_subscriptions' => '🔄 مشاهده اشتراک‌ها',
         'buy_subscriptions' => '🛍 خرید اشتراک جدید',
-        'individual_existence' => '❗️موجودی اختصاصی',
+        'individual_existence' => '📊 موجودی سرویس‌ها',
         'application_links' => '📚 آموزش و قوانین',
         'search_config' => '➕ افزودن اشتراک',
         'delete_config' => '🗑 حذف اشتراک',

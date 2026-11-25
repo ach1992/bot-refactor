@@ -82,7 +82,7 @@ function achbotServiceLocalTargetLocked(mysqli $db,int $userId,array $q,bool $is
     }
     if ($q['plan_id']>0) {
         $p=achbotProviderRow($db,'SELECT * FROM server_plans WHERE id=? FOR UPDATE','i',[$q['plan_id']]);
-        if (!$p || ($buy && (int)$p['active']!==1))
+        if (!$p || ($buy && ((int)$p['active']!==1 || (int)$p['price']<=0)))
             throw new DomainException('service_plan_unavailable');
         if ($buy && (int)$p['server_id']!==$sid)
             throw new DomainException('service_plan_target_changed');

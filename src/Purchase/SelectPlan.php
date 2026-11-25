@@ -21,6 +21,12 @@ if(($planSelectionCallback ||
         alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.d3fb64c4d9'), true);
         return;
     }
+    $respd=null;
+    foreach (achbotSaleablePlans($connection,null,(int)$match[2]) as $candidate)
+        if ((int)$candidate['id']===(int)$match[1]) {$respd=$candidate;break;}
+    if (!$respd) {
+        alert(\achbotMessage('purchase.select_plan.alert.789af84a82'),true);return;
+    }
     if($planSelectionCallback) delMessage();
 
     if(($botState['remark']??'') ==  "manual" && preg_match('/^selectPlan/',$data) && $match['buyType'] != "much"){
@@ -64,12 +70,6 @@ if(($planSelectionCallback ||
     $id = $match[1]; 
 	$call_id = $match[2]; 
     alert(\achbotMessage('legacy_messages.receving_information'));
-    $respd=null;
-    foreach (achbotSaleablePlans($connection,null,(int)$call_id) as $candidate)
-        if ((int)$candidate['id']===(int)$id) {$respd=$candidate;break;}
-    if (!$respd) {
-        alert(\achbotMessage('purchase.select_plan.alert.789af84a82'),true);return;
-    }
     $sid=(int)$respd['server_id'];
     $price=(int)$respd['price'];
     if (isset($accountCount)) {

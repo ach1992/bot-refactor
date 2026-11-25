@@ -45,7 +45,7 @@ if(in_array($data,['agentOneBuy','buySubscription','agentMuchBuy'],true)){
     $buyType=match($data){'agentOneBuy'=>'one','agentMuchBuy'=>'much',default=>'none'};
     if ($buyType!=='none' && (int)$userInfo['is_agent']!==1) return;
     $servers=[];
-    foreach (achbotPurchaseOfferings($connection,$botState,$buyType) as $p) $servers[(int)$p['server_id']]=$p;
+    foreach (achbotSaleablePlans($connection) as $p) $servers[(int)$p['server_id']]=$p;
     ksort($servers);
     if(!$servers){
         if ($shortcut) sendMessage(\achbotMessage('legacy_messages.no_server_available'),null,'HTML');

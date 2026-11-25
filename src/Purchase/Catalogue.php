@@ -25,7 +25,7 @@ if(preg_match('/\AselectServer(?<serverId>[1-9][0-9]*)_(?<buyType>none|one|much)
         while ($file = $respd->fetch_assoc()){
             $id = $file['id'];
             $name = $file['title'];
-            $rowcount=count(achbotPurchaseOfferings($connection,$botState,$match['buyType'],(int)$sid,(int)$id));
+            $rowcount=count(achbotSaleablePlans($connection,(int)$sid,(int)$id));
             if($rowcount>0) $keyboard[] = ['text' => "$name", 'callback_data' => "selectCategory{$id}_{$sid}_{$match['buyType']}"];
         }
         if(empty($keyboard)){
@@ -46,7 +46,7 @@ if(preg_match('/\AselectCategory(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0-9
     $sid = $match['serverId'];
     $respd=achbotSaleablePlans($connection,(int)$sid,(int)$call_id);
     $custom=achbotCustomPurchaseEnabled($botState,$match['buyType']) &&
-        achbotAvailablePlans($connection,(int)$sid,(int)$call_id,'custom')!==[];
+        $respd!==[];
     if(!$respd && !$custom){
         alert(\achbotMessage('legacy_messages.no_plan_available'));
     }else{
@@ -80,7 +80,7 @@ if(preg_match('/\AselectCustomPlan(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0
     $call_id = $match['categoryId'];
     $sid = $match['serverId'];
     if (!achbotCustomPurchaseEnabled($botState,$match['buyType'])) return;
-    $respd=achbotAvailablePlans($connection,(int)$sid,(int)$call_id,'custom');
+    $respd=achbotSaleablePlans($connection,(int)$sid,(int)$call_id);
     if (!$respd) {alert(achbotMessage('legacy_messages.no_plan_available'));return;}
     alert(\achbotMessage('legacy_messages.receive_plans'));
     $keyboard = [];
@@ -97,7 +97,7 @@ if(preg_match('/\AselectCustomPlan(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0
 if(preg_match('/\AselectCustomePlan(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$data, $match) && ($botState['sellState']=="on" ||$from_id == $admin)){
     if (!achbotCustomPurchaseEnabled($botState,$match['buyType']) ||
         ($match['buyType']==='one' && (int)$userInfo['is_agent']!==1)) return;
-    $eligible=array_column(achbotAvailablePlans($connection,null,(int)$match['categoryId'],'custom'),'id');
+    $eligible=array_column(achbotSaleablePlans($connection,null,(int)$match['categoryId']),'id');
     if (!in_array((int)$match['planId'],array_map('intval',$eligible),true)) {
         alert(\achbotMessage('purchase.catalogue.alert.67fda139df'), true);
         return;
@@ -199,7 +199,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     if (!achbotCustomPurchaseEnabled($botState,$match['buyType']) ||
         ($match['buyType']==='one' && (int)$userInfo['is_agent']!==1)) return;
     $respd=null;
-    foreach (achbotAvailablePlans($connection,null,(int)$call_id,'custom') as $candidate)
+    foreach (achbotSaleablePlans($connection,null,(int)$call_id) as $candidate)
         if ((int)$candidate['id']===(int)$id) {$respd=$candidate;break;}
     if (!$respd) {
         alert(achbotMessage('purchase.catalogue.alert.10fd7f4fa9'),true);return;

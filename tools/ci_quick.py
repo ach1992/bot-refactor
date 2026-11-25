@@ -190,6 +190,7 @@ REQUIRED_CURRENT_CASES = {
     "wallet_first_funding": (
         "duration_storage_boundary_before_wallet_debit",
         "custom_duration_overflow_refused",
+        "trial_base_price_refused_at_issue_and_funding",
         "registered_native_gateway_same_engines_once",
         "registered_gateway_foreign_evidence_rejected_by_core",
         "registered_new_manual_method_same_credit_once",
@@ -234,6 +235,7 @@ REQUIRED_SCENARIOS = {
         "actual_shortcuts_and_callback_share_purchase_methods_and_entry_gates",
         "actual_owned_renewal_discount_and_subscription_shortcut",
         "actual_trial_only_and_mixed_catalogue_purpose_and_custom_gate",
+        "actual_trial_conversion_refuses_existing_unfunded_standard_and_custom_drafts",
         "actual_zero_agent_single_bulk_and_primary_commercial_no_money_or_trial",
         "zero_commercial_current_agency_authorization_rechecked_before_reservation",
     ),

@@ -230,6 +230,17 @@ function achbotFixtureVerifyGatewayLocked(mysqli $db,array $pay,array $attempt,a
             b=balance();fund(mode,oid)
             assert balance()==b-100
             sql('UPDATE server_plans SET price=100,days=30,volume=2 WHERE id=7');case('immutable_quote')
+            for variant in ('standard','custom'):
+                oid=issue(mode,mode+'-becomes-trial-'+variant,variant=variant)
+                b=balance();c=capacity()
+                sql('UPDATE server_plans SET price=0 WHERE id=7')
+                fund(mode,oid,'request_invalidated')
+                assert (balance(),capacity())==(b,c)
+                assert sql(f'SELECT debit_entry_id IS NULL AND reserved_count=0 FROM service_operations WHERE id={oid}')=='1'
+                fail(mode,cmd('issue',ref=mode+'-trial-'+variant,quote=quote(variant=variant)),
+                     'service_plan_unavailable')
+                sql('UPDATE server_plans SET price=100 WHERE id=7')
+            case('trial_base_price_refused_at_issue_and_funding')
             oid=issue(mode,mode+'-no-funds',price=2147483647)
             b=balance();c=capacity();fund(mode,oid,'insufficient_funds')
             assert (balance(),capacity())==(b,c);case('insufficient')

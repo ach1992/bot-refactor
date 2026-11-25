@@ -568,5 +568,17 @@
         "recipient_count"
       ]
     }
+  },
+  "admin_settings.config.get_bot_setting_keys.button.546c2c8acc": {
+    "after": "📊 موجودی سرویس‌ها",
+    "before": "💰 موجودی اختصاصی"
+  },
+  "bot.bot.process_callback_query.message.e8f25aae49": {
+    "after": "📊 موجودی سرویس‌ها:",
+    "before": "🟢 موجودی پلن اختصاصی:"
+  },
+  "legacy_buttons.individual_existence": {
+    "after": "📊 موجودی سرویس‌ها",
+    "before": "❗️موجودی اختصاصی"
   }
 }

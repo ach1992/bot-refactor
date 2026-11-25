@@ -281,12 +281,55 @@ def main():
         run('standard',callback='selectPlan80_3_none')
         assert sql('SELECT COUNT(*) FROM pays')==before
         state(plandelkhahState='on')
-        assert 'selectServer8_none' in callbacks(run('entry',callback='buySubscription'))
-        assert 'selectCategory3_2_none' in callbacks(run('catalogue',callback='selectServer2_none'))
-        assert 'selectCustomPlan3_8_none' in callbacks(run('catalogue',callback='selectCategory3_8_none'))
-        assert 'selectCustomePlan80_3_none' in callbacks(run('catalogue',callback='selectCustomPlan3_8_none'))
+        assert 'selectServer8_none' not in callbacks(run('entry',callback='buySubscription'))
+        assert 'selectCategory3_2_none' not in callbacks(run('catalogue',callback='selectServer2_none'))
+        assert 'selectCustomPlan3_8_none' not in callbacks(run('catalogue',callback='selectCategory3_8_none'))
+        assert 'selectCustomePlan80_3_none' not in callbacks(run('catalogue',callback='selectCustomPlan3_8_none'))
+        mixed=callbacks(run('catalogue',callback='selectCustomPlan1_2_none'))
+        assert 'selectCustomePlan7_1_none' in mixed and 'selectCustomePlan81_1_none' not in mixed,mixed
         assert 'selectServer8_much' not in callbacks(run('entry',actor=2002,callback='agentMuchBuy'))
+        stock=run('capacity',callback='availableServers2')
+        assert stock['events'][0][1]=='📊 موجودی سرویس‌ها:',stock
+        rows=json.loads(stock['events'][0][2])['inline_keyboard']
+        assert len(rows[0])==3 and rows[1][1]['text']=='Plan 7' and rows[1][2]['text']=='Server 2',rows
+        assert 'Trial only' not in json.dumps(stock) and 'Mixed trial' not in json.dumps(stock),stock
+        menu=run('menu')
+        assert any(b['text']=='📊 موجودی سرویس‌ها' and b.get('callback_data')=='availableServers2' for row in json.loads(menu['events'][0][1])['inline_keyboard'] for b in row),menu
+        assert 'availableServers' not in callbacks(menu)
+        state(individualExistence='off')
+        assert 'availableServers2' not in callbacks(run('menu'))
+        assert not run('capacity',callback='availableServers2')['events']
+        state(remark='manual')
+        sql("UPDATE users SET step='none' WHERE userid IN (2001,2002)")
+        assert run('standard',callback='selectPlan80_3_none')['user']['step']=='none'
+        assert run('standard',actor=2002,callback='selectPlan81_1_much')['user']['step']=='none'
+        assert run('catalogue',callback='selectCustomePlan81_1_none')['user']['step']=='none'
+        sql("UPDATE users SET step='enterCustomPlanName81_1_2_3_none' WHERE userid=2001")
+        run('catalogue',text='custom12345')
+        assert sql('SELECT COUNT(*) FROM pays')==before
+        state()
+        sql("UPDATE users SET step='none' WHERE userid=2001")
         cases.append('actual_trial_only_and_mixed_catalogue_purpose_and_custom_gate')
+        # A previously displayed commercial quote must not buy a plan which
+        # has since become a dedicated trial. Neither path may reserve funds.
+        for mode in ('standard','custom'):
+            if mode=='custom':
+                sql("UPDATE users SET step='enterCustomPlanName7_1_2_3_none' WHERE userid=2001")
+                r=run('catalogue',text='custom12345')
+            else:
+                r=run('standard',callback='selectPlan7_1_none')
+            _,h,_,_=latest(2001)
+            prefix='payBuy' if mode=='standard' else 'payCustom'
+            assert prefix+'WithWallet'+h in callbacks(r),r
+            queries=['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM service_effects','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet,freetrial FROM users WHERE userid=2001','SELECT COUNT(*) FROM orders_list']
+            snapshot=tuple(sql(q) for q in queries)
+            sql('UPDATE server_plans SET price=0 WHERE id=7')
+            denied=run('wallet',hash=h,mode=mode,expect_denied=True)
+            assert denied['events'][0]==['denied','service_plan_unavailable'],denied
+            assert tuple(sql(q) for q in queries)==snapshot
+            sql('UPDATE server_plans SET price=100 WHERE id=7')
+        cases.append('actual_trial_conversion_refuses_existing_unfunded_standard_and_custom_drafts')
+
         # Configured zero-price agent and primary owner use exact service
         # command, not trial entitlement or a fabricated monetary debit.
         state(walletState='off',zarinpal='on')

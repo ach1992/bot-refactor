@@ -102,7 +102,7 @@ function achbotCheckoutSealDraftLocked(mysqli $db,int $id,array $pay,array $disp
         $plan=achbotProviderRow($db,'SELECT catid,price FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$pay['plan_id']]);
         if (!$plan) throw new DomainException('checkout_plan_changed');
         $context['category_id']=(int)$plan['catid'];
-        if ($standard && (int)$plan['price']<=0) throw new DomainException('checkout_standard_offering_invalid');
+        if ((int)$plan['price']<=0) throw new DomainException('checkout_purchase_offering_invalid');
         if ($standard && (int)$pay['price']===0) {
             $authorization=achbotCheckoutZeroCommercialLocked($db,$pay);
             if ($authorization===null) throw new DomainException('checkout_zero_commercial_denied');

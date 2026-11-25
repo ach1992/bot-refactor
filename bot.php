@@ -1253,7 +1253,7 @@ if($data=="availableServers2" && ($botState['individualExistence']??'off')==='on
         ['text'=>\achbotMessage('bot.bot.process_callback_query.button.d9772fd001'),'callback_data'=>"wizwizch"],
         ['text'=>\achbotMessage('bot.bot.process_callback_query.button.0b29754285'),'callback_data'=>"wizwizch"]
     ]];
-    foreach (achbotPurchaseOfferings($connection,$botState,'none') as $plan) {
+    foreach (achbotSaleablePlans($connection) as $plan) {
         $keys[] = [
             ['text'=>$plan['capacity'].\achbotMessage('bot.bot.process_callback_query.text.d789169bd3'),'callback_data'=>"wizwizch"],
             ['text'=>$plan['title'],'callback_data'=>"wizwizch"],

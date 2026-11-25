@@ -394,7 +394,7 @@ function achbotAvailablePlans(mysqli $db,?int $server=null,?int $category=null,s
     $price=match($purpose) {
         'standard'=>' AND p.price>0',
         'trial'=>' AND p.price=0',
-        'custom','admin'=>' AND p.price>=0',
+        'admin'=>' AND p.price>=0',
         default=>throw new InvalidArgumentException('offering_purpose_invalid')
     };
     $sql="SELECT p.*,si.title AS server_title,si.flag AS server_flag,si.ucount AS capacity,
@@ -412,7 +412,8 @@ function achbotAvailablePlans(mysqli $db,?int $server=null,?int $category=null,s
 }
 
 /** Existing custom purchasing is a separate enabled offering, with configured
- * per-unit prices, never implied by a standard plan or a trial. */
+ * per-unit prices. Only ordinary saleable plans may be used as templates;
+ * zero-base-price plans are reserved for the dedicated trial route. */
 function achbotCustomPurchaseEnabled(array $states,string $mode): bool {
     if (($states['plandelkhahState']??'off')!=='on' || !in_array($mode,['none','one'],true))
         return false;
@@ -423,7 +424,4 @@ function achbotCustomPurchaseEnabled(array $states,string $mode): bool {
 }
 function achbotSaleablePlans(mysqli $db,?int $server=null,?int $category=null): array {
     return achbotAvailablePlans($db,$server,$category,'standard');
-}
-function achbotPurchaseOfferings(mysqli $db,array $states,string $mode,?int $server=null,?int $category=null): array {
-    return achbotAvailablePlans($db,$server,$category,achbotCustomPurchaseEnabled($states,$mode)?'custom':'standard');
 }
