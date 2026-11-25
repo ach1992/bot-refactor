@@ -3,6 +3,7 @@ declare(strict_types=1);
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/FundingCheckout.php';
 require_once __DIR__.'/PaymentLifecycle.php';
+require_once __DIR__.'/ReceiptHelpers.php';
 require_once __DIR__.'/../Plans/Addons.php';
 require_once __DIR__.'/../Services/Ownership.php';
 require_once __DIR__.'/../Purchase/AgentPricing.php';
@@ -340,6 +341,7 @@ function achbotCheckoutPaymentMethodsLocked(mysqli $db,int $actor,string $type,i
     $keys=null;
     $methods=[];
     foreach (achbotPayUxAudienceMethods() as $method=>$label) {
+        if ($type==='INCREASE_WALLET' && $method==='wallet') continue;
         $flag=achbotPayUxMethodFlag($method,$type);
         if ($flag===null || ($states[$flag]??'off')!=='on') continue;
         if (!achbotPayUxAudienceAllowed($db,$method,$actor,true,$type)) continue;
@@ -352,15 +354,42 @@ function achbotCheckoutPaymentMethodsLocked(mysqli $db,int $actor,string $type,i
                 $credential=$keys[$def['hosted']['credential_setting']]??null;
                 if (!is_string($credential) || trim($credential)==='') continue;
                 if ($method==='nowpayments') {
-                    $rate=achbotUsdtRate($keys);
-                    if ($rate===null || round($price/$rate,2)<0.01 ||
-                        trim((string)($GLOBALS['nowpaymentsIpnSecret']??''))==='') continue;
+                    $secret=$GLOBALS['nowpaymentsIpnSecret']??null;
+                    if (!is_scalar($secret) || trim((string)$secret)==='') continue;
+                    try {
+                        ($def['hosted']['quote'])(['price'=>$price],
+                            achbotNowpaymentsQuoteInput($price,$keys,$GLOBALS));
+                    } catch (DomainException $e) {continue;}
                 }
             } else continue;
         }
         $methods[]=$method;
     }
     return $methods;
+}
+
+/** The non-discount add-on/top-up cards share the same eligibility snapshot.
+ * Use the committed owner/draft, never a stale route price or request flags. */
+function achbotCheckoutDraftPaymentMethods(mysqli $db,int $id,int $actor): array {
+    $begun=false;
+    try {
+        if (!$db->begin_transaction()) throw new RuntimeException('checkout_view_begin');
+        $begun=true;
+        achbotPayUxLockDraftOwner($db,$actor);
+        $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=? AND user_id=? FOR UPDATE','ii',[$id,$actor]);
+        $methods=[];
+        if ($pay && $pay['checkout_operation_id']===null && achbotPayUxCurrentDraft($pay) &&
+            achbotPayUxUnclaimedDraftUsable($db,$pay,true) &&
+            !achbotProviderRow($db,'SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]))
+            $methods=achbotCheckoutPaymentMethodsLocked($db,$actor,$pay['type'],(int)$pay['price']);
+        $db->rollback();
+        return $methods;
+    } catch (Throwable $e) {
+        if ($begun) try {$db->rollback();} catch (Throwable $ignored) {}
+        achbotDiagnosticEvent('achbot.finance.checkout_view_deferred',[
+            'pay_id'=>$id,'actor_id'=>$actor]+achbotDiagnosticLocalFailure($e),'warning');
+        return [];
+    }
 }
 
 /** Read original unclaimed checkout, validate its actual local admission,

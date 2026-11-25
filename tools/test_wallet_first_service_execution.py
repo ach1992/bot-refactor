@@ -246,6 +246,9 @@ try {
         $text='';$botUrl='https://bot.fixture.invalid/';$botUsername='fixture_bot';
         $botState=json_decode(achbotProviderRow($db,"SELECT value FROM setting WHERE type='BOT_STATES'")['value'],true)
             +['nowPaymentOther'=>'off','zarinpal'=>'off','nextpay'=>'off','walletState'=>'on'];
+        $nowpaymentsIpnSecret=$x['ipn_secret']??'fixture-ipn-secret';
+        if (array_key_exists('settlement_policy',$x)) $nowpaymentsSettlementPolicy=$x['settlement_policy'];
+        if (isset($x['stale_keys'])) $paymentKeys=array_replace($paymentKeys,$x['stale_keys']);
         $data=$x['callback'];$GLOBALS['fixtureAlerts']=[];$GLOBALS['fixtureQuoteMessages']=[];
         $update=(object)['update_id'=>123456,'callback_query'=>(object)['id'=>$callbackId,'from'=>(object)['id'=>$from_id],
             'data'=>$data,'message'=>(object)['message_id'=>$message_id,'chat'=>(object)['id'=>$chat_id,'type'=>'private']]]];
@@ -2521,6 +2524,81 @@ DELIMITER ;
                         r=php(mode,'telegram_addon_quote',actor=9002,callback=f'{prefix}{oid}_{offer}')
                         assert r['messages'] and sql("SELECT price FROM pays WHERE user_id=9002 ORDER BY id DESC LIMIT 1")=='100',r
                     cases.append(mode+'_actual_addon_current_agency_pricing_and_draft_guard')
+                    # Source-real positive ADD_TIME/ADD_VOLUME with the
+                    # owned PasarGuard peer; no finance or merchant effects.
+                    saved_states=sql("SELECT value FROM setting WHERE type='BOT_STATES'")
+                    saved_keys=sql("SELECT value FROM setting WHERE type='PAYMENT_KEYS'").splitlines()
+                    assert len(saved_keys)<=1
+                    sql("DELETE FROM setting WHERE type='PAYMENT_KEYS'; INSERT INTO setting(type,value) VALUES ('PAYMENT_KEYS','{}')")
+                    base_keys={'bankAccount':'fixture-bank','holderName':'fixture-holder'}
+                    methods=[
+                        ('walletState','wallet',{}),
+                        ('cartToCartState','bank_transfer',{}),
+                        ('giftCardState','gift_card',{'giftCardUrl':'https://fixture.invalid/gift'}),
+                        ('manualUsdtState','manual_usdt',{'manualUsdtWalletBEP20':'0x'+'a'*40,'manualUsdtRateToman':'1000'}),
+                        ('manualUsdtState','manual_trx',{'manualTrxWallet':'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb','manualTrxRateToman':'1000'}),
+                        ('zarinpal','zarinpal',{'zarinpal':'fixture-merchant'}),
+                        ('nextpay','nextpay',{'nextpay':'fixture-merchant'}),
+                        ('nowPaymentOther','nowpayments',{'nowpayment':'fixture-merchant','manualUsdtRateToman':'1000'}),
+                    ]
+                    def addon_state(**flags):
+                        state=dict(sellState='on',agencyState='on',increaseTimeState='on',increaseVolumeState='on',walletState='off')
+                        state.update(flags)
+                        sql("UPDATE setting SET value='"+json.dumps(state)+"' WHERE type='BOT_STATES'")
+                    def addon_keys(keys):
+                        sql("UPDATE setting SET value='"+json.dumps(keys)+"' WHERE type='PAYMENT_KEYS'")
+                    def assert_addon_methods(expected,**configuration):
+                        for table,route,prefix in [('increase_day','selectPlanDayIncrease','payIncreaseDay'),('increase_plan','increaseVolumePlan','payIncrease')]:
+                            offer=sql(f"SELECT id FROM {table} WHERE volume=97 AND server_id IS NULL")
+                            before=finance()
+                            count=int(sql("SELECT COUNT(*) FROM pays"))
+                            attempts=sql("SELECT COUNT(*) FROM payment_attempts")
+                            operations=sql("SELECT COUNT(*) FROM service_operations")
+                            rr=php(mode,'telegram_addon_quote',actor=9002,callback=f'{route}{oid}_{offer}',**configuration)
+                            assert rr['messages'] and int(sql("SELECT COUNT(*) FROM pays"))==count+1,rr
+                            h,price=sql("SELECT hash_id,price FROM pays WHERE user_id=9002 ORDER BY id DESC LIMIT 1").split('\t')
+                            assert price=='100',rr
+                            actual=set();cancel=False
+                            for row in rr['messages'][-1]['keys']['inline_keyboard']:
+                                for b in row:
+                                    cb=b.get('callback_data','');url=b.get('url','')
+                                    if cb=='mainMenu':cancel=True
+                                    elif cb==prefix+'WithWallet'+h:actual.add('wallet')
+                                    elif cb==prefix+'WithCartToCart'+h:actual.add('bank_transfer')
+                                    elif cb==prefix+'WithGiftCard'+h:actual.add('gift_card')
+                                    elif cb=='mcm_'+h:actual.add('crypto')
+                                    else:
+                                        urls={f'https://bot.fixture.invalid/pay/checkout.php?{flag}&hash_id={h}':m for flag,m in [('nowpayment','nowpayments'),('zarinpal','zarinpal'),('nextpay','nextpay')]}
+                                        assert url in urls,(b,rr)
+                                        actual.add(urls[url])
+                            assert cancel and actual==expected,(mode,route,expected,actual,rr)
+                            assert finance()==before
+                            assert sql("SELECT COUNT(*) FROM payment_attempts")==attempts and sql("SELECT COUNT(*) FROM service_operations")==operations
+                    for flag,method,keys in methods:
+                        addon_keys(base_keys|keys)
+                        addon_state(**{flag:'on'})
+                        assert_addon_methods({'crypto' if method in ('manual_usdt','manual_trx') else method})
+                    addon_state(nowPaymentWallet='on')
+                    assert_addon_methods(set())
+                    addon_state(zarinpal='on',nextpay='on',nowPaymentOther='on')
+                    addon_keys(base_keys)
+                    assert_addon_methods(set(),stale_keys={'zarinpal':'stale','nextpay':'stale','nowpayment':'stale','manualUsdtRateToman':'1000'})
+                    addon_state(nowPaymentOther='on')
+                    addon_keys(base_keys|methods[-1][2])
+                    assert_addon_methods(set(),ipn_secret='')
+                    assert_addon_methods(set(),settlement_policy={'outcome_currency':'usdttrc20','minimum_outcome_per_usd':'0'})
+                    assert_addon_methods({'nowpayments'},settlement_policy={'outcome_currency':'usdttrc20','minimum_outcome_per_usd':'0.8'})
+                    addon_keys(base_keys|{'nowpayment':'fixture-merchant','manualUsdtRateToman':'1000000000'})
+                    assert_addon_methods(set())
+                    for index,denied,allowed in [(4,'manual_trx','manual_usdt'),(3,'manual_usdt','manual_trx')]:
+                        addon_keys(base_keys|methods[index][2])
+                        addon_state(manualUsdtState='on',gatewayAudience={denied:'off',allowed:'all'})
+                        assert_addon_methods(set())
+                    sql("UPDATE setting SET value='"+saved_states+"' WHERE type='BOT_STATES'; DELETE FROM setting WHERE type='PAYMENT_KEYS'")
+                    if saved_keys:
+                        addon_keys_value=saved_keys[0].replace("'","''")
+                        sql("INSERT INTO setting(type,value) VALUES ('PAYMENT_KEYS','"+addon_keys_value+"')")
+                    cases.append(mode+'_positive_addons_shared_configured_method_eligibility')
                     # A zero effective ordinary-mode BUY remains eligible after
                     # representative demotion, without rewriting its history.
                     assert php(mode,'commercial_plan',order=ordinary_zero)==dict(origin=True,choose=True,paid=True)

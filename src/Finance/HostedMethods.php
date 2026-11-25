@@ -16,9 +16,11 @@ function achbotHostedUsdQuote(array $pay,array $quote): array {
     $currency=null;$minimum='0';
     if (array_key_exists('settlement_policy',$quote)) {
         $policy=$quote['settlement_policy'];
-        $currency=is_array($policy)?strtolower((string)($policy['outcome_currency']??'')):'';
-        $minimum=preg_match('/\A[a-z0-9]{2,32}\z/D',$currency)?
-            achbotNpMinimumPayout($amount,(string)($policy['minimum_outcome_per_usd']??'')):null;
+        $asset=is_array($policy)?($policy['outcome_currency']??null):null;
+        $rate=is_array($policy)?($policy['minimum_outcome_per_usd']??null):null;
+        $currency=is_scalar($asset)?strtolower((string)$asset):'';
+        $minimum=is_scalar($rate) && preg_match('/\A[a-z0-9]{2,32}\z/D',$currency)?
+            achbotNpMinimumPayout($amount,(string)$rate):null;
         if ($minimum===null) throw new DomainException('hosted_settlement_policy_invalid');
     }
     // Preserve the current exact issued USD quote and its existing policy

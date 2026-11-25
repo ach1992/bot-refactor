@@ -79,6 +79,17 @@ function achbotUsdtRate(?array $keys=null): ?float {
     return achbotUsdtRateValue($keys['manualUsdtRateToman']??null);
 }
 
+/** Same local input for NOWPayments eligibility and first invoice issuance.
+ * An explicitly configured invalid payout policy must not become the default. */
+function achbotNowpaymentsQuoteInput(int $price,array $keys,array $configuration): array {
+    $rate=achbotUsdtRate($keys);
+    if ($rate===null) throw new DomainException('checkout_exchange_rate_unavailable');
+    $quote=['local_price'=>$price,'usd'=>number_format(round($price/$rate,2),2,'.','')];
+    if (array_key_exists('nowpaymentsSettlementPolicy',$configuration))
+        $quote['settlement_policy']=$configuration['nowpaymentsSettlementPolicy'];
+    return $quote;
+}
+
 /** Preserve unique account lookup for quote/menu eligibility, without role pricing. */
 function achbotUsdtRateForUser(mysqli $db,int $userId): ?float {
     if ($userId<=0) return null;
@@ -158,10 +169,6 @@ function achbotManualCryptoOptions(?int $userId=null): array {
                           'label'=>\achbotMessage('manual_payment.receipt_helpers.manual_crypto_options.t_r_x__t_r_o_n.e3a2653517')];
     }
     return $available;
-}
-
-function achbotManualCryptoEnabled(?int $userId=null): bool {
-    return achbotManualCryptoOptions($userId) !== [];
 }
 
 /** No implicit recipient or gift seller: invalid settings disable initiation. */

@@ -132,6 +132,7 @@ function startWalletPayment(mysqli $connection, $botState, $botUrl,
         $stmt->bind_param('siii', $hash_id, $actor, $amount, $time);
         if (!$stmt->execute()) throw new RuntimeException('topup_insert_failed');
         if ($stmt->affected_rows !== 1) throw new RuntimeException('topup_insert_unconfirmed');
+        $draftId=(int)$stmt->insert_id;
         $stmt->close();
         if (!$connection->commit()) throw new RuntimeException('topup_commit_unknown');
         $started = false;
@@ -145,18 +146,19 @@ function startWalletPayment(mysqli $connection, $botState, $botUrl,
         return 'review';
     }
 
+    $methods=achbotCheckoutDraftPaymentMethods($connection,$draftId,$actor);
     $keyboard = [];
-    if (achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$actor))
+    if (in_array('bank_transfer',$methods,true))
         $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cart_to_cart'), 'callback_data' => "payIncreaseWalletWithCartToCart$hash_id"]];
-    if (achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$actor))
+    if (in_array('gift_card',$methods,true))
         $keyboard[] = [['text' => \achbotMessage('legacy_buttons.gift_card'), 'callback_data' => "payIncreaseWalletWithGiftCard$hash_id"]];
-    if (achbotManualCryptoEnabled((int)$actor) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$actor) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$actor)))
+    if (in_array('manual_usdt',$methods,true) || in_array('manual_trx',$methods,true))
         $keyboard[] = [['text' => \achbotMessage('wallet.wallet_start.start_wallet_payment.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
-    if (($botState['nowPaymentWallet'] == 'on' && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$actor) && achbotUsdtRateForUser($connection,(int)$actor)!==null))
+    if (in_array('nowpayments',$methods,true))
         $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'), 'url' => $botUrl . 'pay/checkout.php?nowpayment&hash_id=' . $hash_id]];
-    if (($botState['zarinpal'] == 'on' && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$actor)))
+    if (in_array('zarinpal',$methods,true))
         $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'), 'url' => $botUrl . 'pay/checkout.php?zarinpal&hash_id=' . $hash_id]];
-    if (($botState['nextpay'] == 'on' && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$actor)))
+    if (in_array('nextpay',$methods,true))
         $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'), 'url' => $botUrl . 'pay/checkout.php?nextpay&hash_id=' . $hash_id]];
     $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cancel'), 'callback_data' => 'mainMenu']];
     $keys = json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);

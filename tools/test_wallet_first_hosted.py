@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
 import hashlib
 import hmac
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -53,6 +54,7 @@ $c=json_decode($argv[5],true,512,JSON_THROW_ON_ERROR);
 $connection=$db;$botUrl='https://bot.fixture.invalid/';$botUsername='fixture_bot';
 $paymentKeys=['nextpay'=>'next-original','zarinpal'=>'zarin-original','nowpayment'=>'np-original','manualUsdtRateToman'=>100];
 $nowpaymentsIpnSecret='fixture-ipn';
+if (array_key_exists('settlement_policy',$c)) $nowpaymentsSettlementPolicy=$c['settlement_policy'];
 $botState=json_decode($db->query("SELECT value FROM setting WHERE type='BOT_STATES' LIMIT 1")->fetch_row()[0]??'{}',true);
 $botState['rewardChannel']='@fixture_report';
 function sendMessage(...$args){return (object)['ok'=>true,'result'=>(object)['message_id'=>572]];}
@@ -448,6 +450,35 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                     result(mode,'browser_return',query=query)
                     assert bal()==b+205
                     case('actual_public_'+flag+'_checkout_and_return')
+
+                # The actual browser route must use exactly the same local
+                # quote input and validation as method availability. Invalid
+                # explicit policy cannot issue a remote invoice or persist
+                # an attempt; valid policy remains pinned across reopen.
+                for i,policy in enumerate([None,{}, {'outcome_currency':['usdttrc20'],'minimum_outcome_per_usd':'0.8'},
+                        {'outcome_currency':'usdttrc20','minimum_outcome_per_usd':['0.8']},
+                        {'outcome_currency':'usdttrc20','minimum_outcome_per_usd':'0'}]):
+                    name=f'{mode}-browser-invalid-policy-{i}'
+                    pid=seed(name,price=205)
+                    before=snapshot();start=len(calls)
+                    r=result(mode,'browser_issue',flag='nowpayment',hash=name,settlement_policy=policy)
+                    assert r['status']!=302 and snapshot()==before and len(calls)==start,r
+                    assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
+                    assert sql(f"SELECT COALESCE(payid,'') FROM pays WHERE id={pid}")==''
+                name=mode+'-browser-strict-policy';pid=seed(name,price=205);ref=name+'-ref'
+                policy={'outcome_currency':'USDTTRC20','minimum_outcome_per_usd':'0.8'}
+                responses['/np/issue']=(200,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
+                start=len(calls);before=bal()
+                assert result(mode,'browser_issue',flag='nowpayment',hash=name,settlement_policy=policy)['status']==302
+                # 2.05 USD * 0.8 = 1.64; retain the original exact quote
+                # and settlement metadata, independent of later settings.
+                original=sql(f"SELECT quote_amount,settlement_currency,minimum_settlement_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}").split('\t')
+                assert Decimal(original[0])==Decimal('2.05') and original[1]=='usdttrc20' and Decimal(original[2])==Decimal('1.64'),original
+                assert len(original[3])==64 and len(calls)==start+1 and bal()==before
+                assert result(mode,'browser_issue',flag='nowpayment',hash=name,settlement_policy=None)['status']==302
+                assert sql(f"SELECT quote_amount,settlement_currency,minimum_settlement_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}").split('\t')==original
+                assert len(calls)==start+1 and bal()==before
+                case('actual_browser_nowpayments_local_policy_validation_and_original_reopen')
 
             assert not errors,errors
         finally:server.shutdown();server.server_close();thread.join(timeout=5)

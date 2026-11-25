@@ -117,13 +117,8 @@ if(mysqli_num_rows($payInfo)==0){
         $keys=json_decode($keysRows[0]['value'],true,32,JSON_THROW_ON_ERROR);
         if (!is_array($keys)) throw new RuntimeException('checkout_merchant_config_invalid');
         $price=(int)$payParam['price'];$quote=['local_price'=>$price];
-        if ($checkoutMethod==='nowpayments' && $originalAttempt===null) {
-            $rate=achbotUsdtRateForUser($connection,(int)$payParam['user_id']);
-            if ($rate===null || $rate<=0) throw new RuntimeException('checkout_exchange_rate_unavailable');
-            $quote['usd']=number_format(round($price/$rate,2),2,'.','');
-            if (array_key_exists('nowpaymentsSettlementPolicy',get_defined_vars()))
-                $quote['settlement_policy']=$nowpaymentsSettlementPolicy;
-        }
+        if ($checkoutMethod==='nowpayments' && $originalAttempt===null)
+            $quote=achbotNowpaymentsQuoteInput($price,$keys,get_defined_vars());
         $r=achbotHostedReceiptIssue($connection,(int)$payParam['id'],(int)$payParam['user_id'],
             $checkoutMethod,null,$quote,$keys,$botUrl,payTypeToDescription($payParam['type']),
             $botState,(string)($nowpaymentsIpnSecret??''));

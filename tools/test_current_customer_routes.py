@@ -41,7 +41,9 @@ $userInfo=achbotProviderRow($connection,'SELECT * FROM users WHERE userid=?','i'
 $botState=json_decode(achbotProviderRow($connection,"SELECT value FROM setting WHERE type='BOT_STATES'")['value'],true);
 $robotState=$botState['botState']??'on';$botUrl='https://fixture.invalid/';
 $paymentKeys=json_decode(achbotProviderRow($connection,"SELECT value FROM setting WHERE type='PAYMENT_KEYS'")['value'],true)??[];
-$nowpaymentsIpnSecret='fixture-ipn-secret';
+$nowpaymentsIpnSecret=$spec['ipn_secret']??'fixture-ipn-secret';
+if (array_key_exists('settlement_policy',$spec))
+    $nowpaymentsSettlementPolicy=$spec['settlement_policy'];
 if (isset($spec['stale_state'])) $botState=array_replace($botState,$spec['stale_state']);
 if (isset($spec['stale_keys'])) $paymentKeys=array_replace($paymentKeys,$spec['stale_keys']);
 $cancelKey=$removeKeyboard='{}';$events=[];$inviteReward=0;$joinLink='https://t.me/fixture';
@@ -128,6 +130,11 @@ case 'seed_order':
     $events[]=['order',$oid];break;
 case 'extensions':
     require $root.'/src/Finance/Routes/Extensions.php';break;
+case 'topup':
+    require_once $root.'/src/Finance/WalletStart.php';
+    $events[]=['topup',startWalletPayment($connection,$botState,$botUrl,$from_id,$removeKeyboard,
+        100000,(string)$userInfo['step'],(int)$update->update_id,$message_id)];
+    break;
 case 'renew':
     require $root.'/src/Finance/Routes/RenewalCheckout.php';break;
 case 'discount':
@@ -272,13 +279,13 @@ def main():
         # the emitted discount button is then consumed by the real route.
         def latest(uid):
             return sql(f'SELECT id,hash_id,price,agent_count FROM pays WHERE user_id={uid} ORDER BY id DESC LIMIT 1').split('\t')
-        def redeem(uid,r,code,mode,back,amount,quantity=1,zero=False):
+        def redeem(uid,r,code,mode,back,amount,quantity=1,zero=False,**configuration):
             pid,h,oldprice,count=latest(uid)
             assert 'haveDiscountCheckout_'+pid in callbacks(r),r
             r=run('discount',actor=uid,callback='haveDiscountCheckout_'+pid)
             assert r['user']['step']=='discountCheckout_'+pid,r
             sql(f"INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('{code}','percent',{100 if zero else 20},0,2,-1)")
-            r=run('discount',actor=uid,text=code)
+            r=run('discount',actor=uid,text=code,**configuration)
             cb=callbacks(r);prefix={'standard':'payBuy','custom':'payCustom','renew':'payRenew'}[mode]
             assert prefix+'WithWallet'+h in cb and back in cb,r
             assert int(latest(uid)[2])==amount and max(1,int(count))==quantity,(r,latest(uid))
@@ -646,7 +653,7 @@ def main():
             assert 'haveDiscountCheckout_'+str(pid) in cb,r
             assert not any(b.get('url') or b.get('callback_data','').startswith(('payBuyWith','payCustomWith','payRenewWith','renewPay_','mcm_')) for b in buttons(r)),r
             assert sum(no_method_notice in e[1] for e in r['events'] if e[0]=='send')==1,r
-        def reject_partial(uid,r,tag,discount_type='percent',amount=20,maximum=None,stale_state=None,stale_keys=None):
+        def reject_partial(uid,r,tag,discount_type='percent',amount=20,maximum=None,stale_state=None,stale_keys=None,**configuration):
             pid,h,price,_=latest(uid)
             no_money_card(r,pid)
             run('discount',actor=uid,callback='haveDiscountCheckout_'+pid)
@@ -659,7 +666,7 @@ def main():
             # immutable draft/discount and financial fields instead.
             queries[0]=f"SELECT price,checkout_draft_context,state,checkout_operation_id FROM pays WHERE id={pid}"
             snapshot=tuple(sql(q) for q in queries)
-            extra={}
+            extra=dict(configuration)
             if stale_state is not None:extra['stale_state']=stale_state
             if stale_keys is not None:extra['stale_keys']=stale_keys
             rr=run('discount',actor=uid,text=tag,**extra)
@@ -815,6 +822,96 @@ def main():
         sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
         state()
         cases.append('malformed_payment_destinations_do_not_block_free_or_consume_partial_discount')
+        # Wallet recharge uses the same local admission checks, but its own
+        # NOWPayments flag and no Wallet self-payment.
+        def assert_topup_methods(expected,**configuration):
+            before=int(sql("SELECT COUNT(*) FROM pays"))
+            sql(f"UPDATE users SET step='achbotWalletTopup:amount:100000:81:{int(time.time())}' WHERE userid=2001")
+            rr=run('topup',**configuration)
+            assert ['topup','created'] in rr['events'],rr
+            assert int(sql("SELECT COUNT(*) FROM pays"))==before+1,rr
+            pid,h,price,_=latest(2001)
+            assert price=='100000',rr
+            actual=set()
+            for b in buttons(rr):
+                cb=b.get('callback_data','');url=b.get('url','')
+                if cb=='mainMenu':continue
+                elif cb=='payIncreaseWalletWithCartToCart'+h:actual.add('bank_transfer')
+                elif cb=='payIncreaseWalletWithGiftCard'+h:actual.add('gift_card')
+                elif cb=='mcm_'+h:actual.add('crypto')
+                else:
+                    urls={f'https://fixture.invalid/pay/checkout.php?{flag}&hash_id={h}':m
+                        for flag,m in [('nowpayment','nowpayments'),('zarinpal','zarinpal'),('nextpay','nextpay')]}
+                    assert url in urls,(b,rr)
+                    actual.add(urls[url])
+            assert actual==expected and 'mainMenu' in callbacks(rr),(expected,actual,rr)
+            assert not any(x.startswith('haveDiscountCheckout_') for x in callbacks(rr)),rr
+        for flag,method,keys,_ in methods:
+            sql("UPDATE setting SET value='"+json.dumps(base_keys|keys)+"' WHERE type='PAYMENT_KEYS'")
+            state(walletState='off',**{flag:'on'}) if flag!='walletState' else state()
+            expected={'crypto' if method in ('manual_usdt','manual_trx') else method}
+            if method=='nowpayments':
+                assert_topup_methods(set())
+                state(walletState='off',nowPaymentWallet='on')
+                assert_topup_methods(expected)
+            else:
+                assert_topup_methods(set() if method=='wallet' else expected)
+        cases.append('configured_methods_shared_by_independent_topup_no_wallet_self_payment')
+        state(walletState='off',zarinpal='on',nextpay='on',nowPaymentOther='on',nowPaymentWallet='on')
+        sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
+        assert_topup_methods(set(),stale_keys={'zarinpal':'stale','nextpay':'stale','nowpayment':'stale','manualUsdtRateToman':'1000'})
+        state(walletState='off',nowPaymentOther='on',nowPaymentWallet='on')
+        sql("UPDATE setting SET value='"+json.dumps(base_keys|methods[-1][2])+"' WHERE type='PAYMENT_KEYS'")
+        assert_topup_methods(set(),ipn_secret='')
+        assert_topup_methods(set(),settlement_policy={'outcome_currency':'usdttrc20','minimum_outcome_per_usd':'0'})
+        assert_topup_methods({'nowpayments'},settlement_policy={'outcome_currency':'usdttrc20','minimum_outcome_per_usd':'0.8'})
+        sql("UPDATE setting SET value='"+json.dumps(base_keys|{'nowpayment':'fixture-merchant','manualUsdtRateToman':'1000000000'})+"' WHERE type='PAYMENT_KEYS'")
+        assert_topup_methods(set())
+        for index,denied,allowed in [(4,'manual_trx','manual_usdt'),(3,'manual_usdt','manual_trx')]:
+            sql("UPDATE setting SET value='"+json.dumps(base_keys|methods[index][2])+"' WHERE type='PAYMENT_KEYS'")
+            state(walletState='off',manualUsdtState='on',gatewayAudience={denied:'off',allowed:'all'})
+            assert_topup_methods(set())
+        cases.append('topup_invalid_config_audience_and_quote_unavailable')
+
+        # Explicit null, malformed nested types, invalid asset/rate and zero
+        # rate must all behave exactly like the existing hosted quote validator.
+        # No partial code consumption or financial state change on rejection.
+        state(walletState='off',nowPaymentOther='on')
+        sql("UPDATE setting SET value='"+json.dumps(base_keys|methods[-1][2])+"' WHERE type='PAYMENT_KEYS'")
+        policies=[None,{}, {'outcome_currency':['usdttrc20'],'minimum_outcome_per_usd':'0.8'},
+            {'outcome_currency':'usdttrc20','minimum_outcome_per_usd':['0.8']},
+            {'outcome_currency':'!','minimum_outcome_per_usd':'0.8'},
+            {'outcome_currency':'usdttrc20','minimum_outcome_per_usd':'0'}]
+        for i,policy in enumerate(policies):
+            r=run('standard',callback='selectPlan7_1_none',settlement_policy=policy)
+            r=reject_partial(2001,r,'npinvalid'+str(i),settlement_policy=policy)
+            if i==0:
+                redeem(2001,r,'npinvalidfull','standard','selectCategory1_2_none',0,zero=True,settlement_policy=policy)
+        for i,config in enumerate([{}, {'settlement_policy':{'outcome_currency':'USDTTRC20','minimum_outcome_per_usd':'0.8'}}]):
+            r=run('standard',callback='selectPlan7_1_none',**config)
+            pid,h,_,_=latest(2001)
+            assert any('?nowpayment&hash_id='+h in b.get('url','') for b in buttons(r)),r
+            code='npvalid'+str(i)
+            sql(f"INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('{code}','percent',20,0,2,-1)")
+            run('discount',callback='haveDiscountCheckout_'+pid)
+            rr=run('discount',text=code,**config)
+            assert latest(2001)[2]=='80' and any('?nowpayment&hash_id='+h in b.get('url','') for b in buttons(rr)),rr
+            assert sql(f"SELECT expire_count FROM discounts WHERE hash_id='{code}'")=='1'
+        # Valid initial configuration may become invalid before redemption.
+        # Re-evaluate the residual quote at consumption, not only at preview.
+        r=run('standard',callback='selectPlan7_1_none')
+        pid,h,_,_=latest(2001)
+        run('discount',callback='haveDiscountCheckout_'+pid)
+        sql("INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('npchanged','percent',20,0,2,-1)")
+        before=sql(f"SELECT price,checkout_draft_context FROM pays WHERE id={pid}")
+        rr=run('discount',text='npchanged',settlement_policy=None)
+        no_money_card(rr,pid)
+        assert sql(f"SELECT price,checkout_draft_context FROM pays WHERE id={pid}")==before
+        assert sql("SELECT expire_count FROM discounts WHERE hash_id='npchanged'")=='2'
+        cases.append('nowpayments_local_policy_quote_validation_atomic_discount_and_zero')
+        sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
+        state()
+
 
 
 

@@ -1465,8 +1465,15 @@ audience remains distinct from gateway active-entitlement classification.
   payment configuration. A positive residual without any eligible method
   leaves price, context, counters and usage unchanged; the existing code
   button is retained for retry with the approved explanation. A zero
-  residual bypasses the monetary-method test. A locally eligible method
-  is not a claim of merchant acceptance or sufficient Wallet balance.
+  residual bypasses the monetary-method test. Positive time/volume add-ons
+  and Wallet recharge read the same locked list from the committed draft;
+  recharge keeps its own NOWPayments flag and never offers Wallet payment
+  for itself. The existing hosted USD quote input and pure validation
+  (including an explicitly configured optional payout policy) are shared
+  with initial NOWPayments issuance; no network or payment effect is
+  needed to discover eligibility. Original issued attempts retain their
+  pinned quote. A locally eligible method is not a claim of merchant
+  acceptance or sufficient Wallet balance.
 - The retired shared-inbound availability menu and settings toggle have
   no supported Native saleable-plan meaning. Individual capacity and
   purchase selection share the current provider-validated active
