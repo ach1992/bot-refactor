@@ -590,7 +590,7 @@ return [
         'payment_lifecycle.pay_ux_status_text.text.8b1195f62f' => 'پرداخت جدید انجام ندهید. اگر قبلاً وجهی پرداخت کرده‌اید، همان پرداخت را برای بررسی ارسال کنید. پس از بسته‌شدن درخواست، مبلغ تأییدشده به کیف پول شما اضافه می‌شود.',
         'payment_lifecycle.invoice_deadline' => ['text'=>'⏳ مهلت پرداخت: {deadline}','parameters'=>['deadline']],
         'payment_lifecycle.previous_payment_review' => '🔎 بررسی پرداخت قبلی',
-        'payment_lifecycle.pay_ux_status_text.text.90290d6783' => 'مهلت پرداخت این درخواست پایان یافته است. اگر قبلاً پرداخت کرده‌اید، پرداخت را تکرار نکنید و وضعیت همان فاکتور را پیگیری کنید.',
+        'payment_lifecycle.pay_ux_status_text.text.90290d6783' => 'مهلت پرداخت این درخواست پایان یافته است. اگر قبلاً پرداخت کرده‌اید، پرداخت را تکرار نکنید و وضعیت همان فاکتور را پیگیری کنید. مبلغ تأییدشده پس از بسته‌شدن درخواست به کیف پول شما اضافه می‌شود.',
         'payment_lifecycle.pay_ux_status_text.text.4bca689fc3' => 'درخواست ارسال رسید ثبت شد. تصویر معتبر را در گفت‌وگوی ربات بفرستید؛ زدن دکمه به معنی ثبت پرداخت نیست.',
         'payment_lifecycle.pay_ux_status_text.text.c0ee0533a8' => 'از فاکتور جدید استفاده کنید. لینک قبلی دیگر برای پرداخت قابل استفاده نیست؛ اگر وجهی فرستاده‌اید با پشتیبانی هماهنگ کنید.',
         'payment_lifecycle.pay_ux_status_text.text.b2948cf010' => '🔎 جزئیات بررسی را از پشتیبانی پیگیری کنید.',
@@ -640,7 +640,6 @@ return [
         // pre_payment.body
         'pre_payment.body.ff6ceb47bf' => '' . "\n" . '📅 تاریخ تأیید: <code>',
         // pre_payment.button
-        'pre_payment.button.ea1db2132d' => '🔄 بررسی دوباره وضعیت',
         // pre_payment.alert
         'pre_payment.alert.fdf0d1d6f9' => 'وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.',
         'pre_payment.alert.fa55f5201f' => '⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست. با پشتیبانی تماس بگیرید.',

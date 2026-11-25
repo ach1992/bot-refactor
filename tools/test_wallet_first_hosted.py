@@ -96,6 +96,7 @@ try {
         'verify'=>achbotHostedReceiptVerify($db,$id,$owner,$c['method'],$c['ref']),
         'ipn'=>achbotHostedReceiptIngestIpn($db,$c['raw'],$c['sig']),
         'maintain'=>achbotHostedReceiptMaintain($db,3),
+        'expire'=>achbotPayUxExpireInvoice($db,$id,(int)$c['clock']),
         'review'=>achbotGatewayReviewCommit($db,(int)($c['actor']??9001),(int)$c['attempt'],$c['decision'],9001),
         'outcome'=>achbotCheckoutReceiptOutcome($db,$id),
         default=>throw new RuntimeException('fixture_unknown_op')
@@ -214,7 +215,9 @@ def main():
                 responses['/next/issue']=(200,dict(code=-1,trans_id=ref))
                 b=bal();start=len(calls)
                 r=issue(mode,pid,'nextpay')
-                assert r==dict(status='issued',url='https://nextpay.org/nx/gateway/payment/'+ref),r
+                issued,deadline=map(int,sql(f"SELECT CONCAT(UNIX_TIMESTAMP(created_at),':',invoice_expires_at) FROM payment_attempts WHERE pay_row_id={pid}").split(':'))
+                assert deadline-issued==21600
+                assert r==dict(status='issued',url='https://nextpay.org/nx/gateway/payment/'+ref,invoice_expires_at=deadline),r
                 assert calls[-1][2]==dict(api_key='next-original',amount='100',order_id=str(pid),currency='IRT',
                     callback_uri='https://bot.fixture.invalid/pay/back.php?nextpay&hash_id='+mode+'-next')
                 assert issue(mode,pid,'nextpay')==r and len(calls)==start+1 and bal()==b
@@ -435,6 +438,12 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                     assert sql(f"SELECT provider FROM payment_attempts WHERE pay_row_id={pid}")==method
                     assert result(mode,'browser_issue',flag=flag,hash=name)['status']==302
                     assert len(calls)==start+1 and bal()==b
+                    deadline=int(sql(f"SELECT invoice_expires_at FROM payment_attempts WHERE pay_row_id={pid}"))
+                    assert result(mode,'expire',id=pid,clock=deadline-1) is False
+                    assert result(mode,'expire',id=pid,clock=deadline) is True
+                    assert result(mode,'browser_issue',flag=flag,hash=name)['status']!=302
+                    assert len(calls)==start+1 and bal()==b
+                    assert sql(f"SELECT state FROM pays WHERE id={pid}")=='expired'
                     # Invalid browser references cannot verify/credit another invoice.
                     result(mode,'browser_return',query=dict(query,hash_id='wrong-'+name))
                     assert len(calls)==start+1 and bal()==b
@@ -452,7 +461,7 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                     assert bal()==b+205,(flag,b,bal())
                     result(mode,'browser_return',query=query)
                     assert bal()==b+205
-                    case('actual_public_'+flag+'_checkout_and_return')
+                    case('actual_public_'+flag+'_checkout_expiry_and_late_return')
 
                 # The actual browser route must use exactly the same local
                 # quote input and validation as method availability. Invalid

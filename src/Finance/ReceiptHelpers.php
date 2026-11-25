@@ -10,6 +10,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/../Admin/Access.php';
 require_once __DIR__.'/ManualReceiptIntent.php';
 require_once __DIR__.'/ReceiptMethods.php';
+require_once __DIR__.'/PaymentLifecycle.php';
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
 require_once __DIR__.'/../Purchase/OrderWrites.php';
 require_once __DIR__.'/../Services/Ownership.php';
@@ -250,7 +251,8 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
         require_once __DIR__.'/CheckoutAdmission.php';
         if ($expectedMode!==null && !achbotCheckoutModeMatchesRequest($payInfo,$expectedMode)) return false;
         $attempt=achbotProviderRow($connection,'SELECT * FROM payment_attempts WHERE pay_row_id=?','i',[(int)$payInfo['id']]);
-        return $attempt && achbotCurrentReceiptPin($attempt) && achbotPayUxInvoiceDeadline($attempt)>0 &&
+        return $attempt && achbotCurrentReceiptPin($attempt) &&
+            hash_equals($attempt['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($payInfo,$attempt)) &&
             $attempt['provider']===$method && in_array($attempt['stage'],['pending','receiving'],true) &&
             ($attempt['evidence_profile']===null || achbotPaymentEvidenceSnapshot($attempt)!==null) &&
             achbotManualIntentDecode((string)$attempt['checkout_url'],$method)!==null;
@@ -289,11 +291,10 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$attempt || !achbotCurrentReceiptPin($attempt) || (string)$attempt['provider'] !== $method ||
-            achbotPayUxInvoiceDeadline($attempt)<=0 ||
-            !in_array((string)$attempt['stage'], ['pending','receiving'], true)) {
+            !in_array((string)$attempt['stage'], ['pending','receiving'], true) ||
+            !hash_equals($attempt['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$attempt))) {
             $connection->rollback(); return null;
         }
-        require_once __DIR__ . '/PaymentLifecycle.php';
         if ($attempt['evidence_profile']!==null && !achbotPaymentEvidenceSnapshot($attempt)) {
             $connection->rollback();return null;
         }
@@ -380,7 +381,7 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
             $connection->rollback(); return false;
         }
         $id = (int)$pay['id'];
-        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,review_notice_claim_token,wallet_invoice_sha256
+        $stmt = $connection->prepare('SELECT id,provider,stage,checkout_url,review_notice_claim_token,wallet_invoice_sha256,invoice_expires_at
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
@@ -430,7 +431,7 @@ function achbotManualOriginalServiceQuote(mysqli $db,array $pay,int $actor,strin
         $begun=true;
         [$current,$attempt]=achbotCreditInvoiceLocked($db,(int)$pay['id'],$actor);
         if (!achbotCheckoutModeMatchesRequest($current,$mode) ||
-            !is_string($attempt['wallet_invoice_sha256']??null) ||
+            !achbotCurrentReceiptPin($attempt) ||
             !hash_equals($attempt['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($current,$attempt)) ||
             (int)$attempt['service_operation_id']!==(int)$current['checkout_operation_id'])
             throw new RuntimeException('manual_original_quote_identity');
@@ -793,7 +794,7 @@ function duplicateReceiptGuard(mysqli $connection, array $payInfo, int $nowTs): 
         MAX(CASE WHEN p.state='declined' THEN p.request_date END) AS declined_at
         FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id
         WHERE $where AND a.provider IN ($methods)
-          AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>''",$types,$values);
+          AND a.invoice_expires_at IS NOT NULL AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>''",$types,$values);
     if ($row['review_at']!==null && $nowTs-(int)$row['review_at']<$review)
         return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.2f5e71511d',
             ['mins'=>(int)ceil(($review-$nowTs+(int)$row['review_at'])/60)]);

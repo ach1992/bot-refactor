@@ -31,7 +31,7 @@ function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
     $q->bind_param('ii',$attemptId,$payId);$q->execute();
     $a=$q->get_result()->fetch_assoc();$q->close();
     if (!$pay || !$a ||
-        !in_array((string)$pay['state'],['pending','send','service_superseded'],true) ||
+        !in_array((string)$pay['state'],['pending','send','expired','service_superseded'],true) ||
         (int)$pay['price']<=0 ||
         (int)$a['local_amount_toman']!==(int)$pay['price'] ||
         !hash_equals((string)$pay['hash_id'],(string)$a['order_hash']) ||
@@ -39,7 +39,7 @@ function achbotGatewayReviewEligible(mysqli $db,int $attemptId,
         (string)$a['provider_reference']==='' ||
         achbotHasUnscopedPaymentReferenceCollision($db,(string)$a['provider_reference'],$payId))
         return null;
-    if ($a['wallet_credit_entry_id']!==null || !is_string($a['wallet_invoice_sha256']) ||
+    if ($a['wallet_credit_entry_id']!==null || !achbotCurrentReceiptPin($a) ||
         !hash_equals($a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$a))) return null;
     $provider=(string)$a['provider'];
     $hosted=achbotHostedReceiptDefinition($provider);
@@ -159,7 +159,7 @@ function achbotGatewayReviewRecover(mysqli $db,int $actor,int $attemptId,
     if (!achbotAdminCanFor($db,$actor,$primaryOwner,'payments')) return ['status'=>'denied'];
     $r=achbotProviderRow($db,"SELECT a.pay_row_id,p.user_id,a.provider,a.provider_reference,a.payment_id
         FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
-        WHERE a.id=? AND a.wallet_invoice_sha256<>''",'i',[$attemptId]);
+        WHERE a.id=? AND a.invoice_expires_at IS NOT NULL AND a.wallet_invoice_sha256<>''",'i',[$attemptId]);
     if (!$r) return ['status'=>'stale'];
     $id=(int)$r['pay_row_id'];
     $hosted=achbotHostedReceiptDefinition($r['provider']);

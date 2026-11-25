@@ -2,6 +2,7 @@
 declare(strict_types=1);
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/FundingCheckout.php';
+require_once __DIR__.'/PaymentLifecycle.php';
 require_once __DIR__.'/ReceiptHelpers.php';
 
 /** Trusted original checkout caller checks audience, age, configuration and
@@ -29,7 +30,7 @@ function achbotManualReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
         }
         if ($a) {
             if ($a['provider']!==$method || (int)($a['service_operation_id']??0)!==($operationId??0) ||
-                !is_string($a['wallet_invoice_sha256']) ||
+                !achbotCurrentReceiptPin($a) ||
                 !hash_equals($a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$a)))
                 throw new DomainException('manual_original_attempt_conflict');
             $intent=achbotManualIntentDecode((string)$a['checkout_url'],$method);
@@ -92,7 +93,7 @@ function achbotManualReceiptCheckApi(mysqli $db,int $payId): string {
                 $pin=$a['wallet_invoice_sha256'];
                 $def=achbotCreditMethodDefinition((string)$a['provider']);
                 if (!$def || !isset($def['api_checker']) ||
-                    !is_string($pin) || !hash_equals($pin,achbotCreditInvoiceFingerprint($pay,$a)) ||
+                    !achbotCurrentReceiptPin($a) || !hash_equals($pin,achbotCreditInvoiceFingerprint($pay,$a)) ||
                     !achbotPaymentEvidenceSnapshot($a))
                     throw new DomainException('api_receipt_unadmitted');
                 if (!$db->commit()) throw new RuntimeException('api_receipt_check_commit');

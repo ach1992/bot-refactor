@@ -32,7 +32,7 @@ if ($isMenu || $isPick) {
             prepareStartFallback();
             return '__ACHBOT_V8_GOTO_START__';
         }
-        $stmt=$connection->prepare('SELECT provider,stage,checkout_url,wallet_invoice_sha256 FROM payment_attempts
+        $stmt=$connection->prepare('SELECT provider,stage,checkout_url,wallet_invoice_sha256,invoice_expires_at FROM payment_attempts
             WHERE pay_row_id=? LIMIT 1');
         $payId=(int)$selectedPay['id'];
         $stmt->bind_param('i',$payId);$stmt->execute();

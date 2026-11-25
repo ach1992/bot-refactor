@@ -604,5 +604,50 @@
   "subscription.order_management.show_order_management_panel.alert.7a6ebab798": {
     "after": "⚠️ هیچ سرور دیگری متصل به همین پنل پاسارگارد وجود ندارد.",
     "before": "⚠️ هیچ سرور دیگری با همان پنل مرزبان وجود ندارد."
+  },
+  "admin_settings.config.payment_policy_fields.receipt_grace": {
+    "before": null,
+    "after": "فرصت ارسال رسید پس از اولین کلیک (دقیقه)"
+  },
+  "admin_settings.config.payment_policy_fields.sms_review": {
+    "before": null,
+    "after": "پیگیری پیامک پس از انقضای فاکتور (ساعت)"
+  },
+  "admin_settings.config.payment_policy_fields.text.7763855ebb": {
+    "before": "مهلت لینک آنلاین پیش از بررسی (ساعت)",
+    "after": "مهلت لینک پرداخت آنلاین (ساعت)"
+  },
+  "admin_settings.config.payment_policy_fields.text.9bd7de27ab": {
+    "before": "فاکتور دستی بدون شروع رسید (ساعت)",
+    "after": "مهلت پرداخت فاکتور دستی (ساعت)"
+  },
+  "payment.payment_lifecycle.invoice_deadline": {
+    "before": null,
+    "after": {
+      "text": "⏳ مهلت پرداخت: {deadline}",
+      "parameters": [
+        "deadline"
+      ]
+    }
+  },
+  "payment.payment_lifecycle.pay_ux_status_text.service_superseded_next": {
+    "before": "پرداخت این فاکتور دیگر اشتراک را تغییر نمی‌دهد. اگر وجهی پرداخت کرده‌اید، با شناسه پیگیری برای بررسی مالی به پشتیبانی اطلاع دهید.",
+    "after": "درخواست قبلی دوباره فعال نمی‌شود. مبلغ پرداخت قبلی پس از تأیید به کیف پول شما اضافه می‌شود؛ دوباره پرداخت نکنید."
+  },
+  "payment.payment_lifecycle.pay_ux_status_text.service_superseded_title": {
+    "before": "🔄 فاکتور قبلی به دلیل تغییر سرویس متوقف شده است.",
+    "after": "🔄 درخواست قبلی بسته شده است."
+  },
+  "payment.payment_lifecycle.pay_ux_status_text.text.8b1195f62f": {
+    "before": "مهلت ارسال رسید از طریق این فاکتور پایان یافته است. اگر وجهی انتقال داده‌اید، شواهد را فقط از طریق پشتیبانی ارائه کنید؛ انقضا به معنی برگشت وجه نیست.",
+    "after": "پرداخت جدید انجام ندهید. اگر قبلاً وجهی پرداخت کرده‌اید، همان پرداخت را برای بررسی ارسال کنید. پس از بسته‌شدن درخواست، مبلغ تأییدشده به کیف پول شما اضافه می‌شود."
+  },
+  "payment.payment_lifecycle.pay_ux_status_text.text.90290d6783": {
+    "before": "مهلت این درخواست پایان یافته است. برای پرداخت جدید از منوی ربات اقدام کنید.",
+    "after": "مهلت پرداخت این درخواست پایان یافته است. اگر قبلاً پرداخت کرده‌اید، پرداخت را تکرار نکنید و وضعیت همان فاکتور را پیگیری کنید. مبلغ تأییدشده پس از بسته‌شدن درخواست به کیف پول شما اضافه می‌شود."
+  },
+  "payment.payment_lifecycle.previous_payment_review": {
+    "before": null,
+    "after": "🔎 بررسی پرداخت قبلی"
   }
 }

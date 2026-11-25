@@ -81,7 +81,10 @@ Use HTML templates and escape untrusted dynamic text exactly once with
 ENT_SUBSTITUTE, 'UTF-8')`. Do not escape trusted tags a second time.
 Plain button labels, callback data, callback alerts and raw configuration
 bytes are not HTML. Intentionally authored instance templates retain their
-HTML contract. Broadcast jobs store raw text for history and rendered HTML
+HTML contract. Stored checkout plan/category titles and descriptions are
+literal data; the renderer escapes them exactly once and replaces template
+tokens in one pass without interpreting tokens inside dynamic values.
+Broadcast jobs store raw text for history and rendered HTML
 for execution; edit jobs do the same. Historical pending jobs are not replayed.
 Support history stores original literal content, and live sends render
 Telegram entities without modifying the incoming text.

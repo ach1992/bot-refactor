@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 from pathlib import Path
 import subprocess
@@ -59,6 +59,7 @@ $GLOBALS['botState']=$states+['cartToCartState'=>'on','giftCardState'=>'on','man
 if (array_key_exists('report_channel',$spec)) $GLOBALS['botState']['rewardChannel']=$spec['report_channel'];
 if (!($spec['api']??false)) {$GLOBALS['botState']['smsApiVerifyState']='off';$GLOBALS['botState']['giftApiVerifyState']='off';}
 try {
+    if (isset($spec['issued_time'])) $db->query('SET timestamp='.(int)$spec['issued_time']);
     $result=match ($spec['op']) {
         'attention'=>achbotGatewayAttentionCaseOpen($db,$id),
         'expire'=>achbotPayUxExpireInvoice($db,$id,(int)$spec['clock']),
@@ -593,6 +594,34 @@ DELIMITER ;
                 assert sql(f"SELECT wallet_credit_entry_id IS NULL AND evidence_profile='fixture-corrupt-profile' FROM payment_attempts WHERE pay_row_id={bad}")=='1'
                 case('api_maintenance_rotates_broken_pin_and_skips_historical_projection')
 
+                # Source-issued old invoices: transfer may be timely even
+                # when first submitted after closure. The SMS search duration
+                # does not extend the actual transfer window.
+                for offset,expected in [(0,'settled'),(1,'monitoring')]:
+                    late=seed(mode+'-delayed-transfer-'+str(offset),price=queue_base+20000+offset*2000)
+                    issued_time=int(datetime.now(timezone.utc).timestamp())-7*3600
+                    r=result(mode,'issue',late,method='bank_transfer',api=True,issued_time=issued_time)
+                    deadline=int(sql(f"SELECT invoice_expires_at FROM payment_attempts WHERE pay_row_id={late}"))
+                    assert deadline==issued_time+21600 and r['status']=='closed'
+                    assert result(mode,'expire',late,clock=deadline) is True
+                    submit(mode,late,'bank_transfer','delayed-transfer-photo',api=True)
+                    ident=str((30000 if mode=='strict' else 31000)+offset)
+                    transfer=datetime.fromtimestamp(deadline+offset,timezone.utc)
+                    received=datetime.now(timezone.utc)
+                    server.messages[ident]=dict(id=int(ident),public_uid='UID'+ident,provider='BANK_FIXTURE',provider_sms_id='sms'+ident,
+                        sender='BANK',mobile_source='phone',bank_key='fixture',rule_id=7,amount=int(float(r['amount'])),display_unit='toman',
+                        sms_date=transfer.strftime('%Y-%m-%d'),sms_time=transfer.strftime('%H:%M:%S'),created_at=received.strftime('%Y-%m-%d %H:%M:%S'),status='ready')
+                    b=balance()
+                    assert result(mode,'check',late)==expected
+                    if offset==0:
+                        assert balance()==b+queue_base+20000 and server.consumes[ident]==1
+                        assert result(mode,'check',late)=='settled' and server.consumes[ident]==1
+                    else:
+                        assert balance()==b and server.consumes.get(ident,0)==0
+                        assert result(mode,'attention',late) is True
+                    del server.messages[ident]
+                case('source_issued_expiry_delayed_sms_exact_transfer_boundary_and_review')
+
                 # More than four exact-amount pages is a scheduling budget,
                 # never an operator-only threshold or permanent first-page loop.
                 scan=seed(mode+'-paged-bank-proof',price=8371)
@@ -601,7 +630,6 @@ DELIMITER ;
                 first=10000 if mode=='strict' else 20000
                 unit='toman' if mode=='strict' else 'rial'
                 multiplier=1 if unit=='toman' else 10
-                from datetime import timedelta
                 nowdt=datetime.now(timezone.utc).replace(microsecond=0)
                 older=nowdt-timedelta(minutes=10)
                 for n in range(401):
@@ -619,7 +647,7 @@ DELIMITER ;
                 assert result(mode,'check',scan)=='settled' and server.consumes[str(first+400)]==1
                 for n in range(401):del server.messages[str(first+n)]
                 case('bank_filtered_search_resumes_after_page_budget')
-            assert sum(server.consumes.values())==8 and server.gift_consumes==2
+            assert sum(server.consumes.values())==10 and server.gift_consumes==2
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
     report=dict(complete=True,cases=len(cases),checks=cases,owned_socket_mariadb=True,
         actual_protected_api_http=True,actual_manual_receipt_ack_contract=True,external_requests=0,production_effects=0)

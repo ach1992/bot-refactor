@@ -37,13 +37,19 @@ checkout/message projection and the merchant configuration workflow.
 The administrator's payment policy controls new invoices. The default
 unissued draft is 30 minutes; manual invoices (including API-assisted
 bank and gift receipts) and hosted initiation links are six hours.
-The original expiry is pinned at issuance rather than recalculated from
-subsequent configuration. A first receipt click before expiry can grant
+The draft deadline is pinned at draft creation, and the original invoice
+expiry is pinned at issuance rather than recalculated from subsequent
+configuration. A first receipt click before expiry can grant
 15 minutes of upload time from that click, without shortening the
 original window, extending the transfer window or renewing the grace on
 later clicks. The grace and post-expiry SMS search duration are configurable.
 A local deadline closes only an unfunded request without recorded evidence;
-it never cancels an external payment or declares it unsuccessful.
+it never cancels an external payment or declares it unsuccessful. Issued
+hosted links use the original guarded checkout route and expose the pinned
+deadline. An expired or superseded link cannot initiate another merchant
+invoice; the original authenticated reconciliation and staff review remain
+available. The API invoice owns its own first registered projection; other
+tracked references use the common lifecycle status.
 
 Late evidence is admitted against the same immutable issued invoice.
 Verified funds for an expired or superseded service credit Wallet once;

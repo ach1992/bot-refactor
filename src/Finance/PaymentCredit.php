@@ -7,6 +7,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__.'/../Wallet/Ledger.php';
 require_once __DIR__.'/PaymentEvidence.php';
+require_once __DIR__.'/PaymentLifecycle.php';
 require_once __DIR__.'/ReceiptMethods.php';
 require_once __DIR__.'/../Panel/ProviderStorage.php';
 
@@ -104,7 +105,7 @@ function achbotPaymentCreditLocked(mysqli $db,int $payId,int $userId,
     string $basis,array $proof=[],int $actor=0,int $primary=0): array {
     [$pay,$attempt]=achbotCreditInvoiceLocked($db,$payId,$userId);
     $pin=$attempt['wallet_invoice_sha256'];
-    if (!is_string($pin) || !hash_equals($pin,achbotCreditInvoiceFingerprint($pay,$attempt)))
+    if (!achbotCurrentReceiptPin($attempt) || !hash_equals($pin,achbotCreditInvoiceFingerprint($pay,$attempt)))
         throw new RuntimeException('payment_credit_unadmitted_or_changed_invoice');
     $amount=(int)$pay['price'];
     $method=achbotCreditMethodDefinition((string)$attempt['provider']);
@@ -172,7 +173,7 @@ function achbotReceiptCreditEvidenceLocked(mysqli $db,int $payId,int $userId): a
     $entry=achbotWalletFindEntryLocked($db,$owner['id'],$userId,
         'payment_credit',(string)$payId,0,(int)$pay['price']);
     if ($pay['state']!=='paid' || $attempt['stage']!=='done' ||
-        !$method || !isset($method['proofs'][$basis]) || !is_string($pin) ||
+        !$method || !isset($method['proofs'][$basis]) || !achbotCurrentReceiptPin($attempt) ||
         !hash_equals($pin,achbotCreditInvoiceFingerprint($pay,$attempt)) ||
         !$entry || $entry['id']!==(int)$attempt['wallet_credit_entry_id'] ||
         !in_array($attempt['wallet_funding_result']??null,

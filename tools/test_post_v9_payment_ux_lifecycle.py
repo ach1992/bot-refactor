@@ -23,6 +23,7 @@ $_SERVER['SCRIPT_FILENAME']='owned-payment-ux.php';
 error_reporting(E_ALL & ~E_DEPRECATED);
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $botState=$spec['states']??[];
+$botUrl='https://bot.fixture.invalid/';
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 $GLOBALS['events']=[];
@@ -45,6 +46,10 @@ function bot($method,$data=[]) {
         $method==='editMessageText') $fail=true;
     return (object)['ok'=>!$fail];
 }
+function sendMessage($text,$keys=null,$mode='HTML',$chat=null) {
+    $GLOBALS['events'][]=['method'=>'sendMessage','text'=>$text,'keyboard'=>$keys,'mode'=>$mode];
+    return (object)['ok'=>true,'result'=>(object)['message_id'=>77]];
+}
 function payTypeToDescription($type){return $type==='INCREASE_WALLET'?'شارژ کیف پول':'خرید اشتراک';}
 require_once $argv[1].'/src/Finance/ReceiptHelpers.php';
 require_once $argv[1].'/src/Finance/PaymentLifecycle.php';
@@ -53,6 +58,10 @@ $action=(string)$spec['action'];
 $before=null;
 if ($action==='expire') {
     $before=achbotPayUxExpireDraft($connection,$id,$spec['clock']??null);
+} elseif ($action==='render_checkout') {
+    require_once $argv[1].'/src/Purchase/CheckoutPresentation.php';
+    achbotRenderCheckoutDraft($connection,$spec['view'],$botUrl,false);
+    $before=true;
 } elseif ($action==='selectable') {
     $connection->begin_transaction();
     $stmt=$connection->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
@@ -60,8 +69,13 @@ if ($action==='expire') {
     $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
     $before=$pay && achbotPayUxUnclaimedDraftUsable($connection,$pay);
     $connection->rollback();
-} elseif ($action==='manual_expire') {
-    $before=achbotPayUxExpireUnstartedManual($connection,$id);
+} elseif ($action==='invoice_expire') {
+    $before=achbotPayUxExpireInvoice($connection,$id,$spec['clock']??null);
+} elseif ($action==='pin') {
+    require_once $argv[1].'/src/Finance/PaymentCredit.php';
+    $connection->begin_transaction();
+    achbotCreditPinIssuedLocked($connection,$id,(int)$spec['actor']);
+    $before=$connection->commit();
 } elseif ($action==='manual_start') {
     $before=achbotPayUxStartManualReceipt($connection,$id,
         (string)($spec['provider']??'bank_transfer'),(int)($spec['actor']??1001));
@@ -107,7 +121,7 @@ if ($action==='expire') {
     catch (Throwable $ignored) { $pay['superseded']=true; }
     $before=['state'=>achbotPayUxState($pay,$attempt),
              'body'=>achbotPayUxStatusText($pay,$attempt),
-             'keyboard'=>achbotPayUxStatusKeyboard($pay['hash_id'])];
+             'keyboard'=>achbotPayUxStatusKeyboard($pay['hash_id'],$pay,$attempt)];
 } else throw new RuntimeException('unknown owned test action');
 echo json_encode(['result'=>$before,'events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
@@ -125,6 +139,7 @@ def cmd(w,e,root,s,database=DB):
 
 def run(w,e,s,database=DB):
     expected_diagnostic=s.pop('expected_edit_diagnostic',None)
+    expected_click_denied=s.pop('expected_click_denied',False)
     p=subprocess.run(cmd(w,e,ROOT,s,database),cwd=w,env=e,capture_output=True,timeout=20)
     import re
     expected=re.compile(rb'achbot_payment_telegram_edit_deferred pay_id=[0-9]+ '
@@ -133,16 +148,22 @@ def run(w,e,s,database=DB):
                         rb'access_denied|rate_limited|telegram_server_error|telegram_rejected) '
                         rb'tg_code=[0-9]{1,3} markup_only=[01]')
     unexpected=[line for line in p.stderr.splitlines() if not expected.fullmatch(line)]
+    if expected_click_denied:
+        denied=f"achbot_manual_receipt_click_deferred pay_id={s['id']}".encode()
+        assert denied in unexpected, (denied,unexpected)
+        unexpected.remove(denied)
     if expected_diagnostic is not None and expected_diagnostic.encode() not in p.stderr:
         raise RuntimeError('Missing expected categorized Telegram edit diagnostic: '+str(expected_diagnostic))
     if p.returncode or unexpected:
         raise RuntimeError('PHP native failure: '+repr((p.returncode,p.stdout[-400:],unexpected[-8:])))
     return json.loads(p.stdout)
 
-def add(w,e,h,who=1001,kind='BUY_SUB',old=1700000000,order='NULL'):
+def add(w,e,h,who=1001,kind='BUY_SUB',old=1700000000,order='NULL',sealed=True):
     sql(w,e,f"INSERT INTO pays "
         f"(hash_id,user_id,type,plan_id,server_id,volume,day,price,request_date,state,order_id) "
         f"VALUES ('{h}',{who},'{kind}',7,2,0,0,100,{old},'pending',{order})")
+    if sealed and old>0:
+        sql(w,e,f"UPDATE pays SET draft_expires_at={old+1800} WHERE hash_id='{h}'")
     return int(sql(w,e,f"SELECT id FROM pays WHERE hash_id='{h}'"))
 
 def state(w,e,h):
@@ -160,7 +181,7 @@ def main():
     with owned.owned_database() as (w,e):
         purchase.init(w,e,'http://127.0.0.1:9')
         assert len(sql(w,e,'SHOW TABLES').splitlines())==23
-        missing=add(w,e,'missing-003')
+        missing=add(w,e,'missing-003',sealed=False)
         assert run(w,e,dict(action='expire',id=missing,clock=1800000000))['result'] is False
         assert state(w,e,'missing-003')=='pending'
         cases.append('missing_003_fails_closed_and_preserves_draft')
@@ -171,6 +192,27 @@ def main():
         cases.append('uninstalled_006_cannot_overwrite_manual_receipt_id')
         sql(w,e,(ROOT/'migrations/post-v9/006_payment_message_refs.sql').read_text())
         assert len(sql(w,e,'SHOW TABLES').splitlines())==26
+        # A partial 003 ledger must not permit historical draft expiry.
+        sql(w,e,'DROP TABLE payment_transactions')
+        assert run(w,e,dict(action='expire',id=missing,clock=1800000000))['result'] is False
+        assert state(w,e,'missing-003')=='pending'
+        cases.append('incomplete_003_schema_blocks_expiry')
+    # All positive lifecycle cases now use the canonical installation,
+    # not a partial historical schema with fabricated invoice hashes.
+    with owned.owned_database(ROOT/'database/current-schema.sql') as (w,e):
+        # The real checkout producer escapes literal stored data, preserves
+        # valid trusted instance HTML, and never re-expands embedded tokens.
+        for checkout_mode,agents in [('standard',0),('custom',0),('standard',2)]:
+            view=dict(pay=dict(hash_id='literal-checkout',user_id=1001,price=100,id=0,agent_bought=int(bool(agents)),agent_count=agents),
+                      quote=dict(server_id=2,quantity=2,days=30,volume=3),plan=dict(title='<b>PRICE &</b>',descr='سلام <tag> DESCRIPTION &'),
+                      category=dict(title='🔥 PLAN-NAME'),mode=checkout_mode,payment_methods=['wallet'],context=dict(category_id=1))
+            result=run(w,e,dict(action='render_checkout',view=view,states=dict(instanceMessages=dict(purchase_note=dict(format='html',text='<b>یادداشت</b>')))))
+            rendered=result['events'][0]
+            assert rendered['mode']=='HTML'
+            assert '🔥 PLAN-NAME &lt;b&gt;PRICE &amp;&lt;/b&gt;' in rendered['text'],rendered
+            assert 'سلام &lt;tag&gt; DESCRIPTION &amp;' in rendered['text'],rendered
+            assert '<b>یادداشت</b>' in rendered['text'],rendered
+        cases.append('actual_checkout_literal_data_one_pass_trusted_instance_html')
         older=add(w,e,'original-draft')
         newer=add(w,e,'replacement-draft',old=1700000020)
         assert run(w,e,dict(action='expire',id=older,clock=1700000040))['result'] is True
@@ -242,8 +284,8 @@ def main():
         cases.append('aged_unclaimed_payment_method_blocked')
         zero=add(w,e,'bad-legacy-zero-date',who=9023,kind='INCREASE_WALLET',old=0)
         assert run(w,e,dict(action='selectable',id=zero))['result'] is False
-        assert run(w,e,dict(action='expire',id=zero,clock=now))['result'] is True
-        cases.append('zero_timestamp_unclaimed_quote_can_be_expired_safely')
+        assert run(w,e,dict(action='expire',id=zero,clock=now))['result'] is False
+        cases.append('unsealed_historical_quote_not_reissued_or_expired')
         msg=add(w,e,'multiple-msg',kind='INCREASE_WALLET',old=1700000100)
         for mid in (71,72,73):
             assert run(w,e,dict(action='track',id=msg,message_id=mid))['result'] is True
@@ -379,101 +421,106 @@ def main():
         cases.append('two_concurrent_expiry_workers_exactly_one_mutation')
         assert count(w,e,'pays',f"id={old}") == 1
         assert count(w,e,'payment_message_refs',f"pay_row_id={msg}") == 4
-        # Owner-accepted six-hour manual idle policy, with exact current DB clock.
-        import json as jsonlib
+        # Source-real pin on the canonical schema. Backdate the initial
+        # fixture INSERT, never mutate a sealed deadline/fingerprint.
         valid_intents={
             'bank_transfer':{'v':1,'method':'bank_transfer','account':'6037999999999999','holder':'Fixture'},
             'gift_card':{'v':1,'method':'gift_card','seller_url':'https://example.org/gift-card'},
             'manual_usdt':{'v':1,'method':'manual_usdt','network':'BEP20','wallet':'0x'+'1'*40},
             'manual_trx':{'v':1,'method':'manual_trx','network':'TRON','wallet':'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8'},
         }
-        def manual_quote(key, provider, who=1001):
+        for who in (9431,9432,9444,9455,9466,9467,9499):
+            sql(w,e,f"INSERT INTO users(userid,name,username,refcode,date) VALUES ({who},'Fixture','fixture','0','1700000000')")
+        def quote(key,provider,who,age=0):
             pay_id=add(w,e,key,who=who,kind='INCREASE_WALLET',old=int(time.time()))
-            intent=jsonlib.dumps(valid_intents[provider],separators=(',',':'))
+            manual=provider in valid_intents
+            intent=json.dumps(valid_intents[provider],separators=(',',':')) if manual else 'https://example.org/fixture'
             literal="'"+intent.replace("'","''")+"'"
+            ref="NULL" if manual else f"'{key}'"
+            if not manual:
+                sql(w,e,f"UPDATE pays SET payid='{key}' WHERE id={pay_id}")
             sql(w,e,f"INSERT INTO payment_attempts "
-                f"(pay_row_id,provider,order_hash,quote_amount,quote_currency,checkout_url,stage,wallet_invoice_sha256) "
-                f"VALUES ({pay_id},'{provider}','{key}',100,'toman',{literal},'pending',REPEAT('a',64))")
+                f"(pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,checkout_url,provider_reference,stage,wallet_invoice_sha256,created_at) "
+                f"VALUES ({pay_id},'{provider}','{key}',100,'toman',100,{literal},{ref},'pending','',DATE_SUB(NOW(),INTERVAL {age} SECOND))")
+            assert run(w,e,dict(action='pin',id=pay_id,actor=who))['result'] is True
             return pay_id
-        sql(w,e,"ALTER TABLE payment_attempts ADD wallet_invoice_sha256 CHAR(64) DEFAULT NULL")
+        def deadline(pid):
+            return int(sql(w,e,f"SELECT invoice_expires_at FROM payment_attempts WHERE pay_row_id={pid}"))
         for method in valid_intents:
-            late=manual_quote('idle-'+method,method,who=9431)
-            sql(w,e,f"UPDATE payment_attempts SET created_at=DATE_SUB(NOW(),INTERVAL 21600 SECOND) "
-                f"WHERE pay_row_id={late}")
-            assert run(w,e,dict(action='manual_start',id=late,provider=method,actor=9431))['result'] is False
+            late=quote('idle-'+method,method,9431,age=21660)
             assert run(w,e,dict(action='track',id=late,chat_id=9431,
                                 message_id=2000+len(cases)))['result'] is True
-            assert run(w,e,dict(action='manual_expire',id=late))['result'] is True
+            assert run(w,e,dict(action='invoice_expire',id=late,clock=deadline(late)))['result'] is True
             changed=run(w,e,dict(action='sync',id=late))
             assert changed['result']==1,changed
             assert all('مهلت' in event['text'] and 'پرداخت فاکتور' not in event['keyboard']
+                       and 'بررسی پرداخت قبلی' in event['keyboard']
                        for event in changed['events'] if event['method']=='editMessageText')
             assert state(w,e,'idle-'+method)=='expired'
-            assert sql(w,e,f"SELECT stage FROM payment_attempts WHERE pay_row_id={late}").strip()=='expired'
-            assert run(w,e,dict(action='manual_expire',id=late))['result'] is False
-            cases.append('idle_six_hour_'+method+'_terminal_without_forgetting_claim')
-            timely=manual_quote('click-'+method,method,who=9432)
-            sql(w,e,f"UPDATE payment_attempts SET created_at=DATE_SUB(NOW(),INTERVAL 21598 SECOND) "
-                f"WHERE pay_row_id={timely}")
-            assert run(w,e,dict(action='manual_start',id=timely,provider=method,actor=9431))['result'] is False
+            # Preserve the original pending evidence owner, not a retired
+            # terminal attempt state. Late receipt admission is not reopening.
+            assert sql(w,e,f"SELECT stage FROM payment_attempts WHERE pay_row_id={late}").strip()=='pending'
+            assert run(w,e,dict(action='invoice_expire',id=late))['result'] is False
+            assert run(w,e,dict(action='manual_start',id=late,provider=method,actor=9431))['result'] is True
+            assert run(w,e,dict(action='manual_allowed',id=late,provider=method,actor=9431))['result'] is True
+            assert state(w,e,'idle-'+method)=='expired'
+            assert sql(w,e,f"SELECT receipt_started_at FROM payment_attempts WHERE pay_row_id={late}").strip()=='NULL'
+            cases.append('expired_'+method+'_original_late_receipt_without_reopening')
+            timely=quote('click-'+method,method,9432,age=21300)
+            assert run(w,e,dict(action='manual_start',id=timely,provider=method,actor=9431,expected_click_denied=True))['result'] is False
             assert run(w,e,dict(action='manual_start',id=timely,provider=method,actor=9432))['result'] is True
+            start=int(sql(w,e,f"SELECT receipt_started_at FROM payment_attempts WHERE pay_row_id={timely}"))
+            original=deadline(timely)
+            assert start<original<start+900
+            assert run(w,e,dict(action='manual_start',id=timely,provider=method,actor=9432))['result'] is True
+            assert int(sql(w,e,f"SELECT receipt_started_at FROM payment_attempts WHERE pay_row_id={timely}"))==start
             assert run(w,e,dict(action='manual_allowed',id=timely,provider=method,actor=9432))['result'] is True
-            sql(w,e,f"UPDATE payment_attempts SET created_at=DATE_SUB(NOW(),INTERVAL 24000 SECOND) "
-                f"WHERE pay_row_id={timely}")
-            assert run(w,e,dict(action='manual_expire',id=timely))['result'] is False
-            assert run(w,e,dict(action='manual_start',id=timely,provider=method,actor=9432))['result'] is True
+            assert run(w,e,dict(action='invoice_expire',id=timely,clock=start+899))['result'] is False
             assert run(w,e,dict(action='state',id=timely))['result']['state']=='awaiting_receipt'
-            cases.append('clicked_'+method+'_persists_upload_intent_not_paid')
-        manual_review=manual_quote('manual-evidence-protection','bank_transfer',who=9444)
-        sql(w,e,f"UPDATE payment_attempts SET stage='receiving',created_at=DATE_SUB(NOW(),INTERVAL 25000 SECOND) "
-            f"WHERE pay_row_id={manual_review}")
-        assert run(w,e,dict(action='manual_expire',id=manual_review))['result'] is False
+            assert run(w,e,dict(action='invoice_expire',id=timely,clock=start+900))['result'] is True
+            cases.append('first_click_'+method+'_grace_is_pinned_and_nonextendable')
+        manual_review=quote('manual-evidence-protection','bank_transfer',9444,age=25000)
+        sql(w,e,f"UPDATE payment_attempts SET stage='receiving' WHERE pay_row_id={manual_review}")
+        assert run(w,e,dict(action='invoice_expire',id=manual_review))['result'] is False
         assert state(w,e,'manual-evidence-protection')=='pending'
         cases.append('manual_evidence_lease_not_expired')
-        custom=manual_quote('custom-idle-window','bank_transfer',who=9455)
-        sql(w,e,f"UPDATE payment_attempts SET created_at=DATE_SUB(NOW(),INTERVAL 7200 SECOND) "
-            f"WHERE pay_row_id={custom}")
-        assert run(w,e,dict(action='manual_expire',id=custom))['result'] is False
-        assert run(w,e,dict(action='manual_expire',id=custom,states={'paymentManualHours':1}))['result'] is True
-        cases.append('bounded_manual_window_policy_changes_effective_deadline')
-        hosted=add(w,e,'hosted-claim',who=9466,kind='INCREASE_WALLET',old=int(time.time()))
-        sql(w,e,f"INSERT INTO payment_attempts "
-            f"(pay_row_id,provider,order_hash,quote_amount,quote_currency,stage,created_at) "
-            f"VALUES ({hosted},'nowpayments','hosted-claim',100,'toman','pending',DATE_SUB(NOW(),INTERVAL 21600 SECOND))")
+        custom=quote('custom-idle-window','bank_transfer',9455,age=7200)
+        custom_deadline=deadline(custom)
+        sql(w,e,"INSERT INTO setting(type,value) VALUES ('BOT_STATES',JSON_OBJECT('paymentManualHours',1,'paymentHostedHours',72))")
+        assert run(w,e,dict(action='invoice_expire',id=custom))['result'] is False
+        assert deadline(custom)==custom_deadline
+        new=quote('new-custom-window','bank_transfer',9455,age=7200)
+        assert run(w,e,dict(action='invoice_expire',id=new))['result'] is True
+        cases.append('persisted_policy_only_applies_to_new_issuance')
+        sql(w,e,"DELETE FROM setting WHERE type='BOT_STATES'")
+        hosted=quote('hosted-claim','nextpay',9466,age=21660)
         assert run(w,e,dict(action='hosted_attention',id=hosted))['result'] is True
         assert run(w,e,dict(action='track',id=hosted,chat_id=9466,
                             message_id=3466))['result'] is True
         hosted_sync=run(w,e,dict(action='sync',id=hosted))
-        # Original provider payment buttons stay intact while the checkout
-        # merely waits for money; no Telegram update or staff alert occurs.
-        assert hosted_sync['result']==0 and not hosted_sync['events'],hosted_sync
-        assert run(w,e,dict(action='state',id=hosted))['result']['state']=='awaiting_payment'
-        assert run(w,e,dict(action='manual_expire',id=hosted))['result'] is False
-        assert state(w,e,'hosted-claim')=='pending'
-        assert sql(w,e,f"SELECT stage FROM payment_attempts WHERE pay_row_id={hosted}").strip()=='pending'
-        cases.append('aged_hosted_unpaid_remains_waiting_not_review_or_cancellation')
-        # Actual subsequent provider evidence changes the original customer
-        # message, without crediting funds or allowing a second settlement.
-        sql(w,e,f"UPDATE payment_attempts SET stage='review',provider_status='confirmed' "
-            f"WHERE pay_row_id={hosted}")
-        hosted_review=run(w,e,dict(action='sync',id=hosted))
-        assert hosted_review['result']==1 and len(hosted_review['events'])==1
-        assert 'نیازمند بررسی' in hosted_review['events'][0]['text'],hosted_review
-        assert run(w,e,dict(action='state',id=hosted))['result']['state']=='needs_review'
-        assert state(w,e,'hosted-claim')=='pending'
-        cases.append('hosted_provider_evidence_updates_customer_status_without_payment_effect')
-        fresh_host=add(w,e,'fresh-hosted-claim',who=9467,old=int(time.time()))
-        sql(w,e,f"INSERT INTO payment_attempts "
-            f"(pay_row_id,provider,order_hash,quote_amount,quote_currency,stage) "
-            f"VALUES ({fresh_host},'nextpay','fresh-hosted-claim',100,'toman','pending')")
+        assert hosted_sync['result']==1 and len(hosted_sync['events'])==1,hosted_sync
+        assert 'پرداخت فاکتور' not in hosted_sync['events'][0]['keyboard']
+        assert 'بررسی پرداخت قبلی' in hosted_sync['events'][0]['keyboard']
+        assert run(w,e,dict(action='state',id=hosted))['result']['state']=='expired'
+        assert run(w,e,dict(action='invoice_expire',id=hosted))['result'] is True
+        assert state(w,e,'hosted-claim')=='expired'
+        assert sql(w,e,f"SELECT CONCAT(stage,':',provider_reference) FROM payment_attempts WHERE pay_row_id={hosted}").strip()=='pending:hosted-claim'
+        cases.append('expired_hosted_link_closed_original_merchant_reference_preserved')
+        fresh_host=quote('fresh-hosted-claim','nextpay',9467)
         assert run(w,e,dict(action='hosted_attention',id=fresh_host))['result'] is False
-        assert run(w,e,dict(action='hosted_attention',id=hosted,states={'paymentHostedHours':72}))['result'] is False
-        cases.append('hosted_attention_window_is_bounded_and_configurable')
-        # Contending expiry worker and receipt click must not both succeed.
-        race=manual_quote('manual-expiry-race','bank_transfer',who=9499)
-        sql(w,e,f"UPDATE payment_attempts SET created_at=DATE_SUB(NOW(),INTERVAL 21600 SECOND) "
-            f"WHERE pay_row_id={race}")
-        spec1=dict(action='manual_expire',id=race)
+        fresh_state=run(w,e,dict(action='state',id=fresh_host))['result']
+        assert fresh_state['state']=='awaiting_payment'
+        assert any(b.get('url')=='https://bot.fixture.invalid/pay/checkout.php?nextpay&hash_id=fresh-hosted-claim' for row in json.loads(fresh_state['keyboard'])['inline_keyboard'] for b in row),fresh_state
+        assert 'مهلت پرداخت' in fresh_state['body']
+        sql(w,e,f"UPDATE payment_attempts SET provider_status='confirming' WHERE pay_row_id={fresh_host}")
+        confirming=run(w,e,dict(action='state',id=fresh_host))['result']
+        assert confirming['state']=='needs_review' and 'پرداخت فاکتور' not in confirming['keyboard']
+        sql(w,e,f"UPDATE payment_attempts SET stage='review',provider_status='confirmed' WHERE pay_row_id={fresh_host}")
+        assert run(w,e,dict(action='invoice_expire',id=fresh_host,clock=deadline(fresh_host)))['result'] is False
+        assert run(w,e,dict(action='state',id=fresh_host))['result']['state']=='needs_review'
+        cases.append('hosted_recorded_provider_evidence_survives_expiry')
+        race=quote('manual-expiry-race','bank_transfer',9499,age=21660)
+        spec1=dict(action='invoice_expire',id=race)
         spec2=dict(action='manual_start',id=race,actor=9499,provider='bank_transfer')
         ps=[subprocess.Popen(cmd(w,e,ROOT,spec),env=e,cwd=w,stdout=subprocess.PIPE,
                              stderr=subprocess.PIPE) for spec in (spec1,spec2)]
@@ -482,9 +529,12 @@ def main():
             stdout,stderr=pr.communicate(timeout=25)
             assert pr.returncode==0 and not stderr,(pr.returncode,stderr)
             results.append(json.loads(stdout)['result'])
-        assert results==[True,False] or results==[False,False],results
-        assert (state(w,e,'manual-expiry-race')=='expired')
-        cases.append('manual_click_cannot_revive_overdue_quote_under_concurrency')
+        # Late click is always admissible; either transaction can close the
+        # invoice, neither may revive it or create a timely grace.
+        assert results in ([True,True],[False,True]),results
+        assert state(w,e,'manual-expiry-race')=='expired'
+        assert sql(w,e,f"SELECT receipt_started_at FROM payment_attempts WHERE pay_row_id={race}").strip()=='NULL'
+        cases.append('concurrent_late_click_and_expiry_never_reopen_or_extend')
         # Current eligibility requires the linked service-operation evidence.
         # This suite's earlier partial-schema failures remain isolated.
         audience_db='fresh_audience'
@@ -608,12 +658,6 @@ def main():
         assert 6490 in busy_edits and len(busy_edits)==8,(busy,busy_edits)
         assert count(w,e,'payment_message_refs',f'pay_row_id={stale} AND synced_digest IS NOT NULL')==1
         cases.append('continuous_unacked_backlog_keeps_full_scan_lane_for_changed_acked_originals')
-        # Incomplete provider ledger cannot prove a draft never had an invoice.
-        sql(w,e,'DROP TABLE payment_transactions')
-        incomplete=add(w,e,'partial-ledger-do-not-expire',kind='INCREASE_WALLET')
-        assert run(w,e,dict(action='expire',id=incomplete,clock=1800000000))['result'] is False
-        assert state(w,e,'partial-ledger-do-not-expire')=='pending'
-        cases.append('incomplete_003_schema_blocks_expiry')
     result={'complete':True,'cases':len(cases),'scenarios':cases,
             'source_real_php':True,'original_schema_unchanged':True,
             'production_mutations':0,'external_provider_requests':0}

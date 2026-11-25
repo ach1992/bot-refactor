@@ -115,6 +115,12 @@ def main():
             if i==0:
                 # The first ALTER owns the FK/index/context, but not merchant timestamps.
                 run('checkout_command_schema_partial')
+        run('checkout_deadline_schema_missing')
+        deadline_ddl=(ROOT/'migrations/post-v9/049_invoice_deadlines.sql').read_text()
+        deadline_ddl='\n'.join(line for line in deadline_ddl.splitlines() if not line.lstrip().startswith('--'))
+        for i,statement in enumerate(part.strip() for part in deadline_ddl.split(';') if part.strip()):
+            sql(statement)
+            if i==0: run('checkout_deadline_schema_missing')
         run('accepted')
         sql('ALTER TABLE pays ADD INDEX fixture_checkout_fk(checkout_operation_id); ALTER TABLE pays DROP INDEX uq_checkout_operation, ADD INDEX uq_checkout_operation(checkout_operation_id)')
         run('checkout_command_schema_invalid')

@@ -28,7 +28,7 @@ function achbotApiPaymentWithWorkerLock(mysqli $db,int $payId,callable $action):
 function achbotApiPaymentCanResume(mysqli $db,array $pay): bool {
     $id=(int)($pay['id']??0);$a=$pay['attempt']??null;
     if ($id<=0 || !$a ||
-        !is_string($a['wallet_invoice_sha256']??null) || $a['wallet_invoice_sha256']==='' ||
+        !achbotCurrentReceiptPin($a) ||
         !achbotCreditMethodHas($a['provider'],'api_checker')) return false;
     $proof=achbotPaymentEvidenceGetProof($db,$id);
     return ($proof['mode']??null)==='settle';
@@ -627,7 +627,7 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
         $apiMethods=achbotCreditMethodSqlList('api_checker');
         $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
                 WHERE a.evidence_profile IS NOT NULL AND a.provider IN ($apiMethods)
-                  AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>'' AND a.wallet_credit_entry_id IS NULL
+                  AND a.invoice_expires_at IS NOT NULL AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>'' AND a.wallet_credit_entry_id IS NULL
                   AND (a.evidence_next_check_at IS NULL OR a.evidence_next_check_at<=NOW())
                   AND (a.evidence_state='proven' OR
                        (p.state<>'declined' AND (a.evidence_state IS NULL OR a.evidence_state NOT IN ('invalid_code','manual')) AND
@@ -663,7 +663,7 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
         // UI convergence is independent of evidence polling/finality/leases.
         $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
             WHERE a.evidence_profile IS NOT NULL AND a.provider IN ($apiMethods)
-              AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>''
+              AND a.invoice_expires_at IS NOT NULL AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>''
             ORDER BY CASE WHEN p.state='paid'
                     AND (a.evidence_projection_checked_at IS NULL OR
                          a.updated_at>a.evidence_projection_checked_at)

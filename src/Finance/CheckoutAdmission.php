@@ -23,12 +23,6 @@ function achbotCheckoutRequireSchema(mysqli $db): void {
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='pays' AND COLUMN_NAME='checkout_draft_context'");
     if (!$context || !in_array($context['DATA_TYPE'],['json','longtext'],true) || $context['IS_NULLABLE']!=='YES')
         throw new RuntimeException('checkout_draft_context_schema_missing');
-    $s=achbotProviderStatement($db,"SELECT COUNT(*) AS n FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA=DATABASE() AND DATA_TYPE='bigint' AND IS_NULLABLE='YES'
-          AND ((TABLE_NAME='pays' AND COLUMN_NAME='draft_expires_at') OR
-               (TABLE_NAME='payment_attempts' AND COLUMN_NAME IN ('invoice_expires_at','receipt_grace_seconds','receipt_started_at')))");
-    $n=(int)$s->get_result()->fetch_assoc()['n'];$s->close();
-    if ($n!==4) throw new RuntimeException('checkout_deadline_schema_missing');
     // 033 has multiple auto-committing DDL statements. The first ALTER
     // alone is not permission to activate the new receipt coordinator.
     $s=achbotProviderStatement($db,"SELECT COLUMN_NAME,DATA_TYPE,IS_NULLABLE,DATETIME_PRECISION
@@ -40,6 +34,12 @@ function achbotCheckoutRequireSchema(mysqli $db): void {
     foreach ($cols as $c)
         if ($c['DATA_TYPE']!=='datetime' || $c['IS_NULLABLE']!=='YES' || (int)$c['DATETIME_PRECISION']!==6)
             throw new RuntimeException('checkout_command_schema_invalid');
+    $s=achbotProviderStatement($db,"SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA=DATABASE() AND DATA_TYPE='bigint' AND COLUMN_TYPE LIKE '%unsigned%' AND IS_NULLABLE='YES'
+          AND ((TABLE_NAME='pays' AND COLUMN_NAME='draft_expires_at') OR
+               (TABLE_NAME='payment_attempts' AND COLUMN_NAME IN ('invoice_expires_at','receipt_grace_seconds','receipt_started_at')))");
+    $n=(int)$s->get_result()->fetch_assoc()['n'];$s->close();
+    if ($n!==4) throw new RuntimeException('checkout_deadline_schema_missing');
     $s=achbotProviderStatement($db,"SELECT COLUMN_NAME,NON_UNIQUE,SUB_PART
         FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE()
           AND TABLE_NAME='pays' AND INDEX_NAME='uq_checkout_operation'");
