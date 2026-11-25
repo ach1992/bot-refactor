@@ -50,6 +50,7 @@ $botState=['lockChannel'=>$channelLock,'supportID'=>'@fixture_support',
     'cooperationUrl'=>'@fixture_support','helpChannel'=>'',
     'agencyState'=>'off','sellState'=>'on','testAccount'=>'off','sharedExistence'=>'off',
     'individualExistence'=>'off','searchState'=>'off','rewardChannel'=>'@fixture_report'];
+if (!empty($spec['sales_off'])) $botState['sellState']='off';
 if(!empty($spec['missing_optional_flags'])) {
     unset($botState['individualExistence'],$botState['sharedExistence'],$botState['agencyState']);
 }
@@ -103,6 +104,7 @@ require __DIR__.'/set-user.php';
 require __DIR__.'/get-main-keys.php';
 require __DIR__.'/src/Presentation/Text.php';
 require $root.'/src/Telegram/UserProfile.php';
+require_once $root.'/src/Purchase/AgentPricing.php';
 $userInfo=null;
 $stmt=$connection->prepare('SELECT * FROM users WHERE userid=? LIMIT 2');
 $stmt->bind_param('i',$actor);$stmt->execute();
@@ -267,6 +269,17 @@ def main() -> None:
         buttons=[b for row in json.loads(home['markup'])['inline_keyboard'] for b in row]
         yes(sum(b.get('url')=='https://t.me/fixture_support' for b in buttons)==1,
             "home_single_support_destination_no_duplicate_button")
+        welcome=next(e for e in r['events'] if e['kind']=='send' and e['text']=='WELCOME')
+        yes(all(any(b.get('callback_data')=='buySubscription' for row in json.loads(e['markup'])['inline_keyboard'] for b in row) for e in (home,welcome)),
+            "open_sales_home_and_welcome_offer_purchase")
+        r=run(actor=2498,sales_off=True)
+        yes(len(r['rows'])==1 and [e['text'] for e in r['events'] if e['kind']=='send']==['HOME','WELCOME'],
+            "closed_sales_onboarding_still_registers_and_welcomes")
+        menus={e['text']:{b.get('callback_data') for row in json.loads(e['markup'])['inline_keyboard'] for b in row}
+               for e in r['events'] if e['kind']=='send'}
+        yes(all('buySubscription' not in callbacks for callbacks in menus.values()) and
+            'increaseMyWallet' in menus['HOME'] and 'mainMenu' in menus['WELCOME'],
+            "closed_sales_home_and_welcome_hide_purchase_keep_navigation")
         r=run(actor=2423,missing_optional_flags=True)
         yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
             "unset_optional_feature_flags_do_not_break_new_user_menu")

@@ -2034,8 +2034,10 @@ DELIMITER ;
                 wire=sql(f"SELECT recipient,keys_json,mode FROM fixture_followup WHERE intent_id={operator}").split('	')
                 assert wire[0]=='9002' and wire[2]=='NULL',wire
                 callbacks=[b.get('callback_data') for row in json.loads(wire[1])['inline_keyboard'] for b in row]
-                assert {'agencySettings','agentOneBuy','agentConfigsList','managePanel','searchUsersConfig'}<=set(callbacks),callbacks
-                assert 'mySubscriptions' not in callbacks and 'inviteFriends' not in callbacks,callbacks
+                assert {'agencySettings','increaseMyWallet','getTestAccount','agentConfigsList','managePanel','searchUsersConfig'}<=set(callbacks),callbacks
+                # Closed sales applies to the non-primary operator's ordinary
+                # purchase navigation, not to their authorized staff work.
+                assert not {'agentOneBuy','agentMuchBuy','buySubscription','mySubscriptions','inviteFriends'} & set(callbacks),callbacks
                 text=sql(f"SELECT text FROM fixture_followup WHERE intent_id={operator}")
                 for original in rows(op):assert original.split('	')[2] in text
                 assert ref in text
