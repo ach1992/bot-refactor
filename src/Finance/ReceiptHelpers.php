@@ -243,40 +243,18 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
 }
 
 function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $method, int $userId,?string $expectedMode=null): bool {
-    if ((int)$payInfo['user_id'] !== $userId ||
-        !in_array((string)$payInfo['state'],['pending','service_superseded'],true) ||
-        (string)($payInfo['payid'] ?? '') !== '' ||
-        !achbotCreditMethodHas($method,'manual_quote')) return false;
+    if ((int)$payInfo['user_id']!==$userId ||
+        !in_array($payInfo['state'],['pending','expired','service_superseded'],true) ||
+        (string)($payInfo['payid']??'')!=='' || !achbotCreditMethodHas($method,'manual_quote')) return false;
     try {
-        require_once __DIR__ . '/PaymentLifecycle.php';
         require_once __DIR__.'/CheckoutAdmission.php';
         if ($expectedMode!==null && !achbotCheckoutModeMatchesRequest($payInfo,$expectedMode)) return false;
-        $api=function_exists('achbotApiPaymentContext') ? achbotApiPaymentContext($connection,(string)$payInfo['hash_id'],$userId) : null;
-        if (function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($connection,(int)$payInfo['id']) && !$api) return false;
-
-        $stmt = $connection->prepare('SELECT provider,stage,checkout_url,provider_status,wallet_invoice_sha256,
-            TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
-            FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
-        $id = (int)$payInfo['id'];
-        $stmt->bind_param('i', $id);
-        $stmt->execute();
-        $attempt = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        $validWindow=$attempt && achbotCurrentReceiptPin($attempt) && (
-            $api!==null || $attempt['stage']==='receiving' ||
-            (string)($attempt['provider_status']??'')==='receipt_started' ||
-            ((string)($attempt['provider_status']??'')==='' &&
-             (int)$attempt['age_seconds']<achbotPayUxManualDeadlineSeconds())
-        );
-        return $validWindow &&
-            ($payInfo['state']==='pending' || $attempt['stage']==='receiving' ||
-                (string)($attempt['provider_status']??'')==='receipt_started') &&
-            (string)$attempt['provider'] === $method &&
-            in_array((string)$attempt['stage'], ['pending','receiving'], true) &&
-            achbotManualIntentDecode((string)$attempt['checkout_url'], $method) !== null;
-    } catch (Throwable $error) {
-        return false;
-    }
+        $attempt=achbotProviderRow($connection,'SELECT * FROM payment_attempts WHERE pay_row_id=?','i',[(int)$payInfo['id']]);
+        return $attempt && achbotCurrentReceiptPin($attempt) && achbotPayUxInvoiceDeadline($attempt)>0 &&
+            $attempt['provider']===$method && in_array($attempt['stage'],['pending','receiving'],true) &&
+            ($attempt['evidence_profile']===null || achbotPaymentEvidenceSnapshot($attempt)!==null) &&
+            achbotManualIntentDecode((string)$attempt['checkout_url'],$method)!==null;
+    } catch (Throwable $error) {return false;}
 }
 
 /**
@@ -294,13 +272,14 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         $claimToken = bin2hex(random_bytes(16));
         if (!$connection->begin_transaction()) throw new RuntimeException('manual_evidence_transaction_failed');
         $id = (int)$payInfo['id'];
+        achbotWalletLockOwnerLocked($connection,$userId);
         $stmt = $connection->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
         $pay = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$pay || (int)$pay['user_id'] !== $userId ||
-            ($expectedMode!==null && !achbotCheckoutModeMatchesRequest($pay,$expectedMode)) || !in_array($pay['state'],['pending','service_superseded'],true) ||
+            ($expectedMode!==null && !achbotCheckoutModeMatchesRequest($pay,$expectedMode)) || !in_array($pay['state'],['pending','expired','service_superseded'],true) ||
             (string)($pay['payid'] ?? '') !== '') { $connection->rollback(); return null; }
         $stmt = $connection->prepare('SELECT *,
             TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
@@ -310,19 +289,26 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
         if (!$attempt || !achbotCurrentReceiptPin($attempt) || (string)$attempt['provider'] !== $method ||
-            !in_array((string)$attempt['stage'], ['pending','receiving'], true) ||
-            ($pay['state']==='service_superseded' && $attempt['stage']!=='receiving' &&
-                (string)($attempt['provider_status']??'')!=='receipt_started')) {
+            achbotPayUxInvoiceDeadline($attempt)<=0 ||
+            !in_array((string)$attempt['stage'], ['pending','receiving'], true)) {
             $connection->rollback(); return null;
         }
         require_once __DIR__ . '/PaymentLifecycle.php';
-        $api=function_exists('achbotApiPaymentContext') ? achbotApiPaymentContext($connection,(string)$payInfo['hash_id'],$userId) : null;
-        if (function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($connection,(int)$payInfo['id']) && !$api) {$connection->rollback();return null;}
-
-        if (!$api && $attempt['stage']==='pending' &&
-            (string)($attempt['provider_status']??'')!== 'receipt_started' &&
-            (int)$attempt['age_seconds']>=achbotPayUxManualDeadlineSeconds()) {
-            $connection->rollback(); return null;
+        if ($attempt['evidence_profile']!==null && !achbotPaymentEvidenceSnapshot($attempt)) {
+            $connection->rollback();return null;
+        }
+        achbotPayUxCloseInvoiceLocked($connection,$pay,$attempt);
+        if ($pay['state']==='expired') {
+            $q=achbotProviderStatement($connection,"UPDATE pays SET state='service_superseded' WHERE id=? AND state='expired'",'i',[$id]);
+            $n=$q->affected_rows;$q->close();
+            if ($n!==1) throw new RuntimeException('late_receipt_state_changed');
+            $pay['state']='service_superseded';
+        }
+        if ($attempt['stage']==='pending') {
+            $q=achbotProviderStatement($connection,"UPDATE payment_attempts SET provider_status='receipt_started'
+                WHERE id=? AND stage='pending' AND provider_status IS NULL",'i',[(int)$attempt['id']]);
+            $q->close();
+            if ($attempt['provider_status']===null) $attempt['provider_status']='receipt_started';
         }
         $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], $method);
         if ($intent === null) { $connection->rollback(); return null; }
@@ -565,7 +551,7 @@ function achbotManualGiftSubmissionPreflight(mysqli $db,array $pay,string $metho
     try {
         $c=achbotApiPaymentContext($db,(string)$pay['hash_id'],(int)$pay['user_id']);
         if (!$c || ($c['attempt']['provider']??'')!=='gift_card' ||
-            ($c['pay']['state']??'')!=='pending')return $accepted;
+            !in_array($c['pay']['state']??null,['pending','expired','service_superseded'],true))return $accepted;
         $verified=achbotPaymentEvidenceGiftVerify($c['profile'],$code);
         $status=(string)($verified['status']??'unavailable');
         if (in_array($status,['not_found','invalid','used','revoked','expired'],true))
@@ -673,7 +659,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, int $priceToman,
         $pay=achbotPayUxOwnedReference($connection,$hashId,$userId);
         if (!$pay) return '';
         $stmt = $connection->prepare("SELECT provider,quote_amount,quote_currency,
-            local_amount_toman,settlement_currency,checkout_url
+            local_amount_toman,settlement_currency,checkout_url,invoice_expires_at
             FROM payment_attempts WHERE order_hash=? AND provider=? LIMIT 1");
         $stmt->bind_param('ss', $hashId, $method);
         $stmt->execute();
@@ -703,7 +689,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, int $priceToman,
                 'USDT-WALLET' => htmlspecialchars($wallet, ENT_QUOTES, 'UTF-8'),
                 'PRICE-TRX' => number_format((float)$attempt['quote_amount'], 6, '.', ''),
                 'TRX-WALLET' => htmlspecialchars($wallet, ENT_QUOTES, 'UTF-8'),
-            ]);
+            ]).achbotPayUxDeadlineText($attempt);
         }
         if ((string)$attempt['quote_currency'] !== 'toman') return '';
         $amount = (int)$attempt['quote_amount'];
@@ -711,7 +697,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, int $priceToman,
         if ($method === 'bank_transfer' &&
             (trim((string)($intent['account'] ?? '')) === '' ||
              trim((string)($intent['holder'] ?? '')) === '')) return '';
-        if(achbotManualTypedGift($connection,$pay,$method))return achbotMessageHtml('payment.api_payment.gift_invoice',['amount'=>number_format($amount)]);
+        if(achbotManualTypedGift($connection,$pay,$method))return achbotMessageHtml('payment.api_payment.gift_invoice',['amount'=>number_format($amount)]).achbotPayUxDeadlineText($attempt);
         $template = \achbotMessage('legacy_messages.'.($method === 'gift_card' ?
             'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail'));
         return strtr($template, [
@@ -720,7 +706,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, int $priceToman,
             'PRICE-RIAL' => number_format($amount * 10),
             'ACCOUNT-NUMBER' => htmlspecialchars((string)($intent['account'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
             'HOLDER-NAME' => htmlspecialchars((string)($intent['holder'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-        ]);
+        ]).achbotPayUxDeadlineText($attempt);
     } catch (Throwable $error) {
         return '';
     }
@@ -773,8 +759,10 @@ function duplicateReceiptGuard(mysqli $connection, array $payInfo, int $nowTs): 
     require_once __DIR__.'/PaymentLifecycle.php';
     $id=(int)$payInfo['id'];$userId=(int)$payInfo['user_id'];
     // Original receipt recovery is not a new payment.
-    $own=achbotProviderRow($connection,'SELECT stage,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id=?','i',[$id]);
-    if ($own && achbotCurrentReceiptPin($own) && $own['stage']==='receiving') return null;
+    $own=achbotProviderRow($connection,'SELECT stage,wallet_invoice_sha256,invoice_expires_at FROM payment_attempts WHERE pay_row_id=?','i',[$id]);
+    if ($own && achbotCurrentReceiptPin($own) && ($own['stage']==='receiving' ||
+        in_array($payInfo['state'],['expired','service_superseded'],true) ||
+        (achbotPayUxInvoiceDeadline($own)>0 && !achbotPayUxInvoiceOpen($own,$nowTs)))) return null;
     if (in_array($payInfo['state'],['have_sent','paid'],true))
         return \achbotMessage('manual_payment.receipt_helpers.duplicate_receipt_guard.label.2ea72e23b7');
 

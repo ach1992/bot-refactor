@@ -26,10 +26,6 @@ function achbotManualReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
             $operationId=achbotCheckoutAdmitDraftLocked($db,$pay,$a,$method,$draftStates);
             // Read back the exact committed-in-this-transaction binding.
             $pay=achbotCheckoutPayLocked($db,$payId,$userId);
-            if ($a!==null && empty($a['provider_status']) &&
-                $a['evidence_profile']===null &&
-                strtotime((string)$a['created_at'])+achbotPayUxManualDeadlineSeconds()<=time())
-                throw new DomainException('manual_draft_unavailable');
         }
         if ($a) {
             if ($a['provider']!==$method || (int)($a['service_operation_id']??0)!==($operationId??0) ||
@@ -59,7 +55,10 @@ function achbotManualReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
             $aid=(int)$s->insert_id;$s->close();
             if ($aid<=0) throw new RuntimeException('manual_invoice_insert');
             $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE id=? FOR UPDATE','i',[$aid]);
-            $profile=achbotPaymentEvidenceProfile($method);
+            $states=achbotPayUxCurrentStatesLocked($db)??[];
+            $a=achbotPayUxSealInvoiceLocked($db,$a,$states);
+            $profile=achbotPaymentEvidenceProfile($method,$draftStates!==null?$keys:null,
+                $draftStates!==null?$states:null);
             if ($profile!==null && !achbotPaymentEvidencePinLocked($db,$pay,$a,$profile))
                 throw new RuntimeException('manual_evidence_pin');
             achbotCheckoutPinReceiptLocked($db,$payId,$userId);
@@ -69,7 +68,7 @@ function achbotManualReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
         // Only publish the original invoice in an open state. Never return
         // encrypted API credentials or merchant configuration to a UI caller.
         $result=['status'=>$pay['state']==='pending' && $a['stage']==='pending' &&
-            $a['wallet_credit_entry_id']===null?'issued':'closed',
+            $a['wallet_credit_entry_id']===null && achbotPayUxInvoiceOpen($a)?'issued':'closed',
             'amount'=>(string)$a['quote_amount'],'currency'=>$a['quote_currency'],'intent'=>$intent];
         if (!$db->commit()) throw new RuntimeException('manual_issue_commit');
         return $result;

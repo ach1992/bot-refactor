@@ -32,6 +32,28 @@ checkout/message projection and the merchant configuration workflow.
   for API evidence and original-receipt recovery. Keep user-facing changes
   within the approved product contract.
 
+## Invoice deadlines and late payment
+
+The administrator's payment policy controls new invoices. The default
+unissued draft is 30 minutes; manual invoices (including API-assisted
+bank and gift receipts) and hosted initiation links are six hours.
+The original expiry is pinned at issuance rather than recalculated from
+subsequent configuration. A first receipt click before expiry can grant
+15 minutes of upload time from that click, without shortening the
+original window, extending the transfer window or renewing the grace on
+later clicks. The grace and post-expiry SMS search duration are configurable.
+A local deadline closes only an unfunded request without recorded evidence;
+it never cancels an external payment or declares it unsuccessful.
+
+Late evidence is admitted against the same immutable issued invoice.
+Verified funds for an expired or superseded service credit Wallet once;
+the closed command is not revived. Already recorded evidence and funded
+service work retain their original recovery path. Time alone cannot
+approve a bank receipt: authenticated API evidence or an authorized
+operator decision is required. Historical unsealed invoices are not
+reissued. See [API evidence](API-PAYMENT-EVIDENCE.md) for the separate
+transfer-time and SMS-search windows.
+
 ## Merchant credential and destination editor
 
 The administrator `PAYMENT_KEYS` editor configures methods; it does not settle payments.

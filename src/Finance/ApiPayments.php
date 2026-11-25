@@ -64,22 +64,12 @@ function achbotApiPaymentContext(mysqli $db,string $hash,int $actor=0): ?array {
 function achbotApiPaymentTerminal(array $pay): bool {
     return in_array((string)($pay['state']??''),['approved','paid','auto_cart_approved','paid_with_wallet'],true);
 }
-/** Original invoice callbacks, never inferred from an arbitrary submitted callback. */
-function achbotApiPaymentReceiptPrefixes(array $pay,string $method='bank_transfer'): array {
-    $t=(string)$pay['type'];$gift=$method==='gift_card';
-    if ($t==='INCREASE_WALLET') return [$gift?'sendIncreaseWalletGiftReceipt':'sendIncreaseWalletReceipt','cancelIncreaseWalletReceipt'];
-    if ($t==='RENEW_ACCOUNT') return [$gift?'sendRenewGiftReceipt':'sendRenewCartReceipt','cancelRenewCartReceipt'];
-    if (str_starts_with($t,'INCREASE_DAY_')) return [$gift?'sendIncreaseDayGiftReceipt':'sendIncreaseDayReceipt','cancelIncreaseDayReceipt'];
-    if (str_starts_with($t,'INCREASE_VOLUME_')) return [$gift?'sendIncreaseVolumeGiftReceipt':'sendIncreaseVolumeReceipt','cancelIncreaseVolumeReceipt'];
-    if ((int)$pay['day']>0 || (int)$pay['volume']>0) return [$gift?'sendCustomGiftReceipt':'sendCustomCartReceipt','cancelCustomCartReceipt'];
-    return [$gift?'sendBuyGiftReceipt':'sendBuyCartReceipt','cancelBuyCartReceipt'];
-}
 function achbotApiPaymentKeyboard(array $context,?string $sendPrefix=null,?string $cancelPrefix=null): string {
     $pay=$context['pay'];$hash=(string)$pay['hash_id'];
     if (achbotApiPaymentTerminal($pay) || !in_array($pay['state'],['pending','have_sent'],true))
-        return achbotPayUxStatusKeyboard($hash);
-    if ($pay['state']==='have_sent') return achbotPayUxStatusKeyboard($hash);
-    [$send,$cancel]=achbotApiPaymentReceiptPrefixes($pay,(string)$context['attempt']['provider']);
+        return achbotPayUxStatusKeyboard($hash,$pay,$context['attempt']);
+    if ($pay['state']==='have_sent' || !achbotPayUxInvoiceOpen($context['attempt'])) return achbotPayUxStatusKeyboard($hash,$pay,$context['attempt']);
+    [$send,$cancel]=achbotPayUxReceiptPrefixes($pay,(string)$context['attempt']['provider']);
     $send=$sendPrefix??$send;$cancel=$cancelPrefix??$cancel;
     $gift=$context['attempt']['provider']==='gift_card';
     $rows=[[['text'=>$gift?achbotMessage('payment.api_payment.code'):achbotMessage('telegram.markup.receipt_and_cancel.button.ae15b282fd'),'callback_data'=>$send.$hash]]];
@@ -121,7 +111,8 @@ function achbotApiPaymentSyncInvoiceLocked(mysqli $db,array $c): bool {
     $c=$current;$p=$c['pay'];$a=$c['attempt'];
     $chat=(int)($a['evidence_invoice_chat_id']??0);$message=(int)($a['evidence_invoice_message_id']??0);
     if ($chat!==(int)$p['user_id'] || $chat<=0 || $message<=0 || !function_exists('bot')) return false;
-    if (achbotApiPaymentTerminal($p) || !in_array($p['state'],['pending','have_sent'],true))
+    if (achbotApiPaymentTerminal($p) || !in_array($p['state'],['pending','have_sent'],true) ||
+        ($p['state']==='pending' && !achbotPayUxInvoiceOpen($a)))
         $body=achbotPayUxStatusText($p,$a);
     else {
         $body=achbotApiPaymentInvoiceText($c);
@@ -372,7 +363,7 @@ function achbotApiPaymentCheckBank(mysqli $db,array $claim,callable $settle): st
         $proof=$r['proof']??achbotPaymentEvidenceGetProof($db,$id);
         return is_array($proof)?$settle($db,$id,$proof):'review';
     }
-    if(time()>(int)$profile['issued_at']+(int)$profile['horizon_seconds'])return 'manual';
+    if(time()>=(int)($profile['search_expires_at']??0))return 'manual';
     // Keep original proof/uniqueness/admission logic independent from search.
     $inspect=static function(array $rows) use ($db,$a,$profile,$id,$settle): ?string {
         foreach($rows as $raw) {

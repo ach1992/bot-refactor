@@ -133,11 +133,12 @@ function startWalletPayment(mysqli $connection, $botUrl,
         $hash_id = RandomString();
 
         $time = time();
+        $deadline=$time+achbotPayUxDraftDeadlineSeconds(achbotPayUxCurrentStatesLocked($connection)??[]);
         $stmt = $connection->prepare("INSERT INTO pays
-            (hash_id,user_id,type,plan_id,volume,day,price,request_date,state,checkout_draft_context)
-            VALUES (?,?,'INCREASE_WALLET','0','0','0',?,?,'pending',JSON_OBJECT('version',1))");
+            (hash_id,user_id,type,plan_id,volume,day,price,request_date,state,checkout_draft_context,draft_expires_at)
+            VALUES (?,?,'INCREASE_WALLET','0','0','0',?,?,'pending',JSON_OBJECT('version',1),?)");
         if (!$stmt) throw new RuntimeException('topup_insert_unavailable');
-        $stmt->bind_param('siii', $hash_id, $actor, $amount, $time);
+        $stmt->bind_param('siiii', $hash_id, $actor, $amount, $time,$deadline);
         if (!$stmt->execute()) throw new RuntimeException('topup_insert_failed');
         if ($stmt->affected_rows !== 1) throw new RuntimeException('topup_insert_unconfirmed');
         $draftId=(int)$stmt->insert_id;

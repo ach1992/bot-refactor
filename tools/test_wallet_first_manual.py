@@ -61,6 +61,8 @@ if (!($spec['api']??false)) {$GLOBALS['botState']['smsApiVerifyState']='off';$GL
 try {
     $result=match ($spec['op']) {
         'attention'=>achbotGatewayAttentionCaseOpen($db,$id),
+        'expire'=>achbotPayUxExpireInvoice($db,$id,(int)$spec['clock']),
+        'receipt_deadline'=>achbotPayUxReceiptDeadline($spec['attempt']),
         'maintain'=>achbotApiPaymentMaintain($db,(int)($spec['limit']??1)),
         'duplicate_guard'=>(static function() use ($db,$pay,$spec) {
             $GLOBALS['botState']=array_replace($GLOBALS['botState'],$spec['policy']??[]);
@@ -376,15 +378,52 @@ DELIMITER ;
                 assert result(mode,'approve',pid)['funding']=='request_invalidated' and balance()==b+100
                 assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+100
                 case('typed_gift_claim_atomic_and_superseded_recovery')
-                # No NEW evidence may start from an already-invalidated draft.
+                # A closed service can receive original late proof but never a new service.
                 name=mode+'-unstarted-superseded'
                 oid=result(mode,'quote',reference=name,request=q)
                 pid=seed(name,price=100,kind='BUY_SUB')
                 result(mode,'issue',pid,method='bank_transfer',service=oid)
-                sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}")
-                assert result(mode,'begin',pid,file='new-photo') is None
-                assert result(mode,'attention',pid) is False
-                case('superseded_unstarted_receipt_not_reopened')
+                sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}; UPDATE service_operations SET stage='cancelled' WHERE id={oid}")
+                assert result(mode,'issue',pid,method='bank_transfer',service=oid)['status']=='closed'
+                assert result(mode,'begin',pid,file='new-photo',owner=9002) is None
+                submit(mode,pid,'bank_transfer','original-late-photo')
+                assert result(mode,'attention',pid) is True
+                b=balance()
+                assert result(mode,'approve',pid)['funding']=='request_invalidated' and balance()==b+100
+                assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+100
+                assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
+                case('superseded_unstarted_late_evidence_wallet_only_never_reopens')
+
+                # Deadline is fixed on issuance; settings and repeated clicks do not move it.
+                # Inject only the clock into the genuine expiry transaction.
+                name=mode+'-invoice-expiry'
+                oid=result(mode,'quote',reference=name,request=q)
+                pid=seed(name,price=100,kind='BUY_SUB')
+                result(mode,'issue',pid,method='bank_transfer',service=oid)
+                issued,deadline,grace=map(int,sql(f"SELECT CONCAT(UNIX_TIMESTAMP(created_at),':',invoice_expires_at,':',receipt_grace_seconds) FROM payment_attempts WHERE pay_row_id={pid}").split(':'))
+                assert deadline-issued==21600 and grace==900
+                sql("UPDATE setting SET value=JSON_SET(value,'$.paymentManualHours',1,'$.paymentReceiptGraceMinutes',1) WHERE type='BOT_STATES'")
+                assert result(mode,'issue',pid,method='bank_transfer',service=oid)['status']=='issued'
+                assert result(mode,'start',pid,method='bank_transfer',owner=9002) is False
+                assert result(mode,'start',pid,method='bank_transfer') is True
+                start=int(sql(f"SELECT receipt_started_at FROM payment_attempts WHERE pay_row_id={pid}"))
+                assert result(mode,'start',pid,method='bank_transfer') is True
+                assert sql(f"SELECT CONCAT(invoice_expires_at,':',receipt_grace_seconds,':',receipt_started_at) FROM payment_attempts WHERE pay_row_id={pid}")==f'{deadline}:{grace}:{start}'
+                sql("UPDATE setting SET value=JSON_REMOVE(value,'$.paymentManualHours','$.paymentReceiptGraceMinutes') WHERE type='BOT_STATES'")
+                assert result(mode,'receipt_deadline',attempt={'invoice_expires_at':deadline,'receipt_grace_seconds':grace,'receipt_started_at':deadline-1})==deadline-1+grace
+                assert result(mode,'receipt_deadline',attempt={'invoice_expires_at':deadline,'receipt_grace_seconds':grace,'receipt_started_at':deadline})==deadline
+                assert result(mode,'expire',pid,clock=deadline-1) is False
+                assert result(mode,'expire',pid,clock=deadline) is True
+                assert result(mode,'expire',pid,clock=deadline+1) is False
+                assert sql(f"SELECT state FROM pays WHERE id={pid}")=='expired'
+                assert result(mode,'issue',pid,method='bank_transfer',service=oid)['status']=='closed'
+                assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
+                submit(mode,pid,'bank_transfer','late-expired-original-photo')
+                b=balance()
+                assert result(mode,'approve',pid)['funding']=='request_invalidated' and balance()==b+100
+                assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+100
+                assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
+                case('pinned_deadline_nonextendable_grace_late_wallet_once')
                 for method in ('bank_transfer','gift_card'):
                     name=mode+'-started-superseded-'+method
                     oid=result(mode,'quote',reference=name,request=q)
@@ -525,14 +564,16 @@ DELIMITER ;
                 # It must not permanently occupy the only worker/projection
                 # slot while another legitimate payment is ready.
                 sql("UPDATE payment_attempts SET evidence_next_check_at=DATE_ADD(NOW(),INTERVAL 1 DAY),evidence_projection_checked_at=NOW() WHERE evidence_profile IS NOT NULL")
-                historic=seed(mode+'-historical-projection',price=7381)
+                queue_base=700000 if mode=='strict' else 800000
+                historic=seed(mode+'-historical-projection',price=queue_base+1000)
                 result(mode,'issue',historic,method='bank_transfer',api=True)
                 sql(f"UPDATE payment_attempts SET wallet_invoice_sha256=NULL WHERE pay_row_id={historic}")
-                bad=seed(mode+'-bad-profile',price=7382)
+                bad=seed(mode+'-bad-profile',price=queue_base+3000)
                 result(mode,'issue',bad,method='bank_transfer',api=True)
                 submit(mode,bad,'bank_transfer','bad-profile-photo',api=True)
                 sql(f"UPDATE payment_attempts SET evidence_profile='fixture-corrupt-profile',evidence_next_check_at=NOW()-INTERVAL 10 MINUTE WHERE pay_row_id={bad}")
-                good=seed(mode+'-healthy-behind-bad',price=7383)
+                good_price=queue_base+5000
+                good=seed(mode+'-healthy-behind-bad',price=good_price)
                 r=result(mode,'issue',good,method='bank_transfer',api=True)
                 submit(mode,good,'bank_transfer','healthy-profile-photo',api=True)
                 ident='102' if mode=='strict' else '202'
@@ -547,7 +588,7 @@ DELIMITER ;
                 assert sql(f"SELECT evidence_next_check_at>NOW() AND evidence_projection_checked_at IS NOT NULL FROM payment_attempts WHERE pay_row_id={bad}")=='1'
                 assert sql(f"SELECT evidence_projection_checked_at IS NULL FROM payment_attempts WHERE pay_row_id={historic}")=='1'
                 assert result(mode,'maintain',good)['checked']==1
-                assert balance()==b+7383 and server.consumes[ident]==1
+                assert balance()==b+good_price and server.consumes[ident]==1
                 assert sql(f"SELECT evidence_projection_checked_at IS NOT NULL FROM payment_attempts WHERE pay_row_id={good}")=='1'
                 assert sql(f"SELECT wallet_credit_entry_id IS NULL AND evidence_profile='fixture-corrupt-profile' FROM payment_attempts WHERE pay_row_id={bad}")=='1'
                 case('api_maintenance_rotates_broken_pin_and_skips_historical_projection')

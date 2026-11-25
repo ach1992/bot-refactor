@@ -77,6 +77,8 @@ function achbotCreditPinIssuedLocked(mysqli $db,int $payId,int $userId): void {
         $attempt['wallet_credit_entry_id']!==null ||
         ($pay['approved_by']??null)!==null)
         throw new RuntimeException('payment_credit_issue_not_new');
+    require_once __DIR__.'/PaymentLifecycle.php';
+    $attempt=achbotPayUxSealInvoiceLocked($db,$attempt,achbotPayUxCurrentStatesLocked($db)??[]);
     $fingerprint=achbotCreditInvoiceFingerprint($pay,$attempt);
     $id=(int)$attempt['id'];
     $q=$db->prepare("UPDATE payment_attempts SET wallet_invoice_sha256=?

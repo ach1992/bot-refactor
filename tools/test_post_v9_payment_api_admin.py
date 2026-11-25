@@ -128,13 +128,12 @@ def main():
         assert TOKEN not in keys.step(w,env)
         assert not any(x[0]=='delete' for x in secret_saved['events'])
         assert 'smsApiHorizonHours' not in values()
-        before=states();toggle('smsApiVerifyState');assert states()==before
-        editor('smsApiHorizonHours','48')
+        assert 'smsApiHorizonHours' not in str(call(kind='menu_callback',data='changePaymentKeysApiSms'))
+        before=states()
         toggle('smsApiVerifyState');assert states()['smsApiVerifyState']=='on'
-        enabled=states()
         toggle('smsApiVerifyState');assert states()['smsApiVerifyState']=='off'
         assert {k:v for k,v in states().items() if k!='smsApiVerifyState'}==before
-        checks.append('encrypted_token_explicit_horizon_guarded_enable_disable_preserves_other_flags')
+        checks.append('encrypted_token_common_policy_guarded_enable_disable_preserves_other_flags')
 
         # Optional filters/time settings remain unset; no new activation prerequisite.
         assert all(not values().get(k) for k in ('smsApiProvider','smsApiSender','smsApiMobileSource',
@@ -175,7 +174,7 @@ def main():
         checks.append('cancel_one_action_returns_to_api_page_without_deleting_admin_input')
 
         # Validation and clear use the real evidence normalizer.
-        for field,value in [('smsApiHorizonHours','0'),('smsApiHorizonHours','1.5'),
+        for field,value in [('smsApiRuleId','0'),('smsApiRuleId','1.5'),
                             ('giftApiAmountUnit','USD'),('giftApiValueId','0'),
                             ('smsApiUrl','http://example.com/wp-json/ach-pay-manager/v1')]:
             old=values().get(field)
@@ -183,10 +182,11 @@ def main():
             result=call(kind='message',text=value)
             no_save(result);assert values().get(field)==old
             call(kind='message',text=CANCEL_COPY)
-        editor('smsApiHorizonHours','/clear')
-        assert values()['smsApiHorizonHours']==''
+        editor('smsApiUrl','/clear')
+        assert values()['smsApiUrl']==''
         before=states();toggle('smsApiVerifyState');assert states()==before
-        checks.append('real_normalizer_rejects_bad_money_horizon_urls_clear_blocks_enable')
+        editor('smsApiUrl','https://example.com/wp-json/ach-pay-manager/v1')
+        checks.append('real_normalizer_rejects_bad_money_rule_id_urls_clear_blocks_enable')
 
         # Source/frame forgery, revoked role, lower tiers and malformed page names.
         for role in ('operator','support'):
@@ -211,16 +211,16 @@ def main():
         checks.append('current_manager_authority_required_revocation_forged_frames_malformed_denied')
 
         # A second editor invalidates the older baseline, including same-value ABA.
-        editor('smsApiHorizonHours',actor=9002)
-        editor('smsApiHorizonHours','72',actor=9003)
+        editor('smsApiRuleId',actor=9002)
+        editor('smsApiRuleId','72',actor=9003)
         old=values()
         no_save(call(kind='message',text='24',actor=9002))
-        assert values()==old and values()['smsApiHorizonHours']=='72'
+        assert values()==old and values()['smsApiRuleId']=='72'
         call(kind='message',text=CANCEL_COPY,actor=9002)
-        opened=editor('smsApiHorizonHours')
+        opened=editor('smsApiRuleId')
         replay_seq=seq[0]
         no_save(call(kind='message',text='24',update_id=replay_seq))
-        assert values()['smsApiHorizonHours']=='72'
+        assert values()['smsApiRuleId']=='72'
         call(kind='message',text=CANCEL_COPY)
         checks.append('field_revision_conflict_and_replayed_message_cannot_overwrite')
 
@@ -244,7 +244,6 @@ def main():
             for row in json.loads(event[2])['inline_keyboard'] for button in row)
         before=states();toggle('smsApiVerifyState');assert states()==before
         editor('smsApiToken',TOKEN,actor=9001)
-        editor('smsApiHorizonHours','48',actor=9001)
         toggle('smsApiVerifyState',actor=9001)
         assert states()['smsApiVerifyState']=='on'
         current=states();old_source=seq[0]

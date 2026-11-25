@@ -8,7 +8,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {
 require_once __DIR__.'/../Diagnostics/EventLog.php';
 
 function achbotPaymentEvidenceSettingFields(): array {
-    return ['smsApiUrl','smsApiToken','smsApiHorizonHours','smsApiProvider',
+    return ['smsApiUrl','smsApiToken','smsApiProvider',
         'smsApiSender','smsApiMobileSource','smsApiRuleId','smsApiBankKey',
         'smsApiTimezone','smsApiCalendar','giftApiUrl','giftApiKeyId',
         'giftApiSecret','giftApiAmountUnit',
@@ -48,9 +48,9 @@ function achbotPaymentEvidenceNormalizeSetting(string $field,string $input): ?st
     if (strlen($value)>2048 || preg_match('/[\x00-\x1f\x7f]/',$value)) return null;
     if ($field==='smsApiUrl' || $field==='giftApiUrl')
         return achbotPaymentEvidenceBaseUrl($value,$field==='smsApiUrl'?'bank_transfer':'gift_card');
-    if (in_array($field,['smsApiHorizonHours','smsApiRuleId','giftApiValueId'],true)) {
+    if (in_array($field,['smsApiRuleId','giftApiValueId'],true)) {
         $n=achbotPaymentEvidenceInteger($value);
-        if ($n===null || ($field==='smsApiHorizonHours' && $n>intdiv(PHP_INT_MAX,3600)))
+        if ($n===null)
             return null;
         return (string)$n;
     }
@@ -121,9 +121,8 @@ function achbotPaymentEvidenceProfile(string $method,?array $keys=null,?array $s
         'endpoint_sha256'=>hash('sha256',$url),'filters'=>[]];
     if ($method==='bank_transfer') {
         $token=achbotPaymentEvidenceSecret($keys,'smsApiToken');
-        $hours=achbotPaymentEvidenceInteger($keys['smsApiHorizonHours']??null);
-        if ($token===null || $hours===null || $hours>intdiv(PHP_INT_MAX,3600)) return null;
-        $profile+=['token'=>$token,'horizon_seconds'=>$hours*3600,'timezone'=>null,'calendar'=>null];
+        if ($token===null) return null;
+        $profile+=['token'=>$token,'timezone'=>null,'calendar'=>null];
         foreach (['Provider'=>'provider','Sender'=>'sender','MobileSource'=>'mobile_source',
                   'RuleId'=>'rule_id','BankKey'=>'bank_key'] as $setting=>$field) {
             $raw=$keys['smsApi'.$setting]??'';
@@ -182,6 +181,10 @@ function achbotPaymentEvidenceQuoteFingerprint(array $attempt): string {
     $intent=json_decode((string)($attempt['checkout_url']??''),true);
     if (is_array($intent)) { unset($intent['receipt_file_id']); ksort($intent); }
     $out['intent']=is_array($intent)?$intent:(string)($attempt['checkout_url']??'');
+    if (isset($attempt['invoice_expires_at'])) {
+        $out['invoice_expires_at']=(string)$attempt['invoice_expires_at'];
+        $out['receipt_grace_seconds']=(string)$attempt['receipt_grace_seconds'];
+    }
     return hash('sha256',json_encode($out,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
 }
 function achbotPaymentEvidenceSchemaReady(mysqli $db): bool {
@@ -246,9 +249,16 @@ function achbotPaymentEvidencePinLocked(mysqli $db,array $pay,array $attempt,?ar
     $stmt->bind_param('ii',$id,$payId); $stmt->execute();
     $current=$stmt->get_result()->fetch_assoc(); $stmt->close();
     if (!$current || $current['evidence_profile']!==null) return false;
+    require_once __DIR__.'/PaymentLifecycle.php';
+    $states=achbotPayUxCurrentStatesLocked($db)??[];
+    $current=achbotPayUxSealInvoiceLocked($db,$current,$states);
     $issued=(int)$current['evidence_issued_unix'];
-    if ($issued<=0 || (($profile['horizon_seconds']??0)>PHP_INT_MAX-$issued)) return false;
+    if ($issued<=0 || achbotPayUxInvoiceDeadline($current)<=$issued) return false;
     $profile['issued_at']=$issued;
+    if ($profile['method']==='bank_transfer') {
+        $profile['horizon_seconds']=achbotPayUxInvoiceDeadline($current)-$issued;
+        $profile['search_expires_at']=achbotPayUxInvoiceDeadline($current)+3600*achbotPayUxPolicyNumber('paymentSmsReviewHours',$states);
+    }
     $profile['pay_sha256']=achbotPaymentEvidencePayFingerprint($pay);
     $profile['quote_sha256']=achbotPaymentEvidenceQuoteFingerprint($current);
     $sealed=achbotPaymentEvidenceProtect('profile:'.$id.':'.$payId,$profile);

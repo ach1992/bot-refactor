@@ -51,6 +51,8 @@ function achbotCheckoutSettleReceiptLocked(mysqli $db,int $payId,int $userId,str
     [$pay,$attempt]=achbotCreditInvoiceLocked($db,$payId,$userId);
     if (!array_key_exists('wallet_funding_result',$attempt))
         throw new RuntimeException('checkout_funding_schema_missing');
+    require_once __DIR__.'/PaymentLifecycle.php';
+    achbotPayUxCloseInvoiceLocked($db,$pay,$attempt);
     $entry=achbotPaymentCreditLocked($db,$payId,$userId,$basis,$proof,$actor,$primary);
     $operation=$attempt['service_operation_id']===null?null:(int)$attempt['service_operation_id'];
     if ($entry['replayed']) {

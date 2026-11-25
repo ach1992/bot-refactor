@@ -69,7 +69,7 @@ function achbotHostedReceiptReserveLocked(mysqli $db,int $payId,int $userId,stri
             // can render its original status without reopening a checkout.
             return ['status'=>$pay['state']==='pending' && $a['stage']==='pending' &&
                 $a['wallet_credit_entry_id']===null &&
-                empty($a['payment_id'])?'issued':'closed','url'=>$a['checkout_url']];
+                empty($a['payment_id']) && achbotPayUxInvoiceOpen($a)?'issued':'closed','url'=>$a['checkout_url']];
         }
         return ['status'=>'issuance_uncertain'];
     }
@@ -88,6 +88,8 @@ function achbotHostedReceiptReserveLocked(mysqli $db,int $payId,int $userId,stri
     $aid=(int)$s->insert_id;$s->close();
     if ($aid<=0) throw new RuntimeException('hosted_reservation_insert');
     $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE id=? FOR UPDATE','i',[$aid]);
+    require_once __DIR__.'/PaymentLifecycle.php';
+    $a=achbotPayUxSealInvoiceLocked($db,$a,achbotPayUxCurrentStatesLocked($db)??[]);
     $profile=achbotPaymentEvidenceProtect(achbotHostedMerchantPurpose($a),[
         'v'=>1,'method'=>$method,'credential'=>$credential,
         'identity'=>achbotHostedReservationIdentity($pay,$a)] + ($ipnSecret===null?[]:['ipn_secret'=>$ipnSecret]));
@@ -134,7 +136,7 @@ function achbotHostedReceiptBindLocked(mysqli $db,int $payId,int $userId,array $
     $s=achbotProviderStatement($db,"UPDATE payment_attempts SET wallet_invoice_sha256=? WHERE id=? AND wallet_invoice_sha256=''",'si',[$pin,(int)$a['id']]);
     $n=$s->affected_rows;$s->close();
     if ($n!==1) throw new RuntimeException('hosted_invoice_pin_write');
-    return ['status'=>$pay['state']==='pending'?'issued':'closed','url'=>$url];
+    return ['status'=>$pay['state']==='pending' && achbotPayUxInvoiceOpen($a)?'issued':'closed','url'=>$url];
 }
 function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $method,?int $operationId,
     ?array $quote,?array $paymentKeys,string $botUrl,string $description,?array $draftStates=null,?string $ipnSecret=null): array {

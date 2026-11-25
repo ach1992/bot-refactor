@@ -43,7 +43,7 @@ $db->query("SET time_zone='+00:00'");
 $spec=json_decode($argv[4],true,32,JSON_THROW_ON_ERROR);
 $GLOBALS['telegramWebhookSecret']=$spec['webhook']??'fixture-webhook-secret-32-bytes-123456';
 $keys=['smsApiUrl'=>$spec['base'].'/wp-json/ach-pay-manager/v1',
- 'smsApiHorizonHours'=>'24','smsApiTimezone'=>'UTC','smsApiCalendar'=>'gregorian',
+ 'smsApiTimezone'=>'UTC','smsApiCalendar'=>'gregorian',
  'giftApiUrl'=>$spec['base'].'/wp-json/ach-gcw/v2','giftApiKeyId'=>'fixture-client',
  'giftApiAmountUnit'=>'toman'];
 $keys['smsApiToken']=achbotPaymentEvidenceProtect('setting:smsApiToken',['value'=>'fixture-sms-secret']);

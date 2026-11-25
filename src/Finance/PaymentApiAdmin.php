@@ -12,7 +12,6 @@ function achbotPaymentApiAdminFieldMap(): array {
     return [
         'smsApiUrl'=>['bank_transfer',false],
         'smsApiToken'=>['bank_transfer',false],
-        'smsApiHorizonHours'=>['bank_transfer',false],
         'smsApiProvider'=>['bank_transfer',true],
         'smsApiSender'=>['bank_transfer',true],
         'smsApiMobileSource'=>['bank_transfer',true],

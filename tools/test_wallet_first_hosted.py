@@ -187,7 +187,7 @@ def main():
                 r=run(mode,op,**kw);assert r['ok'],r
                 return r['result']
             def seed(name,price=100,kind='INCREASE_WALLET'):
-                sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state,checkout_draft_context) VALUES ('{name}',1001,'{kind}',{price},UNIX_TIMESTAMP(),'pending',JSON_OBJECT('version',1))")
+                sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state,checkout_draft_context,draft_expires_at) VALUES ('{name}',1001,'{kind}',{price},UNIX_TIMESTAMP(),'pending',JSON_OBJECT('version',1),UNIX_TIMESTAMP()+1800)")
                 return int(sql(f"SELECT id FROM pays WHERE hash_id='{name}'"))
             def snapshot():
                 return tuple(sql(q) for q in [

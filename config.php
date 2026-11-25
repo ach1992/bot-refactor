@@ -521,6 +521,7 @@ function setSettings($field, $value): bool {
         'instanceMessages','cooperationUrl','helpChannel','lockChannelJoinUrl',
         'gatewayAudience',
         'paymentDraftMinutes','paymentManualHours','paymentHostedHours',
+        'paymentReceiptGraceMinutes','paymentSmsReviewHours',
         'receiptApprovedMinutes','receiptApprovedOtherMinutes',
         'receiptReviewMinutes','receiptDeclinedMinutes'
     ];

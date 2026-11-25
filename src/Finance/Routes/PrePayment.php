@@ -28,8 +28,7 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
     $stage = null;
     $attempt = null;
     try {
-        $stmt = $connection->prepare('SELECT provider,stage,payment_id,provider_status,
-            TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
+        $stmt = $connection->prepare('SELECT *
             FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
         $id = (int)$pay['id'];
         $stmt->bind_param('i',$id);
@@ -61,12 +60,7 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
         $body .= \achbotMessage('payment.pre_payment.body.ff6ceb47bf') .
             htmlspecialchars((string)$pay['updated_at'],ENT_QUOTES,'UTF-8') . "</code>";
     }
-    $actions=[];
-    if (!in_array($uiState,['expired','declined','payment_recorded'],true)) {
-        $actions[]=[['text'=>\achbotMessage('payment.pre_payment.button.ea1db2132d'),'callback_data'=>'ps_'.$hashId]];
-    }
-    $actions[]=[['text'=>\achbotMessage('payment.payment_lifecycle.pay_ux_status_keyboard.button.1121ffbf88'),'callback_data'=>'ph_'.$hashId]];
-    $keyboard=inlineKeyboard($actions);
+    $keyboard=achbotPayUxStatusKeyboard($hashId,$pay,$attempt);
     answerCallbackQuery($callbackId, \achbotMessage('payment.pre_payment.alert.fdf0d1d6f9'));
     // The clicked Telegram message is our canonical status card; never
     // manufacture a second status message on every refresh.

@@ -23,6 +23,12 @@ function achbotCheckoutRequireSchema(mysqli $db): void {
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='pays' AND COLUMN_NAME='checkout_draft_context'");
     if (!$context || !in_array($context['DATA_TYPE'],['json','longtext'],true) || $context['IS_NULLABLE']!=='YES')
         throw new RuntimeException('checkout_draft_context_schema_missing');
+    $s=achbotProviderStatement($db,"SELECT COUNT(*) AS n FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA=DATABASE() AND DATA_TYPE='bigint' AND IS_NULLABLE='YES'
+          AND ((TABLE_NAME='pays' AND COLUMN_NAME='draft_expires_at') OR
+               (TABLE_NAME='payment_attempts' AND COLUMN_NAME IN ('invoice_expires_at','receipt_grace_seconds','receipt_started_at')))");
+    $n=(int)$s->get_result()->fetch_assoc()['n'];$s->close();
+    if ($n!==4) throw new RuntimeException('checkout_deadline_schema_missing');
     // 033 has multiple auto-committing DDL statements. The first ALTER
     // alone is not permission to activate the new receipt coordinator.
     $s=achbotProviderStatement($db,"SELECT COLUMN_NAME,DATA_TYPE,IS_NULLABLE,DATETIME_PRECISION
@@ -246,7 +252,8 @@ function achbotCheckoutSealDraftLocked(mysqli $db,int $id,array $pay,array $disp
             'naming_mode'=>(string)($states['remark']??''),'prefix'=>(string)$server['remark']];
     }
     $context=achbotServiceJson($context);
-    $s=achbotProviderStatement($db,'UPDATE pays SET checkout_draft_context=? WHERE id=? AND checkout_draft_context IS NULL','si',[$context,$id]);
+    $deadline=(int)$pay['request_date']+achbotPayUxDraftDeadlineSeconds(achbotPayUxCurrentStatesLocked($db)??[]);
+    $s=achbotProviderStatement($db,'UPDATE pays SET checkout_draft_context=?,draft_expires_at=? WHERE id=? AND checkout_draft_context IS NULL AND draft_expires_at IS NULL','sii',[$context,$deadline,$id]);
     $n=$s->affected_rows;$s->close();
     if ($n!==1) throw new RuntimeException('checkout_draft_context_bind_failed');
 }
