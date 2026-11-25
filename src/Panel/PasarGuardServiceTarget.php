@@ -47,7 +47,7 @@ function achbotPasarGuardServiceTargetLocked(mysqli $db,array $q,?array $o,?arra
                 throw new DomainException('service_plan_change_pending');
             if ($a['source_kind']==='service_operation') {
                 $e=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=? FOR UPDATE','i',[$a['effect_id']]);
-                if (!$e || achbotServiceOriginalBuyLocked($db,$e)['stage']!=='completed')
+                if (!$e || achbotServiceOriginalBuy($db,$e,true)['stage']!=='completed')
                     throw new DomainException('service_original_buy_pending');
             }
             $target['account']=achbotPgServiceOrderTarget($ctx)['account'];

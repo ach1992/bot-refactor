@@ -73,16 +73,19 @@ function achbotServiceLocalTargetLocked(mysqli $db,int $userId,array $q,bool $is
         throw new DomainException('service_server_unavailable');
     $o=null;$p=null;
     if ($q['order_id']>0) {
-        $o=achbotProviderRow($db,'SELECT id,userid,server_id,fileid,inbound_id,status,remark,uuid
+        $o=achbotProviderRow($db,'SELECT *
             FROM orders_list WHERE id=? FOR UPDATE','i',[$q['order_id']]);
         if (!$o || (int)$o['userid']!==$userId || (int)$o['status']!==1 ||
             (int)$o['server_id']!==$sid || (int)$o['fileid']!==$q['plan_id'] ||
             $o['remark']!==$q['remark'] || (string)$o['uuid']!==$q['uuid'])
             throw new DomainException('service_order_changed');
+        if ($issuing && !achbotOrderMayUsePaidPlan($db,$o,true))
+            throw new DomainException('service_commercial_subject_unavailable');
     }
     if ($q['plan_id']>0) {
         $p=achbotProviderRow($db,'SELECT * FROM server_plans WHERE id=? FOR UPDATE','i',[$q['plan_id']]);
-        if (!$p || ($buy && ((int)$p['active']!==1 || (int)$p['price']<=0)))
+        if (!$p || ($buy && ((int)$p['active']!==1 || (int)$p['price']<=0)) ||
+            (!$buy && $issuing && (int)$p['price']<=0))
             throw new DomainException('service_plan_unavailable');
         if ($buy && (int)$p['server_id']!==$sid)
             throw new DomainException('service_plan_target_changed');

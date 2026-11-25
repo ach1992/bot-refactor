@@ -308,3 +308,22 @@ at [the prior exact source](https://github.com/ach1992/bot-refactor/tree/05894a7
 The current roster and retained historical account-provenance construction
 are unchanged. Old test commands in historical records refer to their
 original source, not executable instructions for the new runtime.
+
+### Commercial service lifecycle admission
+
+Current BUY provenance is derived from the retained, completed service command
+and its verified Native effect ordinal, not the allocated order amount or the
+historical representative-mode flag. Genuine ordinary trials are not commercial
+subjects, including if their plan is later repriced. Verified imported and
+relocated references retain their established origin. New manual renewal and
+add-on drafts and first method admission share the current selected paid-plan
+eligibility and persisted sell/operation switches. Automatic renewal continues
+to use its separate opted-in policy. Issued receipt evidence and already-funded
+original operations do not acquire a new admission requirement during recovery.
+
+Required current-customer and service-execution cases cover trial and disabled
+policy refusal, stale unissued renew/day/volume drafts, completed zero-effective
+ordinary and representative purchases, demotion, full discount-code purchase,
+and zero-allocated retained bulk ordinals. The exact zero-value confirmation
+presentation for other command families remains an explicit Owner decision
+(F13); this remediation does not broaden existing monetary-method exemptions.

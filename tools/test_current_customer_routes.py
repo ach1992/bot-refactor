@@ -93,19 +93,38 @@ case 'catalogue':
 case 'standard':
     require $root.'/src/Purchase/SelectPlan.php';break;
 case 'seed_order':
-    // Synthetic already-linked Native account, not a remote creation.
-    $snap=achbotProviderSnapshot($connection,2,7);
+    // Disposable Native linkage fixture. Commercial cases exercise the actual
+    // issue/fund boundary; no remote creation is simulated as a live result.
+    $trial=(bool)($spec['trial']??false);$plan=$trial?14:7;
+    $price=$trial?0:100;$remark=$trial?'fixture-trial':'fixture-linked';
+    $remote=$trial?12346:12345;
+    $connection->begin_transaction();
+    $op=null;
+    if (!$trial) {
+        $op=achbotServiceIssueLocked($connection,$from_id,'fixture','existing-order-'.$from_id,
+            ['kind'=>'BUY','variant'=>'standard','price'=>$price,'server_id'=>2,'plan_id'=>$plan,'order_id'=>0,
+                'quantity'=>1,'days'=>30,'volume'=>2,'remark'=>$remark,'uuid'=>'','naming_mode'=>'manual','explicit_name'=>true]);
+        if (achbotServiceFundLocked($connection,$from_id,$op)!=='funded') throw new RuntimeException('fixture_fund');
+    }
+    $snap=achbotProviderSnapshot($connection,2,$plan);
     $json=json_encode($snap,JSON_THROW_ON_ERROR);
     $endpoint=$snap['endpoint_sha256'];$key='pg:'.$snap['instance_key'];
-    $marker='achbot:v1:'.str_repeat('b',32);$operation=str_repeat('b',32);
-    $created='2026-01-01T00:00:00Z';
-    $entitlement=json_encode(['group_ids'=>[1],'data_limit'=>2147483648,'expire'=>time()+86400,'status'=>'active']);
-    $s=achbotProviderStatement($connection,"INSERT INTO orders_list (userid,token,transid,fileid,server_id,remark,uuid,expire_date,link,amount,status,date) VALUES (?,'fixture','fixture',7,2,'fixture-linked','fixture-uuid',?,'fixture',100,1,?)",'iis',[$from_id,time()+86400,(string)time()]);
+    $operation=str_repeat($trial?'c':'b',32);$marker='achbot:v1:'.$operation;
+    $created='2026-01-01T00:00:00Z';$expire=time()+86400;
+    $entitlement=json_encode(['group_ids'=>[1],'data_limit'=>2147483648,'expire'=>$expire,'status'=>'active']);
+    $s=achbotProviderStatement($connection,"INSERT INTO orders_list (userid,token,transid,fileid,server_id,remark,uuid,expire_date,link,amount,status,date) VALUES (?,'fixture','fixture',?,2,?,'fixture-uuid',?,'fixture',?,1,?)",'iisiis',[$from_id,$plan,$remark,$expire,$price,(string)time()]);
     $oid=$s->insert_id;$s->close();
-    $s=achbotProviderStatement($connection,"INSERT INTO service_effects(source_kind,source_ref,actor_userid,ordinal,operation_id,effect_kind,target_server_id,target_key,endpoint_sha256,plan_id,remote_username,requested_expire,requested_bytes,request_sha256,state,order_id,verified_at,provider_snapshot,provider_reference_id,provider_connection_id,provider_remote_user_id,provider_remote_created_at,provider_operation_marker,provider_entitlement_snapshot,provider_state,provider_verified_at) VALUES ('free_trial','fixture',?,1,?,'create',2,?,?,7,'fixture-linked',?,2147483648,?,'local_recorded',?,NOW(),?,12345,2,12345,?,?,?,'linked',NOW())",'isssisissss',[$from_id,$operation,$key,$endpoint,time()+86400,hash('sha256',$json),$oid,$json,$created,$marker,$entitlement]);
+    $s=achbotProviderStatement($connection,"INSERT INTO service_effects(source_kind,source_ref,actor_userid,ordinal,operation_id,effect_kind,target_server_id,target_key,endpoint_sha256,plan_id,remote_username,requested_expire,requested_bytes,request_sha256,state,order_id,verified_at,provider_snapshot,provider_reference_id,provider_connection_id,provider_remote_user_id,provider_remote_created_at,provider_operation_marker,provider_entitlement_snapshot,provider_state,provider_verified_at) VALUES (?,?,?,1,?,'create',2,?,?,?, ?,?,2147483648,?,'local_recorded',?,NOW(),?,?,2,?,?,?,?,'linked',NOW())",
+        'ssisssisisisiisss',[$trial?'free_trial':'service_operation',$trial?'trial:'.$from_id:(string)$op,$from_id,$operation,$key,$endpoint,$plan,$remark,$expire,hash('sha256',$json),$oid,$json,$remote,$remote,$created,$marker,$entitlement]);
     $effect=$s->insert_id;$s->close();
-    achbotProviderBindOrder($connection,['effect_id'=>(int)$effect,'remote_user_id'=>12345,'remote_created_at'=>$created],(int)$oid);
+    achbotProviderBindOrder($connection,['effect_id'=>(int)$effect,'remote_user_id'=>$remote,'remote_created_at'=>$created],(int)$oid);
+    if (!$trial) {
+        $s=achbotProviderStatement($connection,"UPDATE service_operations SET stage='completed',next_attempt_at=NULL WHERE id=?",'i',[$op]);$s->close();
+    }
+    $connection->commit();
     $events[]=['order',$oid];break;
+case 'extensions':
+    require $root.'/src/Finance/Routes/Extensions.php';break;
 case 'renew':
     require $root.'/src/Finance/Routes/RenewalCheckout.php';break;
 case 'discount':
@@ -152,7 +171,7 @@ def main():
                     out.extend(b.get('callback_data','') for row in json.loads(e[1])['inline_keyboard'] for b in row)
             return out
         def state(**kw):
-            s=dict(sellState='on',walletState='on',remark='digits',agencyState='on',agencyPlanDiscount='off',plandelkhahState='on',gbPrice=10,dayPrice=20,individualExistence='on')
+            s=dict(sellState='on',walletState='on',remark='digits',agencyState='on',agencyPlanDiscount='off',plandelkhahState='on',gbPrice=10,dayPrice=20,individualExistence='on',renewAccountState='on',increaseTimeState='on',increaseVolumeState='on')
             s.update(kw);sql("UPDATE setting SET value='"+json.dumps(s)+"' WHERE type='BOT_STATES'")
         sql("INSERT INTO setting(id,type,value) VALUES (1,'BOT_STATES','{}'),(2,'PAYMENT_KEYS','PRIVATE_SYNTHETIC'),(3,'MAIN_BUTTONSVisible','Public answer'),(4,'XMAIN_BUTTONSBad','PRIVATE_SYNTHETIC'),(5,'MAINXBUTTONSBad','PRIVATE_SYNTHETIC'),(6,'main_buttonsBad','PRIVATE_SYNTHETIC'),(7,'TICKETS_CATEGORY','Ticket'),(8,'tickets_category','PRIVATE_SYNTHETIC'),(9,'MAIN_BUTTONSDelete','Public second'),(10,'TICKETS_CATEGORY','Ticket second')")
         state()
@@ -324,6 +343,36 @@ def main():
         r=run('renew',callback=f'renewAccount{oid}')
         redeem(2001,r,'renew','renew','mainMenu',80)
         cases.append('actual_owned_renewal_discount_and_subscription_shortcut')
+        # Deny new commands for an actual trial even if its template or
+        # historical amount/agent flag changes. No provider call is permitted.
+        sql("INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids) SELECT 14,catid,server_id,inbound_id,'Trial fixture',days,volume,0,descr,active,date,provider_group_ids FROM server_plans WHERE id=7")
+        trial=run('seed_order',trial=True)['events'][0][1]
+        before=sql("SELECT COUNT(*) FROM pays")
+        for phase in (0,1):
+            if phase:
+                sql(f"UPDATE orders_list SET amount=100,agent_bought=1 WHERE id={trial}; UPDATE server_plans SET price=100 WHERE id=14")
+            for route,callback in [('renew',f'renewAccountAsk{trial}'),('renew',f'renewAccount{trial}'),('extensions',f'increaseADay{trial}'),('extensions',f'increaseAVolume{trial}')]:
+                r=run(route,callback=callback)
+                assert not callbacks(r),r
+                assert sql("SELECT COUNT(*) FROM pays")==before
+        sql(f"UPDATE orders_list SET amount=0,agent_bought=0 WHERE id={trial}; UPDATE server_plans SET price=0,active=0 WHERE id=14")
+        for flag,route,callback in [('renewAccountState','renew',f'renewAccount{oid}'),('increaseTimeState','extensions',f'increaseADay{oid}'),('increaseVolumeState','extensions',f'increaseAVolume{oid}'),('sellState','renew',f'renewAccount{oid}')]:
+            state(**{flag:'off'})
+            r=run(route,callback=callback)
+            assert not callbacks(r) and sql("SELECT COUNT(*) FROM pays")==before,(flag,r)
+        state()
+        r=run('renew',callback=f'renewAccount{oid}')
+        pid,h,*_=latest(2001)
+        assert 'payRenewWithWallet'+h in callbacks(r),r
+        state(renewAccountState='off')
+        before_wallet=sql("SELECT wallet FROM users WHERE userid=2001")
+        before_ops=sql("SELECT COUNT(*) FROM service_operations")
+        r=run('wallet',hash=h,mode='renew',expect_denied=True)
+        assert any(e[0]=='denied' for e in r['events']),r
+        assert sql("SELECT wallet FROM users WHERE userid=2001")==before_wallet and sql("SELECT COUNT(*) FROM service_operations")==before_ops
+        state()
+        cases.append('managed_trial_policy_and_revoked_draft_denied_before_effect')
+
 
         assert 'selectServer2_none' not in callbacks(run('shortcut',text='/buy',forced='@fixture',member=False))
         assert 'haveJoined/start buy' in callbacks(run('shortcut',text='/buy',forced='@fixture',member=False))

@@ -218,6 +218,14 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, arr
         if ($pricingOwner===null || $pricingState===null ||
             achbotAgencyQuotePolicy($pricingOwner,$pricingState,(int)$pay['plan_id'],(int)$pay['server_id'])!==$pricingPolicy)
             throw new DomainException('draft_agency_pricing_changed');
+        if ($type==='RENEW_ACCOUNT' || $addon) {
+            require_once __DIR__.'/../Purchase/OrderWrites.php';
+            $order=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=? FOR UPDATE','i',[$orderId]);
+            $kind=$type==='RENEW_ACCOUNT'?'RENEW':(str_starts_with($type,'INCREASE_DAY_')?'ADD_TIME':'ADD_VOLUME');
+            if (!$order || (int)$order['userid']!==$actor ||
+                achbotManagedServicePlan($db,$order,$kind,$pricingState,true)===null)
+                throw new DomainException('draft_managed_service_unavailable');
+        }
         require_once __DIR__.'/CheckoutAdmission.php';
         achbotCheckoutRequireSchema($db);
         achbotCheckoutSealDraftLocked($db,$draftId,$pay,$display,$states);

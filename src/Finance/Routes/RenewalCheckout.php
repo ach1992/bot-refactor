@@ -13,8 +13,14 @@ if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text
 require_once __DIR__ . '/../PaymentLifecycle.php';
 require_once __DIR__ . '/../../Purchase/AgentPricing.php';
 
-if (preg_match('/^renewAccountAsk(\d+)$/', $data, $match)) {
+if (preg_match('/\ArenewAccountAsk([1-9][0-9]{0,9})\z/D', $data, $match)) {
     $oid = (int)$match[1];
+    $order=achbotProviderRow($connection,'SELECT * FROM orders_list WHERE id=? AND userid=?','ii',[$oid,(int)$from_id]);
+    if (!$order || !achbotSupportsOrder($connection,$oid,(int)$order['fileid'],(int)$from_id) ||
+        achbotManagedServicePlan($connection,$order,'RENEW',$botState)===null) {
+        alert(achbotMessage('renewal.renewal_checkout.alert.6aa152a253'),true);
+        return;
+    }
 
     $keyboard = json_encode([
         'inline_keyboard' => [
@@ -32,7 +38,7 @@ if (preg_match('/^renewAccountAsk(\d+)$/', $data, $match)) {
 }
 
 if (
-    preg_match('/^renewAccount(\d+)$/', $data, $match) &&
+    preg_match('/\ArenewAccount([1-9][0-9]{0,9})\z/D', $data, $match) &&
     $text != \achbotMessage('legacy_buttons.cancel')
 ) {
 
@@ -65,13 +71,12 @@ if (
 	
 	$serverId = $order['server_id'];
 
+    $respd=achbotManagedServicePlan($connection,$order,'RENEW',$botState);
+    if ($respd===null) {
+        alert(achbotMessage('renewal.renewal_checkout.alert.6aa152a253'),true);
+        return;
+    }
     delMessage();
-
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
-    $stmt->bind_param("i", $fid);
-    $stmt->execute();
-    $respd = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
     $price = $respd['price'];
     $price=achbotExistingServicePrice($userInfo,$botState,$order,(int)$price);
         $hash_id = RandomString();

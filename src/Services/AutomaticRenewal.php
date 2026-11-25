@@ -76,7 +76,7 @@ function achbotServiceAutoRenewAdmit(mysqli $db,int $orderId,int $userId,array $
         }
         require_once __DIR__.'/../Finance/PaymentLifecycle.php';
         $current=achbotPayUxCurrentStatesLocked($db);
-        if ($current===null || ($current['renewAutoState']??'off')!=='on') {
+        if ($current===null || achbotManagedServicePlan($db,$o,'RENEW',$current,true,true)===null) {
             $db->rollback();return ['status'=>'ineligible'];
         }
         $u=achbotProviderRow($db,'SELECT is_agent,discount_percent FROM users WHERE id=? FOR UPDATE','i',[$owner['id']]);

@@ -460,7 +460,7 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         $groups=$snapshot['group_ids'];
         if (!$admin) {
             require_once __DIR__.'/../Purchase/OrderWrites.php';
-            if (!achbotOrderMayUsePaidPlan($db,$order,true))
+            if (achbotPaidPlanForOrder($db,$order,$newPlanId,true)===null)
                 throw new RuntimeException('physical_plan_not_eligible');
         }
         $all=achbotPhysicalActiveOrders($db,$order,true);

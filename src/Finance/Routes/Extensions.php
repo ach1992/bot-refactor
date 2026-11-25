@@ -14,7 +14,7 @@ require_once __DIR__ . '/../PaymentLifecycle.php';
 require_once __DIR__ . '/../../Purchase/AgentPricing.php';
 require_once __DIR__ . '/../../Plans/Addons.php';
 
-if(preg_match('/increaseADay(.*)/', $data, $match)){
+if(preg_match('/\AincreaseADay([1-9][0-9]{0,9})\z/D', $data, $match)){
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
@@ -26,6 +26,8 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
     }
 
     try {
+        if (achbotManagedServicePlan($connection,$orderInfo,'ADD_TIME',$botState)===null)
+            throw new DomainException('managed_service_unavailable');
         achbotAddonSchema($connection);
         $addonContext=achbotAddonContext($connection,$orderInfo);
         if (!achbotOrderAddonEligibility($connection,$orderInfo,'day',$addonContext)['eligible']) {
@@ -57,7 +59,7 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
             'inline_keyboard' => $keyboard
         ]));
 }
-if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)){
+if(preg_match('/\AselectPlanDayIncrease(?<orderId>[1-9][0-9]{0,9})_(?<dayId>[1-9][0-9]{0,9})\z/D',$data,$match)){
     $data = str_replace('selectPlanDayIncrease','',$data);
     $pid = $match['dayId'];
     $stmt = $connection->prepare("SELECT * FROM `increase_day` WHERE `id` = ?");
@@ -80,6 +82,8 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     }
 
     try {
+        if (achbotManagedServicePlan($connection,$orderInfo,'ADD_TIME',$botState)===null)
+            throw new DomainException('managed_service_unavailable');
         achbotAddonSchema($connection);
         $addonContext=achbotAddonContext($connection,$orderInfo);
         if (!achbotOrderAddonEligibility($connection,$orderInfo,'day',$addonContext)['eligible']) {
@@ -315,7 +319,7 @@ if (is_string($data) && preg_match('/^changePlan_([1-9][0-9]{0,9})$/D', $data, $
         $buttons=[];
         foreach ($plans as $plan) {
             $planId=(int)$plan['id'];
-            if (\AchBot\Subscription\AccountDetails\paidPlanForOrder($connection,$orderInfo,$planId)===null) continue;
+            if (achbotPaidPlanForOrder($connection,$orderInfo,$planId)===null) continue;
             $buttons[]=[['text'=>$plan['title'],'callback_data'=>'confirmChangePlan_'.$orderId.'_'.$planId]];
         }
         $buttons[]=[['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'mainMenu']];
@@ -347,7 +351,7 @@ if (is_string($data) && preg_match('/^confirmChangePlan_([1-9][0-9]{0,9})_([1-9]
             throw new RuntimeException('plan_actor_denied');
         if (!achbotOrderMayUsePaidPlan($connection,$orderInfo))
             throw new RuntimeException('plan_order_unavailable');
-        $plan=\AchBot\Subscription\AccountDetails\paidPlanForOrder($connection,$orderInfo,$newPlanId);
+        $plan=achbotPaidPlanForOrder($connection,$orderInfo,$newPlanId);
         if ($plan===null) throw new RuntimeException('plan_target_unavailable');
         $result=achbotPhysicalSelectPlan($connection,$orderId,$newPlanId,$actorId,$isAdmin);
         if (!$result['success']) throw new RuntimeException($result['reason']);
@@ -378,6 +382,8 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
 
 
     try {
+        if (achbotManagedServicePlan($connection,$orderInfo,'ADD_VOLUME',$botState)===null)
+            throw new DomainException('managed_service_unavailable');
         achbotAddonSchema($connection);
         $addonContext=achbotAddonContext($connection,$orderInfo);
         $eligibility=achbotOrderAddonEligibility($connection,$orderInfo,'volume',$addonContext);
@@ -441,6 +447,8 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
     }
 
     try {
+        if (achbotManagedServicePlan($connection,$orderInfo,'ADD_VOLUME',$botState)===null)
+            throw new DomainException('managed_service_unavailable');
         achbotAddonSchema($connection);
         $addonContext=achbotAddonContext($connection,$orderInfo);
         $eligibility=achbotOrderAddonEligibility($connection,$orderInfo,'volume',$addonContext);

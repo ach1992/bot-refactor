@@ -225,6 +225,10 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
         if (!$o || (int)$o['userid']!==$uid || (int)$o['status']!==1 ||
             (int)$o['server_id']!==$sid || (int)$o['fileid']!==$pid)
             throw new DomainException('checkout_order_changed');
+        $kind=$add?($parts[1]==='DAY'?'ADD_TIME':'ADD_VOLUME'):'RENEW';
+        $current=achbotPayUxCurrentStatesLocked($db);
+        if ($current===null || achbotManagedServicePlan($db,$o,$kind,$current,true)===null)
+            throw new DomainException('checkout_managed_service_unavailable');
         $q['order_id']=$oid;$q['variant']='managed';$q['remark']=$o['remark'];$q['uuid']=(string)$o['uuid'];
         if ($add) {
             if (!achbotAddonPayLocal($db,$pay,$o)) throw new DomainException('checkout_addon_changed');

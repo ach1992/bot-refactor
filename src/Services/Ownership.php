@@ -15,9 +15,9 @@ function achbotServiceOperationsPresent(mysqli $db): bool {
     return true;
 }
 
-/** Original purchased account provenance. The caller already holds the
- * relevant order and physical account locks; no balance or Native I/O. */
-function achbotServiceOriginalBuyLocked(mysqli $db,array $effect): array {
+/** Original purchased account provenance; locked callers hold the relevant
+ * order and physical account locks. No balance or Native I/O. */
+function achbotServiceOriginalBuy(mysqli $db,array $effect,bool $lock): array {
     $ref=$effect['source_ref']??null;
     if (($effect['source_kind']??null)!=='service_operation' ||
         !is_string($ref) || !preg_match('/^[1-9][0-9]*$/D',$ref) ||
@@ -25,7 +25,7 @@ function achbotServiceOriginalBuyLocked(mysqli $db,array $effect): array {
         ($effect['effect_kind']??null)!=='create' || $effect['pay_row_id']!==null ||
         (int)$effect['reserved_count']!==0)
         throw new RuntimeException('service_original_buy_source_invalid');
-    $op=achbotProviderRow($db,'SELECT * FROM service_operations WHERE id=? FOR UPDATE','i',[(int)$ref]);
+    $op=achbotProviderRow($db,'SELECT * FROM service_operations WHERE id=?'.($lock?' FOR UPDATE':''),'i',[(int)$ref]);
     if (!$op || $op['kind']!=='BUY' || !hash_equals($op['quote_sha256'],hash('sha256',$op['quote_payload'])))
         throw new RuntimeException('service_original_buy_missing');
     $quote=json_decode($op['quote_payload'],true,64,JSON_THROW_ON_ERROR);
@@ -93,7 +93,7 @@ function achbotServiceSubjectWorkSettledLocked(mysqli $db,array $peers,bool $ret
         $e=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=? FOR UPDATE','i',[$id]);
         if (!$e) throw new RuntimeException('service_ownership_anchor_missing');
         if ($e['source_kind']==='service_operation' &&
-            achbotServiceOriginalBuyLocked($db,$e)['stage']!=='completed') return false;
+            achbotServiceOriginalBuy($db,$e,true)['stage']!=='completed') return false;
     }
     if ($retire) {
         $s=achbotProviderStatement($db,"UPDATE service_operations FORCE INDEX(idx_service_subject_stage)
@@ -166,7 +166,7 @@ function achbotServicePlanChangePendingLocked(mysqli $db,string $lock): bool {
  * Explicit UI deletion can restore that slot; Cron/local-only policy does
  * not. No capacity is transferred or invented on a later alias. */
 function achbotServiceBuyCapacityServerLocked(mysqli $db,array $order,array $effect,bool $finalizing): ?int {
-    $op=achbotServiceOriginalBuyLocked($db,$effect);
+    $op=achbotServiceOriginalBuy($db,$effect,true);
     if ($op['stage']!=='completed' || $effect['state']!=='local_recorded' ||
         (int)$effect['order_id']!==(int)$order['id'] ||
         (int)$order['provider_effect_id']!==(int)$effect['id'] ||

@@ -3016,8 +3016,9 @@ if (preg_match('/^(toggleAutoRenew|adminToggleAutoRenew)(\d+)$/', $data, $match)
         $new=$current==='on'?'off':'on';
         // Disabling consent remains possible even if a former product is no
         // longer available. Enabling requires real origin and a valid paid plan.
-        if ($new==='on' && (($botState['renewAutoState']??'off')!=='on' ||
-            \AchBot\Subscription\AccountDetails\selectedPaidPlan($connection,$order,true)===null ||
+        require_once __DIR__.'/src/Finance/PaymentLifecycle.php';
+        if ($new==='on' && (!achbotManagedServicePolicyAllows('RENEW',achbotPayUxCurrentStatesLocked($connection)??[],true) ||
+            achbotSelectedPaidPlan($connection,$order,true)===null ||
             !achbotSupportsOrder($connection,$orderId,(int)$order['fileid'],(int)$order['userid'],true))) {
             $connection->rollback();$begun=false;
             alert(\achbotMessage('admin_settings.config.get_order_detail_keys.alert.8338c921ca'),true);return;
