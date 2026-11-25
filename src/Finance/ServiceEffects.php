@@ -291,16 +291,6 @@ function achbotCreateNonPaymentAccount(
         $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,$locked);
         $group=$targetIdentity['group'];$endpoint=$targetIdentity['endpoint'];
         $credentials=$targetIdentity['credentials'];$targetKey=$targetIdentity['key'];
-        $operation=bin2hex(random_bytes(16));
-        $now=time();
-        if ($days>achbotServiceDaysMax($now)) throw new RuntimeException('nonpaid_effect_invalid_request');
-        $expiry=$now+86400*$days;
-        $bytes=$volume*1073741824;
-        $fingerprint=hash('sha256',json_encode([
-            $kind,$sourceRef,$actor,$ordinal,$count,$planId,$serverId,
-            $group,$endpoint,$remark,$expiry,$bytes
-        ],JSON_THROW_ON_ERROR));
-
         $existing=$db->prepare("SELECT ordinal,state,reserved_count,
             plan_id,target_server_id
             FROM service_effects WHERE source_kind=? AND source_ref=?
@@ -311,6 +301,19 @@ function achbotCreateNonPaymentAccount(
         $rows=$existing->get_result()->fetch_all(MYSQLI_ASSOC);$existing->close();
         if (count($rows)!==$ordinal-1)
             throw new RuntimeException('nonpaid_effect_already_reserved_or_gap');
+        $mode=(string)($p['naming_mode']??'manual');
+        $remark=achbotAvailableAccountRemarkLocked($db,$targetKey,$remark,
+            $kind==='free_trial' && $mode==='manual',$kind==='admin_bulk' && $mode==='manual');
+        $operation=bin2hex(random_bytes(16));
+        $now=time();
+        if ($days>achbotServiceDaysMax($now)) throw new RuntimeException('nonpaid_effect_invalid_request');
+        $expiry=$now+86400*$days;
+        $bytes=$volume*1073741824;
+        $fingerprint=hash('sha256',json_encode([
+            $kind,$sourceRef,$actor,$ordinal,$count,$planId,$serverId,
+            $group,$endpoint,$remark,$expiry,$bytes
+        ],JSON_THROW_ON_ERROR));
+
         $reserved=0;
         if ($ordinal===1) {
             $reserve=$db->prepare('UPDATE server_info SET ucount=ucount-?

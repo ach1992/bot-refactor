@@ -70,6 +70,8 @@ function achbotPasarGuardServiceTargetLocked(mysqli $db,array $q,?array $o,?arra
                 foreach (array_unique([1,$q['quantity']]) as $ordinal)
                     achbotStyledAccountRemark($q['remark'],'pasarguard','service:quote-check',
                         $ordinal,$q['quantity'],$q['naming_mode'],$q['explicit_name']);
+                if ($q['explicit_name'] && $q['quantity']===1)
+                    achbotAvailableAccountRemarkLocked($db,$target['physical'],$q['remark'],true);
             } catch (InvalidArgumentException $e) {
                 throw new DomainException('service_account_name_invalid',0,$e);
             }
@@ -81,7 +83,8 @@ function achbotPasarGuardServiceTargetLocked(mysqli $db,array $q,?array $o,?arra
             'provider_connection_ambiguous','provider_groups_invalid',
             'pg_order_identity_changed','pg_account_not_verified','pg_account_panel_changed',
             'provider_order_identity_invalid','provider_order_origin_invalid',
-            'provider_order_origin_identity_invalid','provider_account_provenance_invalid'],true))
+            'provider_order_origin_identity_invalid','provider_account_provenance_invalid',
+            'service_account_name_conflict'],true))
             throw $invalid;
         throw new DomainException($reason,0,$invalid);
     }

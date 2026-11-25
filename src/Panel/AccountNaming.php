@@ -18,9 +18,9 @@ function achbotEffectValidUsername(string $username,?string $provider=null): boo
 
 /**
  * Preserve the configured account-name shape (server-user-digits or
- * server-digits), not an opaque provider-specific alias. Bulk digits are
- * source/ordinal-stable so a fresh random buildRemark() result cannot alter
- * a pending operation. The 007 journal, not this formatter, is replay truth.
+ * server-digits), not an opaque provider-specific alias. Bulk preferred digits are
+ * source/ordinal-stable. The committed effect journal, not this formatter,
+ * is replay truth.
  *
  * For long generated names only the server prefix is shortened to fit
  * the Native username limit. Explicit single names stay
@@ -82,11 +82,56 @@ function achbotStyledAccountRemark(string $base,string $provider,string $source,
     return $name;
 }
 
-/** Five visible digits; adjacent lines of the same source cannot collide. */
+/** Five visible preferred digits; the physical name allocator fences other claims. */
 function achbotAccountNumericToken(string $source,int $ordinal): string {
     // One source-derived starting point, then sequential line offsets.
-    // The existing unique Native-target/effect index still fences collisions
-    // with other sources before any remote CREATE.
+    // Allocation resolves collisions before the original effect is committed.
     $start=(int)(hexdec(substr(hash('sha256',$source),0,11))%90000);
     return (string)(10000+(($start+$ordinal)%90000));
+}
+
+/**
+ * Allocate a locally available name ONLY for a new, not-yet-journaled CREATE.
+ * Keep the approved five-digit name shape and exact explicitly chosen single
+ * names. A committed effect is never renamed, even after uncertain HTTP.
+ * The physical-target unique index remains the atomic concurrency fence.
+ */
+function achbotAvailableAccountRemarkLocked(mysqli $db,string $targetKey,string $preferred,
+    bool $explicitSingle=false,bool $manualBulk=false): string {
+    require_once __DIR__.'/ProviderStorage.php';
+    if ((int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==1)
+        throw new LogicException('service_account_name_requires_transaction');
+    $used=achbotProviderRow($db,'SELECT id FROM service_effects
+        WHERE target_key=? AND active_username=? FOR UPDATE','ss',[$targetKey,$preferred]);
+    if ($used===null) return $preferred;
+    if ($explicitSingle) throw new RuntimeException('service_account_name_conflict');
+    $pattern=$manualBulk
+        ? '/\A(.+_)([1-9][0-9]{4})(_[1-9][0-9]*)\z/D'
+        : '/\A(.+-)([1-9][0-9]{4})()\z/D';
+    if (preg_match($pattern,$preferred,$parts)!==1)
+        throw new RuntimeException('service_account_name_conflict');
+    [$unused,$prefix,$digits,$suffix]=$parts;
+    // On collision, read the occupied names in this actual finite namespace
+    // once (not up to 90,000 separate SQL round trips). Current locking read
+    // avoids a stale snapshot after waiting for another reservation.
+    $s=achbotProviderStatement($db,'SELECT active_username FROM service_effects
+        WHERE target_key=? AND active_username BETWEEN ? AND ? FOR UPDATE',
+        'sss',[$targetKey,$prefix.'10000'.$suffix,$prefix.'99999'.$suffix]);
+    $occupied=[];
+    try {
+        $r=$s->get_result();
+        while ($row=$r->fetch_assoc()) {
+            $name=$row['active_username'];
+            if (strlen($name)===strlen($preferred) && str_starts_with($name,$prefix) &&
+                str_ends_with($name,$suffix)) {
+                $token=substr($name,strlen($prefix),5);
+                if (preg_match('/\A[1-9][0-9]{4}\z/D',$token)===1) $occupied[(int)$token]=true;
+            }
+        }
+    } finally {$s->close();}
+    for ($offset=1;$offset<90000;$offset++) {
+        $token=10000+(((int)$digits-10000+$offset)%90000);
+        if (!isset($occupied[$token])) return $prefix.$token.$suffix;
+    }
+    throw new RuntimeException('service_account_name_space_exhausted');
 }

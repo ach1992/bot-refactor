@@ -42,6 +42,7 @@ if (in_array(($spec['route']??'trial'),['trial','attention'],true)) {
     $update->message=$message;
 }
 $botState=['remark'=>(string)($spec['remark_mode']??'digits'),'rewardChannel'=>'@fixtureReport','testAccount'=>'on'];
+if (isset($spec['seed'])) mt_srand((int)$spec['seed']);
 $buttonValues=['cancel'=>'cancel','start_bot'=>'start','back_to_main'=>'back'];
 $mainValues=['sending_config_to_user'=>'Working',
  'send_only_number'=>'Enter integer','can_create_specific_account'=>'Limit AMOUNT',
@@ -566,6 +567,40 @@ def check():
         assert len(set(fallback_names))==2
         assert capacity()==8
         cases.append('admin_bulk_empty_manual_description_uses_normal_single_account_shape')
+
+        reset()
+        seen={}
+        for update in range(990000,1080001):
+            token=int(hashlib.sha256(f'bulk:9001:{update}'.encode()).hexdigest()[:11],16)%90000
+            if token in seen:
+                pair=(seen[token],update)
+                break
+            seen[token]=update
+        else:raise AssertionError('fixture collision not found')
+        for remark_mode in ('digits','manual'):
+            reset()
+            sql(work,env,"UPDATE server_plans SET descr='collision_manual' WHERE id=7")
+            names=[]
+            for update in pair:
+                sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001")
+                events=php(work,env,driver,route='bulk',actor=9001,text='1',remark_mode=remark_mode,update_id=update)
+                posts=[e['remark'] for e in events if e['name']=='POST']
+                assert len(posts)==1 and len([e for e in events if e['name']=='DELIVER'])==1,events
+                names.extend(posts)
+            assert len(set(names))==2 and capacity()==8,names
+            assert all(re.fullmatch(r'buyfixture-[1-9][0-9]{4}' if remark_mode=='digits' else r'collision_manual_[1-9][0-9]{4}_1',name) for name in names),names
+            assert sql(work,env,"SELECT COUNT(*) FROM service_effects WHERE source_kind='admin_bulk' AND state='local_recorded'")=='2'
+        cases.append('actual_nonpaid_bulk_physical_name_collision_resolved_before_dispatch')
+
+        reset()
+        names=[]
+        for update in (990001,990002):
+            events=php(work,env,driver,route='trial',actor=9001,update_id=update,seed=20261125)
+            posts=[e['remark'] for e in events if e['name']=='POST']
+            assert len(posts)==1 and len([e for e in events if e['name']=='DELIVER'])==1,events
+            names.extend(posts)
+        assert len(set(names))==2 and capacity()==8 and all(re.fullmatch(r'buyfixture-[1-9][0-9]{4}',v) for v in names),names
+        cases.append('actual_trial_generated_name_collision_resolved_before_dispatch')
 
         reset()
         # Preserve the current provider limit while keeping ordinal uniqueness.

@@ -35,7 +35,7 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[],bool
     $name=achbotServiceExecutionLock($db,$id);
     $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
     if ((int)($held['acquired']??0)!==1) return ['status'=>'busy'];
-    $owner=null;$physicalLock=null;
+    $owner=null;$physicalLock=null;$phase='admission';
     try {
         $locator=achbotProviderRow($db,'SELECT userid FROM service_operations WHERE id=?','i',[$id]);
         if (!$locator) return ['status'=>'missing'];
@@ -61,6 +61,7 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[],bool
         $finalizing=$op['stage']==='applied';
         $def=$adapter[$finalizing?'service_finalization':'service_execution'][$op['kind']]??null;
         if (!$def) throw new DomainException($finalizing?'service_finalizer_unavailable':'service_executor_unavailable');
+        $phase='prepare';
         $work=($def['prepare'])($db,$op,$quote);
         $token=bin2hex(random_bytes(16));
         $claimStage=$finalizing?'applied':'dispatching';
@@ -84,7 +85,9 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[],bool
         if (!achbotServiceExecutionOwnsLock($db,$name) ||
             ($physicalLock!==null && !achbotServiceExecutionOwnsLock($db,$physicalLock)))
             throw new RuntimeException('service_worker_ownership_lost');
+        $phase='perform';
         $result=$finalizing?($def['perform'])($db,$op,$quote,$work,$presentation):($def['perform'])($db,$op,$quote,$work);
+        $phase='apply';
         if (!$db->begin_transaction()) throw new RuntimeException('service_worker_result_begin');
         [$current,$original]=achbotServiceReadLocked($db,$owner,$id);
         if (!achbotServiceExecutionOwnsLock($db,$name) ||
@@ -130,7 +133,7 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[],bool
             }
         } catch (Throwable $ignored) {}
         achbotDiagnosticEvent('achbot.service.execution',[
-            'service_operation_id'=>$id,'reason'=>$reason,'class'=>get_class($e)],'error');
+            'service_operation_id'=>$id,'reason'=>$reason,'phase'=>$phase]+achbotDiagnosticLocalFailure($e),'error');
         return ['status'=>'pending','reason'=>$reason];
     } finally {
         if ($physicalLock!==null) {

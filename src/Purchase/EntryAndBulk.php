@@ -257,7 +257,7 @@ if (
             $connection,'admin_bulk',$bulkSource,$uid,$i,$count,[
                 'user_id'=>$uid,'server_type'=>$serverType,
                 'server_id'=>$server_id,'inbound_id'=>$inbound_id,
-                'plan_id'=>$fidFromStep,'remark'=>$remark,'volume'=>$volume,
+                'plan_id'=>$fidFromStep,'remark'=>$remark,'naming_mode'=>$remarkMode,'volume'=>$volume,
                 'days'=>$days
             ]
         );

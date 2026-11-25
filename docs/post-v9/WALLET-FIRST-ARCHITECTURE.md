@@ -232,9 +232,11 @@ those paths. No new arbitrary caps or expiry.
 On cutover, quiesce all old writers; establish one opening per existing user
 including negative/zero; reconcile count and per-user sum (not merely total).
 Never replay historical credits/debits to build balances. New users start at
-zero. Retain original invoices and audit records. An operation that was already
-debited is imported funded with its original debit evidence; opening balance
-already includes it, so no second debit and no fake credit.
+zero. Retain original invoices and audit records. Reconcile already-debited
+historical operations separately during the approved manual transfer; preserve
+their debit evidence and account for it in the reconciled opening balance.
+Do not import them as runnable Wallet-first operations, debit again or create
+a fake credit.
 
 ## 4. Service operations and data model
 
@@ -312,7 +314,13 @@ valid not-found, malformed response, rate limit and connection failure.
 Do not treat 404/409 indiscriminately as safe retry.
 
 **BUY:** reserve capacity exactly once, persist original naming/username,
-ordinal and marker before POST. Use authenticated GET by exact username/identity;
+ordinal and marker before POST. Before creating a new effect, resolve a local
+generated-name collision within the existing five-digit naming shape on the
+same physical target; explicit single names are never changed. Paid BUY and
+nonpayment creation share the allocator. Once reserved, the exact name and
+marker are immutable. Exhaustion or an explicit-name conflict is classified;
+a foreign remote identity is not a reason to allocate another name.
+Use authenticated GET by exact username/identity;
 adopt only matching original account incarnation and entitlement. For
 PasarGuard the reviewed upstream has unique username, by-username and by-id
 GET, and note marker; same-name original POST and 409->GET can converge under

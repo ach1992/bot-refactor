@@ -36,10 +36,23 @@ function achbotDiagnosticLocalFailure(Throwable $error): array {
     $context=['class'=>get_class($error),'reason'=>'internal_exception'];
     if ($error instanceof mysqli_sql_exception) {
         $context['reason']='internal_database_exception';
-        $context['sql_errno']=(int)$error->getCode();
     } elseif (($error instanceof RuntimeException || $error instanceof DomainException) &&
         preg_match('/\A(?:checkout|draft|addon|service|provider|wallet|manual|payment|pg)_[a-z0-9_]{2,88}\z/D',$error->getMessage())===1) {
         $context['reason']=$error->getMessage();
+    }
+    for ($cause=$error;$cause!==null;$cause=$cause->getPrevious()) {
+        if ($cause instanceof AchbotProviderStorageException) {
+            if ($cause->sqlErrno>0) {
+                $context['sql_errno']=$cause->sqlErrno;
+                $context['sql_state']=$cause->sqlState;
+            }
+            break;
+        }
+        if ($cause instanceof mysqli_sql_exception) {
+            $context['sql_errno']=(int)$cause->getCode();
+            $context['sql_state']=$cause->getSqlState();
+            break;
+        }
     }
     return $context;
 }
@@ -71,6 +84,8 @@ function achbotDiagnosticEvent(string $name,array $context=[],string $level='inf
             'http_reason','action','mode','upstream_request_id'];
         foreach ($context as $key=>$value) {
             if (in_array($key,$numeric,true) && is_int($value) && $value>=0)
+                $fields[$key]=$value;
+            elseif ($key==='sql_state' && is_string($value) && preg_match('/\A[A-Z0-9]{5}\z/D',$value)===1)
                 $fields[$key]=$value;
             elseif ($key==='operational_ref' && is_string($value) &&
                 preg_match('/\A[a-z][a-z0-9_-]*:[A-Za-z0-9:_-]+\z/D',$value)===1 && strlen($value)<=128)

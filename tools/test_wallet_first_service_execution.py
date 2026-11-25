@@ -10,6 +10,7 @@ import argparse
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 import threading
@@ -446,6 +447,7 @@ def main():
     focus.add_argument('--referral-agent-only',action='store_true',help='Run focused agent purchase referral cases')
     focus.add_argument('--bulk-report-only',action='store_true',help='Run real large purchase report continuation proof')
     focus.add_argument('--zero-commercial-only',action='store_true',help='Run zero-price commercial execution proof')
+    focus.add_argument('--name-collision-only',action='store_true',help='Run physical generated-name collision proof')
     args=ap.parse_args()
     cases=[]
     with owned.owned_database(ROOT/'database/current-schema.sql') as (work,env):
@@ -644,6 +646,7 @@ def main():
                        (10,1,2,0,'Fixture PG group change',30,2,100,'description',1,'fixture','[1]');""")
             sql('UPDATE users SET wallet=50000 WHERE userid=9002')
             driver=work/'execution.php';driver.write_text(PHP)
+            last_diagnostics=[]
             def php(mysqli_mode,op,**kw):
                 p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=curl','-d','extension=gd',
                     '-d','allow_url_fopen=0','-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
@@ -662,6 +665,7 @@ def main():
                         diagnostics.append(json.loads(line[len('[AChBot] '):]))
                     else:
                         assert line.startswith(('achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_','achbot_plan_correction_')) or (op=='telegram_wallet' and line.startswith('achbot_admin_')) or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
+                last_diagnostics[:]=diagnostics
                 if 'expect_diagnostic' in kw:
                     expected=kw['expect_diagnostic']
                     assert any(all(item.get(k)==v for k,v in expected.items()) for item in diagnostics),(expected,diagnostics)
@@ -678,7 +682,7 @@ def main():
                     remark=mode+'-'+ref+'-12345',uuid='',naming_mode='digits',explicit_name=False,policy=policy or {}))
             def step(mode,id,status,reason=None):
                 r=php(mode,'step',id=id)
-                assert r['status']==status and (reason is None or r.get('reason')==reason),(id,r,status,reason)
+                assert r['status']==status and (reason is None or r.get('reason')==reason),(mode,id,r,status,reason,last_diagnostics,sql(f"SELECT stage,kind FROM service_operations WHERE id={id}"))
                 return r
             def retry(id):
                 sql(f'UPDATE service_operations SET next_attempt_at=NOW(6) WHERE id={id}')
@@ -1084,7 +1088,7 @@ def main():
                 assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={pid}")=='reserved'
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_historical_prepaid_claim_no_adoption_or_new_effect')
-            for mode in (() if args.resolution_only or args.referral_agent_only or args.plan_recovery_only or args.bulk_report_only or args.zero_commercial_only else ('strict','off')):
+            for mode in (() if args.resolution_only or args.referral_agent_only or args.plan_recovery_only or args.bulk_report_only or args.zero_commercial_only or args.name_collision_only else ('strict','off')):
                 # Isolate each test mode's scheduler from previously deferred
                 # conflict fixtures; no terminal evidence is changed.
                 sql("UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE stage IN ('funded','prepared','dispatching','applied')")
@@ -1109,6 +1113,7 @@ def main():
                 sql("CREATE TRIGGER fixture_delivery_fail BEFORE INSERT ON payment_delivery_intents FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture rollback'")
                 try:
                     step(mode,id,'pending','provider_storage_unavailable')
+                    assert any(d.get('sql_errno')==1644 and d.get('sql_state')=='45000' and d.get('phase')=='apply' for d in last_diagnostics),last_diagnostics
                     assert sql(f"SELECT COUNT(*) FROM service_effects WHERE source_kind='service_operation' AND source_ref='{id}' AND order_id IS NOT NULL")=='0'
                     assert sql(f"SELECT COUNT(*) FROM payment_delivery_intents WHERE service_operation_id={id}")=='0'
                 finally:sql('DROP TRIGGER fixture_delivery_fail')
@@ -2444,7 +2449,7 @@ DELIMITER ;
                 agent_referral_cases(mode)
 
                 assert not faults and not errors,(faults,errors)
-            if not (args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.bulk_report_only):
+            if not (args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.bulk_report_only or args.name_collision_only):
                 # Original zero-price commercial checkout, through actual
                 # reservation, Native execution, order, delivery and reports.
                 for mode in ('strict','off'):
@@ -2630,11 +2635,11 @@ DELIMITER ;
                             step(mode,op,'applied')
                             step(mode,op,'completed' if j==quantity-1 else 'progressed')
                         assert int(sql(f"SELECT wallet FROM users WHERE userid={actor}"))==before_wallet-sum(expected)
-                        rows=sql(f"SELECT o.id,o.amount FROM orders_list o JOIN service_effects e ON e.order_id=o.id WHERE e.source_kind='service_operation' AND e.source_ref='{op}' ORDER BY e.ordinal").splitlines()
-                        assert [int(row.split('\t')[1]) for row in rows]==expected,rows
-                        for row in rows:
+                        allocated_rows=sql(f"SELECT o.id,o.amount FROM orders_list o JOIN service_effects e ON e.order_id=o.id WHERE e.source_kind='service_operation' AND e.source_ref='{op}' ORDER BY e.ordinal").splitlines()
+                        assert [int(row.split('\t')[1]) for row in allocated_rows]==expected,allocated_rows
+                        for row in allocated_rows:
                             assert php(mode,'commercial_plan',order=int(row.split('\t')[0]))==dict(origin=True,choose=True,paid=True)
-                        if quantity==1: discounted_order=int(rows[0].split('\t')[0])
+                        if quantity==1: discounted_order=int(allocated_rows[0].split('\t')[0])
                     cases.append(mode+'_discounted_and_zero_allocated_bulk_commercial_origin')
                     # A draft is not an issued payment. Revoking any manual
                     # operation policy before method admission must not debit.
@@ -2717,7 +2722,67 @@ DELIMITER ;
 
                     assert not faults and not errors,(faults,errors)
                 sql("UPDATE users SET is_agent=0,discount_percent=NULL WHERE userid=9002")
-            if not (args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.zero_commercial_only):
+            if not (args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.bulk_report_only or args.zero_commercial_only):
+                # Two independent claims on the same physical panel must not
+                # strand a valid generated-name purchase. Cover single,
+                # bulk, explicit-name refusal and uncertain-write replay.
+                for mode in ('strict','off'):
+                    sql("UPDATE users SET wallet=50000 WHERE userid=1001; UPDATE server_info SET ucount=100,state=1,active=1 WHERE id IN (2,3)")
+                    def named(ref,name,quantity=1,explicit=False,server=2,plan=7,owner=1001,**kw):
+                        return php(mode,'issue',owner=owner,ref=mode+'-'+ref,**kw,quote=dict(kind='BUY',variant='standard',
+                            price=100,server_id=server,plan_id=plan,order_id=0,quantity=quantity,days=30,volume=2,
+                            remark=name,uuid='',naming_mode='manual' if explicit else 'digits',
+                            explicit_name=explicit,policy={}))
+                    base=mode+'-collision-'
+                    first=named('collision-original',base+'99999')
+                    exact=named('collision-explicit-late',base+'99999',explicit=True)
+                    unfunded=named('collision-explicit-unfunded',base+'99999',explicit=True)
+                    fund(mode,first);fund(mode,exact)
+                    step(mode,first,'applied');step(mode,first,'completed')
+                    before=finance();n=len(requests)
+                    assert php(mode,'fund',id=unfunded)=='request_invalidated'
+                    assert sql(f"SELECT failure_code FROM service_operations WHERE id={unfunded}")=='service_account_name_conflict'
+                    assert named('collision-explicit-known',base+'99999',explicit=True,expect_error='service_account_name_conflict')
+                    assert finance()==before and len(requests)==n and not rows(unfunded)
+                    second=named('collision-alias',base+'99999',server=3,plan=9)
+                    fund(mode,second);before=finance();n=posts()
+                    faults.append('lost_response');step(mode,second,'pending','pg_vendor_unavailable')
+                    reserved=rows(second)[0].split('\t')[:5]
+                    assert reserved[2]==base+'10000' and posts()==n+1,reserved
+                    retry(second);step(mode,second,'applied');step(mode,second,'completed')
+                    assert rows(second)[0].split('\t')[:5]==reserved and posts()==n+1 and finance()==before
+                    before=finance();n=len(requests)
+                    step(mode,exact,'pending','service_account_name_conflict')
+                    assert not rows(exact) and len(requests)==n and finance()==before
+                    sql(f"UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE id={exact}")
+                    bulk=named('collision-bulk',base+'bulk-12345',quantity=2)
+                    token=10000+((int(hashlib.sha256(f'service:{bulk}'.encode()).hexdigest()[:11],16)+1)%90000)
+                    occupied=named('collision-bulk-occupant',base+'bulk-'+str(token))
+                    fund(mode,occupied);step(mode,occupied,'applied');step(mode,occupied,'completed')
+                    fund(mode,bulk);before=finance();n=posts()
+                    for stage in ('applied','progressed','applied','completed'):step(mode,bulk,stage)
+                    names=[r.split('\t')[2] for r in rows(bulk)]
+                    assert len(set(names))==2 and base+'bulk-'+str(token) not in names and all(re.fullmatch(re.escape(base)+r'bulk-[1-9][0-9]{4}',v) for v in names),names
+                    assert posts()==n+2 and finance()==before and not faults and not errors
+                    # Separate users and logical aliases compete for the
+                    # same physical username. A transient SQL deadlock may
+                    # defer one claim; it never authorizes a second debit.
+                    race_name=base+'race-12345'
+                    other=named('collision-race-other',race_name,server=3,plan=9,owner=9002)
+                    own=named('collision-race-own',race_name)
+                    assert php(mode,'fund',id=other,owner=9002)=='funded'
+                    fund(mode,own);before=finance();n=posts()
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        results=list(pool.map(lambda oid:php(mode,'step',id=oid),(own,other)))
+                    for oid,result in zip((own,other),results):
+                        if result['status']=='pending':
+                            assert result['reason']=='provider_storage_unavailable',result
+                            retry(oid);step(mode,oid,'applied')
+                        else:assert result['status']=='applied',result
+                        step(mode,oid,'completed')
+                    assert posts()==n+2 and finance()==before and len({rows(oid)[0].split('\t')[2] for oid in (own,other)})==2
+                    cases.append(mode+'_physical_generated_name_collision_before_dispatch_only')
+            if not (args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.zero_commercial_only or args.name_collision_only):
                 # Actual large BUY: every Native name and original order ID
                 # is present in exactly one bounded report per recipient.
                 mode='strict'

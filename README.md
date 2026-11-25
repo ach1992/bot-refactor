@@ -2,11 +2,11 @@
 
 **Current stable release:** [Latest stable](https://github.com/ach1992/bot-refactor/releases/latest) · [First Stable baseline v0.10.0](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0) · [All releases](https://github.com/ach1992/bot-refactor/releases)
 
-AChBot is a Persian-language PHP Telegram bot for VPN subscriptions, native **Marzban** and **PasarGuard** account management, wallets and payments, support, administrator operations and scheduled service maintenance. This is the **first supported stable source baseline**; compatibility with superseded bot implementation versions is no longer a development requirement. Existing customer subscription URLs, Native credentials, active accounts, financial records and recovery safeguards **must remain valid**.
+AChBot is a Persian-language PHP Telegram bot for VPN subscriptions, Native account management, wallets and payments, support, administrator operations and scheduled service maintenance. This Wallet-first source supports **PasarGuard**; earlier published Stable releases also supported Marzban. The v0.10.0 release is the **first supported stable source baseline**; compatibility with superseded bot implementation versions is no longer a development requirement. Existing customer subscription URLs, Native credentials, active accounts, financial records and recovery safeguards **must remain valid**.
 
 ## What is supported
 
-- Provider-aware purchases, subscription views, renewals, native plan changes, extensions, imports and multi-account orders. PasarGuard plan access uses `provider_group_ids`; Marzban retains its inbound/proxy metadata.
+- Provider-aware purchases, subscription views, renewals, native plan changes, extensions, imports and multi-account orders. PasarGuard plan access uses `provider_group_ids`; the Wallet-first runtime has no Marzban execution path.
 - Four staff levels (Owner, Manager, Operator, Support), customer support, agent services, plan/server management and per-instance Telegram text.
 - Wallets, hosted gateways and separately configured manual bank, gift-card and crypto payment methods. Optional authenticated bank-SMS and gift-code evidence; human review and durable once-only financial effects are preserved.
 - Explicit administrator-defined physical Panel Groups, per-server presentation policies and configurable subscription/QR/auxiliary-link display.
@@ -44,7 +44,7 @@ Each bot has its own database, webhook, private configuration and Cron job. The 
 
 ## Documentation
 
-- [Wallet-first architecture (approved target; not current runtime)](docs/post-v9/WALLET-FIRST-ARCHITECTURE.md)
+- [Wallet-first architecture (current source candidate; not yet released or installed)](docs/post-v9/WALLET-FIRST-ARCHITECTURE.md)
 - [Product contract](docs/PROJECT-SPEC.md) · [Stable-baseline and release boundary](docs/post-v9/STABLE-BASELINE.md)
 - [Fresh installation](docs/post-v9/FRESH-INSTALL.md) · [Installed-runtime diagnostics](docs/post-v9/INSTALL-DIAGNOSTICS.md)
 - [Provider storage and account identity](docs/post-v9/SHARED-PROVIDER-STORAGE.md) · [Service/plan changes](docs/post-v9/SHARED-SERVICE-TRANSFER.md)

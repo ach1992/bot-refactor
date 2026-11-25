@@ -3,24 +3,51 @@
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__.'/PasarGuard.php';
 
-/** SQL errors are private reason codes, never database text or parameter values. */
-function achbotProviderStatement(mysqli $db,string $sql,string $types='',array $values=[]): mysqli_stmt {
+/** Preserve SQL classification in both MySQLi reporting modes without
+ * logging the SQL, bound values or credentials. */
+final class AchbotProviderStorageException extends RuntimeException {
+    public function __construct(public readonly int $sqlErrno,public readonly string $sqlState,?Throwable $previous=null) {
+        parent::__construct('provider_storage_unavailable',0,$previous);
+    }
+}
+function achbotProviderStorageFailure(mysqli $db,?mysqli_stmt $s,?Throwable $e=null): AchbotProviderStorageException {
+    if ($e instanceof mysqli_sql_exception)
+        return new AchbotProviderStorageException((int)$e->getCode(),$e->getSqlState(),$e);
+    if ($e!==null) return new AchbotProviderStorageException(0,'00000',$e);
     try {
-        $s=$db->prepare($sql);
-        if (!$s || ($types!=='' && !$s->bind_param($types,...$values)) || !$s->execute())
-            throw new RuntimeException('provider_storage_unavailable');
+        $errno=$s?->errno?:$db->errno;
+        $state=$s?->errno?$s->sqlstate:$db->sqlstate;
+        return new AchbotProviderStorageException($errno,$state);
+    } catch (Throwable $cause) {
+        return new AchbotProviderStorageException(0,'00000',$cause);
+    }
+}
+function achbotProviderStatement(mysqli $db,string $sql,string $types='',array $values=[]): mysqli_stmt {
+    $s=null;
+    try {
+        $prepared=$db->prepare($sql);
+        if (!$prepared) throw achbotProviderStorageFailure($db,null);
+        $s=$prepared;
+        if (($types!=='' && !$s->bind_param($types,...$values)) || !$s->execute())
+            throw achbotProviderStorageFailure($db,$s);
         return $s;
     } catch (Throwable $e) {
-        // Keep SQLSTATE/errno available to the owning operation without
-        // exposing SQL text, bound values or provider credentials in logs.
-        throw new RuntimeException('provider_storage_unavailable',0,$e);
+        $failure=$e instanceof AchbotProviderStorageException?$e:achbotProviderStorageFailure($db,$s,$e);
+        if ($s!==null) {
+            try {$s->close();} catch (Throwable $ignored) {}
+        }
+        throw $failure;
     }
 }
 function achbotProviderRow(mysqli $db,string $sql,string $types='',array $values=[]): ?array {
     $s=achbotProviderStatement($db,$sql,$types,$values);
-    try { return $s->get_result()->fetch_assoc(); }
-    catch (Throwable $e) { throw new RuntimeException('provider_storage_unavailable'); }
-    finally { $s->close(); }
+    try {
+        $r=$s->get_result();
+        if (!$r) throw achbotProviderStorageFailure($db,$s);
+        return $r->fetch_assoc();
+    } catch (Throwable $e) {
+        throw $e instanceof AchbotProviderStorageException?$e:achbotProviderStorageFailure($db,$s,$e);
+    } finally { $s->close(); }
 }
 /** Native connection/operation evidence lives in the existing shared tables (012). */
 function achbotProviderRequireSchema(mysqli $db): void {

@@ -56,7 +56,7 @@ if (preg_match('/\AfreeTrial([1-9][0-9]*)_normal\z/D',(string)$data,$match)) {
             $connection,'free_trial',$trialSource,(int)$from_id,1,1,[
                 'user_id'=>(int)$from_id,'server_type'=>$serverType,
                 'server_id'=>$server_id,'inbound_id'=>$inbound_id,
-                'plan_id'=>$planId,'remark'=>$remark,'volume'=>$volume,
+                'plan_id'=>$planId,'remark'=>$remark,'naming_mode'=>(string)($botState['remark']??''),'volume'=>$volume,
                 'days'=>$days
             ]);
 
