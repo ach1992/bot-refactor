@@ -11,9 +11,9 @@ import subprocess
 import time
 from pathlib import Path
 
-import test_access_state as owned
-import test_v6_native as native
-import test_v8_native as purchase
+import database_fixture as owned
+import database_fixture as native
+import database_fixture as purchase
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]

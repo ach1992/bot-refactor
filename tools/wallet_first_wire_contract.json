@@ -51,6 +51,13 @@
     "src/Panel/MarzbanPlanAccess.php"
   ],
   "changes": {
+    "src/Plans/Categories.php": {
+      "reason": "Use existing management error/review copy on failed actor-owned category mutation; typed input has no callback ID. All normal prompt and success wire calls remain exact.",
+      "before_count": 8,
+      "after_count": 9,
+      "before_sha256": "38445729b82b210349287fde3defcbbc86d7e310e9b537f21e121cba2c640125",
+      "after_sha256": "d908db742ddf1aa5b1545d02f273ac37ae9c0a23d6cf3b52378394c6642d6d8f"
+    },
     "bot.php": {
       "before_count": 200,
       "after_count": 168,

@@ -34,11 +34,6 @@ require_once __DIR__.'/src/Finance/ApiPayments.php';
 require_once __DIR__.'/src/Admin/Access.php';
 require_once __DIR__.'/src/Presentation/MainMenu.php';
 
-function tgRetryAfter($res){
-    require_once __DIR__ . '/src/Telegram/Response.php';
-    return \AchBot\Telegram\Response\retryAfter($res);
-}
-
 function bot($method, $datas = []) {
     global $botToken;
     require_once __DIR__ . '/src/Telegram/Transport.php';
@@ -49,11 +44,6 @@ function sendFileToTelegram($method, $datas = []) {
     global $botToken;
     require_once __DIR__ . '/src/Telegram/Transport.php';
     return \AchBot\Telegram\Transport\sendFile($botToken, __DIR__, $method, $datas);
-}
-
-function normalizeReplyMarkup($key){
-    require_once __DIR__ . '/src/Telegram/Markup.php';
-    return \AchBot\Telegram\Markup\normalize($key);
 }
 
 function sendMessage($txt, $key = null, $parse ="MarkDown", $ci= null, $msg = null){
@@ -261,17 +251,6 @@ function check($return = false){
 
 }
 
-function curl_get_file_contents($URL){
-    $c = curl_init();
-    curl_setopt($c, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($c, CURLOPT_URL, $URL);
-    $contents = curl_exec($c);
-    curl_close($c);
-
-    if ($contents) return $contents;
-    else return FALSE;
-}
-
 function ip_in_range($ip, $range){
     if (strpos($range, '/') == false) {
         $range .= '/32';
@@ -348,11 +327,6 @@ if (defined('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT') && (int)$from_id > 0 &&
 // تابع مشترک ساخت درخواست پرداخت
 require_once __DIR__ . '/src/Finance/WalletStart.php';
 require_once __DIR__ . '/src/Admin/InstanceContent.php';
-
-function getSupportUrl(array $botState, string $fallback = '') {
-    require_once __DIR__ . '/src/Presentation/Text.php';
-    return \AchBot\Presentation\Text\supportUrl($botState, $fallback);
-}
 
 if (isset($update->message->document->file_id)) {
     $filetype = 'document';
@@ -3112,14 +3086,6 @@ function generateUID(){
 
     return sprintf('%08s-%04s-%04x-%04x-%012s', $time_low, $time_mid, $time_hi_and_version, $clock_seq_hi_and_reserved, $node);
 }
-function checkCategoryStep(){
-    global $connection;
-    $stmt = $connection->prepare("SELECT step FROM server_categories WHERE active=0");
-    $stmt->execute();
-    $res = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    return $res['step'];
-}
 function setUser($value = 'none', $field = 'step'){
     global $connection, $from_id, $username, $first_name;
 
@@ -3162,28 +3128,11 @@ function setUser($value = 'none', $field = 'step'){
     $stmt->execute();
     $stmt->close();
 }
-function addBorderImage($add){
-    $border = 30;
-    $im = ImageCreateFromPNG($add);
-    $width = ImageSx($im);
-    $height = ImageSy($im);
-    $img_adj_width = $width + 2 * $border;
-    $img_adj_height = $height + 2 * $border;
-    $newimage = imagecreatetruecolor($img_adj_width, $img_adj_height);
-    $border_color = imagecolorallocate($newimage, 255, 255, 255);
-    imagefilledrectangle($newimage, 0, 0, $img_adj_width, $img_adj_height, $border_color);
-    imageCopyResized($newimage, $im, $border, $border, 0, 0, $width, $height, $width, $height);
-    ImagePNG($newimage, $add, 5);
-}
 function sumerize($amount){
     require_once __DIR__ . '/src/Subscription/Presentation.php';
     return \AchBot\Subscription\Presentation\formatTraffic($amount);
 }
 
-function sumerize2($amount){
-    require_once __DIR__ . '/src/Subscription/Presentation.php';
-    return \AchBot\Subscription\Presentation\trafficInGigabytes($amount);
-}
 // Post-V9: legacy X-UI/Sanaei/Alireza facades have been removed.
 // The closed provider contract controls current support; unknown types fail closed.
 function achbotSupportsPanel($type) {
@@ -3279,16 +3228,6 @@ function achbotNotifyAdmins($method, array $data, array $options = []): array {
     return $results;
 }
 
-/** Durable notice markers acknowledge only the complete eligible fanout. */
-function achbotAdminFanoutAcknowledged(array $notices): bool {
-    if ($notices===[]) return false;
-    foreach ($notices as $notice) {
-        $response=$notice['response']??null;
-        if (!is_object($response) || ($response->ok??false)!==true) return false;
-    }
-    return true;
-}
-
 function sendToAllAdmins($method, $data, $pay_hash_id = null, $options = []){
     global $admin, $connection;
 
@@ -3345,18 +3284,5 @@ function sendToAllAdmins($method, $data, $pay_hash_id = null, $options = []){
     }
 }
 
-
-$buttons_only_for_special_admins = [
-    'bot_reports',
-    'server_settings',
-    'gateways_settings',
-    'bot_settings',
-	'categories_settings',
-	'plan_settings'
-];
-
-function canSeeButton($key, $userId) {
-    return achbotAdminCan(achbotAdminButtonCapability((string)$key),(int)$userId);
-}
 
 ?>

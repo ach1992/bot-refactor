@@ -17,9 +17,9 @@ import threading
 from pathlib import Path
 from urllib.parse import urlsplit
 
-import test_access_state as owned
-import test_v6_native as native
-import test_v8_native as purchase
+import database_fixture as owned
+import database_fixture as native
+import database_fixture as purchase
 import test_post_v9_pasarguard_client as pg
 import test_post_v9_api_payment_evidence as sms_fixture
 

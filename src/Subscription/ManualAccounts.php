@@ -170,60 +170,6 @@ if ($userInfo['step'] == "awaiting_userid_input" && $text !== \achbotMessage('le
     exit();
 }
 
-function detectServerIdFromRemark($connection, $remark, $defaultServerId = 0) {
-    $remark = mb_strtolower(trim((string)$remark));
-    if ($remark === '') {
-        return $defaultServerId;
-    }
-
-    $stmt = $connection->prepare("
-        SELECT `id`, `remark`
-        FROM `server_info`
-        WHERE `active` = 1
-        ORDER BY CHAR_LENGTH(`remark`) DESC, `id` ASC
-    ");
-    $stmt->execute();
-    $result = $stmt->get_result();
-
-    $firstActiveServerId = 0;
-
-    while ($row = $result->fetch_assoc()) {
-        $serverId = (int)$row['id'];
-        $prefixRaw = trim((string)$row['remark']);
-
-        if ($firstActiveServerId === 0) {
-            $firstActiveServerId = $serverId;
-        }
-
-        if ($prefixRaw === '') {
-            continue;
-        }
-
-        $prefixes = preg_split('/[\s,|]+/u', $prefixRaw, -1, PREG_SPLIT_NO_EMPTY);
-
-        foreach ($prefixes as $prefix) {
-            $prefix = mb_strtolower(trim($prefix));
-            if ($prefix === '') {
-                continue;
-            }
-
-            if (mb_substr($remark, 0, mb_strlen($prefix)) === $prefix) {
-                $stmt->close();
-                return $serverId;
-            }
-        }
-    }
-
-    $stmt->close();
-
-    if ($firstActiveServerId > 0) {
-        return $firstActiveServerId;
-    }
-
-    return $defaultServerId;
-}
-
-
 if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
     $actor=(int)$from_id;$serverId=(int)$match[1];$begun=false;$committed=false;
     $physicalImportLease=null;

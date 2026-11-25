@@ -11,8 +11,8 @@ from pathlib import Path
 import subprocess
 import time
 
-import test_access_state as owned
-from test_v5_native import sql_command
+import database_fixture as owned
+from database_fixture import sql_command
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=owned.NAMES[1]
@@ -29,7 +29,7 @@ require_once $root.'/src/Admin/Access.php';
 require_once $root.'/src/Presentation/MainMenu.php';
 require_once $root.'/tools/source_scan.php';
 require_once $root.'/src/Telegram/UserProfile.php';
-foreach (['setUser','getMainKeys','getMainMenuButtonsKeys','RandomString'] as $name)
+foreach (['setUser','getMainKeys','getMainMenuButtonsKeys','getCategoriesKeys','RandomString'] as $name)
     eval(str_replace('__DIR__',var_export($root,true),achbotExtractFunction($root.'/config.php',$name)));
 eval(achbotExtractFunction($root.'/bot.php','achbotWebhookIngressAuthenticated'));
 $telegramWebhookSecret='Synthetic_Current_Routes_2026';
@@ -48,7 +48,8 @@ $chat=(object)['id'=>(int)($spec['chat']??$from_id),'type'=>$spec['chat_type']??
 $sender=(object)['id'=>$from_id,'first_name'=>'Fixture','username'=>'fixture'];
 $update=$data!==''?(object)['callback_query'=>(object)['from'=>$sender,'data'=>$data,
     'message'=>(object)['chat'=>$chat,'message_id'=>81]]]:
-    (object)['message'=>(object)['from'=>$sender,'chat'=>$chat,'text'=>$text]];
+    (object)['message'=>(object)['from'=>$sender,'chat'=>$chat,'message_id'=>82,'text'=>$text]];
+$update->update_id=(int)($spec['update_id']??100001);
 function sendMessage($text,$keys=null,$mode=null,$uid=null){$GLOBALS['events'][]=['send',$text,$keys,$mode];return (object)['ok'=>true,'result'=>(object)['message_id'=>100+count($GLOBALS['events'])]];}
 function editText($id,$text,$keys=null,$mode=null){$GLOBALS['events'][]=['edit',$text,$keys,$mode];return (object)['ok'=>true];}
 function delMessage(...$a){}
@@ -75,6 +76,8 @@ case 'public':
 case 'delete_main':
     eval(fixtureSection("if(preg_match('/\\AdelMainButton", 'if($data == "addNewMainButton"'));
     break;
+case 'plan_category':
+    require $root.'/src/Plans/Categories.php';break;
 case 'ticket':
     require $root.'/src/Support/Categories.php';break;
 case 'menu':
@@ -178,8 +181,47 @@ def main():
         run('ticket',actor=2003,callback='delTicketCat_10')
         assert sql('SELECT COUNT(*) FROM setting WHERE id IN (9,10)')=='0'
         cases.append('actual_content_deletion_scope_and_staff_capability')
+        # Two administrators may open category creation independently. Neither
+        # draft creates or deletes shared catalogue rows; typed submission
+        # consumes only its own locked step, exactly once.
+        sql("UPDATE setting SET value='manager' WHERE type='ADMIN_ROLE_2003'")
+        sql("INSERT INTO server_categories(id,title,parent,active) VALUES (100,'Preserved inactive',0,0)")
+        for actor in (9001,2003):
+            r=run('plan_category',actor=actor,callback='addNewCategory')
+            assert r['user']['step']=='addNewCategory',r
+        assert sql("SELECT COUNT(*) FROM server_categories")=='1'
+        for invalid in ('','x'*51):
+            r=run('plan_category',actor=9001,text=invalid)
+            assert r['user']['step']=='addNewCategory' and r['events'][0][0]=='send',r
+            assert sql("SELECT COUNT(*) FROM server_categories")=='1'
+        run('plan_category',actor=9001,callback='wizwizch',text='not typed')
+        assert sql("SELECT COUNT(*) FROM server_categories")=='1'
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures=[pool.submit(run,'plan_category',actor=actor,text=title) for actor,title in ((9001,'First category'),(2003,'Second category'))]
+            for f in futures:
+                r=f.result();assert r['user']['step']=='none',r
+        assert sql("SELECT COUNT(*) FROM server_categories WHERE active=1 AND title IN ('First category','Second category')")=='2'
+        assert sql("SELECT COUNT(*) FROM server_categories WHERE id=100 AND active=0")=='1'
+        run('plan_category',actor=9001,text='First category')
+        assert sql("SELECT COUNT(*) FROM server_categories WHERE title='First category'")=='1'
+        run('plan_category',actor=2003,callback='addNewCategory')
+        sql("UPDATE setting SET value='operator' WHERE type='ADMIN_ROLE_2003'")
+        run('plan_category',actor=2003,text='Revoked category')
+        assert sql("SELECT COUNT(*) FROM server_categories WHERE title='Revoked category'")=='0'
+        sql("UPDATE users SET step='none' WHERE userid=2003")
+        cid=int(sql("SELECT id FROM server_categories WHERE title='First category'"))
+        run('plan_category',actor=9001,callback=f'wizwizcategoryedit{cid}_0x')
+        assert sql("SELECT step FROM users WHERE userid=9001")=='none'
+        run('plan_category',actor=9001,callback=f'wizwizcategoryedit{cid}_0')
+        run('plan_category',actor=9001,text='Invalid group',chat_type='group')
+        assert sql(f"SELECT title FROM server_categories WHERE id={cid}")=='First category'
+        run('plan_category',actor=9001,text='Renamed category')
+        assert sql(f"SELECT title FROM server_categories WHERE id={cid}")=='Renamed category'
+        assert sql("SELECT step FROM users WHERE userid=9001")=='none'
+        sql("DELETE FROM server_categories WHERE id>=100")
+        cases.append('actual_category_actor_owned_drafts_concurrent_submit_and_revocation')
         # Real supported Native catalogue and intentionally non-saleable controls.
-        sql("INSERT INTO server_categories(id,server_id,title,parent,step,active) VALUES (1,'0','Category',0,0,1),(2,'0','Inactive category',0,0,0)")
+        sql("INSERT INTO server_categories(id,title,parent,active) VALUES (1,'Category',0,1),(2,'Inactive category',0,0)")
         for sid,active,server_state,capacity in [(2,1,1,100),(3,0,1,10),(4,1,2,10),(5,1,1,0),(6,1,1,10)]:
             sql(f"INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES ({sid},'Server {sid}','{capacity}','fixture','',{active},{server_state}); INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled) VALUES ({sid},'https://fixture.invalid','pasarguard','fixture','fixture',{sid},REPEAT('a',32),'5.5.1',1)")
         for pid,sid,cat,active,inbound,groups in [(7,2,1,1,0,'[1]'),(8,2,1,0,0,'[1]'),(9,3,1,1,0,'[1]'),(10,4,1,1,0,'[1]'),(11,5,1,1,0,'[1]'),(12,6,1,1,9,'[1]'),(13,6,2,1,0,'[1]')]:
@@ -220,6 +262,14 @@ def main():
         redeem(2001,original,'standard','standard','selectCategory1_2_none',80)
         sql('UPDATE server_plans SET price=100 WHERE id=7')
         redeem(2002,run('standard',actor=2002,callback='selectPlan7_1_one'),'agentone','standard','selectCategory1_2_one',80)
+        before_bulk=sql('SELECT COUNT(*) FROM pays')
+        run('standard',actor=2002,callback='selectPlan7_1_much')
+        run('standard',actor=2002,text='2147483648')
+        assert sql('SELECT COUNT(*) FROM pays')==before_bulk
+        run('standard',actor=2002,callback='selectPlan7_1_much')
+        run('standard',actor=2002,text='2147483647')
+        assert sql('SELECT COUNT(*) FROM pays')==before_bulk
+        cases.append('actual_bulk_quantity_and_amount_fit_storage_without_coercion')
         r=run('standard',actor=2002,callback='selectPlan7_1_much')
         assert r['user']['step']=='selectPlan7_1_much',r
         r=redeem(2002,run('standard',actor=2002,text='3'),'agentbulk','standard','selectCategory1_2_much',240,3)
@@ -275,7 +325,7 @@ def main():
         assert r['user'] and 'selectServer2_none' in callbacks(r),r
         cases.append('actual_shortcuts_and_callback_share_purchase_methods_and_entry_gates')
         # Trial-only category and server, with an explicit custom purpose.
-        sql("INSERT INTO server_categories(id,server_id,title,parent,step,active) VALUES (3,'0','Trial category',0,0,1)")
+        sql("INSERT INTO server_categories(id,title,parent,active) VALUES (3,'Trial category',0,1)")
         sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (8,'Trial server','10','fixture','',1,1); INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled) VALUES (8,'https://fixture.invalid','pasarguard','fixture','fixture',8,REPEAT('b',32),'5.5.1',1)")
         sql("INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES (80,3,8,0,'Trial only',1,1,0,'description',1,'fixture','[1]'),(81,1,2,0,'Mixed trial',1,1,0,'description',1,'fixture','[1]'),(82,3,2,0,'Only trial category',1,1,0,'description',1,'fixture','[1]')")
         state(plandelkhahState='off',testAccount='on')

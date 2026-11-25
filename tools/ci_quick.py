@@ -228,6 +228,8 @@ REQUIRED_SCENARIOS = {
     "current_customer_routes": (
         "actual_public_content_namespace_exact_and_no_private_values",
         "actual_content_deletion_scope_and_staff_capability",
+        "actual_category_actor_owned_drafts_concurrent_submit_and_revocation",
+        "actual_bulk_quantity_and_amount_fit_storage_without_coercion",
         "actual_capacity_entry_catalogue_share_current_native_saleability",
         "actual_standard_agent_single_and_bulk_discount_to_wallet_admission",
         "actual_custom_discount_uses_original_plan_units_and_name",

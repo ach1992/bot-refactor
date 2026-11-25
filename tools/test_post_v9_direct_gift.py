@@ -15,8 +15,8 @@ import subprocess
 import time
 from pathlib import Path
 
-import test_access_state as owned
-import test_v6_native as native
+import database_fixture as owned
+import database_fixture as native
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = native.DBS[1]
@@ -299,7 +299,7 @@ def setup(work: Path, env: dict) -> Path:
            'Global CANCEL must not delete another administrator\'s inactive plans')
     config=(ROOT/'config.php').read_text()
     set_start=config.index("function setUser($value = 'none', $field = 'step'){")
-    set_end=config.index('function addBorderImage(',set_start)
+    set_end=config.index('function sumerize(',set_start)
     (stage/'legacy-set-user.php').write_text('<?php\n'+config[set_start:set_end])
     guard_start=bot.index('// ACHBOT_WEBHOOK_INGRESS_BEGIN')
     guard_end=bot.index('if (!achbotWebhookIngressAuthenticated())',guard_start)
@@ -336,7 +336,7 @@ def setup(work: Path, env: dict) -> Path:
     (stage/'main-menu.php').write_text('<?php\n'+bot[menu_start:menu_end])
     manual=(ROOT/'src/Subscription/ManualAccounts.php').read_text()
     manual_start=manual.index('function achbotManualAccountConsumeSelection(')
-    manual_end=manual.index('function detectServerIdFromRemark(',manual_start)
+    manual_end=manual.index("if (preg_match('/^addToOrders",manual_start)
     (stage/'src/Subscription/manual-route.php').write_text(
         '<?php\n'+manual[manual_start:manual_end])
     legacy_ban=(ROOT/'src/Admin/Bans.php').read_text()

@@ -12,7 +12,7 @@ import zipfile
 import io
 
 import package_current
-import test_access_state as fixture
+import database_fixture as fixture
 
 ROOT = package_current.ROOT
 DB = "fresh_readiness"

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import notification_fixture
 import provider_storage_fixture as storage
-import test_access_state as owned
+import database_fixture as owned
 import test_post_v9_direct_gift as direct
 import test_post_v9_direct_gift_native as native
 import test_post_v9_pasarguard_client as pg

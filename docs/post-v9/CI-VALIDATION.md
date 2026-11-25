@@ -276,3 +276,20 @@ The removed legacy matrix and bank-buy/recovery drivers are historical
 source evidence available in Git. Imported historical helpers must be
 reconciled before removal; historical migration construction and genuine
 provenance are not obsolete runtime execution.
+
+### Current fixture isolation and category storage
+
+Current CI imports dedicated socket-only database, PHP staging, provider and
+presentation fixtures rather than executable V1–V9 test drivers. Historical
+source is used only for explicit pinned comparisons; the remaining historical
+test files are not current acceptance entrypoints. The disposable MariaDB
+fixture intentionally retains isolated legacy-schema setup for negative and
+partial-schema tests. Runtime packaging still excludes tests and SQL.
+
+Category creation no longer inserts globally shared inactive draft rows.
+Current role and actor state are read under lock; the final category insert
+and step consumption commit together. Migration 045 is for empty-schema
+construction only, and removes the retired category draft fields. The
+current-route regression checks concurrent managers, inactive-row retention,
+callback/typed-input separation, revoked access, exact rename targets and
+storage-width rejection of bulk count/price overflow.

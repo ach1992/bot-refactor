@@ -11,8 +11,8 @@ import subprocess
 import time
 from pathlib import Path
 
-import test_access_state as owned
-import test_v6_native as native
+import database_fixture as owned
+import database_fixture as native
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = "achbot_v4_new"

@@ -10,8 +10,8 @@ import json
 import subprocess
 import time
 from pathlib import Path
-import test_access_state as owned
-from test_v5_native import sql_command
+import database_fixture as owned
+from database_fixture import sql_command
 import test_post_v9_gateway_admin_source as gateway_source
 
 ROOT=Path(__file__).resolve().parents[1]

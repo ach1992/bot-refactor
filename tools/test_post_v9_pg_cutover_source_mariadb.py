@@ -6,8 +6,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-import test_access_state as owned
-import test_v6_native as native
+import database_fixture as owned
+import database_fixture as native
 import post_v9_pg_cutover_local_export as source
 
 DB = "achbot_pgcutover_fixture"

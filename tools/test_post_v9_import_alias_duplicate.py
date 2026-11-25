@@ -17,27 +17,14 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import provider_storage_fixture as storage
-import test_access_state as owned
-import test_unified_existing_subscriptions as imports
-import test_v6_native as native
-import test_v6_panels as bodies
+import database_fixture as owned
+import existing_subscription_fixture as imports
+import database_fixture as native
+import php_fixture as bodies
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = owned.NAMES[1]
-# Reuse the source-real event driver, with one extra actual domain operation.
-DRIVER = imports.PHP.replace(
-    " } elseif($op==='copy'){",
-    """ } elseif($op==='transfer'){
-  require_once $root.'/src/Subscription/PhysicalService.php';
-  $out=achbotReassignLogicalServer($connection,(int)$spec['order'],
-      (int)$spec['target'],(int)$from_id,true);
- } elseif($op==='copy'){""", 1)
-assert "elseif($op==='transfer')" in DRIVER
-# The shared historical fixture driver still loads the retired adapter.
-# Remove only its retired adapter include; the PG controllers are unmodified.
-DRIVER = DRIVER.replace("require_once $root.'/src/Panel/Accounts.php';", "")
-DRIVER = DRIVER.replace("$botState=array_fill_keys(", "$telegramWebhookSecret='FixtureImportReportSecret2026';$botState=array_fill_keys(")
-
+DRIVER = imports.PHP
 
 
 def run() -> list[str]:
@@ -54,7 +41,7 @@ def run() -> list[str]:
                " VALUES(2,"+storage.text(url)+",'pasarguard','fixture-admin','fixture-private-key');"
                "INSERT INTO server_info(id,title,ucount,remark,flag,active,state)"
                " VALUES(2,'Fixture purchase server',10,'buyfixture','',1,1);"
-               "INSERT INTO server_categories(id,server_id,title,parent,step,active) VALUES(1,'2','Fixture category',0,4,1);"
+               "INSERT INTO server_categories(id,title,parent,active) VALUES(1,'Fixture category',0,1);"
                "INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)"
                " VALUES(7,1,2,0,'Fixture',30,2,100,'description',1,'fixture','[1,2]');")
             db("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,step)"

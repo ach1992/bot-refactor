@@ -6,7 +6,7 @@ from pathlib import Path
 import re
 import subprocess
 
-import test_access_state as owned
+import database_fixture as owned
 
 ROOT=Path(__file__).resolve().parents[1]
 RETIRED={'admins','black_list','servers','bank_buy_invoice_claims','automatic_renewal_attempts'}
@@ -156,6 +156,7 @@ def main():
             checks.append('retired_payment_column:'+column)
         for table,columns in {
             'gift_list':['server_offset'],
+            'server_categories':['server_id','step'],
             'server_config':['port_type','reality','ip','sni','header_type','request_header','response_header','security','tlsSettings'],
             'server_plans':['dest','serverNames','spiderX','limitip','rahgozar','flow','custom_path','custom_port','custom_sni','fileid','acount','protocol','type','pic','step'],
         }.items():

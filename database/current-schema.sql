@@ -534,10 +534,8 @@ CREATE TABLE `send_list` (
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `server_categories` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `server_id` varchar(20) NOT NULL,
   `title` varchar(50) NOT NULL,
   `parent` int(11) NOT NULL DEFAULT 0,
-  `step` int(11) NOT NULL,
   `active` int(11) NOT NULL DEFAULT 0,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

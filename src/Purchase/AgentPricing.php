@@ -42,7 +42,8 @@ if (!function_exists('calculateAgentPrice')) {
             $discountPercent=(int)$discountPercent;
 
             if ($discountPercent > 0) {
-                $price -= floor($price * $discountPercent / 100);
+                // Exact integer arithmetic, including aggregated bulk prices.
+                $price -= intdiv($price,100)*$discountPercent + intdiv(($price%100)*$discountPercent,100);
             }
         }
 

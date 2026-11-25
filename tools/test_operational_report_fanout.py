@@ -4,7 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
-import test_access_state as owned
+import database_fixture as owned
 
 ROOT=Path(__file__).resolve().parents[1]
 PHP=r'''<?php
@@ -13,7 +13,7 @@ $root=$argv[1];$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2])
 $connection->set_charset('utf8mb4');$admin=9001;$botState=['rewardChannel'=>-100123];
 require $root.'/tools/source_scan.php';require $root.'/src/Admin/Access.php';
 eval(achbotExtractFunction($root.'/config.php','achbotNotifyAdmins'));
-eval(achbotExtractFunction($root.'/config.php','achbotAdminFanoutAcknowledged'));
+
 $events=[];$cases=[];$fail=0;$throw=0;
 function sendMessage($text,$keys,$mode,$to,...$args) {
     global $events,$fail,$throw,$connection;
@@ -29,7 +29,7 @@ $data=['text'=>'Fixture report','reply_markup'=>'private','parse_mode'=>'HTML'];
 $options=['report_actor'=>9002,'actor_capability'=>'orders','report_ref'=>'delete:41','report_reply_markup'=>null];
 $connection->query("INSERT INTO setting(type,value) VALUES ('ADMIN_NOTIFY_9002','off')");
 $r=achbotNotifyAdmins('sendMessage',$data,$options);
-yes($targets()===[9001,9002,-100123] && achbotAdminFanoutAcknowledged($r),'owner actual actor channel despite disabled general preference');
+yes($targets()===[9001,9002,-100123] && (count($r)>0 && count(array_filter($r,static fn($notice)=>($notice['response']->ok??false)===true))===count($r)),'owner actual actor channel despite disabled general preference');
 yes(array_column($events,'keys')===['private','private',null],'channel has no private controls');
 $events=[];$options['report_actor']=9001;
 achbotNotifyAdmins('sendMessage',$data,$options);
@@ -48,7 +48,7 @@ achbotNotifyAdmins('sendMessage',$data,$options);
 yes($targets()===[9001,9002,-100123],'manager and actor deduplicated');
 $events=[];$fail=9001;$throw=9002;
 $r=achbotNotifyAdmins('sendMessage',$data,$options);
-yes($targets()===[9001,9002,-100123]&&!achbotAdminFanoutAcknowledged($r),'independent sends survive false and throwing transport');
+yes($targets()===[9001,9002,-100123]&&!(count($r)>0 && count(array_filter($r,static fn($notice)=>($notice['response']->ok??false)===true))===count($r)),'independent sends survive false and throwing transport');
 echo json_encode(['complete'=>true,'cases'=>count($cases),'case_names'=>$cases,'external_requests'=>0]);
 '''
 def main():

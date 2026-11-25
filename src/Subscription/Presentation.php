@@ -379,8 +379,3 @@ function formatTraffic($amount){
         return round($gb,2) . \achbotMessage('subscription.presentation.format_traffic.text.4f65338b34');
     }
 }
-
-function trafficInGigabytes($amount){
-    $gb = $amount / (1024 * 1024 * 1024);
-    return round($gb,2);
-}

@@ -41,7 +41,7 @@ if(($planSelectionCallback ||
             // An account quantity is a positive integer, not an exponent,
             // decimal or a value which PHP will silently cast during INSERT.
             if (!is_string($text) || preg_match('/^0*[1-9][0-9]*$/D',$text)!==1 ||
-                filter_var(ltrim($text,'0'),FILTER_VALIDATE_INT)===false) {
+                filter_var(ltrim($text,'0'),FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>2147483647]])===false) {
                 sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML'); exit();
             }
             $accountCount=(int)$text;
@@ -82,7 +82,7 @@ if(($planSelectionCallback ||
     [$price,$agentBought]=calculateAgentPrice($userInfo,$botState,(int)$id,$sid,$match['buyType'],$price);
     $price=(int)$price;
     if ((int)$from_id===(int)$admin) $price=0;
-    if ($price<0) return;
+    if ($price<0 || $price>2147483647) return;
     $hash_id=RandomString();$time=time();
     if (isset($accountCount)) {
         $stmt=$connection->prepare("INSERT INTO pays(hash_id,user_id,type,plan_id,server_id,volume,day,price,request_date,state,agent_bought,agent_count)

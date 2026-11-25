@@ -12,9 +12,9 @@ import json
 from pathlib import Path
 import subprocess
 
-import test_access_state as owned
-from test_v5_native import sql_command
-import test_v8_native as fixture
+import database_fixture as owned
+from database_fixture import sql_command
+import database_fixture as fixture
 
 ROOT=Path(__file__).resolve().parents[1]
 BASE='77ae8c8f9c3774aae4fea0817fa5da7bc3e110d3'

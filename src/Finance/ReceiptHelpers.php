@@ -23,20 +23,6 @@ if (!function_exists('payTypeToDescription')) {
     }
 }
 
-if (!function_exists('notifyAllAdminsSimple')) {
-    function notifyAllAdminsSimple($text, $admin, $parseMode = null, $replyMarkup = null, $rewardChannel = null)
-    {
-        if ($rewardChannel === null) {
-            global $botState;
-            $rewardChannel = $botState['rewardChannel'] ?? null;
-        }
-
-        achbotNotifyAdmins('sendMessage', [
-            'text'=>$text,'reply_markup'=>$replyMarkup,'parse_mode'=>$parseMode
-        ], ['primary'=>$admin,'report_channel'=>$rewardChannel]);
-    }
-}
-
 function dbFetchPayByHash(mysqli $connection, string $hashId): ?array {
     $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? LIMIT 1");
     $stmt->bind_param("s", $hashId);
@@ -646,12 +632,6 @@ function achbotManualAcknowledgement(array $payInfo, string $method): string {
         achbotPayUxReference($payInfo) .
         \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.62e569e922');
 }
-
-function getCartToCartMessageKey(string $messageType): string {
-    require_once dirname(__DIR__, 2) . '/src/Presentation/Labels.php';
-    return \AchBot\Presentation\Labels\cardToCardMessageKey($messageType);
-}
-
 
 /** Read only the original pinned manual quote and destination, never changed settings. */
 function buildCartToCartInfoMessage(array $paymentKeys, int $priceToman,

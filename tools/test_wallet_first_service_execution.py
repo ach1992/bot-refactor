@@ -17,7 +17,7 @@ import time
 import re
 from urllib.parse import unquote
 
-import test_access_state as owned
+import database_fixture as owned
 from test_wallet_first_cutover import LEGACY_RESERVE_PHP
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -588,7 +588,7 @@ def main():
                 id INT AUTO_INCREMENT PRIMARY KEY, intent_id BIGINT UNSIGNED NOT NULL,
                 user_id BIGINT NOT NULL, part_no INT NOT NULL,kind VARCHAR(12), qr TEXT, caption TEXT, keys_json TEXT, mode VARCHAR(12)) ENGINE=InnoDB""")
 
-            sql("INSERT INTO server_categories(id,server_id,title,parent,step,active) VALUES (1,'2','Fixture category',0,0,1)")
+            sql("INSERT INTO server_categories(id,title,parent,active) VALUES (1,'Fixture category',0,1)")
             sql(f"""INSERT INTO server_config(id,panel_url,type,username,password)
                 VALUES (2,'{base}','pasarguard','fixture','fixture');
                 INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (2,'Fixture PG','100','pgfixture','',1,1);

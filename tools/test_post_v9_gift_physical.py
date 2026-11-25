@@ -16,8 +16,8 @@ import threading
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from pathlib import Path
 
-import test_access_state as owned
-import test_v6_native as native
+import database_fixture as owned
+import database_fixture as native
 import test_post_v9_gift_worker as gift
 
 ROOT=Path(__file__).resolve().parents[1]

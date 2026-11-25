@@ -10,7 +10,7 @@ from urllib.parse import unquote,urlsplit
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-import test_access_state as owned
+import database_fixture as owned
 import provider_storage_fixture as storage
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -291,7 +291,7 @@ def check():
             sql(work,env,"INSERT INTO server_config(id,panel_url,type,username,password) VALUES (2,"+
                 storage.text(url)+",'pasarguard','','fixture-private-key');"
                 "INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES(2,'Fixture purchase server',10,'buyfixture','',1,1);"
-                "INSERT INTO server_categories(id,server_id,title,parent,step,active) VALUES(1,'2','Fixture category',0,4,1);"
+                "INSERT INTO server_categories(id,title,parent,active) VALUES(1,'Fixture category',0,1);"
                 "INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES "
                 "(7,1,2,0,'Fixture',30,2,100,'description',1,'fixture','[1,2]'),"
                 "(8,1,2,0,'Free fixture',30,2,0,'fixture-free',1,'fixture','[1,2]');")

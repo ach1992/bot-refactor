@@ -9,9 +9,9 @@ import argparse, base64, contextlib, copy, json, socket, subprocess, tempfile, t
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
-import test_access_state as owned
-import test_v6_native as native
-import test_v8_native as purchase
+import database_fixture as owned
+import database_fixture as native
+import database_fixture as purchase
 
 ROOT=Path(__file__).resolve().parents[1]
 MARKER='achbot:v1:'+'a'*32

@@ -14,10 +14,10 @@ import subprocess
 import time
 from pathlib import Path
 
-import test_access_state as owned
-import test_post_v9_purchases as stage_mod
-import test_v6_native as native
-import test_v8_native as purchase
+import database_fixture as owned
+import wallet_transfer_fixture as stage_mod
+import database_fixture as native
+import database_fixture as purchase
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = purchase.SIDE[1]
@@ -114,13 +114,20 @@ def prepare(work, env, sender=50000, recipient=50000,
 
 
 def execute(work, env, stage, text, actor=1001, data="", **source):
-    orig = purchase.block
-    try:
-        purchase.block = lambda kind, modern: TEST_ROUTE if kind == "wallet_transfer_guard" else orig(kind, modern)
-        return purchase.run(work, env, stage, DB, "wallet_transfer_guard",
-                            {"actor": actor, "text": text, "data": data, **source}, modern=True)
-    finally:
-        purchase.block = orig
+    spec={"actor":actor,"text":text,"data":data,**source}
+    (stage/"case.json").write_text(json.dumps(spec,ensure_ascii=False))
+    (stage/"access-sequence.php").write_bytes(TEST_ROUTE)
+    output=stage/"result.json"
+    if output.exists():output.unlink()
+    run_env=dict(env,ACHBOT_PRIVATE_TEST="1",ACHBOT_V7_NATIVE="1",
+                 ACHBOT_DATABASE=DB,ACHBOT_SOCKET=str(work/"mysql.sock"))
+    p=subprocess.run(worker_cmd(stage,work),cwd=stage,env=run_env,capture_output=True,timeout=25)
+    if p.returncode or p.stdout or p.stderr or not output.exists():
+        raise RuntimeError("Wallet transfer PHP runner failed: "+repr((p.returncode,p.stdout[-550:],p.stderr[-550:])))
+    result=json.loads(output.read_text())
+    if result["exception"] or any(x.startswith(("FATAL:","EXCEPTION:")) for x in result["warnings"]):
+        raise RuntimeError("Wallet transfer PHP error: "+repr(result)[:1800])
+    return result
 
 
 def assert_events(result, successful):
@@ -160,7 +167,7 @@ def race(work, env, workers, label):
     try:
         for number, (actor, amount, *extra) in enumerate(workers, start=1):
             stage = work / ("transfer-" + label + "-race-" + str(number))
-            stage_mod.stage_source(stage, True)
+            stage_mod.stage_source(stage)
             (stage / "access-sequence.php").write_bytes(
                 b"<?php\n"
                 + ("file_put_contents('" + str(barrier) + "." + str(number)
@@ -215,10 +222,10 @@ def main():
     reports = []
     with owned.owned_database() as (work, env):
         stage = work / "current-wallet"
-        stage_mod.stage_source(stage, True)
+        stage_mod.stage_source(stage)
         if not args.current_only:
             baseline_stage = work / "baseline-wallet"
-            stage_mod.stage_source(baseline_stage, True)
+            stage_mod.stage_source(baseline_stage)
             (baseline_stage / "src/Finance/Routes/WalletTransfer.php").write_bytes(
                 subprocess.check_output(["git","-C",str(ROOT),"show",
                     "ea6834cb0612b5fa687ec492fbd9c6e1fd0b6a50:src/Finance/Routes/WalletTransfer.php"]))
@@ -408,7 +415,7 @@ def main():
         # Simulated Telegram failure AFTER COMMIT must never undo the SQL
         # transfer. Continue other notifications and alert the private admin.
         notify_stage = work / "failed-notification-wallet"
-        stage_mod.stage_source(notify_stage, True)
+        stage_mod.stage_source(notify_stage)
         synthetic_php = notify_stage / "native-purchase.php"
         fixture_text = synthetic_php.read_text()
         original_send = "function sendMessage(...$args){achEvent('sendMessage',$args);return (object)['ok'=>true];}"
@@ -588,7 +595,7 @@ def main():
         # never be treated as proof that the money was reverted.
         def make_commit_fixture(name, override):
             fixture_stage = work / name
-            stage_mod.stage_source(fixture_stage, True)
+            stage_mod.stage_source(fixture_stage)
             php_path = fixture_stage / "native-purchase.php"
             code = php_path.read_text()
             declaration = "class SyntheticCommitConnection extends mysqli {\n" + override + "\n}\n"

@@ -98,14 +98,6 @@ function achbotInstanceMessage(array $state,string $field,$userId=''): string {
         return achbotMessageHtml('instance_content.unconfigured',['userId'=>(string)$userId]);
     return $rendered;
 }
-function achbotInstanceContentValues(array $values,array $state,$userId=''): array {
-    foreach(['start_message','user_welcome_message','reached_main_menu'] as $field)
-        $values[$field]=achbotInstanceMessage($state,$field,$userId);
-    $note=achbotInstanceMessage($state,'purchase_note',$userId);
-    foreach(['buy_subscription_detail','buy_much_subscription_detail','buy_custom_subscription_detail'] as $field)
-        if (is_string($values[$field]??null))$values[$field]=rtrim($values[$field])."\n\n".$note;
-    return $values;
-}
 /**
  * Resolve one source-owned legacy template for the current bot/request.
  * Only instance text and the handful of context-bearing templates need
