@@ -21,6 +21,7 @@ set_error_handler(static function(int $code,string $message): never {
 });
 require 'messages/loader.php';
 require 'src/Admin/InstanceContent.php';
+eval(base64_decode($argv[1]));
 $source=achbotMessages('legacy_messages');
 $states=[
     ['supportID'=>'@support_name','lockChannel'=>'@public_group',
@@ -95,12 +96,17 @@ def main() -> None:
     old = subprocess.check_output(["git", "show", BASE + ":" + relative], cwd=ROOT)
     current = (ROOT / relative).read_bytes()
     start = old.index(b"function achbotInstanceMessage(")
-    end = old.index(b"function achbotInstanceMenu(")
+    end = old.index(b"function achbotInstanceContentValues(")
     current_start = current.index(b"function achbotInstanceMessage(")
     assert old[start:end] == current[current_start:current_start + end - start], (
         "instance_message_precedence_changed_without_goldens")
 
-    raw = subprocess.check_output(["php", "-r", PHP], cwd=ROOT, text=True)
+    import base64
+    start = old.index(b"function achbotInstanceContentValues(")
+    end = old.index(b"function achbotInstanceMenu(",start)
+    # The exact original implementation is isolated from the current app.
+    reference=base64.b64encode(old[start:end]).decode("ascii")
+    raw = subprocess.check_output(["php", "-r", PHP,reference], cwd=ROOT, text=True)
     result = json.loads(raw)
     assert result["status"] == "PASS" and result["cases"] > 850
     print(json.dumps(result, ensure_ascii=False))

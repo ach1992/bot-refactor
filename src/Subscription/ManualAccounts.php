@@ -170,60 +170,6 @@ if ($userInfo['step'] == "awaiting_userid_input" && $text !== \achbotMessage('le
     exit();
 }
 
-function detectServerIdFromRemark($connection, $remark, $defaultServerId = 0) {
-    $remark = mb_strtolower(trim((string)$remark));
-    if ($remark === '') {
-        return $defaultServerId;
-    }
-
-    $stmt = $connection->prepare("
-        SELECT `id`, `remark`
-        FROM `server_info`
-        WHERE `active` = 1
-        ORDER BY CHAR_LENGTH(`remark`) DESC, `id` ASC
-    ");
-    $stmt->execute();
-    $result = $stmt->get_result();
-
-    $firstActiveServerId = 0;
-
-    while ($row = $result->fetch_assoc()) {
-        $serverId = (int)$row['id'];
-        $prefixRaw = trim((string)$row['remark']);
-
-        if ($firstActiveServerId === 0) {
-            $firstActiveServerId = $serverId;
-        }
-
-        if ($prefixRaw === '') {
-            continue;
-        }
-
-        $prefixes = preg_split('/[\s,|]+/u', $prefixRaw, -1, PREG_SPLIT_NO_EMPTY);
-
-        foreach ($prefixes as $prefix) {
-            $prefix = mb_strtolower(trim($prefix));
-            if ($prefix === '') {
-                continue;
-            }
-
-            if (mb_substr($remark, 0, mb_strlen($prefix)) === $prefix) {
-                $stmt->close();
-                return $serverId;
-            }
-        }
-    }
-
-    $stmt->close();
-
-    if ($firstActiveServerId > 0) {
-        return $firstActiveServerId;
-    }
-
-    return $defaultServerId;
-}
-
-
 if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
     $actor=(int)$from_id;$serverId=(int)$match[1];$begun=false;$committed=false;
     $physicalImportLease=null;
@@ -301,9 +247,17 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
         achbotProviderAdoptExistingLocked($connection,$serverId,$remote,$proof,$finalUserId,$orderId,$actor,(int)$admin);
         $q=$connection->prepare("UPDATE users SET temp=NULL,step='none' WHERE id=? AND userid=?");
         $q->bind_param('ii',$id,$actor);$q->execute();$q->close();
+        require_once __DIR__.'/../Finance/OperationalReports.php';
+        $adminMessage=achbotMessageHtml('operational_reports.import_report',[
+            'user'=>$finalUserId,'remark'=>$remark,'order'=>$orderId,'server'=>$serverId,'actor'=>$actor]);
+        $keys=json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.button.48f23552b7'),'callback_data'=>'quickUserOrderDetails_'.$orderId]]]]);
+        $reportRef='import:'.$orderId;
+        achbotOperationalReportStageLocked($connection,$reportRef,$finalUserId,
+            $adminActor?$actor:0,'operations',$adminMessage,$keys);
         try {if (!$connection->commit()) throw new RuntimeException('import_commit_unknown');}
         catch (Throwable $error) {throw new RuntimeException('import_commit_unknown');}
         $begun=false;$committed=true;
+        achbotOperationalReportDispatch($connection,$reportRef);
         alert(\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.alert.ecf2df32d7'));
         $msg=\achbotMessage('subscription.manual_accounts.import_completed',[
             'remark'=>htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')]);
@@ -312,13 +266,7 @@ if (preg_match('/^addToOrders([1-9][0-9]*)$/D',(string)$data,$match)) {
             ['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>'mainMenu']
         ]]]);
         sendMessage($msg,$keys,'HTML',$finalUserId);
-        if ($adminActor) {
-            $keys=json_encode(['inline_keyboard'=>[[['text'=>\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.button.48f23552b7'),'callback_data'=>'quickUserOrderDetails_'.$orderId]]]]);
-            $adminMessage=\achbotMessage('subscription.manual_accounts.detect_server_id_from_remark.admin_message.7e7a367cc0',[
-                'finalUserId'=>$finalUserId,'first_name'=>htmlspecialchars((string)$first_name,ENT_QUOTES,'UTF-8'),
-                'username'=>htmlspecialchars((string)$username,ENT_QUOTES,'UTF-8'),'remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8')]);
-            achbotNotifyAdmins('sendMessage', ['text'=>$adminMessage,'reply_markup'=>$keys,'parse_mode'=>'HTML'], ['report_channel'=>null]);
-        }
+
     } catch (Throwable $error) {
         if ($begun) {try {$connection->rollback();} catch (Throwable $ignored) {}}
         $reason=$error instanceof RuntimeException && in_array($error->getMessage(),['import_identity_missing','import_stale','import_actor','import_provider_identity','import_proof','import_begin','import_target_missing','import_server_changed','import_already_attached','import_credential_missing','import_insert','import_commit_unknown','provider_storage_unavailable'],true)?$error->getMessage():'import_unavailable';

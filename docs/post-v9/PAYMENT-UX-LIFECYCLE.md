@@ -1,5 +1,7 @@
 # Unified payment-message lifecycle (Issue #51)
 
+**Wallet-first candidate boundary:** For the current PR #234, [Wallet-first architecture](WALLET-FIRST-ARCHITECTURE.md), [the shared exception inbox](AUTOMATIC-GATEWAY-REVIEW.md) and [fresh installation](FRESH-INSTALL.md) take precedence. The following pre-Wallet-first material describes the earlier Stable/RC implementation and historical evidence; it is not an active runtime contract, migration procedure or authorization to replay old effects in the replacement. Use the exact installed release documentation for an older deployment.
+
 **Scope:** source-only checkout UI and Telegram message/reference management. This does not authorize payment, financial mutation, rollout, or SQL migration.
 
 ## State and payment identity
@@ -134,15 +136,26 @@ merchant credentials. Any installed historical exposure assessment or
 credential rotation is a separate Owner/operator action; no rotation
 or production webhook was performed in source acceptance.
 
-**Required source-real regression:** `python3
+**Historical source-real regression (not a current executable gate):** `python3
 tools/test_post_v9_payment_key_admin.py --run-disposable` extracts the
 actual `bot.php` route and `config.php` menu and uses an isolated
 original 23-table MariaDB, independent PHP/MySQLi sessions, synthetic
-Telegram updates and no provider/network effects. This suite is mandatory
-in the exact-candidate `tools/check_post_v9.py` CI matrix alongside existing
+Telegram updates and no provider/network effects. This suite was mandatory
+in the historical exact-candidate `tools/check_post_v9.py` CI matrix alongside existing
 gateway/admin/financial tests. Source-only CI never proves installed
 configuration, merchant verification, payment settlement or production
 authorization. No SQL migration is needed for these editor changes.
+
+## Current Wallet-first receipt policy
+
+The Wallet-first architecture and canonical installation schema supersede
+the historical optional-schema and route-specific settlement descriptions
+below. The configured duplicate-receipt cooldown values remain intact;
+the current implementation uses admitted manual receipts, the actual
+manual credit basis and review/rejection state, not retired payment
+states. Original receiving recovery is not a new payment. Current-schema
+coverage is owned by `tools/test_wallet_first_manual.py`. Historical
+23-table UI fixtures do not exercise new monetary acceptance.
 
 ## Acceptance
 
@@ -151,7 +164,9 @@ tools/test_post_v9_payment_ux_lifecycle.py --run-disposable exercises actual cur
 Unresolved finance: https://github.com/ach1992/bot-refactor/issues/26
 Unified payment UX: https://github.com/ach1992/bot-refactor/issues/51
 
-### Provider issuance vs replacement-draft serialization (PR #60 independent review)
+### Historical provider issuance vs replacement-draft serialization (PR #60 independent review)
+
+These paragraphs record historical reviewed behavior, not executable current-driver requirements. Current maintained financial/checkout coverage is the Wallet-first suite roster in [CI-VALIDATION.md](CI-VALIDATION.md).
 
 Every customer-initiated new pays draft INSERT (standard/custom purchase, subscription renewal and extensions) now requires a **single MariaDB transaction holding users.userid FOR UPDATE through INSERT and COMMIT**. The independent wallet-topup draft path already uses a corresponding users-row transaction. Historical users.userid is non-unique, so missing or duplicated owners fail closed. The shared lock order is users -> pays -> payment_attempts. These creation paths preserve old financial records rather than DELETEing any issued provider claim.
 
@@ -159,7 +174,7 @@ All three hosted providers (NOWPayments, Zarinpal, NextPay) acquire that same ow
 
 The historical prePayCheck_Renew_ManualUsdt callback is a **shared crypto-network selector**, not authorization for USDT specifically. A user with TRX-only access can enter this menu, while the actual selected network and final manual quote still enforce the method-specific permission. The ps_<hash> callback reads full pays identity (including order_id and request_date), matching the scheduled successor-detection projection. In gatewayAudience, **only absent** policy keys retain the legacy all default; explicit NULL or any invalid map/method mode fails closed. Administrators see invalid entries as blocked, rather than silently reopening them.
 
-The mandatory Post-V9 regression tools/test_post_v9_checkout_serialization.py runs real concurrent PHP/MySQLi/MariaDB with an explicit owner-row wait/commit barrier for all three hosted providers. The prior exact candidate reaches mock provider issuance after a newer draft commits (RED), while the corrected source issues none (GREEN). It additionally tests a killed locking successor SELECT, nonthrowing 003 INSERT errors and rollback, source-real renewal crypto/network picker for TRX-only/USDT-only/both/neither, forged callbacks, status identity across same/unrelated subscription targets, and preservation of already-issued provider evidence. Reviewer R1 coverage uses two independent real PHP/MySQLi draft creators invoking the production achbotPayUxInsertDraft() under the owner-row lock; creator A computes the earlier timestamp first but commits AFTER creator B, obtaining the larger pays.id. For NOWPayments, Zarinpal and NextPay, only A may reserve an invoice. The old reviewed HEAD reproduces an outbound mock provider issuance on B (RED). Current HEAD refuses B, permits one A reservation, expires B on its bot-owned URL, and preserves all existing provider-issued claims (GREEN). Independent direct-expiry, Cron sweep, and later terminal-state transitions also reject obsolete links. The test has no production database, real provider call or Telegram effect. Explicit NULL, incorrect types, off and restrictive cohorts are also exercised through the actual first-party checkout HTTP entrypoint for all three hosted gateways. No live provider, deployed database, money or Telegram operation is part of this proof.
+The historical [checkout serialization regression](https://github.com/ach1992/bot-refactor/blob/3201af015dfd4208e9de5e532cc371541353ae52/tools/test_post_v9_checkout_serialization.py) ran real concurrent PHP/MySQLi/MariaDB with an explicit owner-row wait/commit barrier for all three hosted providers. The prior exact candidate reaches mock provider issuance after a newer draft commits (RED), while the corrected source issues none (GREEN). It additionally tests a killed locking successor SELECT, nonthrowing 003 INSERT errors and rollback, source-real renewal crypto/network picker for TRX-only/USDT-only/both/neither, forged callbacks, status identity across same/unrelated subscription targets, and preservation of already-issued provider evidence. Reviewer R1 coverage uses two independent real PHP/MySQLi draft creators invoking the production achbotPayUxInsertDraft() under the owner-row lock; creator A computes the earlier timestamp first but commits AFTER creator B, obtaining the larger pays.id. For NOWPayments, Zarinpal and NextPay, only A may reserve an invoice. The old reviewed HEAD reproduces an outbound mock provider issuance on B (RED). Current HEAD refuses B, permits one A reservation, expires B on its bot-owned URL, and preserves all existing provider-issued claims (GREEN). Independent direct-expiry, Cron sweep, and later terminal-state transitions also reject obsolete links. The test has no production database, real provider call or Telegram effect. Explicit NULL, incorrect types, off and restrictive cohorts are also exercised through the actual first-party checkout HTTP entrypoint for all three hosted gateways. No live provider, deployed database, money or Telegram operation is part of this proof.
 
 ### Manual and wallet method selection serialized with replacement drafts (R2)
 
@@ -169,7 +184,7 @@ For NEW manual claims, the transaction cannot insert the required 003 attempt un
 
 For direct wallet spending, a *reject-only* read-only preflight first preserves prompt rejection of unsupported/retired panels without waiting on a financial owner lock; passing that preflight never authorizes money movement. The actual owner lock precedes the pays lock and the CURRENT-read successor and ledger checks, including a fresh supported-subject check. The existing ownership, available wallet balance, manual/admin debt, method exclusivity, no-repeat, and fulfillment authorization remain intact. Exact-one local processing/debit/completion writes must succeed before reporting customer payment success. SQL exceptions, nonthrowing mysqli failures, owner-lock timeout or deadlock victims fail closed and send operator review where necessary. Remote fulfillment or an ambiguous COMMIT is **never automatically retried or refunded**; source-only financial evidence is not proof of installed-provider settlement.
 
-The mandatory disposable-source-native `tools/test_post_v9_method_selection_race.py` instruments temporary source snapshots only at the actual post-preflight/pre-ledger or pre-debit boundary and uses independent PHP/MySQLi MariaDB sessions. It reproduces the **prior reviewed ee029 source RED**: a newer draft commits while an older manual choice still issues a payment destination or a wallet action still debits and invokes the synthetic handler. Corrected source **GREEN** proves both commit orderings across all four manual methods and wallet, old known Telegram bank/gift callback cannot reveal a stale destination, and existing pinned issued claims remain recoverable. Owner lock timeout, KILL QUERY, deliberately inverted-lock deadlock victim selection and actual MYSQLI_REPORT_OFF insert/debit trigger errors must cause no false success or double side effect. A synthetic lost acknowledgment after a real disposable-DB COMMIT must remain ambiguous: reopening an already-issued manual claim reuses the same immutable attempt; repeating a paid wallet callback never debits or fulfills again. No new schema, real provider, production database or customer funds are involved.
+The historical [method selection regression](https://github.com/ach1992/bot-refactor/blob/3201af015dfd4208e9de5e532cc371541353ae52/tools/test_post_v9_method_selection_race.py) instrumented temporary source snapshots only at the actual post-preflight/pre-ledger or pre-debit boundary and uses independent PHP/MySQLi MariaDB sessions. It reproduces the **prior reviewed ee029 source RED**: a newer draft commits while an older manual choice still issues a payment destination or a wallet action still debits and invokes the synthetic handler. Corrected source **GREEN** proves both commit orderings across all four manual methods and wallet, old known Telegram bank/gift callback cannot reveal a stale destination, and existing pinned issued claims remain recoverable. Owner lock timeout, KILL QUERY, deliberately inverted-lock deadlock victim selection and actual MYSQLI_REPORT_OFF insert/debit trigger errors must cause no false success or double side effect. A synthetic lost acknowledgment after a real disposable-DB COMMIT must remain ambiguous: reopening an already-issued manual claim reuses the same immutable attempt; repeating a paid wallet callback never debits or fulfills again. No new schema, real provider, production database or customer funds are involved.
 
 ### Definitive wallet authorization under InnoDB REPEATABLE READ (R3)
 

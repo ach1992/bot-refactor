@@ -15,7 +15,7 @@ $links=array_map(static fn($i)=>'vless://opaque-'.$i.'@native.invalid:443?type=w
 $sub='https://native.invalid/sub/opaque%2Btoken?x=a&y=b';
 $backup='https://backup.invalid/sub/opaque%2Btoken?x=a&y=b';
 $native=['links'=>$links,'subscription_url'=>$sub,'backup_urls'=>[$backup]];
-foreach(['marzban','pasarguard'] as $provider){
+foreach(['pasarguard'] as $provider){
     $document=achbotServerDisplayDefault();
     foreach(['delivery','view'] as $context){
         $p=present($provider,$native,[],$document,$context);
@@ -72,7 +72,7 @@ foreach(['marzban','pasarguard'] as $provider){
     verify(!str_contains(json_encode($offKeys),'_vconfigs_') && str_contains(json_encode($offKeys),'_dconfigs_'),$provider.'_conditional_editor_own_context_only');
 }
 // Upgrading an old policy: explicit ON cannot remain hidden by removed knobs.
-foreach(['marzban','pasarguard'] as $provider){
+foreach(['pasarguard'] as $provider){
     $old=['mode'=>'native','policy'=>['show_configs'=>false,'max_links'=>0,'hide_if_more_than'=>0,
         'delivery_selectors'=>[['name'=>'نام 4']],'view_selectors'=>[['name'=>'نام 8']]]];
     $peer=present($provider,$native,[],$old,'view');
@@ -80,34 +80,16 @@ foreach(['marzban','pasarguard'] as $provider){
     equal(present($provider,$native,[],$on,'delivery')['links'],[$links[3]],$provider.'_new_ON_overrides_retired_zero_and_hide');
     equal(present($provider,$native,[],$on,'view'),$peer,$provider.'_new_ON_keeps_peer_legacy_choice');
 }
-foreach(['delivery'=>'d','view'=>'v'] as $context=>$prefix){
-    $old=['mode'=>'marzban_legacy','policy'=>['show_configs'=>false],'legacy'=>[
-        'showIndexes'=>[1],'linkIndices'=>[0],'hideConfigIfMany'=>true,'hideConnectLinkForMarzban'=>true]];
-    $peerContext=$context==='delivery'?'view':'delivery';$peer=present('marzban',$native,[],$old,$peerContext);
-    $on=achbotServerDisplayChange($old,'marzban',$prefix.'cfg','flip');
-    equal(present('marzban',$native,[],$on,$context)['links'],[$links[0]],'legacy_'.$context.'_explicit_ON_not_hidden');
-    equal(present('marzban',$native,[],$on,$peerContext),$peer,'legacy_'.$context.'_ON_preserves_peer');
-}
-// Legacy positional compatibility shares the same inline count boundary.
-// Short configs prove that whole-message size alone cannot enforce ten.
-foreach (['delivery','view'] as $context) {
-    $indices=[10,1,10,0,2,3,4,5,6,7,8,9];
-    $old=['mode'=>'marzban_legacy','policy'=>[], 'legacy'=>[
-        'linkIndices'=>$indices,'showIndexes'=>range(1,12),
-        'hideConfigIfMany'=>false,'hideConnectLinkForMarzban'=>false]];
-    $unchanged=serialize($old);
-    $uncapped=$context==='delivery'?array_map(static fn($i)=>$links[$i],$indices):array_slice($links,0,12);
-    verify(textLength(AchBot\Subscription\Presentation\codeLinks($uncapped))<4096,
-        'legacy_'.$context.'_short_configs_do_not_trigger_size_limit');
-    $p=present('marzban',$native,[],$old,$context);
-    equal($p['links'],array_slice($uncapped,0,10),'legacy_'.$context.'_inline_maximum_ten_preserves_order_and_duplicates');
-    verify($p['limited'] && $p['reason']==='display_limit' && $p['notice_html']!=='',
-        'legacy_'.$context.'_count_limit_notice');
-    equal($p['qr_config_links'],$links,'legacy_'.$context.'_count_limit_keeps_all_forty_explicit_QRs');
-    equal(serialize($old),$unchanged,'legacy_'.$context.'_read_does_not_rewrite_peer_policy');
-    $text=fitMessage($p,static fn($p)=>$p['config_html']."\n".$p['subscription_html']."\n".$p['backup_html']."\n".$p['notice_html']);
-    verify(count($p['links'])===10 && textLength($text)<=4096,
-        'legacy_'.$context.'_complete_short_message_retains_exactly_ten');
+// Retired provider and positional documents never expose native URIs.
+foreach (['view','delivery'] as $context) {
+    $old=['mode'=>'marzban_legacy','policy'=>[], 'legacy'=>['linkIndices'=>[0],'showIndexes'=>[1]]];
+    verify(!achbotServerDisplayValid($old,'pasarguard'),'retired_display_policy_rejected_'.$context);
+    foreach (['marzban','pasarguard'] as $provider) {
+        $p=present($provider,$native,[],$old,$context);
+        equal($p['links'],[],'retired_policy_no_inline_'.$provider.$context);
+        equal($p['qr_config_links'],[],'retired_policy_no_qr_'.$provider.$context);
+        equal($p['qr_subscription_url'],'','retired_policy_no_subscription_'.$provider.$context);
+    }
 }
 // Complete-message budget, not a fragment-byte bound.
 $long=array_map(static fn($i)=>'vless://native.invalid/'.str_repeat(chr(97+$i),1600).'#'.$i,range(0,9));
@@ -138,7 +120,7 @@ equal(count(array_filter($parts,static fn($s)=>str_contains($s,'<code>'.$long[0]
 $exact=str_repeat('a',4096);
 equal(messageParts($exact),[$exact],'exact_limit_no_split_or_reformat');
 equal(array_map('strlen',messageParts($exact.'b')),[4096,1],'one_character_overflow_boundary');
-$p=present('marzban',$native,[],['policy'=>['delivery'=>['names'=>['absent']]]],'delivery');
+$p=present('pasarguard',$native,[],['policy'=>['delivery'=>['names'=>['absent']]]],'delivery');
 equal($p['links'],[],'missing_exact_name_never_falls_back_to_other_native_config');
 verify(!AchBot\Subscription\Presentation\validPolicy(['view'=>['qr'=>'none']]),'order_context_cannot_store_qr_control');
 equal(AchBot\Subscription\Presentation\nativeLinks(["vless://bad.invalid/\xFF"]),[],'invalid_UTF8_config_never_reencoded_as_different_URI');
@@ -169,5 +151,5 @@ equal(count(array_filter($effects,static fn($s)=>$s['kind']==='edit')),1,'order_
 $effects=[];$failAt=1;
 verify(!sendQrFromLink('',$protected,'navigation','',1001),'ambiguous_first_text_part_never_certifies_delivery');
 equal(count($effects),1,'ambiguous_text_exception_not_retried');
-echo json_encode(['complete'=>true,'cases'=>$checks,'source_real'=>true,'two_native_providers'=>true,
+echo json_encode(['complete'=>true,'cases'=>$checks,'source_real'=>true,'native_provider'=>'pasarguard','retired_provider_denied'=>true,
     'whole_message_budget'=>true,'all_explicit_config_qrs'=>true,'production_effects'=>0],JSON_THROW_ON_ERROR)."\n";

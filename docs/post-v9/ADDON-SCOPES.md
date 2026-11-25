@@ -1,30 +1,29 @@
 # Scoped day and volume extension offers (Issue #107)
 
-Current Stable behavior. The applicable 015 schema/Native Group controls must be installed and verified separately; publishing source does not perform a migration or live financial action. The historical original schema remains preserved in source history.
+Current Wallet-first contract. The scoped offer columns and unique indexes are mandatory parts of the consolidated current schema. Use [fresh installation](FRESH-INSTALL.md) and [current readiness](PAYMENT-READINESS-PREFLIGHT.md). Historical schema transitions are not runtime prerequisites.
 
 ## Eligibility and price precedence
 
 Existing increase_day and increase_plan row IDs, quantities and prices are retained.
-Optional migration 015_scoped_addons.sql adds scope metadata with three meanings:
+Current scope metadata has three meanings:
 
 | Scope | Data | Eligibility |
 | --- | --- | --- |
 | Global | server_id NULL, group_ids NULL | All supported servers |
-| Server | logical server ID, group_ids NULL | Exact Marzban/PasarGuard logical server |
+| Server | logical server ID, group_ids NULL | Exact supported logical server (currently PasarGuard) |
 | PasarGuard Group-set | logical PasarGuard server ID plus canonical Group ID JSON | Exact native Group-set on the selected native account |
 
 Hash the unambiguous scope strings G, S:<server-id>, and
 P:<server-id>:<sorted-comma-separated-group-ids> with SHA-256.
 These are stored as scope_hash; an index prevents duplicate
-quantity+scope pairs. Do not confuse native PasarGuard groups with Marzban
+quantity+scope pairs. Do not confuse native PasarGuard groups with physical
 panel_group_id. For a given extension kind and integer unit count,
 priority is exact native PasarGuard Group-set > server > Global.
 Multiple native Groups are one exact set, never a cheapest matching
 individual Group. Imported PasarGuard accounts with an authenticated,
 unchanged empty native Group-set ([]) can use eligible Server/Global
 offers, but cannot match a Group-specific offer or invent Group membership.
-Such a newly issued scoped quote pins native_groups: []; null instead
-means no new scoped Group contract (the historical invoice path).
+Such a newly issued scoped quote pins native_groups: []; do not treat a historical NULL snapshot as a current issued quote.
 CREATE/plan defaults still require nonempty native Groups. A pinned
 existing-account snapshot may preserve [] only with valid account/identity
 references and must pass the usual current provider-authority checks both
@@ -40,28 +39,25 @@ server if needed. PasarGuard native group IDs are entered as a comma
 separated set, for example 3,7; the server must be PasarGuard and the
 Group lookup must verify active/allowed Groups. Enter units-price,
 for example 10-25000. Existing offers display scope and can change
-scope; existing legacy edit/delete and administrator permissions remain.
+scope; current edit/delete and administrator permissions remain.
 The day and volume administrator lists always show **every offer of the
 selected kind** in one view: Global, logical Server and native PasarGuard
 Group-set offers appear together. Each row's scope label is the entry to
 edit that precise offer's scope; price, quantity and delete actions remain
 available on the same row with revision-bound callbacks. There is **no
-scope-filter row**. Legacy Telegram messages containing now-retired filter
-callbacks safely show the same complete list to an authorized idle admin.
+scope-filter row**. Retired filter callbacks are not a supported journey.
 The customer sees only the applicable winning offer per quantity for the
 owned subscription; it is not this unfiltered administrator catalogue.
 Customer day/volume selection uses a single-column keyboard with concise
 Persian quantity/price labels and a Back action to the owned order details.
 Every scoped-editor session now carries a fresh, server-stored 16-hex nonce
 in its Scope and Server picker callbacks. A newer Telegram update ID alone
-never authorizes an old keyboard from another editing session. Every offer
-edit/delete/scope button in a migrated catalog also contains a 20-hex
+never authorizes an old keyboard from another editing session. Every current offer
+edit/delete/scope button also contains a 20-hex
 content revision for the exact displayed kind, ID, scope, quantity and
 price. The existing authenticated SQL transaction locks and checks that
 row before any write; deleted or changed rows are rejected, not silently
-reinterpreted. Older unbound migrated callbacks are refused. Legacy
-unmigrated global catalogs keep the pre-015 path without weakening migrated
-state checks. All callback payloads stay inside Telegram's 64-byte limit.
+reinterpreted. Unbound historical callbacks are refused; no pre-015 runtime fallback remains. All callback payloads stay inside Telegram's 64-byte limit.
 
 New steps retain the existing role, private Telegram frame and update-ID
 fences. Incorrect or stale input does not change pricing.
@@ -99,10 +95,7 @@ An already-issued quote must never silently change amount because of
 admin edits. New draft issuance fails when the selected offer price
 changed while the draft was being created.
 
-Pre-migration invoices have a NULL snapshot and retain original amount
-and units. They may be fulfilled only if they still unambiguously
-correlate with a legacy Global offer. Otherwise stop for manual
-reconciliation, not an invented alternative price or scope.
+Historical invoices without a current immutable quote retain evidence of the original amount and units but are not executable in the replacement runtime. Existing-instance reconciliation is separately authorized.
 Existing idempotency journals, wallet protections and gateway records
 remain authoritative. Never retry an uncertain external effect blindly.
 
@@ -119,59 +112,18 @@ finalization SQL transaction. Only this verified existing-account case may
 retain a zero plan ID. Normal plan-backed orders keep their strict checks;
 zero/invalid references without verified import provenance fail closed.
 
-This finalization check is shared by Wallet and operator-approved Manual
-day/volume callbacks and Hosted day fulfillment. A post-PUT failure is
-held for operator reconciliation: it never triggers automatic refund,
-reprice or native replay. The PHP 8.5 fifth-family native acceptance now
-includes test_post_v9_scoped_pg_payments.py on disposable MariaDB and
-an owned loopback PasarGuard emulator, verifying the non-API financial
-paths and durable replay protections in addition to the separate API
-source-real checks. CI retains an independent
-php85-scoped-pg-payments artifact for exact candidate review.
+Current funded add-on execution is shared across payment methods and uses
+the service operation, Wallet and Native evidence described in
+[the architecture](WALLET-FIRST-ARCHITECTURE.md). A failed local finalization
+keeps the original evidence and recovery boundary; never invent a refund,
+reprice, or blindly replay a remote mutation.
 
-## Operator migration and rollback (separate authorization required)
+## Installation and verification
 
-1. Quiesce the bot webhook and Cron, verify no in-flight payment effects,
-   take an installation-specific DB backup and test its restoration.
-2. Confirm earlier approved migrations and an audited original Global
-   catalogue. Inspect duplicate quantities and invalid legacy units.
-3. Rehearse migration 015 on a disposable DB copy. It checks old columns
-   are absent and refuses duplicate or malformed legacy offers. RC22 ships
-   a SHA-256-verified 015 SQL sidecar, never an automatic migration.
-4. Only when separately authorized, apply 015 once and verify original
-   row IDs, prices, legacy pay snapshots and both new indexes/columns.
-   Runtime readiness requires both exact unique (volume,scope_hash) BTREE
-   definitions, their declared order and transactional InnoDB tables, not
-   merely a complete-looking column list. Partial/index-drifted
-   installations remain non-operational until separately reconciled.
-5. Deploy the paired compatible source, verify readbacks and isolated
-   financial scenarios before resuming the bot.
-
-DDL is not transactionally atomic; a partial migration must be inspected
-and reconciled, never replayed blindly. Dropping new snapshot columns
-after scoped invoices exist would destroy financial provenance: first
-reconcile those invoices and prepare a reviewed compatible restore. Do
-not execute any of these installed-host steps from source-only authority.
-
-## Verification
-
-SQL-only owned disposable socket fixture:
-  PYTHONPATH=tools python3 tools/test_post_v9_scoped_addons.py --sql-only
-
-PHP8.5-only real PHP+isolated MariaDB fixture:
-  PYTHONPATH=tools python3 tools/test_post_v9_scoped_addons.py --run-disposable
-
-The latter runs only on the existing current-runtime native fifth shard
-in full CI, with its own evidence artifact. The review-remediation
-candidate extends it with stale multi-admin callbacks, index drift,
-current credential Group authority and a controlled native HTTP identity
-readback, and financial claim/dispatch/finalization/replay checks. Any new
-financial adapter in the test is local-only; full acceptance must be
-supported by the artifact actually produced for the exact candidate,
-never by this description. The fixture rejects unbounded current-runtime
-PHP deprecations rather than silently treating them as successes. No new native, payment or
-Telegram API endpoints are contacted. Historical accepted Persian copy
-proofs remain intact; the 14 current-only scoped editor keys have a separately
-pinned current-only text manifest.
-
-A current source merge or Stable publication does not execute the optional migration, install the runtime, activate payment APIs or prove live Native Group mutation or real gateway-money operations. Any operator installation, migration and live financial validation require their own specific approval and evidence; source integration was independently reviewed under PR #109.
+The mandatory current schema contains both scoped unique indexes. Partial
+or incompatible schema is rejected. No optional migration or old schema
+mode is supported. The current CI suites include wallet_first_funding,
+wallet_first_service_execution, wallet_first_fresh_schema and
+current_payment_readiness; see [CI validation](CI-VALIDATION.md). Source
+acceptance does not authorize live installation, data transfer, or provider
+operations. Historical SQL and test evidence are available in Git history.

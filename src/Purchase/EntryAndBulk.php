@@ -10,97 +10,73 @@ require_once __DIR__ . '/../Admin/Access.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
-/** Read-only menu admission; use the same configured methods as checkout. */
-function achbotCustomerHasPaymentMethod(mysqli $db,int $userId,array $state): bool {
-    foreach (['bank_transfer','gift_card'] as $method)
-        if (achbotManualEnabled($method) && achbotPayUxAudienceAllowed($db,$method,$userId)) return true;
-    if (achbotManualCryptoEnabled($userId)) {
-        foreach (['manual_usdt','manual_trx'] as $method)
-            if (achbotManualEnabled($method) && achbotPayUxAudienceAllowed($db,$method,$userId)) return true;
+if(in_array($data,['agentOneBuy','buySubscription','agentMuchBuy'],true)){
+    $shortcut=($customerShortcut??null)==='buy';
+    $buyType=match($data){'agentOneBuy'=>'one','agentMuchBuy'=>'much',default=>'none'};
+    $agentShortcut=$shortcut && achbotAgencyActive($userInfo,$botState);
+    if (!achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin)){
+        if ($shortcut) sendMessage(\achbotMessage('legacy_messages.selling_is_off'),null,'HTML');
+        else alert(\achbotMessage('legacy_messages.selling_is_off'));
+        return;
     }
-    foreach (['wallet'=>'walletState','nowpayments'=>'nowPaymentOther','zarinpal'=>'zarinpal','nextpay'=>'nextpay'] as $method=>$flag) {
-        if (($state[$flag]??'off')!=='on' || !achbotPayUxAudienceAllowed($db,$method,$userId)) continue;
-        if ($method!=='nowpayments' || achbotUsdtRateForUser($db,$userId)!==null) return true;
+    if ($agentShortcut) {
+        $keyboard=[[
+            ['text'=>\achbotMessage('legacy_buttons.agent_one_buy'),'callback_data'=>'agentOneBuy'],
+            ['text'=>\achbotMessage('legacy_buttons.agent_much_buy'),'callback_data'=>'agentMuchBuy']
+        ],[['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>'mainMenu']]];
+        sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.ce7759512b'),json_encode(['inline_keyboard'=>$keyboard]),'HTML');
+        return;
     }
-    return false;
-}
-
-if(($data == "agentOneBuy" || $data=='buySubscription' || $data == "agentMuchBuy") && ($botState['sellState']=="on" || ($from_id == $admin || $userInfo['isAdmin'] == true))){
-    if(!achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState)){
-        alert(\achbotMessage('legacy_messages.selling_is_off'));
-        exit();
+    if (!achbotPurchaseModeAllowed($userInfo,$botState,$buyType)) return;
+    $plans=achbotCustomerPurchasePlans($connection,$userInfo,$botState,$buyType,(int)$from_id,(int)$admin);
+    $servers=[];
+    foreach ($plans as $p) $servers[(int)$p['server_id']]=$p;
+    ksort($servers);
+    if(!$servers){
+        if ($shortcut) sendMessage(\achbotMessage('legacy_messages.no_server_available'),null,'HTML');
+        else alert(\achbotMessage('legacy_messages.no_server_available'));
+        return;
     }
-    if($data=="buySubscription") $buyType = "none";
-    elseif($data=="agentOneBuy") $buyType = "one";
-    elseif($data== "agentMuchBuy") $buyType = "much";
-    
-    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type` IN (".achbotProviderSqlTypes().") WHERE si.`active`=1 and si.`state`=1 and si.`ucount` > 0 ORDER BY si.`id` ASC");
-    $stmt->execute();
-    $respd = $stmt->get_result();
-    $stmt->close();
-    if($respd->num_rows==0){
-        alert(\achbotMessage('legacy_messages.no_server_available'));
-        exit;
+    $keyboard=[];
+    foreach($servers as $id=>$p){
+        $keyboard[] = [['text'=>$p['server_flag'].' '.$p['server_title'],'callback_data'=>"selectServer{$id}_{$buyType}"]];
     }
-    $keyboard = [];
-    while($cat = $respd->fetch_assoc()){
-        $id = $cat['id'];
-        $name = $cat['title'];
-        $flag = $cat['flag'];
-        $keyboard[] = ['text' => "$flag $name", 'callback_data' => "selectServer{$id}_{$buyType}"];
-    }
-    $keyboard = array_chunk($keyboard,1);
     $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"]];
-    editText($message_id, \achbotMessage('legacy_messages.buy_sub_select_location'), json_encode(['inline_keyboard'=>$keyboard]));
+    $markup=json_encode(['inline_keyboard'=>$keyboard]);
+    if ($shortcut) sendMessage(\achbotMessage('legacy_messages.buy_sub_select_location'),$markup,'HTML');
+    else editText($message_id, \achbotMessage('legacy_messages.buy_sub_select_location'), $markup);
+    return;
 }
 
 if($data=='createMultipleAccounts' && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT si.* FROM `server_info` si INNER JOIN `server_config` sc ON sc.`id`=si.`id` AND sc.`type` IN (".achbotProviderSqlTypes().") WHERE si.`active`=1 and si.`state`=1 and si.`ucount` > 0 ORDER BY si.`id` ASC");
-    $stmt->execute();
-    $respd = $stmt->get_result();
-    $stmt->close();
-    if($respd->num_rows==0){
-        sendMessage(\achbotMessage('legacy_messages.no_server_available'), null, 'HTML');
-        exit;
+    $servers=[];
+    foreach (achbotAvailablePlans($connection,null,null,'admin') as $plan) $servers[(int)$plan['server_id']]=$plan;
+    if (!$servers) {
+        sendMessage(achbotMessage('legacy_messages.no_server_available'),null,'HTML');
+        return;
     }
-    $keyboard = [];
-    while($cat = $respd->fetch_assoc()){
-        $id = $cat['id'];
-        $name = $cat['title'];
-        $flag = $cat['flag'];
-        $keyboard[] = ['text' => "$flag $name", 'callback_data' => "createAccServer$id"];
-    }
+    ksort($servers);$keyboard=[];
+    foreach ($servers as $id=>$plan)
+        $keyboard[]=['text'=>$plan['server_flag'].' '.$plan['server_title'],'callback_data'=>'createAccServer'.$id];
     $keyboard[] = ['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"managePanel"];
     $keyboard = array_chunk($keyboard,1);
     editText($message_id, \achbotMessage('legacy_messages.buy_sub_select_location'), json_encode(['inline_keyboard'=>$keyboard]));
     
 
 }
-if(preg_match('/createAccServer(\d+)/',$data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) ) {
+if(preg_match('/\AcreateAccServer([1-9][0-9]*)\z/D',$data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) ) {
     $sid = $match[1];
         
-    $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `parent`=0 order by `id` asc");
-    $stmt->execute();
-    $respd = $stmt->get_result();
-    $stmt->close();
-    if($respd->num_rows == 0){
-        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.de33518bf8'));
-    }else{
-        
-        $keyboard = [];
-        while ($file = $respd->fetch_assoc()){
-            $id = $file['id'];
-            $name = $file['title'];
-            $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type` IN (".achbotProviderSqlTypes().") WHERE p.`server_id`=? and p.`catid`=? and p.`active`=1 AND p.`inbound_id`=0");
-            $stmt->bind_param("ii", $sid, $id);
-            $stmt->execute();
-            $rowcount = $stmt->get_result()->num_rows; 
-            $stmt->close();
-            if($rowcount>0) $keyboard[] = ['text' => "$name", 'callback_data' => "createAccCategory{$id}_{$sid}"];
-        }
-        if(empty($keyboard)){
-            alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.de33518bf8'));exit;
-        }
+    $categories=[];
+    foreach (achbotAvailablePlans($connection,(int)$sid,null,'admin') as $plan)
+        $categories[(int)$plan['catid']]=$plan['category_title'];
+    if (!$categories) {
+        alert(achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.de33518bf8'));
+        return;
+    } else {
+        ksort($categories);$keyboard=[];
+        foreach ($categories as $id=>$name)
+            $keyboard[]=['text'=>$name,'callback_data'=>"createAccCategory{$id}_{$sid}"];
         alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.174c6a61d7'));
         $keyboard[] = ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "createMultipleAccounts"];
         $keyboard = array_chunk($keyboard,1);
@@ -108,20 +84,16 @@ if(preg_match('/createAccServer(\d+)/',$data, $match) && ($from_id == $admin || 
     }
 
 }
-if(preg_match('/createAccCategory(\d+)_(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
+if(preg_match('/\AcreateAccCategory([1-9][0-9]*)_([1-9][0-9]*)\z/D',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $call_id = $match[1];
     $sid = $match[2];
-    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type` IN (".achbotProviderSqlTypes().") WHERE p.`server_id`=? and p.`catid`=? and p.`active`=1 AND p.`inbound_id`=0 order by p.`id` asc");
-    $stmt->bind_param("ii", $sid, $call_id);
-    $stmt->execute();
-    $respd = $stmt->get_result();
-    $stmt->close();
-    if($respd->num_rows==0){
-        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.5223e5a747'));
-    }else{
+    $respd=achbotAvailablePlans($connection,(int)$sid,(int)$call_id,'admin');
+    if (!$respd) {
+        alert(achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.5223e5a747'));
+    } else {
         alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.465c2a0af9'));
         $keyboard = [];
-        while($file = $respd->fetch_assoc()){
+        foreach($respd as $file){
             $id = $file['id'];
             $name = $file['title'];
             $keyboard[] = ['text' => "$name", 'callback_data' => "createAccPlan{$id}"];
@@ -132,8 +104,8 @@ if(preg_match('/createAccCategory(\d+)_(\d+)/',$data,$match) && ($from_id == $ad
     }
 
 }
-if(preg_match('/^createAccPlan(\d+)/',$data,$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    if (!achbotSupportsPlan($connection, (int)$match[1])) {
+if(preg_match('/\AcreateAccPlan([1-9][0-9]*)\z/D',$data,$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    if (!in_array((int)$match[1],array_map('intval',array_column(achbotAvailablePlans($connection,null,null,'admin'),'id')),true)) {
         alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.d3fb64c4d9'), true);
         return;
     }
@@ -141,11 +113,12 @@ if(preg_match('/^createAccPlan(\d+)/',$data,$match) && $text != \achbotMessage('
     sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.c754e347bf'),$cancelKey, 'HTML');
     setUser('createAccDate' . $match[1]);
 }
-if(preg_match('/^createAccDate(\d+)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    if(is_numeric($text)){
-        if($text >0){
+if(preg_match('/^createAccDate(\d+)$/D',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    $dayUnits=achbotWholeServiceUnits($text,achbotServiceDaysMax(),true);
+    if($dayUnits!==null){
+        if($dayUnits>0){
             sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f018216ab3'), null, 'HTML');
-            setUser('createAccVolume' . $match[1] . "_" . $text);
+            setUser('createAccVolume' . $match[1] . "_" . $dayUnits);
         }else{
             sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.9cc4de866d'), null, 'HTML');
         }
@@ -153,20 +126,21 @@ if(preg_match('/^createAccDate(\d+)/',$userInfo['step'],$match) && $text != \ach
         sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.141dd787b4'), null, 'HTML');
     }
 }
-if(preg_match('/^createAccVolume(\d+)_(\d+)/',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    if(!is_numeric($text)){
+if(preg_match('/^createAccVolume(\d+)_(\d+)$/D',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    $volumeUnits=achbotWholeServiceUnits($text,achbotServiceVolumeMax(),true);
+    if($volumeUnits===null){
         sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
         exit();
-    }elseif($text <=0){
+    }elseif($volumeUnits===0){
         sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f30d6ad265'), null, 'HTML');
         exit();
     }
     sendMessage(\achbotMessage('legacy_messages.enter_account_amount'), null, 'HTML');
-    setUser("createAccAmount" . $match[1] . "_" . $match[2] . "_" . $text);
+    setUser("createAccAmount" . $match[1] . "_" . $match[2] . "_" . $volumeUnits);
 }
 
 if (
-    preg_match('/^createAccAmount(\d+)_(\d+)_(\d+)/', $userInfo['step'], $match) &&
+    preg_match('/^createAccAmount(\d+)_(\d+)_(\d+)$/D', $userInfo['step'], $match) &&
     $text != \achbotMessage('legacy_buttons.cancel') &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false) == true)
 ) {
@@ -214,38 +188,30 @@ if (
     $volume = $volumeFromStep;
 
     $date             = time();
-    $expire_microdate = floor(microtime(true) * 1000) + (864000 * $days * 100);
-    $expire_date      = $date + (86400 * $days);
 
     $price      = isset($plan['price']) ? (int)$plan['price'] : 0;
     $server_id  = (int)$plan['server_id'];
     $inbound_id = (int)$plan['inbound_id'];
-    $acount     = (int)$plan['acount'];
 
-    $protocol   = $plan['protocol'];
-    $netType    = $plan['type'];
-    $rahgozar   = $plan['rahgozar'];
-    $customPath = $plan['custom_path'];
-    $customPort = $plan['custom_port'];
-    $customSni  = $plan['custom_sni'];
-    $limitip    = $plan['limitip'];
 
-    ensureServerCapacity($connection, $server_id, $inbound_id, $acount);
+    ensureServerCapacity($connection, $server_id);
 
-    if ($inbound_id != 0 && $acount < $count) {
-        sendMessage(str_replace("AMOUNT", $acount, \achbotMessage('legacy_messages.can_create_specific_account')));
-        exit();
-    }
 
     [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
 
     $srv_remark = $serverInfo['remark'] ?? '';
     $serverType = $serverConfig['type'] ?? '';
-    $portType   = $serverConfig['port_type'] ?? 'rand';
 
     alert(\achbotMessage('legacy_messages.sending_config_to_user'));
 
-    $lastRemark = '';
+    require_once __DIR__.'/../Finance/OperationalReports.php';
+    $batchLease=achbotOperationalReportLock($connection,$bulkSource);
+    $leaseRow=achbotProviderRow($connection,'SELECT GET_LOCK(?,0) AS acquired','s',[$batchLease]);
+    if ((int)($leaseRow['acquired']??0)!==1) return;
+    try {
+    // A replay cannot rebuild or replace the reports of a prior batch.
+    if (achbotProviderRow($connection,"SELECT id FROM service_effects
+        WHERE source_kind='admin_bulk' AND source_ref=? LIMIT 1",'s',[$bulkSource])) return;
     $pendingDeliveries=[];
     $reportBulk=static function(array $deliveryReview=[]) use (
         $connection,$count,$uid,$bulkSource,$serverInfo,$server_id,
@@ -260,14 +226,14 @@ if (
         if ($deliveryReview)
             $base.="\n".achbotMessage('bulk_reporting.delivery_needs_review',
                 ['count'=>count($deliveryReview)]);
-        return ['proof'=>$proof,'text'=>achbotBulkReportAppend($base,$proof,true)];
+        $report=achbotBulkReportBuild($base,$proof,true);
+        return ['proof'=>$proof,'text'=>$report['summary'],'pages'=>$report['pages']];
     };
     try {
     for ($i = 1; $i <= $count; $i++) {
 
-        $uniqid = generateRandomString(42, $protocol);
+        $uniqid = generateUID();
 
-        [$port] = getNextPortAndIncrease('settings/temp.txt', $portType);
 
         $remark = buildRemark(
             $botState,
@@ -287,65 +253,42 @@ if (
         $remark=achbotAdminBulkAccountRemark(
             (string)$remark,$bulkSource,$i,$count,(string)$serverType,
             $remarkMode);
-        [$response, $remark, $port, $effectId] = achbotCreateNonPaymentAccount(
+        [$response, $remark, , $effectId] = achbotCreateNonPaymentAccount(
             $connection,'admin_bulk',$bulkSource,$uid,$i,$count,[
-                'is_primary_admin'=>($uid===(int)$admin),
                 'user_id'=>$uid,'server_type'=>$serverType,
                 'server_id'=>$server_id,'inbound_id'=>$inbound_id,
-                'plan_id'=>$fidFromStep,'remark'=>$remark,'volume'=>$volume,
-                'days'=>$days,'uniqid'=>$uniqid,'protocol'=>$protocol,
-                'port'=>$port,'expire_microdate'=>$expire_microdate,
-                'net_type'=>$netType,'rahgozar'=>$rahgozar,
-                'limitip'=>$limitip
+                'plan_id'=>$fidFromStep,'remark'=>$remark,'naming_mode'=>$remarkMode,'volume'=>$volume,
+                'days'=>$days
             ]
         );
 
         ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
+        $expire_date=(int)$response->expire;
 
-        $lastRemark = $remark;
-
-        [$token, $vray_link, $uniqidReturned, $caption, $keys, $qrLink] = buildLinksAndSendQr(
-            $serverType,
-            $serverConfig,
-            $botState,
-            $botUrl,
-            $server_id,
-            $uniqid,
-            $protocol,
-            $remark,
-            $port,
-            $netType,
-            $inbound_id,
-            $rahgozar,
-            $customPath,
-            $customPort,
-            $customSni,
-            $response,
-            $uid,
-            $volume,
-            $days,
-            [],
-            false,
-            '',
-            null,
-            false
-        );
+        require_once __DIR__.'/../Subscription/Delivery.php';
+        $delivery=achbotNonpaidPurchasePacket($connection,$serverType,$server_id,$serverConfig,
+            $botState,(string)($botUsername??''),(string)$botUrl,$remark,$response,$volume,$days,$uid);
 
         if ($connection->begin_transaction()!==true)
             throw new RuntimeException('admin_bulk_order_begin');
         try {
             $orderId=insertOrder(
-                $connection,$uid,$token,$fidFromStep,$server_id,
-                $inbound_id,$remark,$uniqidReturned?:$uniqid,$expire_date,$vray_link,$price,
+                $connection,$uid,'',$fidFromStep,$server_id,
+                $inbound_id,$remark,$uniqid,$expire_date,$delivery['link'],$price,
                 $date,0,true);
             achbotLinkNonPaymentAccountEffect($connection,$effectId,$orderId);
+            $deliveryId=achbotNonpaidDeliveryInsertLocked($connection,$effectId,$orderId,$delivery['packet']);
+            $line=achbotMessageHtml('bulk_reporting.continuation',['page'=>$i,'reference'=>$bulkSource]).
+                "\n".$i.'. <code>'.htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8').'</code> (#'.$orderId.')';
+            achbotOperationalReportStageLocked($connection,$bulkSource,$uid,$uid,'operations',
+                $line,null,[],'operational_report_p'.$i);
             if ($connection->commit()!==true)
                 throw new RuntimeException('admin_bulk_order_commit_unknown');
         } catch (Throwable $error) {
             try {$connection->rollback();} catch (Throwable $ignored) {}
             throw $error;
         }
-        $pendingDeliveries[]=['qr'=>$qrLink,'caption'=>$caption,'keys'=>$keys];
+        $pendingDeliveries[]=$deliveryId;
     }
 
     // Capacity was atomically held with first journal dispatch.
@@ -357,11 +300,7 @@ if (
             ' class='.get_class($error));
         try {
             $summary=$reportBulk();
-            $notice=achbotNotifyAdmins('sendMessage', [
-                'text'=>$summary['text'],'reply_markup'=>null,'parse_mode'=>'HTML']);
-            if (!achbotAdminFanoutAcknowledged($notice))
-                error_log('achbot_admin_bulk_partial_notice_unconfirmed source='.
-                    preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource));
+            achbotOperationalReportCompactBatch($connection,$bulkSource,$uid,$summary['text'],$summary['pages']);
         } catch (Throwable $notificationError) {
             error_log('achbot_admin_bulk_partial_notice_failed source='.
                 preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource).
@@ -371,10 +310,9 @@ if (
         return;
     }
     $deliveryReview=[];
-    foreach ($pendingDeliveries as $index=>$packet) {
+    foreach ($pendingDeliveries as $index=>$deliveryId) {
         try {
-            if (!sendQrFromLink($packet['qr'],$packet['caption'],$packet['keys'],
-                    $botUrl,$uid,'',null))
+            if (achbotServiceDeliveryDispatch($connection,$deliveryId)!=='acknowledged')
                 throw new RuntimeException('bulk_telegram_unconfirmed');
         } catch (Throwable $error) {
             $deliveryReview[]=$index+1;
@@ -385,11 +323,7 @@ if (
     }
     try {
         $summary=$reportBulk($deliveryReview);
-        $notices=achbotNotifyAdmins('sendMessage',[
-            'text'=>$summary['text'],'reply_markup'=>null,'parse_mode'=>'HTML']);
-        if (!achbotAdminFanoutAcknowledged($notices))
-            error_log('achbot_admin_bulk_report_delivery_unconfirmed source='.
-                preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource));
+        achbotOperationalReportCompactBatch($connection,$bulkSource,$uid,$summary['text'],$summary['pages']);
         if (!$summary['proof']['complete'])
             error_log('achbot_admin_bulk_report_incomplete source='.
                 preg_replace('/[^A-Za-z0-9_:]/','',$bulkSource));
@@ -404,5 +338,9 @@ if (
         : achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.62d6e89b94'),
         getMainKeys(), 'HTML');
     setUser();
+    } finally {
+        try {$s=achbotProviderStatement($connection,'SELECT RELEASE_LOCK(?)','s',[$batchLease]);$s->close();}
+        catch (Throwable $ignored) {}
+        achbotOperationalReportDispatch($connection,$bulkSource);
+    }
 }
-

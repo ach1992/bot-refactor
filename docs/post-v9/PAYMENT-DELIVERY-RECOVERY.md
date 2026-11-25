@@ -1,6 +1,8 @@
 # Crash-safe customer payment delivery — recovery contract
 
-**Current Stable source:** Protected original 018/020 delivery evidence and a tightly authorized operator redelivery remain relevant. The old RC26 experimental financial/service workbenches and 019/021 new-install sidecars were retired. Use the [current exception inbox and Archive contract](AUTOMATIC-GATEWAY-REVIEW.md) and [Issue #117](https://github.com/ach1992/bot-refactor/issues/117) for current behavior and outstanding *installed* acceptance. Dated RC workbench sections below are historical reasoning, **not executable runbooks, upgrade instructions or permission to replay effects**.
+**Wallet-first candidate boundary:** For the current PR #234, [Wallet-first architecture](WALLET-FIRST-ARCHITECTURE.md), [the shared exception inbox](AUTOMATIC-GATEWAY-REVIEW.md) and [fresh installation](FRESH-INSTALL.md) take precedence. The following pre-Wallet-first material describes the earlier Stable/RC implementation and historical evidence; it is not an active runtime contract, migration procedure or authorization to replay old effects in the replacement. Use the exact installed release documentation for an older deployment.
+
+**Current Stable source:** Protected original 018/020 delivery evidence and a tightly authorized operator redelivery remain relevant. The old RC26 experimental financial/service workbenches and 019/021 new-install sidecars were retired. Use the [current exception inbox](AUTOMATIC-GATEWAY-REVIEW.md) and [Issue #117](https://github.com/ach1992/bot-refactor/issues/117) for current behavior and outstanding *installed* acceptance. Dated RC workbench sections below are historical reasoning, **not executable runbooks, upgrade instructions or permission to replay effects**.
 
 ## Current operator redelivery (source contract; installed acceptance separate)
 
@@ -68,7 +70,7 @@ Before touching Chili, require ALL:
 
 The telegramWebhookSecret must be present for existing payment-evidence AEAD. Back it up securely; a lost key prevents safe decryption. Never log or expose encrypted payloads or destinations in public issues/logs.
 
-## Source tests
+## Source tests (historical evidence; retired driver names refer to the corresponding Git revision)
 
 - tools/test_post_v9_bank_buy.py: owned MariaDB socket, synthetic native and Telegram responses; additions cover atomic encrypted manifests, crash-after-COMMIT recovery, per-account bulk ACK/unknown, invalid Owner and stale challenge, stale lease, corrupted envelope and concurrent pending claim. Execute on PHP 8.5 only.
 - API native/flow fixtures migrate 018 on disposable setups. All eight PHP 8.5 CI families remain the required exact-HEAD gate.
@@ -353,12 +355,11 @@ another merchant payment inquiry.
   under `processing`; no second remote PUT is allowed. The bank/API
   `auto` BUY_SUB completion and its 018 delivery records are distinct.
 
-Real PHP 8.5 regression candidates live in `test_post_v9_manual_payments.py`
-(original receipt, one-shot capacity, single/multiple account ordering,
-Telegram ambiguity and duplicate Owner callback) and
-`test_post_v9_recovery_transport.py` (actual credential-bound localhost
-login/GET, no remote re-POST, local verification of precisely one original
-native `service_effects` row). Neither proves installed Chili acceptance.
+Historical PHP 8.5 manual-payment and recovery proof used the
+[former manual driver](https://github.com/ach1992/bot-refactor/blob/3201af015dfd4208e9de5e532cc371541353ae52/tools/test_post_v9_manual_payments.py) and the
+[former recovery driver](https://github.com/ach1992/bot-refactor/blob/c2184498192004e1e1f1dc045b7ab2036e3691ba/tools/test_post_v9_recovery_transport.py).
+Neither proves installed acceptance. The current maintained financial,
+Native delivery and recovery tests are defined by [CI-VALIDATION.md](CI-VALIDATION.md).
 
 ### Direct manual receipt rejection
 

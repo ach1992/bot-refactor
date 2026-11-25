@@ -1,5 +1,7 @@
 # Subscription presentation and per-server settings
 
+**Wallet-first boundary:** For the Wallet-first replacement, PasarGuard is the only shipped Native adapter. Use the current presentation modules and [architecture](WALLET-FIRST-ARCHITECTURE.md). Historical two-provider/Marzban positional and old settings compatibility descriptions below do not require a runnable old mode. The actual current schema and fresh runtime are authoritative.
+
 Current **Stable v0.10.0** contract for native Marzban and PasarGuard, accepted in [Issue #37](https://github.com/ach1992/bot-refactor/issues/37). Source/isolated tests do not establish installed Telegram/provider acceptance or authorize deployment.
 
 ## Ordinary administrator journey

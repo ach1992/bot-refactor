@@ -183,41 +183,28 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
             exit;
         }
 
-        // Both wallet effects and step consumption must commit atomically.
-        $maxReceiverBefore = 2147483647 - $amount;
-        $receiverPk = (int)$receiver['id'];
-        $senderPk = (int)$sender['id'];
-        $stmt = $connection->prepare(
-            "UPDATE users SET wallet = wallet + ? "
-            . "WHERE id = ? AND userid = ? AND wallet <= ?"
-        );
-        $stmt->bind_param("iiii", $amount, $receiverPk, $to_id, $maxReceiverBefore);
-        if ($stmt->execute() !== true) {
-            throw new RuntimeException('transfer_recipient_credit_execution_failed');
-        }
-        $credited = $stmt->affected_rows;
-        $stmt->close();
-        if ($credited !== 1) {
-            throw new RuntimeException('transfer_recipient_credit_missing');
-        }
+        // Both users are already locked in stable userid order. The two
+        // shared ledger entries, original 005 evidence and step/cursor claim
+        // commit together; a replay or either-leg failure rolls back all.
+        $senderPk=(int)$sender['id'];
+        $senderUserId=(int)$from_id;
+        $sender_after=$sender_before-$amount;
+        $receiver_after=$receiver_before+$amount;
+        $credit=achbotWalletApplyLocked($connection,$to_id,'transfer',
+            (string)$transferUpdateId,2,$amount,$senderUserId);
+        $debit=achbotWalletApplyLocked($connection,$senderUserId,'transfer',
+            (string)$transferUpdateId,1,-$amount,$senderUserId);
+        if ($credit['replayed'] || $debit['replayed'] ||
+            $credit['before']!==$receiver_before || $credit['after']!==$receiver_after ||
+            $debit['before']!==$sender_before || $debit['after']!==$sender_after)
+            throw new RuntimeException('transfer_wallet_entry_conflict');
 
-        $stmt = $connection->prepare(
-            "UPDATE users SET wallet = wallet - ?, step = 'none' "
-            . "WHERE id = ? AND userid = ? AND step = ? AND wallet >= ?"
-        );
-        $senderUserId = (int)$from_id;
-        $stmt->bind_param("iiisi", $amount, $senderPk, $senderUserId, $expectedStep, $amount);
-        if ($stmt->execute() !== true) {
-            throw new RuntimeException('transfer_sender_debit_execution_failed');
-        }
-        $debited = $stmt->affected_rows;
+        $stmt=$connection->prepare("UPDATE users SET step='none'
+            WHERE id=? AND userid=? AND step=?");
+        $stmt->bind_param('iis',$senderPk,$senderUserId,$expectedStep);
+        $claimed=$stmt->execute() && $stmt->affected_rows===1;
         $stmt->close();
-        if ($debited !== 1) {
-            throw new RuntimeException('transfer_sender_debit_claim_missing');
-        }
-
-        $sender_after = $sender_before - $amount;
-        $receiver_after = $receiver_before + $amount;
+        if (!$claimed) throw new RuntimeException('transfer_sender_debit_claim_missing');
 
         // Both immutable legs commit WITH balances and the consumed step.
         // A failure on either INSERT rolls all of them back.
@@ -233,6 +220,8 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         // Keep replay ownership after users.step is consumed, including
         // after later menu navigation/cancellation or a lost COMMIT reply.
         achbotWalletTransferComplete($connection,$transferCursor,$amountSource);
+        require_once dirname(__DIR__).'/WalletReports.php';
+        achbotWalletReportStageLocked($connection,$credit['id'],(int)$admin);
 
         $commitStarted = true;
         // A false or lost COMMIT acknowledgement is NOT evidence of rollback.
@@ -334,41 +323,11 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         }
     };
 
-    // ساخت نام و یوزرنیم
-        $sender_name = !empty($sender['name']) ? $sender['name'] : \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.bda050585a');
-        $receiver_name = !empty($receiver['name']) ? $receiver['name'] : \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.bda050585a');
-
-        $sender_username = !empty($sender['username']) ? '@' . $sender['username'] : \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.bda050585a');
-        $receiver_username = !empty($receiver['username']) ? '@' . $receiver['username'] : \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.bda050585a');
-
         // پیام برای مقصد
         $sendTransferNotice(
             \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.customer.a5b15e454e') . number_format($amount) . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.ecbce64eed', ['from_id' => $from_id]),
             null, null, $to_id, 'recipient'
         );
-
-        // گزارش برای ادمین/کانال
-        $channelMessage =
-            \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.channel_message.4dcd886908')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.f7c8f1486f')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.1c463d5538', ['from_id' => $from_id])
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.d6da19205d') . htmlspecialchars($sender_name) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.0abd13e218') . htmlspecialchars($sender_username) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.3a7e183abf') . number_format($sender_before) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.77d4a377ae') . number_format($sender_after) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.f7c8f1486f')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.f7206f6d33', ['to_id' => $to_id])
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.d6da19205d') . htmlspecialchars($receiver_name) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.0abd13e218') . htmlspecialchars($receiver_username) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.3a7e183abf') . number_format($receiver_before) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.77d4a377ae') . number_format($receiver_after) . "</b>\n"
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.f7c8f1486f')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.431f74945a') . number_format($amount) . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.b971f2d37a');
-
-        foreach (achbotNotifyAdmins('sendMessage', ['text'=>$channelMessage,'parse_mode'=>'html']) as $notice) {
-            if (!is_object($notice['response']) || ($notice['response']->ok??false)!==true)
-                $deliveryProblems[]=(int)$notice['chat_id']===(int)$admin?'admin':'report_destination';
-        }
 
         // پیام برای مبدأ؛ قدم قبلاً در همان تراکنش مصرف شده است.
         $sendTransferNotice(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.customer.a5b15e454e') . number_format($amount) .

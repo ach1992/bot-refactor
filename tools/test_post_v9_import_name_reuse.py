@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 
 import test_post_v9_pg_cutover_runtime as historical
-import test_post_v9_scoped_api_pg as fixtures
+import native_identity_fixture as fixtures
 
 ROOT = Path(__file__).resolve().parents[1]
 USERNAME = historical.USER
@@ -81,7 +81,7 @@ try {
 
 def run() -> list[str]:
     checks: list[str] = []
-    with fixtures.sandbox() as (sql, runner, provider, _bank, _epoch):
+    with fixtures.sandbox() as (sql, runner, provider, _epoch):
         # Use the same historical-cutover provenance constructor as the
         # original Hell/Vivan acceptance suite (two locally linked references).
         old_effect = int(historical.fixture_effect(sql))

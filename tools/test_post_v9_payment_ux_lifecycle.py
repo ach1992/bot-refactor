@@ -11,9 +11,9 @@ import subprocess
 import time
 from pathlib import Path
 
-import test_access_state as owned
-import test_v6_native as native
-import test_v8_native as purchase
+import database_fixture as owned
+import database_fixture as native
+import database_fixture as purchase
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
@@ -70,11 +70,6 @@ if ($action==='expire') {
 } elseif ($action==='audience') {
     $before=achbotPayUxAudienceAllowed($connection,
         (string)($spec['provider']??'bank_transfer'),(int)($spec['actor']??1001));
-} elseif ($action==='duplicate_guard') {
-    $stmt=$connection->prepare('SELECT * FROM pays WHERE id=? LIMIT 1');
-    $stmt->bind_param('i',$id);$stmt->execute();
-    $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
-    $before=duplicateReceiptGuard($connection,$pay,(int)($spec['clock']??time()));
 } elseif ($action==='manual_allowed') {
     $stmt=$connection->prepare('SELECT * FROM pays WHERE id=? LIMIT 1');
     $stmt->bind_param('i',$id);$stmt->execute();
@@ -120,17 +115,17 @@ echo json_encode(['result'=>$before,'events'=>$GLOBALS['events']],JSON_THROW_ON_
 def sql(w,e,q):
     return native.sql(w,e,q,DB)
 
-def cmd(w,e,root,s):
+def cmd(w,e,root,s,database=DB):
     src=w/'owned-payment-ux.php'
     if not src.exists():src.write_text(DRIVER)
     return ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
             '-d','allow_url_fopen=0',
             '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
-            str(src),str(root),str(w/'mysql.sock'),DB,json.dumps(s,ensure_ascii=False)]
+            str(src),str(root),str(w/'mysql.sock'),database,json.dumps(s,ensure_ascii=False)]
 
-def run(w,e,s):
+def run(w,e,s,database=DB):
     expected_diagnostic=s.pop('expected_edit_diagnostic',None)
-    p=subprocess.run(cmd(w,e,ROOT,s),cwd=w,env=e,capture_output=True,timeout=20)
+    p=subprocess.run(cmd(w,e,ROOT,s,database),cwd=w,env=e,capture_output=True,timeout=20)
     import re
     expected=re.compile(rb'achbot_payment_telegram_edit_deferred pay_id=[0-9]+ '
                         rb'ref_id=[0-9]+ kind=(text|media) '
@@ -397,9 +392,10 @@ def main():
             intent=jsonlib.dumps(valid_intents[provider],separators=(',',':'))
             literal="'"+intent.replace("'","''")+"'"
             sql(w,e,f"INSERT INTO payment_attempts "
-                f"(pay_row_id,provider,order_hash,quote_amount,quote_currency,checkout_url,stage) "
-                f"VALUES ({pay_id},'{provider}','{key}',100,'toman',{literal},'pending')")
+                f"(pay_row_id,provider,order_hash,quote_amount,quote_currency,checkout_url,stage,wallet_invoice_sha256) "
+                f"VALUES ({pay_id},'{provider}','{key}',100,'toman',{literal},'pending',REPEAT('a',64))")
             return pay_id
+        sql(w,e,"ALTER TABLE payment_attempts ADD wallet_invoice_sha256 CHAR(64) DEFAULT NULL")
         for method in valid_intents:
             late=manual_quote('idle-'+method,method,who=9431)
             sql(w,e,f"UPDATE payment_attempts SET created_at=DATE_SUB(NOW(),INTERVAL 21600 SECOND) "
@@ -489,16 +485,22 @@ def main():
         assert results==[True,False] or results==[False,False],results
         assert (state(w,e,'manual-expiry-race')=='expired')
         cases.append('manual_click_cannot_revive_overdue_quote_under_concurrency')
-        sql(w,e,"INSERT INTO users (userid,name,username,refcode,date,is_agent) "
+        # Current eligibility requires the linked service-operation evidence.
+        # This suite's earlier partial-schema failures remain isolated.
+        audience_db='fresh_audience'
+        sql(w,e,"CREATE DATABASE "+audience_db+" CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
+        def audience_sql(q): return native.sql(w,e,q,audience_db)
+        audience_sql((ROOT/'database/current-schema.sql').read_text())
+        audience_sql("INSERT INTO users (userid,name,username,refcode,date,is_agent) "
             "VALUES (9501,'Agent fixture','synthetic_agent','0','1700000000',1),"
             "(9502,'Buyer fixture','synthetic_buyer','0','1700000000',0),"
             "(9503,'Ordinary fixture','synthetic_ordinary','0','1700000000',0)")
-        sql(w,e,"INSERT INTO pays "
+        audience_sql("INSERT INTO pays "
             "(hash_id,user_id,type,plan_id,server_id,volume,day,price,request_date,state) "
             "VALUES ('synthetic-paid-buyer',9502,'BUY_SUB',7,2,0,0,100,1700000000,'paid')")
         audience=lambda actor,mode,provider='bank_transfer': run(w,e,dict(
             action='audience',actor=actor,provider=provider,
-            states={'gatewayAudience':{provider:mode}}))['result']
+            states={'gatewayAudience':{provider:mode}}),audience_db)['result']
         assert audience(9501,'agents') is True
         assert audience(9502,'agents') is False
         assert audience(9503,'non_agents') is True
@@ -513,47 +515,20 @@ def main():
         # Reviewer F4: absent permits legacy all; explicit malformed NULL is
         # a real configured restriction and MUST deny, including nested modes.
         assert run(w,e,dict(action='audience',actor=9501,
-            provider='bank_transfer',states={}))['result'] is True
+            provider='bank_transfer',states={}),audience_db)['result'] is True
         assert run(w,e,dict(action='audience',actor=9501,
-            provider='bank_transfer',states={'gatewayAudience':{}}))['result'] is True
+            provider='bank_transfer',states={'gatewayAudience':{}}),audience_db)['result'] is True
         for invalid in (None,7,'all',{'bank_transfer':None},
                         {'bank_transfer':[]},{'bank_transfer':{}},
                         {'bank_transfer':True},{'bank_transfer':'INVALID'}):
             assert run(w,e,dict(action='audience',actor=9501,
-                provider='bank_transfer',states={'gatewayAudience':invalid}))['result'] is False, invalid
+                provider='bank_transfer',states={'gatewayAudience':invalid}),audience_db)['result'] is False, invalid
         cases.append('f4_explicit_null_malformed_audience_denied_absent_legacy_compatible')
         assert run(w,e,dict(action='audience',actor=9501,provider='weSwap',
-                            states={'gatewayAudience':{}}))['result'] is False
+                            states={'gatewayAudience':{}}),audience_db)['result'] is False
         cases.append('per_method_audience_all_agent_buyer_none_fail_closed')
-        # The duplicate-guard windows are presentation/policy cooldowns,
-        # not a replacement for exactly-once payment/receipt settlement.
-        current=int(time.time())
-        olderInvoice=add(w,e,'same-buyer-approved',who=9670,
-                         kind='BUY_SUB',old=current-500)
-        sql(w,e,f"UPDATE pays SET state='approved' WHERE id={olderInvoice}")
-        freshInvoice=add(w,e,'same-buyer-request',who=9670,
-                         kind='BUY_SUB',old=current)
-        default=run(w,e,dict(action='duplicate_guard',id=freshInvoice,
-                              clock=current))['result']
-        assert isinstance(default,str) and 'تایید' in default
-        shorter=run(w,e,dict(action='duplicate_guard',id=freshInvoice,
-            clock=current,states={'receiptApprovedMinutes':5}))['result']
-        assert shorter is None,(default,shorter)
-        invalid=run(w,e,dict(action='duplicate_guard',id=freshInvoice,
-            clock=current,states={'receiptApprovedMinutes':0}))['result']
-        assert isinstance(invalid,str)
-        cases.append('configurable_duplicate_approved_cooldown_keeps_safe_default')
-        pendingReceipt=add(w,e,'same-buyer-review',who=9671,
-                           kind='BUY_SUB',old=current-500)
-        sql(w,e,f"UPDATE pays SET state='have_sent' WHERE id={pendingReceipt}")
-        pendingNew=add(w,e,'same-buyer-pending',who=9671,kind='BUY_SUB',old=current)
-        default=run(w,e,dict(action='duplicate_guard',id=pendingNew,
-                             clock=current))['result']
-        assert isinstance(default,str) and 'بررسی' in default
-        shorter=run(w,e,dict(action='duplicate_guard',id=pendingNew,
-              clock=current,states={'receiptReviewMinutes':5}))['result']
-        assert shorter is None
-        cases.append('duplicate_receipt_review_window_configurable_only_inside_bounds')
+        # Current pinned-receipt cooldown policy is exercised in
+        # test_wallet_first_manual.py on the canonical installation schema.
         # The installed Hell incident had hundreds of historical payment
         # messages awaiting projection while a newly auto-approved payment
         # had four unsynced receipt/invoice copies. Reserve newer terminal

@@ -14,8 +14,8 @@ import re
 import shutil
 import subprocess
 
-import test_access_state as owned
-import test_v6_native as native
+import database_fixture as owned
+import database_fixture as native
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = owned.NAMES[1]
@@ -49,7 +49,8 @@ $joinLink='https://t.me/fixture_channel';
 $botState=['lockChannel'=>$channelLock,'supportID'=>'@fixture_support',
     'cooperationUrl'=>'@fixture_support','helpChannel'=>'',
     'agencyState'=>'off','sellState'=>'on','testAccount'=>'off','sharedExistence'=>'off',
-    'individualExistence'=>'off','searchState'=>'off'];
+    'individualExistence'=>'off','searchState'=>'off','rewardChannel'=>'@fixture_report'];
+if (!empty($spec['sales_off'])) $botState['sellState']='off';
 if(!empty($spec['missing_optional_flags'])) {
     unset($botState['individualExistence'],$botState['sharedExistence'],$botState['agencyState']);
 }
@@ -90,9 +91,10 @@ function sendMessage($text,$key=null,$parse='HTML',$ci=null) {
 }
 function achbotNotifyAdmins($method,$args) {$GLOBALS['events'][]=['kind'=>'admin','method'=>$method];}
 function delMessage() {$GLOBALS['events'][]=['kind'=>'delete'];}
+function answerCallbackQuery($id) {$GLOBALS['events'][]=['kind'=>'ack','id'=>$id];}
 function alert($text) {$GLOBALS['events'][]=['kind'=>'alert','text'=>$text];}
-function achbotMessage($key,$params=[]) {return $key==='bot.bootstrap.unavailable'?'UNAVAILABLE':'CATALOG_'.$key;}
-function achbotCurrentMessage(string $key): string {
+require_once $root.'/messages/loader.php';
+function fixtureCurrentMessage(string $key): string {
     if (!array_key_exists($key,$GLOBALS['mainValues']))
         throw new OutOfBoundsException('fixture_context_key_missing:'.$key);
     return $GLOBALS['mainValues'][$key];
@@ -101,7 +103,8 @@ require __DIR__.'/auth.php';
 require __DIR__.'/set-user.php';
 require __DIR__.'/get-main-keys.php';
 require __DIR__.'/src/Presentation/Text.php';
-require __DIR__.'/src/Telegram/UserProfile.php';
+require $root.'/src/Telegram/UserProfile.php';
+require_once $root.'/src/Purchase/AgentPricing.php';
 $userInfo=null;
 $stmt=$connection->prepare('SELECT * FROM users WHERE userid=? LIMIT 2');
 $stmt->bind_param('i',$actor);$stmt->execute();
@@ -120,10 +123,14 @@ register_shutdown_function(static function() {
       'registered'=>$GLOBALS['registration']['created']??null,
       'text'=>$GLOBALS['text']],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 });
-if(($spec['mode']??'flow')==='helper') {
+if(($spec['mode']??'flow')==='forbidden_wallet_set') {
+  try {setUser(999999,'wallet');}
+  catch(LogicException $e) {$GLOBALS['events'][]=['kind'=>'denied','reason'=>$e->getMessage()];}
+} elseif(($spec['mode']??'flow')==='helper') {
   $registration=achbotRegisterStartUser($connection,$update,$actor,
       (int)($spec['inviter']??0),(int)($spec['reward']??0),$dbName);
 } else {
+  $callbackId=$update->callback_query->id??null;
   eval(file_get_contents(__DIR__.'/membership-source.php'));
   eval(file_get_contents(__DIR__.'/onboarding-source.php'));
   eval(file_get_contents(__DIR__.'/menu-source.php'));
@@ -146,7 +153,7 @@ def write_runtime(w: Path) -> None:
     files={
         "auth.php": '<?php\n'+extract_function(ROOT/"bot.php","achbotWebhookIngressAuthenticated"),
         "set-user.php": '<?php\n'+extract_function(ROOT/"config.php","setUser"),
-        "get-main-keys.php": '<?php\n'+extract_function(ROOT/"config.php","getMainKeys"),
+        "get-main-keys.php": '<?php\n'+extract_function(ROOT/"src/Presentation/MainMenu.php","achbotMainButtonNamespace")+'\n'+extract_function(ROOT/"src/Presentation/MainMenu.php","achbotMainMenuForContext")+'\n'+extract_function(ROOT/"config.php","getMainKeys"),
         "membership-source.php":current_section("config.php",
             "$joniedState = null;", "// Channel exemption is dispatched"),
         "onboarding-source.php":current_section("bot.php",
@@ -157,8 +164,8 @@ def write_runtime(w: Path) -> None:
             "if(preg_match('/^sendMessageToUser"),
     }
     for file,body in files.items():
-        (w/file).write_text(body,encoding="utf-8")
-    for f in ("src/Telegram/UserProfile.php","src/Presentation/Text.php"):
+        (w/file).write_text(body.replace('achbotCurrentMessage(', 'fixtureCurrentMessage(').replace("__DIR__ . '/src/Telegram/UserProfile.php'","$root . '/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Telegram/UserProfile.php'","$root.'/src/Telegram/UserProfile.php'"),encoding="utf-8")
+    for f in ("src/Telegram/UserProfile.php","src/Presentation/Text.php","src/Wallet/Ledger.php"):
         to=w/f;to.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(ROOT/f,to)
 
@@ -243,6 +250,17 @@ def main() -> None:
             last_case.clear()
             last_case.update({'spec':kwargs,'result':response})
             return response
+        r=run(actor=2399,text='/start 1001',reward=150)
+        yes(not r['rows'] and int(r['inviter_wallet'])==50000,
+            "registration_requires_transactional_shared_ledger")
+        native.sql(w,env,(ROOT/'migrations/post-v9/024_wallet_entries.sql').read_text(),DB)
+        native.sql(w,env,owned.current_wallet_report_ddl(),DB)
+        r=run(actor=1001,mode='forbidden_wallet_set')
+        yes(int(r['inviter_wallet'])==50000 and r['events']==[
+            {'kind':'denied','reason':'wallet_requires_monetary_command'}],
+            "generic_profile_setter_cannot_write_wallet")
+        r=run(actor=2397,mode='forbidden_wallet_set')
+        yes(not r['rows'],"forbidden_wallet_set_cannot_create_user")
         r=run(actor=2401)
         yes(len(r['rows'])==1 and
             [e['text'] for e in r['events'] if e['kind']=='send']==['HOME','WELCOME'],
@@ -251,6 +269,17 @@ def main() -> None:
         buttons=[b for row in json.loads(home['markup'])['inline_keyboard'] for b in row]
         yes(sum(b.get('url')=='https://t.me/fixture_support' for b in buttons)==1,
             "home_single_support_destination_no_duplicate_button")
+        welcome=next(e for e in r['events'] if e['kind']=='send' and e['text']=='WELCOME')
+        yes(all(any(b.get('callback_data')=='buySubscription' for row in json.loads(e['markup'])['inline_keyboard'] for b in row) for e in (home,welcome)),
+            "open_sales_home_and_welcome_offer_purchase")
+        r=run(actor=2498,sales_off=True)
+        yes(len(r['rows'])==1 and [e['text'] for e in r['events'] if e['kind']=='send']==['HOME','WELCOME'],
+            "closed_sales_onboarding_still_registers_and_welcomes")
+        menus={e['text']:{b.get('callback_data') for row in json.loads(e['markup'])['inline_keyboard'] for b in row}
+               for e in r['events'] if e['kind']=='send'}
+        yes(all('buySubscription' not in callbacks for callbacks in menus.values()) and
+            'increaseMyWallet' in menus['HOME'] and 'mainMenu' in menus['WELCOME'],
+            "closed_sales_home_and_welcome_hide_purchase_keep_navigation")
         r=run(actor=2423,missing_optional_flags=True)
         yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
             "unset_optional_feature_flags_do_not_break_new_user_menu")
@@ -258,6 +287,12 @@ def main() -> None:
         yes(len(r['rows'])==1 and r['registered'] is False and
             [e['text'] for e in r['events'] if e['kind']=='send']==['HOME'],
             "repeat_start_reuses_identity_no_repeat_welcome")
+        # A fresh install has no retired callback navigation or stale step
+        # migration. The onboarding slice must not turn an unrelated
+        # callback into a registration, menu, or money movement.
+        r=run(actor=2401,callback='unknown_fixture_callback')
+        yes(not r['events'] and int(r['rows'][0]['wallet'])==0,
+            'unrelated_callback_does_not_activate_onboarding')
         r=run(actor=2402,forced=True,membership='left')
         join_buttons=[button for row in json.loads(r['events'][0]['markup'])['inline_keyboard']
                       for button in row] if r['events'] and r['events'][0]['kind']=='send' else []
@@ -340,6 +375,20 @@ def main() -> None:
             "parallel_first_start_single_row_single_referral_reward")
         yes(int(native.sql(w,env,"SELECT COUNT(*) FROM users WHERE userid=2415",DB).strip())==1,
             "owned_database_enforces_parallel_one_row_result")
+        money=native.sql(w,env,"SELECT COUNT(*),SUM(delta_toman) FROM wallet_entries "
+            "WHERE source_kind='onboarding_referral' AND userid=1001",DB).strip()
+        yes(money=="2\t300","parallel_and_replayed_registration_have_exact_shared_money_entries")
+        reports=native.sql(w,env,"SELECT COUNT(*) FROM payment_followup_intents f JOIN wallet_entries w ON w.id=f.wallet_entry_id WHERE w.source_kind='onboarding_referral' AND f.recipient IN ('9001','@fixture_report')",DB).strip()
+        yes(reports=='4','onboarding_reward_exact_owner_channel_reports')
+        native.sql(w,env,"CREATE TRIGGER owned_referral_failure BEFORE INSERT ON wallet_entries "
+            "FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='owned test failure'",DB)
+        try:
+            r=run(actor=2398,text='/start 1001',reward=150)
+            yes(not r['rows'] and int(r['inviter_wallet'])==50300,
+                "referral_ledger_failure_rolls_back_new_account")
+        finally:
+            native.sql(w,env,"DROP TRIGGER owned_referral_failure",DB)
+
         with ThreadPoolExecutor(max_workers=2) as pool:
             jobs=[pool.submit(run,actor=2421) for _ in range(2)]
             greetings=[x.result(timeout=25) for x in jobs]
@@ -410,7 +459,7 @@ def main() -> None:
         native.sql(w,env,"UPDATE users SET wallet=2147483600 WHERE userid=1001",DB)
         r=run(actor=2443,text='/start 1001',reward=250)
         yes(not r['rows'] and int(r['inviter_wallet'])==2147483600 and
-            any(e['text']=='UNAVAILABLE' for e in r['events'] if e['kind']=='send'),
+            any(e['text']==subprocess.check_output(['php','-r','require "messages/loader.php"; echo achbotMessage("bot.bootstrap.unavailable");'],cwd=ROOT,text=True) for e in r['events'] if e['kind']=='send'),
             "signed_int_overflow_rolls_back_registration_and_reward")
         native.sql(w,env,"UPDATE users SET wallet=-2147483648 WHERE userid=1001",DB)
         r=run(actor=2444,text='/start 1001',reward=1)

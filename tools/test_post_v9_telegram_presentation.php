@@ -238,6 +238,34 @@ foreach ($legacyCodePrompts as $key=>$pair) {
     requireSame(str_replace('`','',$pair['markdown']),strip_tags($candidate),
         'identical visible text and copyable content: '.$key);
 }
+// The new durable manifest is the existing renderer's real message
+// boundaries, including the last-text-only keyboard and original mode.
+require_once dirname(__DIR__).'/src/Subscription/Delivery.php';
+require_once dirname(__DIR__).'/src/Telegram/Response.php';
+$caption=str_repeat('<code>'.str_repeat('x',1200).'</code> &amp; ',6);
+$oldParts=\AchBot\Subscription\Presentation\messageParts($caption);
+requireSame(true,count($oldParts)>1,'multipart fixture is actually split');
+$keys='{"inline_keyboard":[]}';
+$packet=['kind'=>'qr','qr'=>'https://fixture.invalid/sub/1','caption'=>$caption,'keys'=>$keys];
+$parts=achbotSubscriptionDeliveryParts($packet);
+requireSame(['kind'=>'qr','qr'=>$packet['qr'],'caption'=>null],array_shift($parts),'QR original payload');
+requireSame($oldParts,array_column($parts,'text'),'frozen HTML parts preserve exact prior boundaries');
+foreach ($parts as $i=>$part) {
+    requireSame('HTML',$part['mode'],'original parse mode');
+    requireSame($i===count($parts)-1?$keys:null,$part['keys'],'last text keyboard only');
+}
+$packet['qr']='';
+requireSame($parts,achbotSubscriptionDeliveryParts($packet),'no QR if no link');
+requireSame([['kind'=>'text','text'=>'a < b','keys'=>null,'mode'=>null]],
+    achbotSubscriptionDeliveryParts(['kind'=>'text','text'=>'a < b','mode'=>'plain']),'plain historical notice');
+requireSame([['kind'=>'text','text'=>'<b>a</b>','keys'=>null,'mode'=>'HTML']],
+    achbotSubscriptionDeliveryParts(['kind'=>'text','text'=>'<b>a</b>','mode'=>'HTML']),'HTML historical notice');
+$rate=(object)['ok'=>false,'error_code'=>429,'description'=>'Too Many Requests','parameters'=>(object)['retry_after'=>35]];
+requireSame($rate,\AchBot\Telegram\Response\deliveryTransportResponse($rate,429,0),'matching HTTP/API rate limit');
+foreach ([$rate,(object)['ok'=>true],(object)['ok'=>false,'error_code'=>400,'description'=>"can't parse entities"]] as $response) {
+    requireSame(null,\AchBot\Telegram\Response\deliveryTransportResponse($response,500,0),'5xx is always uncertain');
+    requireSame(null,\AchBot\Telegram\Response\deliveryTransportResponse($response,429,28),'transport error is uncertain');
+}
 echo json_encode(['status'=>'PASS','cases'=>$cases,'pass'=>true,
     'scope'=>'isolated-presentation-no-network','default_unchanged'=>true],
     JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),"\n";

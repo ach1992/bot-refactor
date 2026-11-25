@@ -34,6 +34,18 @@ achbotDiagnosticEvent('achbot.finance.evidence_http',[
     'provider'=>'bank_transfer','http_reason'=>'SENSITIVE_TOKEN_DO_NOT_LOG',
     'upstream_request_id'=>'SENSITIVE_REQUEST_ID_DO_NOT_LOG',
     'reason'=>'http_unexpected']);
+achbotDiagnosticEvent('achbot.finance.report_channel_invalid',[
+    'wallet_entry_id'=>987,'stage'=>'wallet_movement','reason'=>'followup_channel_invalid',
+    'raw_channel'=>'SENSITIVE_RAW_DO_NOT_LOG'],'warning');
+foreach (['checkout_timer_deferred','checkout_settlement_deferred','checkout_evidence_deferred',
+    'recipient_ineligible','projection_deferred','soap_result_unconfirmed','sweep_deferred'] as $reason)
+    achbotDiagnosticEvent('achbot.finance.audit_fixture',['pay_id'=>112749,'reason'=>$reason]);
+achbotDiagnosticEvent('achbot.finance.draft_creation_deferred',['actor_id'=>123,'pay_id'=>456]+
+    achbotDiagnosticLocalFailure(new DomainException('draft_agency_pricing_changed')),'warning');
+achbotDiagnosticEvent('achbot.finance.checkout_wallet_deferred',['actor_id'=>123]+
+    achbotDiagnosticLocalFailure(new RuntimeException('SENSITIVE_RAW_DO_NOT_LOG')),'warning');
+achbotDiagnosticEvent('achbot.finance.checkout_wallet_deferred',['actor_id'=>123]+
+    achbotDiagnosticLocalFailure(new RuntimeException('checkout_SENSITIVE_RAW_DO_NOT_LOG')),'warning');
 achbotDiagnosticEvent('BAD name',['reason'=>'leak']);
 """
 def run() -> dict:
@@ -50,8 +62,8 @@ def run() -> dict:
             raise RuntimeError('Unstructured PHP stderr: '+raw[:180])
         message=json.loads(raw[index+len("[AChBot] "):])
         messages.append(message)
-    if len(messages)!=6:
-        raise AssertionError(('expected_six_events',messages))
+    if len(messages)!=17:
+        raise AssertionError(('expected_seventeen_events',messages))
     if any(word in proc.stderr for word in (
         "SENSITIVE_TOKEN","SENSITIVE_REQUEST_ID","SENSITIVE_SMS","SENSITIVE_RAW","sk_private_token")):
         raise AssertionError('Sensitive values emitted')
@@ -72,9 +84,16 @@ def run() -> dict:
         messages[2]['class']!='RuntimeException' or
         messages[3].get('reason')!='awaiting_receipt' or
         messages[4].get('reason')!='lease_busy' or
-        'http_reason' in messages[5] or 'upstream_request_id' in messages[5]):
+        'http_reason' in messages[5] or 'upstream_request_id' in messages[5] or
+        messages[6].get('wallet_entry_id')!=987 or messages[6].get('reason')!='followup_channel_invalid' or
+        messages[6].get('stage')!='wallet_movement'):
         raise AssertionError(('Log context was not preserved',messages))
-    return {'complete':True,'cases':13,'private_log_format':True,
+    expected=['checkout_timer_deferred','checkout_settlement_deferred','checkout_evidence_deferred',
+              'recipient_ineligible','projection_deferred','soap_result_unconfirmed','sweep_deferred']
+    assert [m.get('reason') for m in messages[7:14]]==expected,messages[7:14]
+    assert messages[14]['reason']=='draft_agency_pricing_changed' and messages[14]['actor_id']==123 and messages[14]['pay_id']==456
+    assert all(m['reason']=='internal_exception' and m['class']=='RuntimeException' for m in messages[15:])
+    return {'complete':True,'cases':24,'private_log_format':True,
             'same_trace':True,'secrets_redacted':True,'live_calls':0}
 
 

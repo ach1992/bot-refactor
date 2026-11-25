@@ -32,15 +32,3 @@ function paymentType($payType)
         if (preg_match('/^INCREASE_VOLUME_(\d+)_(\d+)/', $payType)) return \achbotMessage('labels.labels.payment_type.label.160a34aa6d');
         return \achbotMessage('labels.labels.payment_type.label.1af21c4ced');
     }
-
-function cardToCardMessageKey(string $messageType): string {
-    if ($messageType === 'usdt') {
-        return 'brw_cart_to_cart_usdt';
-    }
-
-    if ($messageType === 'gift') {
-        return 'brw_cart_to_cart_gift';
-    }
-
-    return 'brw_cart_to_cart_detail';
-}

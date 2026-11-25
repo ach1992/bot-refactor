@@ -125,7 +125,7 @@ def setup(root: Path) -> tuple[Path, Path]:
         target.write_bytes((ROOT/'messages'/part).read_bytes())
     (root/'config.php').write_text(
         "<?php require_once __DIR__.'/messages/loader.php';"
-        "$botUsername='fixture';$connection=null;")
+        "$botUsername='fixture';$connection=null;$admin=9001;")
     (settings/'jdf.php').write_text('<?php /* owned fixture */')
     for rel in ['src/Jobs','src/Notifications','src/Finance']:
         (root/rel).mkdir(parents=True,exist_ok=True)
@@ -137,14 +137,21 @@ def setup(root: Path) -> tuple[Path, Path]:
     (root/'src/Finance/PaymentLifecycle.php').write_text(PAYUX_MAINTENANCE_PHP)
     (root/'src/Finance/ApiPayments.php').write_text(API_MAINTENANCE_PHP)
     (root/'src/Finance/DeliveryLedger.php').write_text(DELIVERY_MAINTENANCE_PHP)
-    # The services worker also invokes two Wallet maintenance functions.
-    # These are inert stand-ins for the Cron coordination fixture.
-    (root/'src/Finance/WalletEditRecovery.php').write_text(
-        '<?php function achbotWalletAddonMaintain($db){return [];}' )
-    (root/'src/Finance/WalletRenewalRecovery.php').write_text(
-        '<?php function achbotWalletPgRenewMaintain($db){return [];}' )
-    (root/'src/Finance/WalletAddonNotices.php').write_text(
-        '<?php function achbotWalletAddonMaintainReports($db){return [];}' )
+    (root/'src/Finance/FollowupOutbox.php').write_text(
+        DELIVERY_MAINTENANCE_PHP.replace('achbotDeliveryMaintainPending($db)',
+            'achbotFollowupMaintainOriginalPending($db,$limit,$budget)')
+        .replace('"delivery\\n"','"followup\\n"')
+        .replace('.delivery-failure','.followup-failure'))
+
+    # Current service maintenance replaces the retired per-payment recovery
+    # workers. These inert stand-ins exercise the same Cron isolation.
+    (root/'src/Services').mkdir(parents=True,exist_ok=True)
+    (root/'src/Finance/CheckoutRoutes.php').write_text(
+        '<?php function achbotCheckoutRequireSchema($db){} function achbotCheckoutPresentation(){return [];}')
+    (root/'src/Services/Execution.php').write_text(
+        '<?php function achbotServiceExecuteDue($db,$limit,$budget,$presentation){return [];}')
+    (root/'src/Finance/ServicePurchaseReferral.php').write_text(
+        '<?php function achbotServiceReferralMaintainPending($db,$owner,$limit,$budget){return [];}')
 
     work = root / "owned-cwd"
     work.mkdir()
@@ -462,7 +469,7 @@ def main() -> None:
         maintenance_trace = Path(str(trace) + '.maintenance')
         # Keep the existing API-before-PayUX invariant while validating the
         # new independently guarded delivery first-attempt maintenance.
-        api_order = maintenance_trace.read_text().splitlines() == ['api', 'payux', 'delivery']
+        api_order = maintenance_trace.read_text().splitlines() == ['api', 'payux', 'delivery', 'followup']
         check('api_payment_maintenance_precedes_payux', api_order)
         check('sealed_delivery_maintenance_follows_payux', api_order)
         check("per_installation_private_lock_created",
@@ -929,7 +936,7 @@ def main() -> None:
             api_failed.returncode == 0
             and api_failed.stdout == 'owned fixture success\n' * len(JOBS)
             and api_failed.stderr.strip().startswith('achbot_payment_lifecycle_deferred class=RuntimeException')
-            and maintenance_trace.read_text().splitlines() == ['api', 'payux', 'delivery']
+            and maintenance_trace.read_text().splitlines() == ['api', 'payux', 'delivery', 'followup']
             and [line.split('|')[0] for line in trace.read_text().splitlines()] == list(JOBS)
         )
         check('api_payment_failure_preserves_payux_finally', api_finally)
@@ -950,7 +957,23 @@ def main() -> None:
               and delivery_failed.stdout == 'owned fixture success\n' * len(JOBS)
               and delivery_failed.stderr.strip()
                   == 'achbot_pending_delivery_maintenance_deferred class=RuntimeException'
-              and maintenance_trace.read_text().splitlines() == ['api', 'payux', 'delivery']
+              and maintenance_trace.read_text().splitlines() == ['api', 'payux', 'delivery', 'followup']
+              and [line.split('|')[0] for line in trace.read_text().splitlines()] == list(JOBS))
+
+        maintenance_trace.unlink()
+        trace.unlink()
+        followup_failure = Path(str(trace) + '.followup-failure')
+        followup_failure.write_text('owned controlled failure', encoding='utf-8')
+        try:
+            followup_failed = cmd(php, entrypoint, work, env)
+        finally:
+            followup_failure.unlink()
+        check('original_followup_failure_preserves_four_worker_outputs',
+              followup_failed.returncode == 0
+              and followup_failed.stdout == 'owned fixture success\n' * len(JOBS)
+              and followup_failed.stderr.strip()
+                  == 'achbot_original_followup_maintenance_deferred class=RuntimeException'
+              and maintenance_trace.read_text().splitlines() == ['api', 'payux', 'delivery', 'followup']
               and [line.split('|')[0] for line in trace.read_text().splitlines()] == list(JOBS))
 
 

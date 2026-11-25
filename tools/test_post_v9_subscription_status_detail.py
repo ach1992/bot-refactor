@@ -11,10 +11,10 @@ import json
 from pathlib import Path
 import subprocess
 
-import test_access_state as owned
-import test_unified_customer_services as existing
-import test_v6_native as native
-import test_v8_native as purchase
+import database_fixture as owned
+import subscription_status_fixture as existing
+import database_fixture as native
+import database_fixture as purchase
 
 ROOT = Path(__file__).resolve().parents[1]
 

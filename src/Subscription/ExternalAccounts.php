@@ -43,13 +43,7 @@ function achbotExternalImportProof(array $server,object $remote,string $input): 
         $proof['observation']=$observation;
         return $proof;
     }
-    if (($server['type']??null)!=='marzban' || !is_string($remote->subscription_url??null)) return null;
-    $native=$remote->subscription_url;
-    if (str_starts_with($native,'/')) $native=rtrim((string)$server['panel_url'],'/').$native;
-    $known=achbotExternalSubscriptionParts($native);
-    if (!$known || !hash_equals($known['token'],$supplied['token'])) return null;
-    return ['token'=>$known['token'],'expiry'=>$observation['expire'],
-        'status'=>$observation['status'],'subscription_url'=>$native,'observation'=>$observation];
+    return null;
 }
 function achbotExternalImportFrame($update,int $actor,string $callback): bool {
     $q=$update->callback_query??null;$m=$q->message??null;
@@ -194,34 +188,6 @@ if ($userInfo['step'] == "showAccount" && $text != \achbotMessage('legacy_button
         } catch (Throwable $error) {
             error_log('achbot_existing_subscription_lookup_deferred');
         }
-    }
-    // Different logical Marzban server records can point at one explicitly
-    // declared physical Panel Group. Each has independently verified the
-    // supplied bearer. Collapse only identical native account identities on
-    // that SAME valid declared panel; unrelated targets stay ambiguous.
-    if (count($matches)>1) {
-        $unique=[];
-        foreach ($matches as $match) {
-            $same=false;
-            if ($match['type']==='marzban' &&
-                is_array($match['proof']['identity']??null)) {
-                foreach ($unique as $previous) {
-                    if ($previous['type']!=='marzban' ||
-                        ($previous['proof']['identity']??null)!==$match['proof']['identity'])
-                        continue;
-                    try {
-                        if (achbotSameMarzbanPanel($connection,$previous['server'],$match['server'])) {
-                            $same=true;break;
-                        }
-                    } catch (Throwable $error) {
-                        // Original pre-group schema has no group column; it
-                        // remains ambiguous rather than guessing from URLs.
-                    }
-                }
-            }
-            if (!$same) $unique[]=$match;
-        }
-        $matches=$unique;
     }
     $found=count($matches)===1;$config=null;$serverId=0;
     if ($found) {

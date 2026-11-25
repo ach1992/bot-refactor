@@ -30,9 +30,8 @@ function achbotAddonAdminScopeKeys(string $session): string {
 }
 
 function achbotAddonAdminServers(mysqli $db,string $scope): array {
-    $where=$scope==='groups'?" AND c.type='pasarguard'":'';
     $rows=$db->query("SELECT i.id,i.title,c.type FROM server_info i INNER JOIN server_config c ON c.id=i.id
-        WHERE i.active=1 AND i.state IN (1,2) AND c.type IN ('marzban','pasarguard')".$where." ORDER BY i.id");
+        WHERE i.active=1 AND i.state IN (1,2) AND c.type='pasarguard' ORDER BY i.id");
     if (!$rows) throw new RuntimeException('addon_admin_servers_unavailable');
     $list=$rows->fetch_all(MYSQLI_ASSOC);$rows->free();return $list;
 }
@@ -41,8 +40,7 @@ function achbotAddonAdminValidServer(mysqli $db,int $id,string $scope): bool {
     $q=$db->prepare("SELECT c.type FROM server_info i INNER JOIN server_config c ON c.id=i.id
         WHERE i.id=? AND i.active=1 AND i.state IN (1,2)");
     $q->bind_param('i',$id);$q->execute();$server=$q->get_result()->fetch_assoc();$q->close();
-    return $server && ($scope==='groups'?
-        $server['type']==='pasarguard':in_array($server['type'],['marzban','pasarguard'],true));
+    return $server && $server['type']==='pasarguard';
 }
 function achbotAddonAdminVerifyFlow(mysqli $db,array $flow): array {
     $scope=$flow['scope']??null;
@@ -106,30 +104,14 @@ function achbotAddonAdminNext(mysqli $db,array $flow): void {
 function achbotAddonAdminHandle(mysqli $db): bool {
     global $data,$text,$from_id,$admin,$userInfo,$cancelKey;
     $cb=(string)($data??'');$step=(string)($userInfo['step']??'');
-    $filterMatch=[];
-    $filterOwned=preg_match('/^addonFilter(Day|Volume)(All|Global|Servers|Server[1-9][0-9]*)$/D',
-        $cb,$filterMatch)===1;
     $owned=in_array($cb,['dayPlanSettings','volumePlanSettings','addNewDayPlan','addNewVolumePlan'],true) ||
-        $filterOwned ||
         preg_match('/^addon(?:EditScope(?:Day|Volume)[1-9][0-9]*_[a-f0-9]{20}|Scope(?:Global|Server|Groups)_[a-f0-9]{16}|PickServer[1-9][0-9]*_[a-f0-9]{16})$/D',$cb) ||
         str_starts_with($step,'addon:');
     if (!$owned) return false;
     try {
-        if (!achbotAddonSchema($db)) return false;
+        achbotAddonSchema($db);
         if (!achbotAdminCanFor($db,(int)$from_id,(int)$admin,'plans'))
             throw new RuntimeException('addon_admin_denied');
-        if ($filterOwned) {
-            // Previously sent Telegram keyboards can still contain filter
-            // callbacks. Preserve authorization and editor-state checks, but
-            // always converge to the complete list without presenting any
-            // further filter picker.
-            if ($step!=='none') {
-                sendMessage(\achbotMessage('addon_scopes.filter_blocked'),$cancelKey, 'HTML');
-                return true;
-            }
-            achbotIntervalShow($db,$filterMatch[1]==='Day'?'day':'volume');
-            return true;
-        }
         if ($cb==='dayPlanSettings' || $cb==='volumePlanSettings') {
             if ($step!=='none') throw new RuntimeException('addon_admin_editor_in_progress');
             achbotIntervalShow($db,$cb==='dayPlanSettings'?'day':'volume');return true;
@@ -147,8 +129,8 @@ function achbotAddonAdminHandle(mysqli $db): bool {
                 if (!$row) throw new RuntimeException('addon_admin_offer_missing');
                 if (!hash_equals(achbotAddonOfferRevision($kind,$row),$edit[3]))
                     throw new RuntimeException('addon_admin_stale_callback');
-                $scope=achbotAddonScopeRow($row,true);
-                $units=achbotWholeServiceUnits($row['volume'],$kind==='day'?36500:achbotServiceVolumeMax());
+                $scope=achbotAddonScopeRow($row);
+                $units=achbotWholeServiceUnits($row['volume'],$kind==='day'?achbotServiceDaysMax(0):achbotServiceVolumeMax());
                 if ($units===null || (int)$row['price']<0) throw new RuntimeException('addon_admin_offer_invalid');
                 $flow['original']=['id'=>$id,'scope_hash'=>$scope['scope_hash'],
                     'volume'=>$units,'price'=>(int)$row['price']];
@@ -219,7 +201,7 @@ function achbotAddonAdminHandle(mysqli $db): bool {
         if ($step==='addon:units') {
             $input=explode('-',trim($text));
             if (count($input)!==2) throw new RuntimeException('addon_admin_units_invalid');
-            $units=achbotWholeServiceUnits($input[0],$flow['kind']==='day'?36500:achbotServiceVolumeMax());
+            $units=achbotCatalogServiceUnits($input[0],$flow['kind']==='day'?achbotServiceDaysMax():achbotServiceVolumeMax());
             $price=achbotIntervalPrice($input[1]);
             if ($units===null || $price===null || $flow['action']!=='create')
                 throw new RuntimeException('addon_admin_units_invalid');

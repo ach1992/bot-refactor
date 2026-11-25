@@ -16,16 +16,6 @@ function achbotProviderImportParts(string $url): ?array {
     return ['origin'=>strtolower($p['scheme']).'://'.strtolower($p['host']).':'.$port,
         'prefix'=>$m[1],'token'=>$token];
 }
-function achbotProviderImportBase(string $base,string $prefix): ?array {
-    $p=parse_url($base);
-    if (!$p || empty($p['host']) || isset($p['user']) || isset($p['pass']) ||
-        isset($p['query']) || isset($p['fragment']) || preg_match('/[\x00-\x20\x7f]/',$base)) return null;
-    $path=rtrim((string)($p['path']??''),'/');
-    // Native paths may already contain the deployment prefix.
-    $suffix=$path!=='' && ($prefix===$path || str_starts_with($prefix,$path.'/'))?$prefix:$path.$prefix;
-    $origin=$p['scheme'].'://'.$p['host'].(isset($p['port'])?':'.$p['port']:'');
-    return achbotProviderImportParts($origin.$suffix.'/probe');
-}
 function achbotProviderImportServer(mysqli $db,int $serverId,bool $lock=false): array {
     $s=$db->prepare('SELECT c.* FROM server_config c JOIN server_info i ON i.id=c.id
         WHERE c.id=? AND i.active=1'.($lock?' FOR UPDATE':''));
@@ -68,73 +58,6 @@ function achbotProviderSubscriptionInfo(string $trustedUrl,bool $trustedHttp=fal
     try {$data=json_decode($wire,true,64,JSON_THROW_ON_ERROR|JSON_BIGINT_AS_STRING);}
     catch (Throwable $e) {return $failure($http);}
     return is_array($data)?['success'=>true,'uncertain'=>false,'http'=>$http,'data'=>$data]:$failure($http);
-}
-function achbotProviderImportDate(string $value): string {
-    if (!preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})?$/D',$value))
-        throw new RuntimeException('import_created_at_invalid');
-    $date=new DateTimeImmutable($value,new DateTimeZone('UTC'));$errors=DateTimeImmutable::getLastErrors();
-    if ($errors!==false && ($errors['warning_count'] || $errors['error_count']))
-        throw new RuntimeException('import_created_at_invalid');
-    return $date->setTimezone(new DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.u\Z');
-}
-function achbotMarzbanImportTarget(array $target): array {
-    return ['provider'=>'marzban','server_id'=>(int)$target['server_id'],'panel_url'=>$target['panel_url'],
-        'credentials_sha256'=>hash('sha256',json_encode([$target['username'],$target['password']],JSON_THROW_ON_ERROR))];
-}
-
-function achbotMarzbanExistingUser(mysqli $db,int $serverId,string $input,?string $usernameHint=null): object {
-    try {
-        $supplied=achbotProviderImportParts($input);
-        // The pinned native parser also accepts legacy HS256 subscription JWTs.
-        // Claims locate one exact user only; the trusted /info route still proves the signature.
-        if ($supplied && $usernameHint===null &&
-            str_starts_with($supplied['token'],'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.')) {
-            $segments=explode('.',$supplied['token']);
-            if (count($segments)===3) {
-                $decoded=achbotProviderImportDecode($segments[1]);
-                try {$claims=json_decode((string)$decoded,true,16,JSON_THROW_ON_ERROR);}
-                catch (Throwable $error) {$claims=[];}
-                if (is_string($claims['sub']??null) &&
-                    preg_match('/^[a-zA-Z0-9_@.-]{1,100}$/D',$claims['sub'])) $usernameHint=$claims['sub'];
-            }
-        }
-        if (!$supplied || !is_string($usernameHint) || !preg_match('/^[a-zA-Z0-9_@.-]{1,100}$/D',$usernameHint))
-            throw new RuntimeException('import_identity_unverified');
-        achbotProviderImportServer($db,$serverId);
-        $pin=achbotProviderDeletionTarget($db,$serverId,$usernameHint);
-        if (($pin['provider']??null)!=='marzban') throw new RuntimeException('import_target_invalid');
-        $r=getMarzbanUser($serverId,$usernameHint,null,true,$pin['panel_url'],$pin);
-        if (!is_object($r)) throw new RuntimeException('import_native_lookup_unverified');
-        unset($r->provider_import_proof);
-        require_once __DIR__.'/ServiceLifecycle.php';
-        $observation=achbotServiceObservation($r,$usernameHint);
-        if (!$observation['verified'] || !is_string($r->subscription_url??null) || !is_string($r->created_at??null))
-            throw new RuntimeException('import_native_schema_invalid');
-        $created=achbotProviderImportDate($r->created_at);
-        $url=$r->subscription_url;
-        if (str_starts_with($url,'/')) $url=rtrim($pin['panel_url'],'/').$url;
-        $native=achbotProviderImportParts($url);
-        if (!$native) throw new RuntimeException('import_native_url_invalid');
-        // The submitted domain/path may be any subscription alias. Only the
-        // native token/account proof below authorizes this local attachment.
-        if (!hash_equals($native['token'],$supplied['token'])) {
-            $info=achbotProviderSubscriptionInfo($native['origin'].$native['prefix'].'/'.
-                rawurlencode($supplied['token']).'/info',true);
-            $public=$info['data']??null;
-            if (($info['success']??false)!==true || !is_array($public) ||
-                ($public['username']??null)!==$usernameHint || !is_string($public['created_at']??null) ||
-                achbotProviderImportDate($public['created_at'])!==$created)
-                throw new RuntimeException('import_token_identity_unverified');
-        }
-        if (!achbotProviderDeletionTargetMatches($db,$serverId,$usernameHint,$pin))
-            throw new RuntimeException('import_target_changed');
-        $proof=['verified'=>true,'provider'=>'marzban','server_id'=>$serverId,'input_url'=>$input,
-            'input_sha256'=>hash('sha256',$input),'token'=>$supplied['token'],'expiry'=>$observation['expire'],
-            'status'=>$observation['status'],'subscription_url'=>$url,'target'=>achbotMarzbanImportTarget($pin),
-            'identity'=>['remote_username'=>$usernameHint,'remote_created_at'=>$created],
-            'native_user'=>achbotProviderCanonicalValue($r)];
-        $r->provider_import_proof=$proof;return $r;
-    } catch (Throwable $e) {return achbotProviderFailure('import_identity_unverified',false);}
 }
 function achbotProviderImportDecode(string $value): ?string {
     if ($value==='' || !preg_match('/^[A-Za-z0-9_-]+={0,2}$/D',$value)) return null;
@@ -216,88 +139,6 @@ function achbotProviderAdoptExistingLocked(mysqli $db,int $serverId,object $remo
     $adapter=achbotProviderDefinition($server['type']);
     if (!isset($adapter['import_lookup'],$adapter['import_adopt'])) throw new RuntimeException('import_not_supported');
     ($adapter['import_adopt'])($db,$serverId,$remote,$proof,$finalUserId,$orderId,$actorId,$primary);
-}
-function achbotMarzbanAdoptExistingLocked(mysqli $db,int $serverId,object $remote,array $proof,
-    int $finalUserId,int $orderId,int $actorId,int $primary): void {
-    require_once __DIR__.'/ProviderStorage.php';
-    require_once __DIR__.'/../Purchase/OrderWrites.php';
-    // Every attachment records its nonfinancial origin, including pre-007 installations.
-    $s=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_effects'");
-    if (!($s instanceof mysqli_result)) throw new RuntimeException('import_effect_schema_unavailable');
-    $table=$s->fetch_assoc();$s->free();
-    $hasEffects=$table!==null;
-    if ($hasEffects) {
-        if ($table['TABLE_TYPE']!=='BASE TABLE' || strcasecmp((string)$table['ENGINE'],'InnoDB')!==0)
-            throw new RuntimeException('import_effect_schema_invalid');
-        require_once __DIR__.'/../Finance/ServiceEffects.php';
-        achbotEffectRequireUniqueLine($db);
-    }
-    $tx=achbotProviderRow($db,'SELECT @@in_transaction AS tx');
-    if ((int)($tx['tx']??0)!==1 || min($serverId,$finalUserId,$orderId,$actorId)<=0 ||
-        ($proof['verified']??null)!==true || ($proof['provider']??null)!=='marzban' ||
-        ($proof['server_id']??null)!==$serverId || !is_string($proof['input_url']??null) ||
-        !is_string($proof['input_sha256']??null) ||
-        !hash_equals($proof['input_sha256'],hash('sha256',$proof['input_url'])) ||
-        ($remote->username??null)!==($proof['identity']['remote_username']??null))
-        throw new RuntimeException('import_proof_invalid');
-    $server=achbotProviderImportServer($db,$serverId,true);
-    $fresh=achbotMarzbanExistingUser($db,$serverId,$proof['input_url'],$remote->username);
-    $confirmed=$fresh->provider_import_proof??null;
-    if (!is_array($confirmed) || $confirmed['target']!==($proof['target']??null) ||
-        $confirmed['identity']!==($proof['identity']??null) || $confirmed['token']!==($proof['token']??null))
-        throw new RuntimeException('import_proof_changed');
-    $s=achbotProviderStatement($db,'SELECT userid,isAdmin,step FROM users WHERE userid=? LIMIT 2 FOR UPDATE','i',[$actorId]);
-    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
-    if (count($rows)!==1 || $rows[0]['step']==='banned' ||
-        ($finalUserId!==$actorId && $actorId!==$primary && (int)$rows[0]['isAdmin']!==1))
-        throw new RuntimeException('import_actor_invalid');
-    $s=achbotProviderStatement($db,'SELECT userid FROM users WHERE userid=? LIMIT 2 FOR UPDATE','i',[$finalUserId]);
-    $n=$s->get_result()->num_rows;$s->close();
-    if ($n!==1) throw new RuntimeException('import_owner_invalid');
-    $order=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=? FOR UPDATE','i',[$orderId]);
-    if (!$order || (int)$order['userid']!==$finalUserId || (int)$order['server_id']!==$serverId ||
-        (int)$order['fileid']!==0 || (int)$order['inbound_id']!==0 || (int)$order['amount']!==0 ||
-        (int)$order['status']!==1 || ($order['autoRenew']??null)!=='off' ||
-        $order['remark']!==$remote->username || $order['token']!==$confirmed['token'])
-        throw new RuntimeException('import_order_invalid');
-    $credential=achbotProviderRow($db,'SELECT token FROM add_link WHERE added_by=? AND remark=? AND BINARY token=BINARY ?
-        LIMIT 1 FOR UPDATE','iss',[$actorId,$remote->username,$confirmed['token']]);
-    if (!$credential) throw new RuntimeException('import_credential_missing');
-    $group=null;
-    if ($hasEffects) {
-        $binding=achbotProviderRow($db,"SELECT i.panel_group_id,g.value AS group_name FROM server_info i
-            LEFT JOIN setting g ON g.id=i.panel_group_id AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
-            WHERE i.id=? FOR UPDATE",'i',[$serverId]);
-        if (!$binding || ($binding['panel_group_id']!==null &&
-            (!is_string($binding['group_name']) || !achbotMarzbanGroupValid($binding['group_name']))))
-            throw new RuntimeException('import_group_invalid');
-        $group=$binding['panel_group_id']===null?null:(int)$binding['panel_group_id'];
-    }
-    // This journal records a local attachment, not a second physical CREATE.
-    $key='attachment:'.$orderId;
-    $observation=$confirmed['expiry']??0;$expiry=$observation;
-    if ((string)$order['expire_date']!==(string)$expiry) {
-        $s=achbotProviderStatement($db,'UPDATE orders_list SET expire_date=? WHERE id=?','ii',[$expiry,$orderId]);
-        if ($s->affected_rows!==1) {$s->close();throw new RuntimeException('import_order_unconfirmed');}$s->close();
-    }
-    $snapshot=['provider'=>'marzban','server_id'=>$serverId,'target'=>$confirmed['target'],
-        'identity'=>$confirmed['identity'],'native_user'=>$confirmed['native_user'],
-        'order_id'=>$orderId,'owner_userid'=>$finalUserId,'actor_userid'=>$actorId,
-        'input_sha256'=>$confirmed['input_sha256'],'token_sha256'=>hash('sha256',$confirmed['token'])];
-    $hash=hash('sha256',json_encode($snapshot,JSON_THROW_ON_ERROR));
-    achbotRecordImportedOrderOriginLocked($db,$orderId,$finalUserId,$actorId,'marzban',$serverId,
-        $remote->username,$hash,$confirmed['identity']);
-    if (!$hasEffects) return;
-    $operation=bin2hex(random_bytes(16));$bytes=$fresh->data_limit??0;
-    $s=achbotProviderStatement($db,"INSERT INTO service_effects
-        (pay_row_id,source_kind,source_ref,actor_userid,ordinal,reserved_count,operation_id,effect_kind,
-         target_server_id,target_group_id,target_key,endpoint_sha256,plan_id,remote_username,
-         requested_expire,requested_bytes,request_sha256,state,order_id,verified_at)
-        VALUES (NULL,'external_import',?,?,1,0,?,'adopt',?,?,?,?,0,?,?,?,?,'local_recorded',?,UTC_TIMESTAMP())",
-        'sisiisssiisi',['order:'.$orderId,$actorId,$operation,$serverId,$group,$key,
-            hash('sha256',rtrim($server['panel_url'],'/')),$remote->username,$expiry,$bytes,$hash,$orderId]);
-    if ($s->affected_rows!==1) {$s->close();throw new RuntimeException('import_adoption_unconfirmed');}$s->close();
 }
 function achbotPasarGuardAdoptExistingLocked(mysqli $db,int $serverId,object $remote,array $proof,
     int $finalUserId,int $orderId,int $actorId,int $primary): void {

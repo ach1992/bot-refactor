@@ -15,7 +15,9 @@ error_reporting(E_ALL);
 $checks = [];
 $report = [
     'tool' => 'achbot-payment-readiness-preflight',
-    'report_version' => 1,
+    'report_version' => 2,
+    'structure_ready' => false,
+    'payment_configuration_ready' => false,
     'completed' => false,
     'ready_for_isolated_operator_smoke' => false,
     'scope' => 'read_only_local_source_and_database',
@@ -24,9 +26,10 @@ $report = [
     'methods' => [],
     'payment_apis' => [],
     'limitations' => [
-        'matching supplied manifest does not authenticate its provenance',
-        'schema shapes do not prove that a migration was actually run or that historical rows are valid',
-        'does not execute a Telegram, merchant, Cron, Marzban, restore, payment or financial operation',
+        'trusted manifest identity is checked by the operator entrypoint; not live web-SAPI proof',
+        'metadata and runtime schema gates do not certify every column type, check expression, row or migration history',
+        'does not execute a Telegram, merchant, Cron, Native, restore, payment or financial operation',
+        'private encryption key and live API authentication are not inspected',
         'operator approval is required before installed or external-effect acceptance',
     ],
 ];
@@ -37,6 +40,7 @@ function finding(string $id, string $status, string $code): void {
 function finish(int $exit): never {
     global $report, $checks;
     $report['completed'] = true;
+    $report['payment_configuration_ready'] = $exit === 0;
     $report['ready_for_isolated_operator_smoke'] = $exit === 0;
     $report['blocking_checks'] = count(array_filter($checks,
         static fn(array $c): bool => $c['status'] === 'BLOCK'));
@@ -53,106 +57,59 @@ function available($value): bool {
 function textValue($value): string {
     return is_string($value) ? $value : '';
 }
-function options(array $argv): array {
-    $out = [];
-    for ($n = 1; $n < count($argv); $n++) {
-        if (!in_array($argv[$n], ['--manifest', '--runtime-dir'], true) ||
-            !isset($argv[$n + 1]) || str_starts_with($argv[$n + 1], '--') ||
-            array_key_exists($argv[$n], $out)) errorExit('arguments', 'invalid_argument');
-        $out[$argv[$n]] = $argv[++$n];
-    }
-    return $out;
-}
-function verifyManifest(string $manifestPath, string $runtimePath): bool {
+/** Compare the metadata projection generated from the exact consolidated DDL.
+ * No SQL from the contract is executed and no arbitrary table names are queried. */
+function inspectSchema(mysqli $db,array $expected): bool {
     global $report;
-    try {
-        $json = file_get_contents($manifestPath);
-        if ($json === false || strlen($json) > 500000) return false;
-        $manifest = json_decode($json, true, 512, JSON_THROW_ON_ERROR);
-        if (!is_array($manifest) || !isset($manifest['files']) ||
-            !is_array($manifest['files']) || count($manifest['files']) !== 132 ||
-            ($manifest['file_count'] ?? null) !== count($manifest['files']) ||
-            ($manifest['schema_migration_included'] ?? null) !== false ||
-            ($manifest['private_config_included'] ?? null) !== false ||
-            !preg_match('/\A[a-f0-9]{40}\z/D', (string)($manifest['candidate'] ?? ''))) return false;
-        // The expected current runtime inventory is pinned independently of
-        // supplied manifest bytes. Without this guard an attacker-controlled
-        // file list could request hashes of an installed private file.
-        // Canonical-path current inventory: 132 explicit runtime paths.
-        // SHA-256 of newline-joined sorted package_post_v9.members() paths.
-        $members = array_keys($manifest['files']);
-        sort($members, SORT_STRING);
-        if (!hash_equals('cf9a5d8a9caf59a04338da9f4af080af37ec975e1cfb53052787642a4a2a819c',
-                         hash('sha256', implode("\n", $members))) ||
-            in_array('baseInfo.php', $members, true)) return false;
-        // All tool-side runtime source is bound before any helper executes.
-        // This also covers helper dependencies and topic catalogs, avoiding
-        // mixed source versions. Inventory above excludes private files.
-        foreach ($manifest['files'] as $helper => $entry) {
-            $source = dirname(__DIR__) . DIRECTORY_SEPARATOR . $helper;
-            if (is_link($source) || !is_file($source) ||
-                !hash_equals((string)($entry['sha256'] ?? ''),
-                             (string)hash_file('sha256', $source))) return false;
-        }
-        $root = realpath($runtimePath);
-        if ($root === false || !is_dir($root)) return false;
-        $report['source_candidate'] = $manifest['candidate'];
-        $report['source_file_count'] = count($manifest['files']);
-        foreach ($manifest['files'] as $rel => $expected) {
-            if (!is_string($rel) || !preg_match('#\A[a-zA-Z0-9_./-]+\z#D', $rel) ||
-                str_contains($rel, '..') || str_starts_with($rel, '/') ||
-                !is_array($expected) ||
-                !preg_match('/\A[a-f0-9]{64}\z/D', (string)($expected['sha256'] ?? '')) ||
-                !is_int($expected['size']) || $expected['size'] < 0) return false;
-            $path = $root . DIRECTORY_SEPARATOR . $rel;
-            if (is_link($path) || !is_file($path)) return false;
-            $resolved = realpath($path);
-            if ($resolved === false || !str_starts_with($resolved, $root . DIRECTORY_SEPARATOR) ||
-                filesize($path) !== $expected['size'] ||
-                !hash_equals($expected['sha256'], (string)hash_file('sha256', $path))) return false;
-        }
-        foreach (['index.html','buy_helpers.php','settings/tronChecker.php', 'src/Finance/CryptoChecker.php',
-                   'src/Finance/Routes/CryptoAndExchange.php',
-                   'settings/subLink.php','settings/values.php',
-                   'settings/messagewizwiz.php','settings/warnusers.php',
-                   'pay/index.php','src/Finance/GatewayInitiation.php'] as $retired) {
-            if (file_exists($root . DIRECTORY_SEPARATOR . $retired) ||
-                is_link($root . DIRECTORY_SEPARATOR . $retired)) return false;
-        }
-        // Never open baseInfo.php, or a runtime's secrets, even if present.
-        return true;
-    } catch (Throwable $ignored) {
-        return false;
+    $tables=[];$columns=[];$indexes=[];
+    foreach ($db->query("SELECT TABLE_NAME,ENGINE FROM information_schema.TABLES
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE'") as $r)
+        $tables[$r['TABLE_NAME']]=$r['ENGINE'];
+    foreach ($db->query("SELECT TABLE_NAME,COLUMN_NAME,IS_NULLABLE FROM information_schema.COLUMNS
+        WHERE TABLE_SCHEMA=DATABASE()") as $r)
+        $columns[$r['TABLE_NAME']][$r['COLUMN_NAME']]=$r['IS_NULLABLE'];
+    foreach ($db->query("SELECT TABLE_NAME,INDEX_NAME,NON_UNIQUE,SEQ_IN_INDEX,COLUMN_NAME,SUB_PART
+        FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE()
+        ORDER BY TABLE_NAME,INDEX_NAME,SEQ_IN_INDEX") as $r) {
+        $indexes[$r['TABLE_NAME']][$r['INDEX_NAME']][]=
+            [$r['COLUMN_NAME'],(int)$r['NON_UNIQUE']===0,$r['SUB_PART']];
     }
-}
-function metadata(mysqli $db): array {
-    $tables = [];
-    $columns = [];
-    $indexes = [];
-    $unique = [];
-    $r = $db->query('SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE=\'BASE TABLE\'');
-    foreach ($r as $row) $tables[(string)$row['TABLE_NAME']] = true;
-    $r = $db->query('SELECT TABLE_NAME,COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE()');
-    foreach ($r as $row) $columns[$row['TABLE_NAME']][$row['COLUMN_NAME']] = true;
-    $r = $db->query('SELECT TABLE_NAME,INDEX_NAME,NON_UNIQUE,SEQ_IN_INDEX,COLUMN_NAME FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() ORDER BY TABLE_NAME,INDEX_NAME,SEQ_IN_INDEX');
-    foreach ($r as $row) {
-        $indexes[$row['TABLE_NAME']][$row['INDEX_NAME']][] = $row['COLUMN_NAME'];
-        if ((int)$row['NON_UNIQUE'] === 0)
-            $unique[$row['TABLE_NAME']][$row['INDEX_NAME']][] = $row['COLUMN_NAME'];
-    }
-    return [$tables, $columns, $indexes, $unique];
-}
-function validShape(array $spec, array $tables, array $cols, array $unique): bool {
-    foreach ($spec as $table => $requirements) {
-        if (!isset($tables[$table])) return false;
-        foreach ($requirements['columns'] as $column) {
-            if (!isset($cols[$table][$column])) return false;
+    $ready=true;
+    foreach ($expected as $table=>$spec) {
+        $issues=[];
+        if (strcasecmp((string)($tables[$table]??''),$spec['engine'])!==0) $issues[]='missing_or_wrong_engine';
+        foreach ($spec['columns'] as $name=>$nullable)
+            if (($columns[$table][$name]??null)!==$nullable) $issues[]='column:'.$name;
+        foreach ($spec['indexes'] as $name=>$index) {
+            $want=array_map(static fn($c)=>[$c,$index['unique'],null],$index['columns']);
+            if (($indexes[$table][$name]??null)!==$want) $issues[]='index:'.$name;
         }
-        foreach (($requirements['unique'] ?? []) as $index => $fields) {
-            if (($unique[$table][$index] ?? null) !== $fields) return false;
+        // SELECT alone does not expose every TABLE_CONSTRAINTS row in
+        // MariaDB. Read the existing definition with the same privilege;
+        // compare only named current constraints and FK endpoints, not raw
+        // DDL or column defaults in the public report.
+        if ($spec['constraints'] && isset($tables[$table])) {
+            if (!preg_match('/^[a-zA-Z0-9_]+$/D',$table))
+                throw new RuntimeException('invalid_schema_table');
+            $ddl=$db->query('SHOW CREATE TABLE `'.$table.'`')->fetch_assoc()['Create Table']??'';
+            foreach ($spec['constraints'] as $name=>$c) {
+                $prefix='/^\\s*CONSTRAINT `'.preg_quote($name,'/').'` ';
+                if ($c['type']==='CHECK') {
+                    if (!preg_match($prefix.'CHECK\\s*\\(/mi',$ddl)) $issues[]='constraint:'.$name;
+                    continue;
+                }
+                $pattern=$prefix.'FOREIGN KEY\\s*\\(([^)]+)\\) REFERENCES `([a-zA-Z0-9_]+)`\\s*\\(([^)]+)\\)/mi';
+                if (!preg_match($pattern,$ddl,$m)) {$issues[]='constraint:'.$name;continue;}
+                preg_match_all('/`([a-zA-Z0-9_]+)`/',$m[1],$from);
+                preg_match_all('/`([a-zA-Z0-9_]+)`/',$m[3],$to);
+                if ($from[1]!==$c['columns'] || $m[2]!==$c['target'] || $to[1]!==$c['target_columns'])
+                    $issues[]='foreign_key:'.$name;
+            }
         }
+        if ($issues) {$ready=false;$report['schema'][$table]=$issues;}
     }
-    return true;
+    finding('consolidated_schema',$ready?'PASS':'BLOCK',$ready?'required_current_metadata_present':'current_schema_mismatch');
+    return $ready;
 }
 function readSettings(mysqli $db): ?array {
     $records = ['BOT_STATES' => [], 'PAYMENT_KEYS' => []];
@@ -160,9 +117,14 @@ function readSettings(mysqli $db): ?array {
     foreach ($r as $row) $records[$row['type']][] = $row['value'];
     $valid = true;
     foreach ($records as $type => $values) {
+        if (!$values) {
+            $records[$type]=[];
+            finding('setting_'.strtolower($type),'INFO','unconfigured_document');
+            continue;
+        }
         if (count($values) !== 1) {
             finding('setting_' . strtolower($type), 'BLOCK',
-                count($values) === 0 ? 'document_missing' : 'duplicate_document');
+                'duplicate_document');
             $valid = false;
             continue;
         }
@@ -191,14 +153,16 @@ function flag(array $state, string $key): bool {
 function policyCheck(array $state): bool {
     $methods = achbotPayUxAudienceMethods();
     $modes = achbotPayUxAudienceModes();
-    $legacy = $state['gatewayAudience'] ?? [];
+    $legacy = array_key_exists('gatewayAudience',$state) ? $state['gatewayAudience'] : [];
     if (!is_array($legacy)) return false;
     foreach ($legacy as $method => $mode) {
         if (!is_string($method) || !array_key_exists($method, $methods) ||
             !is_string($mode) || !array_key_exists($mode, $modes)) return false;
     }
-    return !array_key_exists('gatewayRules', $state) ||
-        achbotGatewayRulesDecode($state['gatewayRules']) !== null;
+    return (!array_key_exists('gatewayRules', $state) ||
+        achbotGatewayRulesDecode($state['gatewayRules']) !== null) &&
+        achbotGatewayRuleExemptUsersDecode(array_key_exists('gatewayRuleExemptUsers',$state)
+            ? $state['gatewayRuleExemptUsers'] : []) !== null;
 }
 /**
  * Static policy opportunity only. Do not query any customer or infer their
@@ -206,6 +170,9 @@ function policyCheck(array $state): bool {
  * a method key (including []) overrides the legacy audience for that method.
  */
 function achbotPreflightPolicyPotential(array $state, string $method): bool {
+    // policyCheck already validated the complete documents. An exemption
+    // is a possible audience, not proof that the user exists or can pay.
+    if (!empty($state['gatewayRuleExemptUsers'][$method])) return true;
     if (array_key_exists('gatewayRules', $state)) {
         $document = achbotGatewayRulesDecode($state['gatewayRules']);
         if ($document === null) return false;
@@ -216,7 +183,7 @@ function achbotPreflightPolicyPotential(array $state, string $method): bool {
             return false;
         }
     }
-    $legacy = $state['gatewayAudience'] ?? [];
+    $legacy = array_key_exists('gatewayAudience',$state) ? $state['gatewayAudience'] : [];
     if (!is_array($legacy)) return false;
     $mode = $legacy[$method] ?? 'all';
     return is_string($mode) && array_key_exists($mode, achbotPayUxAudienceModes()) &&
@@ -230,12 +197,8 @@ function achbotPreflightUsdtConfiguration(array $keys): array {
     $configured=false;$address=false;
     foreach (['BEP20','TRC20','ERC20'] as $network) {
         if (achbotManualUsdtConfiguration($network)!==null) $configured=true;
-        // Isolate destination validity without pretending a private rate exists.
-        $probe=$keys;
-        $probe['manualUsdtRateToman']='1000';
-        $GLOBALS['paymentKeys']=$probe;
-        if (achbotManualUsdtConfiguration($network)!==null) $address=true;
-        $GLOBALS['paymentKeys']=$keys;
+        $wallet=$keys['manualUsdtWallet'.$network]??null;
+        if (is_string($wallet) && achbotManualUsdtWalletValid(trim($wallet),$network)) $address=true;
     }
     $invalid=array_key_exists('manualUsdtRateToman',$keys) &&
         $keys['manualUsdtRateToman']!=='' &&
@@ -244,32 +207,32 @@ function achbotPreflightUsdtConfiguration(array $keys): array {
             'rate_configured'=>$rateConfigured];
 }
 
-/** Report API capability only; private-key/profile validation belongs to runtime. */
-function achbotPreflightApiReadiness(mysqli $db, array $state, array $columns): void {
+/** Never decrypt credentials or infer live authentication in a diagnostic. */
+function achbotPreflightApiReadiness(array $state,array $keys): void {
     global $report;
-    require_once dirname(__DIR__) . '/src/Finance/PaymentEvidence.php';
-    $ready = achbotPaymentEvidenceSchemaReady($db);
-    $present = false;
-    foreach (['payment_attempts', 'payment_transactions'] as $table) {
-        foreach (array_keys($columns[$table] ?? []) as $column) {
-            if (str_starts_with($column, 'evidence_')) $present = true;
+    foreach (['bank_transfer'=>'smsApi','gift_card'=>'giftApi'] as $method=>$prefix) {
+        $active=flag($state,$prefix.'VerifyState');
+        $credential=$keys[$prefix.($method==='bank_transfer'?'Token':'Secret')]??null;
+        $url=$keys[$prefix.'Url']??null;
+        $envelope=is_string($credential) && str_starts_with($credential,'achpe1:')
+            ?base64_decode(substr($credential,7),true):false;
+        $present=is_string($envelope) && strlen($envelope)>=29 &&
+            is_string($url) && achbotPaymentEvidenceBaseUrl($url,$method)!==null;
+        if ($method==='bank_transfer') {
+            $hours=achbotPaymentEvidenceInteger($keys['smsApiHorizonHours']??null);
+            $present=$present && $hours!==null && $hours<=intdiv(PHP_INT_MAX,3600);
+        } else {
+            $id=$keys['giftApiKeyId']??null;
+            $present=$present && is_string($id) && $id!=='' &&
+                achbotPaymentEvidenceNormalizeSetting('giftApiKeyId',$id)===$id &&
+                in_array($keys['giftApiAmountUnit']??null,['rial','toman'],true);
         }
-    }
-    $switches = ['bank_transfer' => flag($state, 'smsApiVerifyState'),
-                 'gift_card' => flag($state, 'giftApiVerifyState')];
-    $enabled = in_array(true, $switches, true);
-    $code = $ready ? 'api_evidence_capability_detected_not_ddl_certified' :
-        ($present ? 'partial_or_incompatible_api_evidence_schema_requires_audit' : 'missing');
-    $report['schema']['014'] = $code;
-    finding('schema_014', $ready ? 'PASS' : ($enabled ? 'BLOCK' : ($present ? 'WARN' : 'INFO')), $code);
-    foreach ($switches as $method => $active) {
-        $report['payment_apis'][$method] = [
-            'switch' => $active ? 'on' : 'off',
-            'schema_capability' => $ready ? 'ready' : ($present ? 'partial_or_incompatible' : 'missing'),
-            'credentials' => 'credentials_not_decrypted',
-            'authentication' => 'not_verified',
-        ];
-        if ($active) finding('api_' . $method, 'WARN', 'credentials_not_decrypted_not_verified');
+        $report['payment_apis'][$method]=[
+            'switch'=>$active?'on':'off',
+            'local_configuration'=>$active?($present?'present_not_decrypted':'missing_or_invalid'):'not_evaluated',
+            'authentication'=>'not_verified'];
+        if ($active) finding('api_'.$method,$present?'WARN':'BLOCK',
+            $present?'credentials_not_decrypted_not_verified':'required_api_setting_missing_or_invalid');
     }
 }
 
@@ -278,11 +241,8 @@ function methodChecks(array $state, array $keys): void {
     require_once dirname(__DIR__) . '/src/Finance/ReceiptHelpers.php';
     $usdt = achbotPreflightUsdtConfiguration($keys);
     $usdtConfigured = $usdt['configured'];
-    $trxRate = $keys['manualTrxRateToman'] ?? null;
-    $trxConfigured = achbotManualTronAddressValid(
-        textValue($keys['manualTrxWallet'] ?? null)) &&
-        is_scalar($trxRate) &&
-        preg_match('/\A[1-9][0-9]{0,8}\z/D', (string)$trxRate) === 1;
+    $GLOBALS['paymentKeys']=$keys;
+    $trxConfigured=achbotManualTrxConfiguration()!==null;
     $manualOn = flag($state, 'manualUsdtState');
     $on = [
         'nowpayments' => flag($state,'nowPaymentWallet') || flag($state,'nowPaymentOther'),
@@ -305,10 +265,8 @@ function methodChecks(array $state, array $keys): void {
                 'nowpayments' => available($keys['nowpayment'] ?? null) &&
                     $usdt['rate_configured'],
                 'zarinpal', 'nextpay' => available($keys[$method] ?? null),
-                'bank_transfer' => available($keys['bankAccount'] ?? null) &&
-                    available($keys['holderName'] ?? null) &&
-                    strlen(trim($keys['bankAccount'])) <= 150 &&
-                    strlen(trim($keys['holderName'])) <= 150,
+                'bank_transfer' => available($keys['bankAccount']??null) &&
+                    available($keys['holderName']??null) && achbotManualBankIdentity()!==null,
                 'gift_card' => achbotManualGiftSellerUrlValid(
                     textValue($keys['giftCardUrl'] ?? null)),
                 'manual_usdt' => $usdtConfigured,
@@ -365,20 +323,15 @@ function methodChecks(array $state, array $keys): void {
     }
 }
 
-$args = options($argv);
-if (($args['--manifest'] ?? null) === null || ($args['--runtime-dir'] ?? null) === null) {
-    finding('source_identity', 'BLOCK', 'manifest_and_runtime_dir_required');
-    finish(2);
-} elseif (verifyManifest($args['--manifest'], $args['--runtime-dir'])) {
-    finding('source_identity', 'PASS', 'matches_supplied_manifest_not_provenance');
-} else {
-    finding('source_identity', 'BLOCK', 'manifest_mismatch_or_untrusted_shape');
-    finish(2);
-}
-if (PHP_VERSION_ID < 80100 || !extension_loaded('mysqli'))
-    errorExit('php_runtime', 'php81_and_mysqli_required');
-finding('php_runtime', 'PASS', 'supported_php_and_mysqli_available');
-
+// The Python operator entrypoint authenticates the release/source and derives
+// this metadata projection before starting the CLI worker.
+try {
+    $contract=json_decode(stream_get_contents(STDIN),true,512,JSON_THROW_ON_ERROR);
+    if (!is_array($contract) || !$contract) errorExit('arguments','current_schema_contract_required');
+} catch (Throwable $e) {errorExit('arguments','current_schema_contract_required');}
+if (!extension_loaded('mysqli'))
+    errorExit('php_runtime','mysqli_required');
+finding('php_runtime','PASS','mysqli_available');
 $name = getenv('ACHBOT_PREFLIGHT_DB_NAME') ?: '';
 $user = getenv('ACHBOT_PREFLIGHT_DB_USER') ?: '';
 $password = getenv('ACHBOT_PREFLIGHT_DB_PASSWORD');
@@ -396,151 +349,37 @@ try {
     $db->set_charset('utf8mb4');
     $db->query('START TRANSACTION READ ONLY');
     finding('database_read_only', 'PASS', 'read_only_snapshot_opened');
-    [$tables, $columns, $indexes, $unique] = metadata($db);
-    $legacy = [
-        'add_link','bc_jobs','bc_messages','chats',
-        'chats_info','discounts','gift_list','increase_day','increase_order',
-        'increase_plan','needed_sofwares','orders_list','pays','send_list',
-        'server_categories','server_config','server_info',
-        'server_plans','setting','users',
-    ];
-    $missing = array_filter($legacy, static fn(string $t): bool => !isset($tables[$t]));
-    finding('current_core_tables', $missing ? 'BLOCK' : 'PASS',
-        $missing ? 'current_core_tables_missing' : 'current_core_table_names_present');
-    $report['schema']['010'] = array_intersect(['admins','black_list','servers'], array_keys($tables))
-        ? 'optional_retired_tables_present_no_cleanup_inferred' : 'optional_retired_tables_absent';
-    finding('schema_010', 'INFO', $report['schema']['010']);
-    // The current source uses these explicit FORCE INDEX hints in the final
-    // financial policy and owner-lock reads. A missing named index causes
-    // runtime checkout failure even if all expected tables exist.
-    $criticalIndexes = [
-        'users' => ['idx_users_userid_v1' => ['userid']],
-        'pays' => ['idx_pays_user_v1' => ['user_id']],
-        'orders_list' => ['idx_orders_userid_v1' => ['userid']],
-    ];
-    $indexReady = true;
-    foreach ($criticalIndexes as $table => $required) {
-        foreach ($required as $index => $fields) {
-            if (($indexes[$table][$index] ?? null) !== $fields) $indexReady = false;
+    if (inspectSchema($db,$contract)) {
+        require_once dirname(__DIR__).'/src/Finance/CheckoutAdmission.php';
+        require_once dirname(__DIR__).'/src/Finance/ServiceDelivery.php';
+        require_once dirname(__DIR__).'/src/Finance/FollowupOutbox.php';
+        require_once dirname(__DIR__).'/src/Finance/WalletTransferFlow.php';
+        require_once dirname(__DIR__).'/src/Services/EditFinalization.php';
+        $gates=['achbotCheckoutRequireSchema','achbotProviderRequireSchema',
+            'achbotWalletLedgerReady','achbotPaymentEvidenceSchemaReady',
+            'achbotServiceDeliveryStorageReady','achbotFollowupStorageReady',
+            'achbotServiceMutationSchemaReady','achbotAddonSchema','achbotWalletTransferFlowReady'];
+        foreach ($gates as $gate) {
+            try {$valid=$gate($db)!==false;} catch (Throwable $e) {$valid=false;}
+            finding($gate,$valid?'PASS':'BLOCK',$valid?'current_runtime_storage_ready':'current_runtime_storage_incompatible');
         }
     }
-    finding('final_payment_policy_indexes', $indexReady ? 'PASS' : 'BLOCK',
-        $indexReady ? 'required_owner_index_hints_present' :
-                      'missing_or_incompatible_final_authorization_index');
-    $specs = [
-        '001' => ['server_info'=>['columns'=>['panel_group_id']]],
-        '003' => [
-            'payment_attempts'=>['columns'=>['id','pay_row_id','provider','provider_reference','payment_id'],
-                'unique'=>['uq_payment_attempt_pay_row'=>['pay_row_id'],
-                           'uq_payment_attempt_ref'=>['provider','provider_reference']]],
-            'payment_transactions'=>['columns'=>['id','attempt_id','provider','payment_id'],
-                'unique'=>['uq_payment_transaction_reference'=>['provider','payment_id']]],
-        ],
-        '004' => ['automatic_renewal_attempts'=>['columns'=>['order_id','cycle_expire','pay_row_id'],
-            'unique'=>['uq_renewal_cycle'=>['order_id','cycle_expire']]]],
-        '005' => ['wallet_adjustments'=>['columns'=>['source_type','source_id','entry_no','actor_userid','target_userid','telegram_update_id','reason'],
-            'unique'=>['uq_wallet_source_entry'=>['source_type','source_id','entry_no'],
-                       'uq_wallet_telegram_entry'=>['telegram_update_id','entry_no']]]],
-        '006' => ['payment_message_refs'=>['columns'=>['pay_row_id','chat_id','message_id','updated_at'],
-            'unique'=>['uq_payment_message_chat'=>['chat_id','message_id']]]],
-        '007' => ['service_effects'=>['columns'=>['pay_row_id','source_kind','source_ref','operation_id','target_key','target_server_id','requested_bytes'],
-            'unique'=>['uq_effect_operation'=>['operation_id'],
-                       'uq_effect_source_line'=>['source_kind','source_ref','ordinal']]]],
-        '008' => ['referral_awards'=>['columns'=>['pay_row_id','inviter_userid','amount_toman','state'],
-            'unique'=>['uq_referral_award_payment'=>['pay_row_id']]]],
-        '009' => ['bank_buy_invoice_claims'=>['columns'=>['pay_row_id','invoice_sha256','bank_attempt_id','quoted_days','entitled_days'],
-            'unique'=>['PRIMARY'=>['pay_row_id'],
-                       'uq_bank_claim_attempt'=>['bank_attempt_id']]]],
-        // #117: without this journal a new terminal order cannot commit a
-        // recoverable customer delivery. Block installed readiness before
-        // any attempt to use the new source with an old (003-only) database.
-        '018' => [
-            'payment_delivery_intents'=>['columns'=>[
-                'id','pay_row_id','ordinal','attempt_id','effect_id','order_id',
-                'user_id','server_id','pay_type','pay_fingerprint','source_digest',
-                'native_operation','native_target_key','sealed_payload','payload_sha256',
-                'state','attempt_count','dispatch_token','dispatched_at',
-                'acknowledged_at','last_actor','last_result'],
-                'unique'=>['uq_delivery_pay_ordinal'=>['pay_row_id','ordinal'],
-                    'uq_delivery_effect'=>['effect_id']]],
-            'payment_delivery_attempts'=>['columns'=>[
-                'id','intent_id','attempt_no','dispatch_token','actor_userid',
-                'result','started_at','finished_at'],
-                'unique'=>['uq_delivery_attempt_no'=>['intent_id','attempt_no'],
-                    'uq_delivery_dispatch_token'=>['dispatch_token']]],
-        ],
-        // #117: original customer, staff and referral messages must have
-        // per-recipient PENDING/UNKNOWN followups before a terminal COMMIT.
-        '020' => [
-            'payment_followup_intents'=>['columns'=>[
-                'id','pay_row_id','intent_key','stage','kind','role','recipient',
-                'message_id','pay_fingerprint','sealed_payload','payload_sha256',
-                'state','attempt_count','dispatch_token','dispatched_at',
-                'acknowledged_at','last_result'],
-                'unique'=>['uq_followup_pay_key'=>['pay_row_id','intent_key']]],
-        ],
-        // #117 archival metadata is independent of provider stage.
-        '022' => [
-            'payment_attempts'=>['columns'=>['review_archived_at','review_archived_by']],
-        ],
-    ];
-    foreach ($specs as $migration => $schema) {
-        $present = count(array_filter(array_keys($schema),
-            static fn(string $t): bool => isset($tables[$t])));
-        $isPresent = $present === count($schema) && validShape($schema,$tables,$columns,$unique);
-        $code = $isPresent ? 'columns_and_named_unique_indexes_detected_not_ddl_certified' :
-            ($present === 0 ? 'missing' : 'partial_or_incompatible_schema_requires_audit');
-        $report['schema'][$migration] = $code;
-        finding('schema_' . $migration, $isPresent ? 'PASS' : 'BLOCK', $code);
-    }
-    // Shared native storage (012) is optional for Marzban-only installations.
-    // An older 011 or partial consolidation is never accepted for native dispatch.
-    $pgConfigured = isset($tables['server_config']) &&
-        $db->query("SELECT id FROM server_config WHERE type='pasarguard' LIMIT 1")->num_rows > 0;
-    $pgPresent = isset($tables['provider_panels']) || isset($tables['provider_accounts']) ||
-        isset($columns['server_config']['provider_connection_id']) ||
-        isset($columns['server_info']['provider_panel_id']) ||
-        isset($columns['server_info']['provider_group_ids']) ||
-        isset($columns['server_plans']['provider_group_ids']) ||
-        isset($columns['pays']['provider_snapshot']) ||
-        isset($columns['service_effects']['provider_snapshot']);
-    if (!$pgPresent) {
-        $report['schema']['012'] = $pgConfigured ? 'pasarguard_schema_required' : 'optional_pasarguard_not_configured';
-        finding('schema_012', $pgConfigured ? 'BLOCK' : 'INFO', $report['schema']['012']);
-    } else {
-        try {
-            if (isset($tables['provider_panels']) || isset($tables['provider_accounts']))
-                throw new RuntimeException('provider_consolidation_incomplete');
-            require_once dirname(__DIR__) . '/src/Panel/ProviderStorage.php';
-            achbotProviderRequireSchema($db);
-            $report['schema']['012'] = 'shared_native_storage_detected_not_ddl_certified';
-            finding('schema_012', 'PASS', $report['schema']['012']);
-        } catch (Throwable $ignored) {
-            $report['schema']['012'] = 'partial_or_incompatible_provider_schema_requires_audit';
-            finding('schema_012', 'BLOCK', $report['schema']['012']);
+    $report['structure_ready']=!array_filter($checks,static fn($c)=>$c['status']==='BLOCK');
+    if ($report['structure_ready']) {
+        $settings=readSettings($db);
+        if ($settings!==null) {
+            $state=$settings['BOT_STATES'];$keys=$settings['PAYMENT_KEYS'];
+            $valid=policyCheck($state);
+            finding('gateway_policies',$valid?'PASS':'BLOCK',$valid?'current_source_parser_accepts_rules':'malformed_or_unknown_rule_denies');
+            achbotPreflightApiReadiness($state,$keys);
+            if ($valid) methodChecks($state,$keys);
         }
     }
-    require_once dirname(__DIR__) . '/src/Finance/WalletTransferFlow.php';
-    $transferStorageReady = achbotWalletTransferFlowReady($db);
-    finding('wallet_transfer_storage', $transferStorageReady ? 'PASS' : 'BLOCK',
-        $transferStorageReady ? 'transactional_wallet_and_cursor_schema_ready' :
-            'wallet_or_cursor_schema_missing_or_incompatible');
-    if (isset($tables['setting'])) {
-        $settings = readSettings($db);
-        if ($settings !== null) {
-            require_once dirname(__DIR__) . '/src/Finance/PaymentLifecycle.php';
-            $state = $settings['BOT_STATES'];
-            $valid = policyCheck($state);
-            finding('gateway_policies', $valid ? 'PASS' : 'BLOCK',
-                $valid ? 'current_source_parser_accepts_rules' : 'malformed_or_unknown_rule_denies');
-            achbotPreflightApiReadiness($db,$state,$columns);
-            methodChecks($state,$settings['PAYMENT_KEYS']);
-        }
-    } else finding('settings_read', 'BLOCK', 'setting_table_missing');
     $db->rollback();
     $db->close();
 } catch (Throwable $ignored) {
+    $report['structure_ready']=false;
     finding('database_inspection', 'BLOCK', 'read_only_inspection_failed');
 }
 $bad = count(array_filter($checks,static fn(array $check): bool => $check['status'] === 'BLOCK'));
-finish($bad === 0 ? 0 : 2);
+finish(!$report['structure_ready'] ? 2 : ($bad===0 ? 0 : 3));

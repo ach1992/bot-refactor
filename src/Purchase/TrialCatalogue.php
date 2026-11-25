@@ -7,37 +7,23 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
-if($data=="getTestAccount"){
-    if($userInfo['freetrial'] != null && $from_id != $admin && $userInfo['isAdmin'] != true){
-        alert(\achbotMessage('purchase.trial_catalogue.get_test_account.alert.0143c681c4'));
-        exit();
+if ($data==="getTestAccount") {
+    if (($botState['testAccount']??'off')!=='on') return;
+    if (in_array($userInfo['freetrial']??null,['used','reserved'],true) && $from_id!=$admin) {
+        alert(achbotMessage('purchase.trial_catalogue.get_test_account.alert.0143c681c4'));
+        return;
     }
-    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type` IN (".achbotProviderSqlTypes().") INNER JOIN `server_info` si ON si.`id`=p.`server_id` AND si.`active`=1 AND si.`state`=1 AND si.`ucount`>0 WHERE p.`price`=0 AND p.`active`=1 AND p.`inbound_id`=0");
-    $stmt->execute();
-    $respd = $stmt->get_result();
-    $stmt->close();
-    
-    if($respd->num_rows > 0){
-        alert(\achbotMessage('legacy_messages.receving_information'));
-    	$keyboard = array();
-        while ($row = $respd->fetch_assoc()){
-            $id = $row['id'];
-            $catInfo = $connection->prepare("SELECT * FROM `server_categories` WHERE `id`=?");
-            $catInfo->bind_param("i", $row['catid']);
-            $catInfo->execute();
-            $catname = $catInfo->get_result()->fetch_assoc()['title'];
-            $catInfo->close();
-            
-            $name = $catname." ".$row['title'];
-            $price =  $row['price'];
-            $desc = $row['descr'];
-        	$sid = $row['server_id'];
-
-            $keyboard[] = [['text' => $name, 'callback_data' => "freeTrial{$id}_normal"]];
-
-        }
-	$keyboard[] = [['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]];
-        editText($message_id,\achbotMessage('purchase.trial_catalogue.get_test_account.message.b059640ccc'), json_encode(['inline_keyboard'=>$keyboard]), "HTML");
-    }else alert(\achbotMessage('purchase.trial_catalogue.get_test_account.alert.d1ae7ac011'));
+    $plans=achbotAvailablePlans($connection,null,null,'trial');
+    if (!$plans) {
+        alert(achbotMessage('purchase.trial_catalogue.get_test_account.alert.d1ae7ac011'));
+        return;
+    }
+    alert(achbotMessage('legacy_messages.receving_information'));
+    $keyboard=[];
+    foreach ($plans as $row) {
+        $keyboard[]=[['text'=>$row['category_title'].' '.$row['title'],
+            'callback_data'=>'freeTrial'.$row['id'].'_normal']];
+    }
+    $keyboard[]=[['text'=>achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>'mainMenu']];
+    editText($message_id,achbotMessage('purchase.trial_catalogue.get_test_account.message.b059640ccc'),json_encode(['inline_keyboard'=>$keyboard]),"HTML");
 }
-

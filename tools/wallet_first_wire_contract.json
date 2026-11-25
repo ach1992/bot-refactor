@@ -1,0 +1,304 @@
+{
+  "baseline": "484c80e6ee030e8656da96edc3000311d10327b5",
+  "added_without_direct_send": [
+    "src/Finance/ServiceHistory.php",
+    "src/Finance/CheckoutAdmission.php",
+    "src/Finance/CheckoutRoutes.php",
+    "src/Finance/DeliveryParts.php",
+    "src/Finance/FollowupAttempts.php",
+    "src/Finance/FundingCheckout.php",
+    "src/Finance/HostedMethods.php",
+    "src/Finance/HostedReceipt.php",
+    "src/Finance/ManualReceipt.php",
+    "src/Finance/ManualReceiptIntent.php",
+    "src/Finance/OperationalReports.php",
+    "src/Finance/PaymentCredit.php",
+    "src/Finance/ReceiptMethods.php",
+    "src/Finance/ReceiptReports.php",
+    "src/Finance/ServiceDelivery.php",
+    "src/Finance/ServicePurchaseReferral.php",
+    "src/Finance/ServiceReports.php",
+    "src/Finance/WalletReports.php",
+    "src/Panel/AccountNaming.php",
+    "src/Panel/PasarGuardServiceEdit.php",
+    "src/Panel/PasarGuardServiceExecution.php",
+    "src/Panel/PasarGuardServiceResolution.php",
+    "src/Panel/PasarGuardServiceTarget.php",
+    "src/Presentation/MainMenu.php",
+    "src/Services/AutomaticRenewal.php",
+    "src/Services/EditFinalization.php",
+    "src/Services/Execution.php",
+    "src/Services/Funding.php",
+    "src/Services/Ownership.php",
+    "src/Services/Resolution.php",
+    "src/Wallet/Ledger.php"
+  ],
+  "removed": [
+    "src/Finance/BankPurchase.php",
+    "src/Finance/ManualEditRecovery.php",
+    "src/Finance/PaidAccountRecovery.php",
+    "src/Finance/RecoveryInspection.php",
+    "src/Finance/RecoveryTransport.php",
+    "src/Finance/RenewalHelper.php",
+    "src/Finance/Routes/RenewalPlan.php",
+    "src/Finance/Routes/RenewalSelection.php",
+    "src/Finance/WalletAddonNotices.php",
+    "src/Finance/WalletEditRecovery.php",
+    "src/Finance/WalletOriginalRecovery.php",
+    "src/Finance/WalletRenewalRecovery.php",
+    "src/Finance/WalletSettlement.php",
+    "src/Panel/Accounts.php",
+    "src/Panel/MarzbanPlanAccess.php"
+  ],
+  "changes": {
+    "src/Plans/Categories.php": {
+      "reason": "Use existing management error/review copy on failed actor-owned category mutation; typed input has no callback ID. All normal prompt and success wire calls remain exact.",
+      "before_count": 8,
+      "after_count": 9,
+      "before_sha256": "38445729b82b210349287fde3defcbbc86d7e310e9b537f21e121cba2c640125",
+      "after_sha256": "d908db742ddf1aa5b1545d02f273ac37ae9c0a23d6cf3b52378394c6642d6d8f"
+    },
+    "bot.php": {
+      "before_count": 200,
+      "after_count": 168,
+      "before_sha256": "cff48d8a700a865d62d8c96389da43e7a2d34431deff1f650f3bd4b107808baa",
+      "after_sha256": "cf34a27ec6ca20f494932efa29eb14e2e5bcef14c37234254b2c5c147fbd879e",
+      "reason": "F7 retire unsupported shared availability, F8 dispatch authenticated shortcuts through canonical Home and customer routes; F6 denied content reads do not send values"
+    },
+    "src/Finance/ApiPaymentPresentation.php": {
+      "before_count": 1,
+      "after_count": 0,
+      "before_sha256": "938e2d727dfbbad538ec697c2e31463850ddc74dfdc117a8193cda455e9cdd31",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Receipt completion notification moves to frozen followup packet."
+    },
+    "src/Finance/AutomaticReceipts.php": {
+      "before_count": 13,
+      "after_count": 0,
+      "before_sha256": "cf6a29c9629beb58f0950adee44d7edd2d7c9ae50b0c18772183877958ae9d37",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Common receipt credit and durable service/report dispatch replace inline bank notices."
+    },
+    "src/Finance/AutomaticRenewal.php": {
+      "before_count": 2,
+      "after_count": 0,
+      "before_sha256": "56141b7ca01b2b075bb196ec1af4203dcf6c8b414d1e76010551063edeebc6c5",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Scheduled admission uses shared service command and frozen delivery."
+    },
+    "src/Finance/DeliveryLedger.php": {
+      "before_count": 1,
+      "after_count": 0,
+      "before_sha256": "7faee14d1deb59b40793ed9e75924cc88d9228c5ee3bf3bdabcb0637a93bc431",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "One durable per-part dispatch owner; old whole-packet sender retired."
+    },
+    "src/Finance/Discounts.php": {
+      "before_count": 13,
+      "after_count": 14,
+      "before_sha256": "6895b524dcc7fbef044102999af033e94803d234b41f05c7c27315cedc85f5a6",
+      "after_sha256": "b4994bb00ffa380bedf4358b038e643e52bbf9f396fc29a73fd1e01a69d68209",
+      "reason": "Correct invalid-discount notice in shared quote flow."
+    },
+    "src/Finance/GatewayReturn.php": {
+      "before_count": 6,
+      "after_count": 0,
+      "before_sha256": "0376bec05bcc52461e74ab2d5a69d9875203eae494565558dc645b5935bf95a4",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Browser return no longer performs native operation or inline completion messages."
+    },
+    "src/Finance/ReceiptHelpers.php": {
+      "before_count": 6,
+      "after_count": 6,
+      "before_sha256": "a5b5ce5c92c2a86efa446fa6fe0bb66c54651c88d0c879bb7b06a023ed53b428",
+      "after_sha256": "fdc5b495b0b39be9a5b8bab9147d6c6a7b3cb443e46750503d99483f0505a4b6",
+      "reason": "Remove obsolete payment-path refund notice. Single guarded Home navigation acknowledges a retired callback; retired manual-selection helpers removed."
+    },
+    "src/Finance/ReferralReward.php": {
+      "before_count": 1,
+      "after_count": 0,
+      "before_sha256": "c4881bf727146876eee31a90e64002b2ba826206434bd7e9fd6c7009bd6e6bde",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Referral credit notices are durable source-owned reports."
+    },
+    "src/Finance/Routes/AutomaticGatewayReview.php": {
+      "reason": "Shared operations inbox, receipt evidence/recheck, service disposition, delivery and report recovery; archive removed; hosted rejection notification staged through durable outbox instead of direct send.",
+      "before_count": 49,
+      "after_count": 29,
+      "before_sha256": "4fb93a55e1bbfc7cdab723e0c4153b9d6f5e87c178b741f86ff79ed88a23c8af",
+      "after_sha256": "d56811d69095e8e7384bbdbde09201fb0d1864f2547052f3158a1e05ab29e3a3"
+    },
+    "src/Finance/Routes/Checkout.php": {
+      "before_count": 15,
+      "after_count": 12,
+      "before_sha256": "87aa9564ac301428ae9513a81af203cb095982481a24171f13b81af88ab939fc",
+      "after_sha256": "ad08c9838a2cd71fc9ce7413bbaeec9d9af120d88befd2f86e4fd1c1fff29c0b",
+      "reason": "Success delivery owned by shared command; remove obsolete inline wallet notices. Current manual and wallet admission own all validation; duplicate pre-admission branches removed."
+    },
+    "src/Finance/Routes/Extensions.php": {
+      "before_count": 25,
+      "after_count": 19,
+      "before_sha256": "9ba80f3c2290c756f396e7171ad030eb5d5cf4f60009600ddce7d058b6fc32b7",
+      "after_sha256": "26b0f9c43b0e99799d61516724d0123a5db06589c32ff6816d6a8bd18b5a9659",
+      "reason": "Same shared command and delivery for day and volume.; Owner-approved zero-value confirmation prompt; positive copy and send parameters unchanged."
+    },
+    "src/Finance/Routes/ManualApproval.php": {
+      "before_count": 2,
+      "after_count": 0,
+      "before_sha256": "64b8a4d1b9ebd51d1264852c588531f7cc4ddf54f3028e6e0a65cefd2fbbe152",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Manual approval credits receipt, then advances same shared service command."
+    },
+    "src/Finance/Routes/ManualReceipts.php": {
+      "reason": "Retire obsolete API execution and override callbacks; result projection uses current credit and service delivery journals.",
+      "before_count": 18,
+      "after_count": 11,
+      "before_sha256": "210476cf38cd0651367be92805048be760e098a4dba269cf5893ee268f8c7cee",
+      "after_sha256": "829c073cab573ddbe21cc13a8965f2bc56ccc4d579e51255522b5b8fe8683de2"
+    },
+    "src/Finance/Routes/RenewalCheckout.php": {
+      "before_count": 24,
+      "after_count": 9,
+      "before_sha256": "9ed2ba8682b3d73714fdb16169453d6e192042357453cba395fa3733c4398809",
+      "after_sha256": "49738582bc69f7bacb8c1b5b69fb3716f91979e32920351a1daa00801fb34047",
+      "reason": "F5 use shared original renewal draft presentation; remove obsolete receipt age/current-plan rejection and return-to-menu sends; genuine original receipt remains wallet-creditable."
+    },
+    "src/Finance/Routes/RenewalPlan.php": {
+      "before_count": 1,
+      "after_count": 0,
+      "before_sha256": "a4e512838412f6f109c09ea6c5d4b15510f7bafd61f624406d21cf1a95993000",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Retired external renewal."
+    },
+    "src/Finance/Routes/RenewalSelection.php": {
+      "before_count": 2,
+      "after_count": 0,
+      "before_sha256": "8274b998492de98ceb9d1d4fa64f42155530d43d2c7a30e37643a4aef97c0596",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Retired external renewal."
+    },
+    "src/Purchase/Catalogue.php": {
+      "before_count": 18,
+      "after_count": 15,
+      "before_sha256": "f834fa0961d4d1557238d2cf9efe9d2bb94b7bbf971887697ace11d9258b7400",
+      "after_sha256": "7e907329875dbb1a33d8b4ed408ee81319662f29f8daf65ccdd7e67e1faa31d0",
+      "reason": "F5 render original custom draft through shared presentation; remove duplicate discount continuation"
+    },
+    "src/Subscription/Delivery.php": {
+      "before_count": 2,
+      "after_count": 2,
+      "before_sha256": "4b2b4a5c52f6fc8d2b0d802382fd457531f567f9adda9716873dc9169573681a",
+      "after_sha256": "05db9abff930d4ba2e0255c4a1f6198d7fd20f8d323f0be4b6df08ee947f9d4c",
+      "reason": "Send arguments come from immutable per-part packet; fixture verifies wire fields."
+    },
+    "src/Subscription/OrderManagement.php": {
+      "before_count": 33,
+      "after_count": 29,
+      "before_sha256": "77aa64673ce8da62ffcecc02d50f00579503b2868690b154b52844b96e357b05",
+      "after_sha256": "56154f0b61819ce0807e28a812b7dfbf56d8f054527b6423b30f8529d8c09262",
+      "reason": "Retire local Marzban token/UUID mutations and retain stale callback denial; PasarGuard order management unchanged.; Escape actual local-order-deletion UI remark; retain existing callback and message semantics."
+    },
+    "src/Finance/Routes/PrePayment.php": {
+      "before_count": 26,
+      "after_count": 5,
+      "before_sha256": "d147120088ad0375ab9888055dda0239edbfc9a10b383ec9ab02a239fc20463c",
+      "after_sha256": "1cd099df4a9a87ec26044e7cf299c3a7082355ba244cf2aa56805d1936872a5d",
+      "reason": "Replace obsolete method-selection workflow with current pinned renewal hosted-link action; old draft routes removed."
+    },
+    "src/Plans/AddonAdmin.php": {
+      "before_count": 8,
+      "after_count": 7,
+      "before_sha256": "6ccc11cb33fcde65aca38988282724f847776989397553f7b4e3b8c7844c0930",
+      "after_sha256": "24a75301d4f7e23a5e6bb6ef1ca310fa96c650d000f43d638fbacb81ba730776",
+      "reason": "Remove obsolete filter callback handler; current scope editor retained."
+    },
+    "src/Plans/Intervals.php": {
+      "before_count": 28,
+      "after_count": 16,
+      "before_sha256": "fe9a847311992187e04f08d297d16ed5c025e2e40c0231c6e7db4a9d415d508d",
+      "after_sha256": "ba451ca98ddd9a0053069ab702a93b24b073928fffe429f267832f2a53c670b2",
+      "reason": "Remove old unscoped catalog creation and editing; current scoped editor is sole owner."
+    },
+    "src/Finance/Routes/ServiceAttention.php": {
+      "reason": "Owner-approved operation-owned private detail, resume, refund/closure preview and confirmation, independent delivery redrive navigation.",
+      "before_count": 0,
+      "after_count": 8,
+      "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "after_sha256": "d080909451050c8d3131fb6a5b515561babd9eb2a763e073f8f92b2f6864e43c"
+    },
+    "src/Subscription/AccountDeletion.php": {
+      "before_count": 6,
+      "after_count": 5,
+      "before_sha256": "d3ad36766eb6a66ecb40cc49aa666ea5ea573b6ef7919f4f0f1458893d85b5e1",
+      "after_sha256": "b55d1346e086c045be04cb4874ddb32f3d91e15b9ef9fa564dd25c2c67b5cc0b",
+      "reason": "Unify committed delete reporting with normal owner/actor/channel fanout; remove standalone owner send and escape dynamic remarks in HTML UI."
+    },
+    "src/Subscription/GiftBatch.php": {
+      "reason": "Original gift customer text is sealed with the verified gift and dispatched through the existing common durable followup sender; no direct send or duplicate notice path remains.",
+      "before_count": 1,
+      "after_count": 0,
+      "before_sha256": "bea9782d701af416213500d452e96958f40b09133a70eadbe91ae48c6a6e6b64",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+    },
+    "src/Subscription/CustomerRoutes.php": {
+      "before_count": 23,
+      "after_count": 17,
+      "before_sha256": "3dd3773833d6d1001eb2967ff89317f8e1db3902af1e9921d5644a5aac9dd877",
+      "after_sha256": "33de233b7bbc17d46ba9a8f01853a3108d76db98a241bbd03377f13c32080aa8",
+      "reason": "F8 send own subscription menu for a genuine shortcut"
+    },
+    "src/Finance/Routes/AdminWallet.php": {
+      "reason": "Current credit/debit reason prompt excludes unreachable pre-upgrade direct debt wording; confirmation of negative balance remains unchanged.",
+      "before_count": 16,
+      "after_count": 16,
+      "before_sha256": "6e6a0f519cbdc4e6e430dc2236b14cbea688ffc4ff1905082f9f02ddeadf9127",
+      "after_sha256": "cf764205db4590e33259730717dfee5c755d9629df5fbfcd9c3c4c5bdf8e9658"
+    },
+    "src/Purchase/EntryAndBulk.php": {
+      "before_count": 16,
+      "after_count": 19,
+      "before_sha256": "fb1144f3c00f379edcd82d9fcb14c9db57098d66d633ac88cd2745c1e764db59",
+      "after_sha256": "cffdbbab877bbdd2eaac9baef12a9cb80333946c9a46643b4293537cd88d6b59",
+      "reason": "F7 shared admin and customer purpose-appropriate catalogue; retire unreachable shared-inbound capacity notice"
+    },
+    "config.php": {
+      "before_count": 23,
+      "after_count": 18,
+      "before_sha256": "f10f2b6ae51d9503f2cce6cb4dbf30d12caed7abc89c91dba6688e931cbaae20",
+      "after_sha256": "45c021ec895e1f5d1da17c217057c79854bc2ccba75117a432c235f3bca512ad",
+      "reason": "F8 remove duplicate configuration-time shortcut dispatch; F7 retire shared availability toggle"
+    },
+    "src/Purchase/CheckoutPresentation.php": {
+      "before_count": 0,
+      "after_count": 1,
+      "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "after_sha256": "a1a498d9a696d7b2dc3d24e0effad0977a931ddc3e738a7afe4626addc825f80",
+      "reason": "F5 one shared current draft card and method menu for standard, custom, bulk and renew"
+    },
+    "src/Finance/Routes/DiscountEntry.php": {
+      "before_count": 1,
+      "after_count": 3,
+      "before_sha256": "33676f503ea1ccf762f477c6859b83364dccf586e77187d6e9d18de2d30fb189",
+      "after_sha256": "251d5907114eda1a28430706a8945bcc94c239f413424a23d0c6f2c581035018",
+      "reason": "F5 one owned current draft prompt and redemption route with exact continuation; Owner-approved no-monetary-method discount explanation, with fallback send if the original card becomes unavailable."
+    },
+    "src/Purchase/TrialCatalogue.php": {
+      "before_count": 1,
+      "after_count": 1,
+      "before_sha256": "b75425b15803007c3b921e1b81cefe8785d145f699ed5cf5847f0d1ed223d649",
+      "after_sha256": "2d353c3999e8b08c46730616c8d66307118215a6014dd39d875a809f8e304510",
+      "reason": "F7/F9 dedicated current zero-price trial catalogue"
+    },
+    "src/Purchase/SelectPlan.php": {
+      "before_count": 5,
+      "after_count": 4,
+      "before_sha256": "39dc221acd00a309063d3ac87c0577a8096e470325d3ed1cb1da82182a484420",
+      "after_sha256": "50d21e50e22027fdcc52f74f9fd5250b64a66c6da9841c7974bab5617b49f277",
+      "reason": "F9 original free commercial command instead of one-account trial; remove duplicate presentation"
+    }
+  },
+  "added_with_direct_send": [
+    "src/Finance/Routes/ServiceAttention.php",
+    "src/Purchase/CheckoutPresentation.php"
+  ]
+}

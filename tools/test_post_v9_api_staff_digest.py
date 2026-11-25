@@ -13,8 +13,8 @@ import subprocess
 import sys
 import time
 
-import test_access_state as owned
-import test_v6_native as native
+import database_fixture as owned
+import database_fixture as native
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = owned.NAMES[1]
@@ -160,6 +160,7 @@ def main() -> None:
                                              PHP_DRIVER.split("<?php", 1)[1])
         native.sql(work, env, (ROOT / "migrations/post-v9/003_payment_attempts.sql").read_text(), DB)
         native.sql(work, env, (ROOT / "migrations/post-v9/014_api_payment_evidence.sql").read_text(), DB)
+        native.sql(work, env, (ROOT / "migrations/post-v9/022_gateway_review_archive.sql").read_text(), DB)
         for id in (7701, 7702, 7703, 7704):
             actor = "NULL" if id == 7702 else "0"
             native.sql(work, env, f"INSERT INTO pays(id,hash_id,user_id,type,price,request_date,state,approved_by)"

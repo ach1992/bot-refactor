@@ -12,6 +12,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
+require_once __DIR__.'/../Panel/AccountNaming.php';
 require_once __DIR__.'/../Subscription/ServerDisplaySettings.php';
 
 /**
@@ -36,10 +37,7 @@ function achbotEffectSafeFailure(Throwable $error): array {
         'pg_rate_limited','pg_vendor_unavailable','pg_request_rejected',
         'pg_dispatch_target_changed','pg_verify_begin','pg_verify_commit_unknown',
         'pg_effect_verification_unconfirmed','pg_credentials_changed',
-        'pg_create_invalid','pg_groups_required',
-        // Exact, trusted terminal-Archive refusal; never reduce an expected
-        // operator fence to an opaque runtime_error diagnostic.
-        'effect_original_archived'
+        'pg_create_invalid','pg_groups_required'
     ];
     $fallback='runtime_error';$depth=0;$source='runtime';
     for ($current=$error;$current!==null && $depth<8;$current=$current->getPrevious()) {
@@ -87,7 +85,7 @@ function achbotEffectRequireUniqueLine(mysqli $db): void {
     foreach ([
         'uq_effect_pay_line'=>['pay_row_id','effect_kind','ordinal'],
         'uq_effect_source_line'=>['source_kind','source_ref','ordinal'],
-        'uq_effect_target_username'=>['target_key','remote_username'],
+        'uq_effect_target_username'=>['target_key','active_username'],
         'uq_effect_operation'=>['operation_id'],
         'uq_effect_order'=>['order_id']
     ] as $name=>$expected) {
@@ -116,548 +114,12 @@ function achbotEffectRequireUniqueLine(mysqli $db): void {
         throw new RuntimeException('effect_capacity_schema_invalid');
 }
 
-/**
- * Manual-standard already atomically deducted full capacity under its locked
- * have_sent -> processing payment claim. Journal THAT exact hold in the SAME
- * transaction, rather than deducting it a second time in ordinal 1.
- * An uncertain COMMIT never authorizes a remote CREATE or hold restoration.
- */
-function achbotEffectRecordManualCapacityLocked(mysqli $db,array $pay,int $count,?array $apiProof=null): void {
-    achbotEffectRequireUniqueLine($db);
-    $tx=$db->query('SELECT @@in_transaction AS tx');
-    if (!$tx || (int)($tx->fetch_assoc()['tx']??0)!==1)
-        throw new RuntimeException('manual_hold_requires_payment_transaction');
-    $payId=(int)($pay['id']??0);
-    $planId=(int)($pay['plan_id']??0);
-    $serverId=(int)($pay['server_id']??0);
-    $expectedCount=(int)($pay['agent_count']??0);
-    if ($expectedCount===0) $expectedCount=1;
-    if ($payId<=0 || $planId<=0 || $serverId<=0 || $count<=0 ||
-        $expectedCount!==$count || ($pay['type']??'')!=='BUY_SUB' ||
-        (($pay['state']??'')!=='have_sent' && !($apiProof!==null &&
-            ($pay['state']??'')==='pending' && function_exists('achbotPaymentEvidenceValidateProofLocked') &&
-            achbotPaymentEvidenceValidateProofLocked($db,$pay,$apiProof))))
-        throw new RuntimeException('manual_hold_payment_mismatch');
-    $stmt=$db->prepare("SELECT i.panel_group_id,c.panel_url,c.type,
-         s.server_id,s.inbound_id,g.id AS valid_group
-         FROM server_plans s
-         JOIN server_info i ON i.id=s.server_id
-         JOIN server_config c ON c.id=i.id
-         LEFT JOIN setting g ON g.id=i.panel_group_id
-             AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
-         WHERE s.id=? AND s.active=1 LIMIT 1");
-    if (!$stmt) throw new RuntimeException('manual_hold_target_prepare_failed');
-    $stmt->bind_param('i',$planId);
-    if (!$stmt->execute()) throw new RuntimeException('manual_hold_target_read_failed');
-    $target=$stmt->get_result()->fetch_assoc();$stmt->close();
-    if (!$target || (int)$target['server_id']!==$serverId ||
-        (int)$target['inbound_id']!==0 || !achbotSupportsAccount($target['type'],0) ||
-        ($target['type']==='marzban' && $target['panel_group_id']!==null && $target['valid_group']===null) ||
-        !is_string($target['panel_url']) || $target['panel_url']==='')
-        throw new RuntimeException('manual_hold_target_invalid');
-    $holdTarget=achbotEffectTargetIdentity($db,$serverId,$planId,$payId,$target);
-    $group=$holdTarget['group'];$endpoint=$holdTarget['endpoint'];
-    $markerKey='manual_hold:'.$payId;
-    $markerRemark='manual_hold_'.$payId;
-    $operation=bin2hex(random_bytes(16));
-    $fingerprint=hash('sha256',json_encode([
-        'manual_hold',$payId,$planId,$serverId,$group,$endpoint,$count
-    ],JSON_THROW_ON_ERROR));
-    $stmt=$db->prepare("INSERT INTO service_effects
-        (pay_row_id,ordinal,operation_id,effect_kind,target_server_id,target_group_id,
-         target_key,endpoint_sha256,plan_id,remote_username,requested_expire,
-         requested_bytes,request_sha256,reserved_count,state)
-        VALUES (?,0,?,'manual_hold',?,?,?,?,?,?,0,0,?,?,'reserved')");
-    if (!$stmt) throw new RuntimeException('manual_hold_insert_prepare_failed');
-    $stmt->bind_param('isiississi',$payId,$operation,$serverId,$group,
-        $markerKey,$endpoint,$planId,$markerRemark,$fingerprint,$count);
-    if (!$stmt->execute() || $stmt->affected_rows!==1)
-        throw new RuntimeException('manual_hold_insert_unconfirmed');
-    $stmt->close();
-}
-
-/**
- * One provider-bound username contract for customer draft admission,
- * pre-debit verification and the final paid/nonpaid effect dispatcher.
- * Byte-length is intentional: Marzban usernames are ASCII identifiers.
- */
-function achbotEffectValidUsername(string $username,?string $provider=null): bool {
-    // Keep the existing general/PasarGuard admission contract. Marzban's
-    // actual Native /api/user username column rejects more than 32 bytes.
-    $max=$provider==='marzban'?32:100;
-    return strlen($username)>=1 && strlen($username)<=$max &&
-        preg_match('/^[a-zA-Z0-9_-]+$/D',$username)===1;
-}
-
-/**
- * Preserve the configured account-name shape (server-user-digits or
- * server-digits), not an opaque provider-specific alias. Bulk digits are
- * source/ordinal-stable so a fresh random buildRemark() result cannot alter
- * a pending operation. The 007 journal, not this formatter, is replay truth.
- *
- * For long generated names only the server prefix is shortened to fit
- * Marzban's 32 ASCII bytes (PasarGuard: 100). Explicit single names stay
- * exact; bulk descriptions remain visible with source-distinct suffixes.
- */
-function achbotStyledAccountRemark(string $base,string $provider,string $source,
-    int $ordinal,int $count,string $mode,bool $explicit=false,
-    bool $adminBulk=false): string {
-    if ($source==='' || $ordinal<=0 || $count<=0 || $ordinal>$count)
-        throw new InvalidArgumentException('account_name_source_invalid');
-    $max=$provider==='marzban'?32:100;
-    if (!in_array($provider,['marzban','pasarguard'],true))
-        throw new InvalidArgumentException('account_name_provider_invalid');
-
-    if ($explicit && $count===1) {
-        // A customer's deliberately chosen single-account name is exact.
-        $name=$base;
-    } elseif ($explicit || ($mode==='manual' && $adminBulk)) {
-        // Retain the selected human-readable name/plan description while
-        // separating independent bulk orders and their line identities.
-        if (preg_match('/^[A-Za-z0-9_-]+$/D',$base)!==1)
-            throw new InvalidArgumentException('account_name_manual_invalid');
-        $token=achbotAccountNumericToken($source,0);
-        $suffix='_'.$token.'_'.$ordinal;
-        $room=$max-strlen($suffix);
-        if ($room<1) throw new InvalidArgumentException('account_name_too_long');
-        $name=substr($base,0,$room).$suffix;
-    } elseif ($provider==='pasarguard' && !$adminBulk && $count===1) {
-        // Preserve the unmodified generated single-account name on PasarGuard.
-        $name=$base;
-    } else {
-        // Both providers must bind NEW bulk generated names to immutable
-        // source/ordinal. They differ only in their actual username ceiling.
-        if (preg_match('/^(.+)-([0-9]{4,5})$/D',$base,$matches)!==1 ||
-            preg_match('/^[A-Za-z0-9_-]+$/D',$matches[1])!==1)
-            throw new InvalidArgumentException('account_name_generated_invalid');
-        $numeric=($adminBulk || $count>1)
-            ? achbotAccountNumericToken($source,$ordinal) : $matches[2];
-        if ($mode==='digits') {
-            $room=$max-strlen($numeric)-1;
-            if ($room<1) throw new InvalidArgumentException('account_name_too_long');
-            $name=substr($matches[1],0,$room).'-'.$numeric;
-        } else {
-            if (preg_match('/^(.+)-([1-9][0-9]*)$/D',$matches[1],$parts)!==1)
-                throw new InvalidArgumentException('account_name_generated_invalid');
-            $tail='-'.$parts[2].'-'.$numeric;
-            $room=$max-strlen($tail);
-            if ($room<1) throw new InvalidArgumentException('account_name_too_long');
-            $name=substr($parts[1],0,$room).$tail;
-        }
-    }
-    if (strlen($name)>$max ||
-        preg_match('/^[A-Za-z0-9_-]+$/D',$name)!==1)
-        throw new InvalidArgumentException('account_name_provider_invalid');
-    return $name;
-}
-
-/** Five visible digits; adjacent lines of the same source cannot collide. */
-function achbotAccountNumericToken(string $source,int $ordinal): string {
-    // One source-derived starting point, then sequential line offsets.
-    // The existing unique Native-target/effect index still fences collisions
-    // with other sources before any remote CREATE.
-    $start=(int)(hexdec(substr(hash('sha256',$source),0,11))%90000);
-    return (string)(10000+(($start+$ordinal)%90000));
-}
-
 function achbotAdminBulkAccountRemark(string $base,string $sourceRef,
     int $ordinal,int $count,string $provider,string $mode): string {
     if (preg_match('/^bulk:[1-9][0-9]*:[1-9][0-9]*$/D',$sourceRef)!==1)
         throw new InvalidArgumentException('bulk_account_source_invalid');
     return achbotStyledAccountRemark($base,$provider,$sourceRef,$ordinal,
         $count,$mode,false,true);
-}
-
-function achbotPaidPurchaseRemark(string $base,string $provider,int $payId,
-    int $ordinal,int $count,bool $explicit=false,string $mode=''): string {
-    if ($payId<=0) throw new InvalidArgumentException('paid_account_source_invalid');
-    return achbotStyledAccountRemark($base,$provider,'paid:'.$payId,
-        $ordinal,$count,$mode,$explicit);
-}
-
-/**
- * Called only while the original pays row is already FOR UPDATE locked.
- * The 003 ledger is optional for very old non-hosted orders, but a hidden
- * table, missing 022 or other SQL error must never bypass Archive.
- */
-function achbotEffectAssertNotArchivedLocked(mysqli $db,int $payId,
-    bool $processing=false,bool $wallet=false): void {
-    $hasLedger=true;
-    try {
-        $probe=$db->query('SELECT 1 FROM payment_attempts LIMIT 0');
-        if (!$probe) {
-            if ((int)$db->errno===1146) $hasLedger=false;
-            else throw new RuntimeException('effect_archive_ledger_unavailable');
-        } else $probe->free();
-    } catch (mysqli_sql_exception $error) {
-        if ((int)$error->getCode()===1146) $hasLedger=false;
-        else throw $error;
-    }
-    if (!$hasLedger) return;
-    if ($processing) {
-        // Processing API bank/gift orders share the same terminal Archive
-        // contract as hosted attempts. Other historical manual methods do not
-        // acquire this particular fence merely because the ledger exists.
-        $q=$db->prepare('SELECT provider FROM payment_attempts
-            WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
-        $q->bind_param('i',$payId);$q->execute();
-        $row=$q->get_result()->fetch_assoc();$q->close();
-        if (!$row || !in_array((string)$row['provider'],
-                ['nowpayments','zarinpal','nextpay','bank_transfer','gift_card',
-                 'manual_usdt','manual_trx'],true)) return;
-    }
-    // Some independently supported manual-payment installs have 003 but
-    // not yet 022. No archive can exist without its column; retain those
-    // original manual approvals, never reinterpret a missing column as
-    // permission to bypass an actual archived payment on a 022 install.
-    $missing022=false;$fence=false;
-    try {
-        $fence=$db->prepare('SELECT id FROM payment_attempts
-            WHERE pay_row_id=? AND review_archived_at IS NOT NULL
-            LIMIT 1 FOR UPDATE');
-    } catch (mysqli_sql_exception $error) {
-        if ((int)$error->getCode()!==1054) throw $error;
-        $missing022=true;
-    }
-    if (!$fence) {
-        // With MYSQLI_REPORT_OFF, prepare() returns false/errno=1054
-        // instead of throwing. Preserve that exact code; independently
-        // confirm that 022, not an unrelated required column, is absent.
-        if (!$missing022 && (int)$db->errno!==1054)
-            throw new RuntimeException('effect_archive_fence_unavailable');
-        require_once __DIR__.'/GatewayClient.php';
-        if (!achbotGatewayArchiveSchemaMissing($db))
-            throw new RuntimeException('effect_archive_fence_unavailable');
-        $missing022=true;
-        $q=$db->prepare('SELECT provider FROM payment_attempts
-            WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
-        $q->bind_param('i',$payId);$q->execute();
-        $row=$q->get_result()->fetch_assoc();$q->close();
-        if ($row && in_array((string)$row['provider'],
-            ['bank_transfer','gift_card','manual_usdt','manual_trx'],true)) return;
-        // A historical Wallet checkout on an installation with 003 but
-        // without 022 cannot have an Archive marker. The original Wallet
-        // payment remains usable; when 022 is installed the check below
-        // enforces the marker even for processing_wallet.
-        if ($wallet && $missing022) return;
-        throw new RuntimeException('effect_archive_fence_unavailable');
-    }
-    $fence->bind_param('i',$payId);
-    if (!$fence->execute()) throw new RuntimeException('effect_archive_fence_read_failed');
-    $archived=$fence->get_result()->num_rows>0;
-    $fence->close();
-    if ($archived) throw new RuntimeException('effect_original_archived');
-}
-
-/** Used by a rearmed CREATE's read-first final verification. Caller must
- * already own a short SQL transaction; this acquires the same pay -> attempt
- * locks used by original staff authorization and Archive.
- */
-function achbotEffectAssertRecoveryPaymentLocked(mysqli $db,int $payId,
-    int $actor,int $primary): void {
-    require_once __DIR__.'/../Admin/Access.php';
-    if ($payId<=0 || $actor<=0 || $primary<=0)
-        throw new RuntimeException('paid_resume_reconciliation_not_authorized');
-    $q=$db->prepare('SELECT type,state FROM pays WHERE id=? FOR UPDATE');
-    $q->bind_param('i',$payId);$q->execute();
-    $pay=$q->get_result()->fetch_assoc();$q->close();
-    if (!$pay || $pay['type']!=='BUY_SUB' ||
-        !in_array($pay['state'],['processing','paid','processing_wallet'],true) ||
-        !achbotAdminCanLocked($db,$actor,$primary,'payments'))
-        throw new RuntimeException('paid_resume_reconciliation_payment_changed');
-    achbotEffectAssertNotArchivedLocked($db,$payId,
-        $pay['state']==='processing',$pay['state']==='processing_wallet');
-}
-
-/**
- * Local reservation is not proof of remote dispatch. In one short transaction,
- * coordinate the actual dispatch admission with Archive via the original
- * payment lock: reserved -> dispatching. Archive may close a reserved line,
- * but refuses while a dispatch has been admitted and its result is uncertain.
- * No database transaction remains open during provider HTTP.
- */
-function achbotEffectAdmitPaidDispatch(mysqli $db,int $effectId): void {
-    achbotEffectRequireAutocommit($db);
-    $q=$db->prepare('SELECT pay_row_id FROM service_effects WHERE id=?');
-    $q->bind_param('i',$effectId);$q->execute();
-    $row=$q->get_result()->fetch_assoc();$q->close();
-    if (!$row) throw new RuntimeException('effect_dispatch_missing');
-    if ($row['pay_row_id']===null) return; // Existing non-payment path.
-    $payId=(int)$row['pay_row_id'];
-    if ($payId<=0) throw new RuntimeException('effect_dispatch_pay_invalid');
-    $open=false;
-    try {
-        if (!$db->begin_transaction()) throw new RuntimeException('effect_admission_begin_failed');
-        $open=true;
-        $q=$db->prepare('SELECT state FROM pays WHERE id=? FOR UPDATE');
-        $q->bind_param('i',$payId);$q->execute();
-        $pay=$q->get_result()->fetch_assoc();$q->close();
-        if (!$pay || !in_array((string)$pay['state'],
-                ['paid','processing','processing_wallet'],true))
-            throw new RuntimeException('effect_dispatch_payment_changed');
-        achbotEffectAssertNotArchivedLocked($db,$payId,
-            $pay['state']==='processing',$pay['state']==='processing_wallet');
-        $q=$db->prepare("UPDATE service_effects SET state='dispatching'
-            WHERE id=? AND pay_row_id=? AND effect_kind='create'
-            AND state='reserved' AND order_id IS NULL");
-        $q->bind_param('ii',$effectId,$payId);
-        if (!$q->execute() || $q->affected_rows!==1)
-            throw new RuntimeException('effect_dispatch_already_admitted');
-        $q->close();
-        if (!$db->commit()) throw new RuntimeException('effect_admission_commit_unknown');
-        $open=false;
-    } catch (Throwable $error) {
-        if ($open) try {$db->rollback();} catch (Throwable $ignored) {}
-        throw $error;
-    }
-}
-
-/** Reserve ONCE before outbound POST; never derive outcome from account counts. */
-function achbotCreatePaidAccount(mysqli $db, int $payId, int $ordinal, array $p,
-                                 int $staffActor=0,int $primaryOwner=0): array {
-    achbotEffectRequireAutocommit($db);
-    achbotEffectRequireUniqueLine($db);
-    $serverId=(int)($p['server_id']??0);
-    $planId=(int)($p['plan_id']??0);
-    $inboundId=(int)($p['inbound_id']??-1);
-    $remark=(string)($p['remark']??'');
-    $volume=(int)($p['volume']??0);
-    $days=(int)($p['days']??0);
-    if ($payId<=0 || $ordinal<=0 || $serverId<=0 ||
-        $planId<=0 || $inboundId!==0 || !achbotSupportsAccount($p['server_type']??'',0) ||
-        $volume<=0 || $days<=0 || $days>36500 ||
-        $volume>intdiv(PHP_INT_MAX,1073741824) ||
-        !achbotEffectValidUsername($remark,(string)($p['server_type']??''))) {
-        throw new RuntimeException('effect_invalid_account_request');
-    }
-
-    achbotRequireServerDisplay($db,$serverId,(string)$p['server_type']);
-
-    // Keep the source claim and unique line-item reservation in a SHORT local
-    // transaction. Its pay-row lock prevents a concurrent terminal payment
-    // change between validation and reservation. Never hold it across HTTP.
-    if ($db->begin_transaction()!==true) {
-        throw new RuntimeException('effect_reserve_begin_failed');
-    }
-    try {
-        // These values are owned by the committed payment claim, not callback text.
-        achbotEffectLockTargetRows($db,$serverId,$planId,$payId);
-        // An explicit recovery CREATE must revalidate the current, persisted
-        // payment approval grant after acquiring transaction locks. A demoted
-        // staff member cannot rely on an old Telegram confirmation keyboard.
-        if ($staffActor>0) {
-            require_once __DIR__.'/../Admin/Access.php';
-            if ($primaryOwner<=0 ||
-                !achbotAdminCanLocked($db,$staffActor,$primaryOwner,'payments'))
-                throw new RuntimeException('effect_recovery_staff_permission_revoked');
-        }
-        $stmt=$db->prepare("SELECT p.user_id,p.plan_id,p.server_id AS paid_server,p.type,p.state,p.approved_by,
-            p.agent_count AS raw_count,
-            CASE WHEN p.agent_count>0 THEN p.agent_count ELSE 1 END AS requested_count,
-            s.server_id AS plan_server,s.inbound_id AS plan_inbound,
-            c.type AS panel_type,i.panel_group_id,c.panel_url,
-            c.username AS panel_username,c.password AS panel_password,
-            g.id AS valid_group
-            FROM pays p
-            JOIN server_plans s ON s.id=p.plan_id
-            JOIN server_info i ON i.id=s.server_id
-            JOIN server_config c ON c.id=i.id
-            LEFT JOIN setting g ON g.id=i.panel_group_id
-                AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
-            WHERE p.id=? LIMIT 1 FOR UPDATE");
-        if (!$stmt) throw new RuntimeException('effect_claim_query_unavailable');
-        $stmt->bind_param('i',$payId);
-        if (!$stmt->execute()) throw new RuntimeException('effect_claim_query_failed');
-        $claim=$stmt->get_result()->fetch_assoc();$stmt->close();
-        if (!$claim || $claim['type']!=='BUY_SUB' ||
-            !in_array($claim['state'],['processing','paid','processing_wallet'],true) ||
-            (int)$claim['user_id']!==(int)($p['user_id']??0) ||
-            (int)$claim['plan_id']!==$planId ||
-            // The immutable paid-target anchor is independent of the mutable
-            // plan->server mapping, which may change after checkout preflight.
-            (int)$claim['paid_server']!==$serverId ||
-            (int)$claim['paid_server']!==(int)$claim['plan_server'] ||
-            (int)$claim['plan_server']!==$serverId ||
-            (int)$claim['plan_inbound']!==$inboundId ||
-            !achbotSupportsAccount($claim['panel_type'],0) ||
-            ($claim['panel_type']==='marzban' && $claim['panel_group_id']!==null && $claim['valid_group']===null) ||
-            !is_string($claim['panel_url']) || $claim['panel_url']==='' ||
-            // 0/null is the documented historical one-account default.
-            // A negative persisted count is NOT an authorized single account.
-            (int)($claim['raw_count']??0)<0 ||
-            $ordinal>(int)$claim['requested_count']) {
-            throw new RuntimeException('effect_payment_identity_mismatch');
-        }
-
-        // The local reservation is not a remote send. Both reservation and
-        // final dispatch admission must honor a terminal Archive.
-        achbotEffectAssertNotArchivedLocked($db,$payId,
-            $claim['state']==='processing',
-            $claim['state']==='processing_wallet');
-
-        $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,$payId,$claim);
-        $group=$targetIdentity['group'];$endpoint=$targetIdentity['endpoint'];
-        $credentials=$targetIdentity['credentials'];$targetKey=$targetIdentity['key'];
-        $expiry=time()+86400*$days;
-        $bytes=$volume*1073741824;
-        $operation=bin2hex(random_bytes(16));
-        $fingerprint=hash('sha256',json_encode([
-            $payId,$ordinal,$planId,$serverId,$group,$targetKey,$endpoint,$remark,$expiry,$bytes
-        ],JSON_THROW_ON_ERROR));
-        // The UNIQUE pay/line key is the database backstop. Serializing the
-        // short reservation on pays additionally rejects an existing effect even
-        // on an operator-misconfigured database missing that unique index.
-        // Exactly ONE payment-scoped source of owned server inventory:
-        // (a) wallet debit claim with a wallet_hold row,
-        // (b) manual receipt claim with a manual_hold row, or
-        // (c) hosted settlement with full guarded UPDATE on CREATE ordinal 1.
-        // All share the same InnoDB server_info counter; never subtract
-        // again for a pre-reserved payment, or release after an unknown POST.
-        $requestedCount=(int)$claim['requested_count'];
-        if ($requestedCount<=0)
-            throw new RuntimeException('effect_invalid_reserved_count');
-        $first=$db->prepare("SELECT ordinal,reserved_count,target_server_id,
-                target_group_id,target_key,endpoint_sha256,plan_id
-            FROM service_effects
-            WHERE pay_row_id=? AND effect_kind='create'
-            ORDER BY ordinal LIMIT 1 FOR UPDATE");
-        if (!$first) throw new RuntimeException('effect_capacity_owner_prepare_failed');
-        $first->bind_param('i',$payId);
-        if (!$first->execute()) throw new RuntimeException('effect_capacity_owner_read_failed');
-        $prior=$first->get_result()->fetch_assoc();$first->close();
-
-        $wallet=$claim['state']==='processing_wallet';
-        $manual=$claim['state']==='processing' &&
-            ((int)($claim['approved_by']??0)>0 ||
-             (function_exists('achbotApiPaymentProcessingProofLocked') &&
-              achbotApiPaymentProcessingProofLocked($db,$payId)));
-        if ($wallet && $manual)
-            throw new RuntimeException('effect_capacity_ownership_ambiguous');
-        $requiredKind=$wallet?'wallet_hold':($manual?'manual_hold':null);
-        $holdStmt=$db->prepare("SELECT id,effect_kind,state,reserved_count,
-            target_server_id,target_group_id,target_key,endpoint_sha256,plan_id
-            FROM service_effects WHERE pay_row_id=? AND ordinal=0
-            AND effect_kind IN ('wallet_hold','manual_hold') FOR UPDATE");
-        if (!$holdStmt) throw new RuntimeException('effect_capacity_hold_prepare_failed');
-        $holdStmt->bind_param('i',$payId);
-        if (!$holdStmt->execute()) throw new RuntimeException('effect_capacity_hold_read_failed');
-        $holds=$holdStmt->get_result()->fetch_all(MYSQLI_ASSOC);
-        $holdStmt->close();
-        if ($requiredKind==='wallet_hold' &&
-            (count($holds)!==1 || $holds[0]['effect_kind']!==$requiredKind))
-            throw new RuntimeException('effect_wallet_hold_missing');
-        if ($requiredKind==='manual_hold' &&
-            (count($holds)!==1 || $holds[0]['effect_kind']!==$requiredKind))
-            throw new RuntimeException('effect_manual_hold_missing_or_unexpected');
-        if ($requiredKind===null && count($holds)!==0)
-            throw new RuntimeException('effect_capacity_hold_unexpected');
-        $hold=$holds[0]??null;
-        if ($hold) {
-            $valid=(int)$hold['reserved_count']===$requestedCount &&
-                (int)$hold['target_server_id']===$serverId &&
-                ($hold['target_group_id']===null?null:(int)$hold['target_group_id'])===$group &&
-                $hold['endpoint_sha256']===$endpoint &&
-                (int)$hold['plan_id']===$planId;
-            if ($wallet && $hold['target_key']!==$targetKey) $valid=false;
-            if (!$valid) {
-                throw new RuntimeException($wallet?
-                    'effect_wallet_hold_target_changed':
-                    'effect_manual_capacity_ownership_mismatch');
-            }
-        }
-        $reserveSlots=0;
-        if ($ordinal===1) {
-            if ($prior!==null) throw new RuntimeException('effect_capacity_already_reserved');
-            if ($hold!==null) {
-                if ($hold['state']!=='reserved')
-                    throw new RuntimeException($wallet?
-                        'effect_wallet_hold_already_used':
-                        'effect_manual_hold_already_consumed');
-                $consume=$db->prepare("UPDATE service_effects
-                    SET state='consumed' WHERE id=? AND state='reserved'");
-                if (!$consume) throw new RuntimeException('effect_capacity_hold_consume_prepare');
-                $holdId=(int)$hold['id'];
-                $consume->bind_param('i',$holdId);
-                if (!$consume->execute() || $consume->affected_rows!==1)
-                    throw new RuntimeException('effect_capacity_hold_consume_unconfirmed');
-                $consume->close();
-                // Full count is already owned by ordinal-0 hold row.
-            } else {
-                $capacity=$db->prepare("UPDATE server_info SET ucount=ucount-?
-                    WHERE id=? AND active=1 AND state=1 AND ucount>=?");
-                if (!$capacity) throw new RuntimeException('effect_capacity_prepare_failed');
-                $capacity->bind_param('iii',$requestedCount,$serverId,$requestedCount);
-                if (!$capacity->execute() || $capacity->affected_rows!==1)
-                    throw new RuntimeException('effect_capacity_insufficient_or_unconfirmed');
-                $capacity->close();
-                $reserveSlots=$requestedCount;
-            }
-        } else {
-            if ($hold!==null && $hold['state']!=='consumed')
-                throw new RuntimeException('effect_capacity_hold_not_consumed');
-            $expectedCreateHold=$hold===null?$requestedCount:0;
-            if (!$prior || (int)$prior['ordinal']!==1 ||
-                (int)$prior['reserved_count']!==$expectedCreateHold)
-                throw new RuntimeException('effect_capacity_origin_unverified');
-            // A multi-account original claim cannot switch a later CREATE
-            // onto a new physical provider, group, plan or credentials
-            // after the full-count inventory was reserved by ordinal one.
-            // This invariant also protects interrupted hosted continuations.
-            if ((int)$prior['target_server_id']!==$serverId ||
-                (int)$prior['plan_id']!==$planId ||
-                ($prior['target_group_id']===null?null:(int)$prior['target_group_id'])!==$group ||
-                !hash_equals((string)$prior['target_key'],$targetKey) ||
-                !hash_equals((string)$prior['endpoint_sha256'],$endpoint))
-                throw new RuntimeException('effect_capacity_origin_target_changed');
-            $previousOrdinal=$ordinal-1;
-            $previous=$db->prepare("SELECT state FROM service_effects
-                WHERE pay_row_id=? AND effect_kind='create' AND ordinal=?
-                LIMIT 1 FOR UPDATE");
-            if (!$previous) throw new RuntimeException('effect_previous_prepare_failed');
-            $previous->bind_param('ii',$payId,$previousOrdinal);
-            if (!$previous->execute()) throw new RuntimeException('effect_previous_read_failed');
-            $rows=$previous->get_result()->fetch_all(MYSQLI_ASSOC);
-            $previous->close();
-            if (count($rows)!==1 ||
-                !in_array($rows[0]['state'],['verified','local_recorded'],true))
-                throw new RuntimeException('effect_previous_line_unconfirmed');
-        }
-
-        $existing=$db->prepare("SELECT id FROM service_effects
-            WHERE pay_row_id=? AND effect_kind='create' AND ordinal=?
-            LIMIT 1 FOR UPDATE");
-        if (!$existing) throw new RuntimeException('effect_existing_query_unavailable');
-        $existing->bind_param('ii',$payId,$ordinal);
-        if (!$existing->execute()) throw new RuntimeException('effect_existing_query_failed');
-        $seen=$existing->get_result()->num_rows;
-        $existing->close();
-        if ($seen!==0) throw new RuntimeException('effect_already_reserved');
-
-        $stmt=$db->prepare("INSERT INTO service_effects
-            (pay_row_id,ordinal,operation_id,effect_kind,target_server_id,target_group_id,
-             target_key,endpoint_sha256,plan_id,remote_username,requested_expire,requested_bytes,request_sha256,reserved_count,state)
-            VALUES (?,?,?,'create',?,?,?,?,?,?,?,?,?,?,'reserved')");
-        if (!$stmt) throw new RuntimeException('effect_reserve_prepare_failed');
-        $stmt->bind_param('iisiissisiisi',$payId,$ordinal,$operation,$serverId,$group,
-            $targetKey,$endpoint,$planId,$remark,$expiry,$bytes,$fingerprint,$reserveSlots);
-        if (!$stmt->execute() || $stmt->affected_rows!==1)
-            throw new RuntimeException('effect_reserve_unconfirmed');
-        $effectId=(int)$stmt->insert_id;$stmt->close();
-        if ($effectId<=0) throw new RuntimeException('effect_reserve_id_missing');
-        achbotProviderReserveEffect($db,$effectId,$targetIdentity,$remark,$operation,$expiry,$bytes);
-        if ($db->commit()!==true) {
-            throw new RuntimeException('effect_reserve_commit_unconfirmed');
-        }
-    } catch (Throwable $reservationError) {
-        try { $db->rollback(); } catch (Throwable $ignored) {}
-        // A failed COMMIT acknowledgement may still have persisted a
-        // dispatching row. Do not send any remote request from this path.
-        throw $reservationError;
-    }
-
-    return achbotEffectDispatchReservedAccount(
-        $db,$effectId,$serverId,$group,$endpoint,$remark,
-        $volume,$days,$planId,$operation,$expiry,$bytes,$p,$credentials);
 }
 
 /**
@@ -701,117 +163,6 @@ function achbotEffectLockTargetRows(
     }
 }
 
-/** Discover immutable effect routing, then lock its exact current local target. */
-function achbotEffectLockLinkRows(mysqli $db,int $effectId,bool $paid): array {
-    $stmt=$db->prepare('SELECT target_server_id,pay_row_id FROM service_effects WHERE id=?');
-    if (!$stmt) throw new RuntimeException('effect_link_target_prepare');
-    $stmt->bind_param('i',$effectId);
-    if (!$stmt->execute()) throw new RuntimeException('effect_link_target_read');
-    $target=$stmt->get_result()->fetch_assoc();$stmt->close();
-    $serverId=(int)($target['target_server_id']??0);
-    $payId=$target && $target['pay_row_id']!==null?(int)$target['pay_row_id']:null;
-    if (!$target || $serverId<=0 || ($paid?($payId===null || $payId<=0):$payId!==null))
-        throw new RuntimeException('effect_link_target_invalid');
-    achbotEffectLockTargetRows($db,$serverId,null,$payId);
-    // A callback that finished its remote HTTP just before operator Archive
-    // must not link a new local order after the terminal original decision.
-    // Leave the verified/uncertain Native record for independent diagnosis.
-    if ($paid) {
-        $q=$db->prepare('SELECT state FROM pays WHERE id=?');
-        $q->bind_param('i',$payId);$q->execute();
-        $owner=$q->get_result()->fetch_assoc();$q->close();
-        if ($owner && in_array((string)$owner['state'],
-                ['paid','processing','processing_wallet'],true))
-            achbotEffectAssertNotArchivedLocked($db,$payId,
-                $owner['state']==='processing',
-                $owner['state']==='processing_wallet');
-    }
-    return [$serverId,$payId];
-}
-
-/** Persist verified CREATE without reversing the capacity claimant lock order.
- * No HTTP occurs here. A failed/unknown COMMIT remains review-only.
- */
-function achbotVerifyMarzbanCreatedEffect(
-    mysqli $db,int $effectId,int $serverId,?int $group,
-    string $endpoint,string $operation,array $pinnedTarget,
-    string $expectedState='dispatching',int $payId=0,
-    int $actor=0,int $primary=0
-): void {
-    if (!in_array($expectedState,['reserved','dispatching'],true))
-        throw new RuntimeException('effect_verification_state_invalid');
-    // The ordinary original CREATE dispatcher does not pass its pay_id.
-    // Resolve that immutable parent BEFORE the transaction so even this
-    // direct post-Native verified journal path checks Archive. Non-payment
-    // CREATEs have a NULL parent and retain their existing behavior.
-    $owner=$db->prepare('SELECT pay_row_id FROM service_effects WHERE id=?');
-    if (!$owner) throw new RuntimeException('effect_verification_owner_read_unavailable');
-    $owner->bind_param('i',$effectId);$owner->execute();
-    $belongs=$owner->get_result()->fetch_assoc();$owner->close();
-    if (!$belongs) throw new RuntimeException('effect_verification_owner_missing');
-    $originalPay=$belongs['pay_row_id']===null?0:(int)$belongs['pay_row_id'];
-    if (($payId>0 && $payId!==$originalPay) ||
-        ($payId===0 && $originalPay<0))
-        throw new RuntimeException('effect_verification_owner_changed');
-    $payId=$originalPay;
-    $transaction=false;
-    try {
-        $status=$db->query('SELECT @@in_transaction AS active_transaction');
-        if (!$status || (int)($status->fetch_assoc()['active_transaction']??1)!==0)
-            throw new RuntimeException('effect_verification_requires_autocommit');
-        if (!$db->begin_transaction()) throw new RuntimeException('effect_verification_begin_failed');
-        $transaction=true;
-        if ($expectedState==='reserved' || ($payId>0 && $actor>0)) {
-            achbotEffectAssertRecoveryPaymentLocked($db,$payId,$actor,$primary);
-        } elseif ($payId>0) {
-            $payLock=$db->prepare('SELECT state FROM pays WHERE id=? FOR UPDATE');
-            $payLock->bind_param('i',$payId);$payLock->execute();
-            $payment=$payLock->get_result()->fetch_assoc();$payLock->close();
-            if (!$payment || !in_array((string)$payment['state'],
-                ['paid','processing','processing_wallet'],true))
-                throw new RuntimeException('effect_verification_payment_changed');
-            achbotEffectAssertNotArchivedLocked($db,$payId,
-                $payment['state']==='processing',
-                $payment['state']==='processing_wallet');
-        }
-        // Claimants already lock config via the plan preflight, then info for
-        // capacity. Explicit PK locks prevent an UPDATE JOIN from taking the
-        // inverse info -> config order after the remote CREATE has succeeded.
-        $stmt=$db->prepare('SELECT type,panel_url,username,password FROM server_config WHERE id=? FOR UPDATE');
-        if (!$stmt) throw new RuntimeException('effect_verification_config_prepare');
-        $stmt->bind_param('i',$serverId);
-        if (!$stmt->execute()) throw new RuntimeException('effect_verification_config_read');
-        $config=$stmt->get_result()->fetch_assoc();$stmt->close();
-        $stmt=$db->prepare('SELECT panel_group_id FROM server_info WHERE id=? FOR UPDATE');
-        if (!$stmt) throw new RuntimeException('effect_verification_server_prepare');
-        $stmt->bind_param('i',$serverId);
-        if (!$stmt->execute()) throw new RuntimeException('effect_verification_server_read');
-        $server=$stmt->get_result()->fetch_assoc();$stmt->close();
-        if (!$config || !$server || $config['type']!=='marzban' ||
-            rtrim((string)$config['panel_url'],'/')!==$pinnedTarget['panel_url'] ||
-            (string)$config['username']!==$pinnedTarget['username'] ||
-            (string)$config['password']!==$pinnedTarget['password'] ||
-            ($server['panel_group_id']===null?null:(int)$server['panel_group_id'])!==$group)
-            throw new RuntimeException('effect_credentials_changed_post');
-        $stmt=$db->prepare("UPDATE service_effects SET state='verified',verified_at=NOW()
-            WHERE id=? AND state=? AND order_id IS NULL
-              AND target_server_id=? AND target_group_id <=> ?
-              AND endpoint_sha256=? AND operation_id=?");
-        if (!$stmt) throw new RuntimeException('effect_verification_prepare_failed');
-        $stmt->bind_param('isiiss',$effectId,$expectedState,$serverId,$group,$endpoint,$operation);
-        if (!$stmt->execute() || $stmt->affected_rows!==1)
-            throw new RuntimeException('effect_verification_unconfirmed');
-        $stmt->close();
-        if (!$db->commit()) throw new RuntimeException('effect_verification_commit_unknown');
-        $transaction=false;
-    } catch (Throwable $error) {
-        if ($transaction) {try {$db->rollback();} catch (Throwable $ignored) {}}
-        // Rollback acknowledgement cannot disprove an unknown COMMIT.
-        // Never repeat CREATE, compensate money, or claim confirmed rollback.
-        throw $error;
-    }
-}
-
 /** Shared remote dispatch/readback for paid and authenticated non-paid claims. */
 function achbotEffectDispatchReservedAccount(
     mysqli $db, int $effectId, int $serverId, ?int $group,
@@ -821,128 +172,6 @@ function achbotEffectDispatchReservedAccount(
 ): array {
     return achbotProviderDispatchReservedAccount($db,$effectId,$serverId,$group,
         $endpoint,$remark,$volume,$days,$planId,$operation,$expiry,$bytes,$p,$credentials);
-}
-
-/** Marzban adapter implementation; shared financial ordering remains above. */
-function achbotMarzbanEffectDispatchReservedAccount(
-    mysqli $db, int $effectId, int $serverId, ?int $group,
-    string $endpoint, string $remark, int $volume, int $days,
-    int $planId, string $operation, int $expiry, int $bytes, array $p,
-    string $credentials
-): array {
-    // Anything after this point may have reached Marzban, even if the reply
-    // is lost. No SQL rollback or failed GET may unlock another CREATE.
-    $stage='preflight';
-    try {
-        // A route reconfigured since the reservation must not be used.
-        $check=$db->prepare("SELECT i.panel_group_id,c.type,c.panel_url,c.username,c.password
-            FROM server_info i JOIN server_config c ON c.id=i.id
-            WHERE i.id=? LIMIT 1");
-        if (!$check) throw new RuntimeException('effect_target_check_prepare_failed');
-        $check->bind_param('i',$serverId);
-        if (!$check->execute()) throw new RuntimeException('effect_target_check_failed');
-        $target=$check->get_result()->fetch_assoc();$check->close();
-        if (!$target || ($target['type']??'')!=='marzban' ||
-            ($target['panel_group_id']===null?null:(int)$target['panel_group_id'])!==$group ||
-            hash('sha256',rtrim((string)$target['panel_url'],'/'))!==$endpoint ||
-            hash('sha256',json_encode([
-                (string)$target['username'],(string)$target['password']
-            ],JSON_THROW_ON_ERROR))!==$credentials) {
-            throw new RuntimeException('effect_target_changed_pre_post');
-        }
-
-        $pinnedTarget=[
-            'panel_url'=>rtrim((string)$target['panel_url'],'/'),
-            'username'=>(string)$target['username'],
-            'password'=>(string)$target['password'],
-            'panel_group_id'=>$group
-        ];
-        $stage='remote_create';
-        [$response,$actualRemark,$port]=createServerAccount(
-            'marzban',$serverId,0,$planId,$remark,$volume,$days,
-            (string)($p['uniqid']??''),(string)($p['protocol']??''),
-            (int)($p['port']??0),(int)($p['expire_microdate']??0),
-            (string)($p['net_type']??''),(int)($p['rahgozar']??0),
-            (int)($p['limitip']??0),$operation,$expiry,$pinnedTarget
-        );
-        if (!is_object($response) || ($response->success??false)!==true ||
-            $actualRemark!==$remark) {
-            throw new RuntimeException('effect_remote_create_unconfirmed');
-        }
-        $stage='remote_readback';
-        $remote=getMarzbanUser($serverId,$remark,null,true,
-            $pinnedTarget['panel_url'],$pinnedTarget);
-        // Marzban must prove exact integer seconds and bytes. PHP's (int)
-        // conversion truncates fractional JSON numbers and is not evidence
-        // that a paid account actually has the promised limit.
-        $exactNonnegative=static function($value): ?int {
-            if (!is_int($value) &&
-                (!is_string($value) ||
-                 preg_match('/^(0|[1-9][0-9]*)$/D',$value)!==1)) return null;
-            $parsed=filter_var($value,FILTER_VALIDATE_INT,
-                               ['options'=>['min_range'=>0]]);
-            return $parsed===false?null:$parsed;
-        };
-        $note='achbot:v1:'.$operation;
-        if (!is_object($remote) ||
-            (string)($remote->username??'')!==$remark ||
-            (string)($remote->note??'')!==$note ||
-            !isset($remote->expire,$remote->data_limit) ||
-            $exactNonnegative($remote->expire)!==$expiry ||
-            $exactNonnegative($remote->data_limit)!==$bytes) {
-            throw new RuntimeException('effect_remote_readback_unverified');
-        }
-        $stage='verify_local';
-        achbotVerifyMarzbanCreatedEffect($db,$effectId,$serverId,$group,
-            $endpoint,$operation,$pinnedTarget);
-        return [$response,$remark,$port,$effectId];
-    } catch (Throwable $e) {
-        // One protected structured log bridges the generic staff alert to
-        // the original durable effect. Never emit provider response text.
-        $pay=0;$ordinal=0;
-        try {
-            $q=$db->prepare('SELECT pay_row_id,ordinal FROM service_effects WHERE id=?');
-            $q->bind_param('i',$effectId);$q->execute();
-            $owner=$q->get_result()->fetch_assoc();$q->close();
-            $pay=(int)($owner['pay_row_id']??0);
-            $ordinal=(int)($owner['ordinal']??0);
-        } catch (Throwable $ignored) {}
-        error_log(achbotEffectOperatorDiagnostic($e,$pay,$effectId,$ordinal,$stage));
-        throw new RuntimeException('effect_requires_operator_reconciliation',0,$e);
-    }
-}
-
-/** Join exact order identity inside the caller's local order transaction. */
-function achbotLinkPaidAccountEffect(mysqli $db, int $effectId, int $orderId): void {
-    achbotProviderLinkEffect($db,$effectId,$orderId,true);
-}
-
-function achbotMarzbanLinkPaidAccountEffect(mysqli $db, int $effectId, int $orderId): void {
-    if ($effectId<=0 || $orderId<=0) throw new RuntimeException('effect_order_id_unconfirmed');
-    [$lockedServerId,$lockedPayId]=achbotEffectLockLinkRows($db,$effectId,true);
-    $stmt=$db->prepare("UPDATE service_effects e
-      INNER JOIN pays p ON p.id=e.pay_row_id
-      INNER JOIN orders_list o ON o.id=?
-      INNER JOIN server_info i ON i.id=e.target_server_id
-      INNER JOIN server_config c ON c.id=i.id
-      LEFT JOIN setting g ON g.id=i.panel_group_id
-        AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
-      SET e.order_id=o.id,e.state='local_recorded'
-      WHERE e.id=? AND e.target_server_id=? AND e.pay_row_id=?
-        AND e.state='verified' AND e.order_id IS NULL
-        AND o.userid=p.user_id AND o.fileid=e.plan_id
-        AND p.server_id=e.target_server_id
-        AND o.server_id=e.target_server_id AND o.inbound_id=0
-        AND o.remark=e.remote_username
-        AND c.type='marzban'
-        AND i.panel_group_id <=> e.target_group_id
-        AND (i.panel_group_id IS NULL OR g.id IS NOT NULL)
-        AND SHA2(TRIM(TRAILING '/' FROM c.panel_url),256)=e.endpoint_sha256");
-    if (!$stmt) throw new RuntimeException('effect_link_prepare_failed');
-    $stmt->bind_param('iiii',$orderId,$effectId,$lockedServerId,$lockedPayId);
-    if (!$stmt->execute() || $stmt->affected_rows!==1)
-        throw new RuntimeException('effect_link_unconfirmed');
-    $stmt->close();
 }
 
 /**
@@ -986,58 +215,65 @@ function achbotCreateNonPaymentAccount(
     mysqli $db, string $kind, string $sourceRef, int $actor,
     int $ordinal, int $count, array $p
 ): array {
+    require_once __DIR__.'/OperationalReports.php';
+    achbotOperationalReportRequireReady($db);
+    require_once __DIR__.'/ServiceDelivery.php';
+    if (!achbotServiceDeliverySchemaReady($db)) throw new RuntimeException('delivery_schema_unavailable');
     achbotEffectRequireAutocommit($db);
     achbotEffectRequireUniqueLine($db);
     $serverId=(int)($p['server_id']??0);
     $planId=(int)($p['plan_id']??0);
     $remark=(string)($p['remark']??'');
-    $volume=(int)($p['volume']??0);
-    $days=(int)($p['days']??0);
+    $volume=achbotWholeServiceUnits($p['volume']??null,achbotServiceVolumeMax());
+    $days=achbotWholeServiceUnits($p['days']??null,achbotServiceDaysMax());
     if (!in_array($kind,['free_trial','admin_bulk'],true) ||
         !preg_match('/^(trial|trial_admin|bulk):[1-9][0-9]*(?::[1-9][0-9]*)?$/D',$sourceRef) ||
         $actor<=0 || $ordinal<1 || $count<1 || $ordinal>$count ||
         ($kind==='free_trial' && $count!==1) ||
         $serverId<=0 || $planId<=0 || !achbotSupportsAccount($p['server_type']??'',0) ||
         (int)($p['inbound_id']??-1)!==0 ||
-        $volume<=0 || $days<=0 || $days>36500 ||
-        $volume>intdiv(PHP_INT_MAX,1073741824) ||
+        $volume===null || $days===null ||
         !achbotEffectValidUsername($remark,(string)($p['server_type']??''))) {
         throw new RuntimeException('nonpaid_effect_invalid_request');
     }
-    if (($kind==='free_trial' && !str_starts_with($sourceRef,'trial:') &&
-         !str_starts_with($sourceRef,'trial_admin:')) ||
-        ($kind==='admin_bulk' && !str_starts_with($sourceRef,'bulk:')) ||
-        !str_starts_with($sourceRef,explode(':',$sourceRef)[0].':'.$actor)) {
-        throw new RuntimeException('nonpaid_effect_source_binding_invalid');
-    }
+    $primary=(int)($GLOBALS['admin']??0);
+    $isPrimaryAdmin=$primary>0 && $actor===$primary;
+    if ($kind==='free_trial') {
+        $sourceValid=$isPrimaryAdmin
+            ? preg_match('/\Atrial_admin:'.$actor.':[1-9][0-9]*\z/D',$sourceRef)===1
+            : $sourceRef==='trial:'.$actor;
+    } else $sourceValid=preg_match('/\Abulk:'.$actor.':[1-9][0-9]*\z/D',$sourceRef)===1;
+    if (!$sourceValid) throw new RuntimeException('nonpaid_effect_source_binding_invalid');
     achbotRequireServerDisplay($db,$serverId,(string)$p['server_type']);
     if ($db->begin_transaction()!==true)
         throw new RuntimeException('nonpaid_effect_begin');
     try {
-        $user=$db->prepare('SELECT freetrial,isAdmin FROM users WHERE userid=? FOR UPDATE');
+        $user=$db->prepare('SELECT freetrial,isAdmin,step FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? FOR UPDATE');
         if (!$user) throw new RuntimeException('nonpaid_effect_user_prepare');
         $user->bind_param('i',$actor);
         if (!$user->execute()) throw new RuntimeException('nonpaid_effect_user_read');
         $owners=$user->get_result()->fetch_all(MYSQLI_ASSOC);$user->close();
         if (count($owners)!==1)
             throw new RuntimeException('nonpaid_effect_owner_ambiguous');
-        $isPrimaryAdmin=!empty($p['is_primary_admin']);
-        if ($kind==='admin_bulk' && !$isPrimaryAdmin &&
-            (int)$owners[0]['isAdmin']!==1)
-            throw new RuntimeException('nonpaid_effect_admin_required');
-        if ($kind==='free_trial' && str_starts_with($sourceRef,'trial:') &&
-            in_array($owners[0]['freetrial'],['reserved','used'],true))
-            throw new RuntimeException('nonpaid_effect_trial_already_claimed');
+        require_once __DIR__.'/../Admin/Access.php';
+        require_once __DIR__.'/PaymentLifecycle.php';
+        if ($owners[0]['step']==='banned' ||
+            ($kind==='admin_bulk' && !achbotAdminCanLocked($db,$actor,$primary,'operations')))
+            throw new DomainException('nonpaid_effect_admin_required');
+        if ($kind==='free_trial') {
+            $state=achbotPayUxCurrentStatesLocked($db);
+            if (($state['testAccount']??'off')!=='on')
+                throw new DomainException('nonpaid_trial_disabled');
+            if (!$isPrimaryAdmin && in_array($owners[0]['freetrial'],['reserved','used'],true))
+                throw new DomainException('nonpaid_effect_trial_already_claimed');
+        }
 
         achbotEffectLockTargetRows($db,$serverId,$planId);
-        $plan=$db->prepare("SELECT s.server_id,s.inbound_id,c.type,i.panel_group_id,
-            c.panel_url,c.username AS panel_username,
-            c.password AS panel_password,g.id AS valid_group
+        $plan=$db->prepare("SELECT s.server_id,s.inbound_id,s.price,s.days,s.volume,cat.active AS category_active,cat.parent AS category_parent,c.type,c.panel_url
             FROM server_plans s
             JOIN server_info i ON i.id=s.server_id
+            JOIN server_categories cat ON cat.id=s.catid
             JOIN server_config c ON c.id=i.id
-            LEFT JOIN setting g ON g.id=i.panel_group_id
-                AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
             WHERE s.id=? AND s.active=1 AND i.active=1 AND i.state=1
             LIMIT 1 FOR UPDATE");
         if (!$plan) throw new RuntimeException('nonpaid_effect_plan_prepare');
@@ -1045,21 +281,17 @@ function achbotCreateNonPaymentAccount(
         if (!$plan->execute()) throw new RuntimeException('nonpaid_effect_plan_read');
         $locked=$plan->get_result()->fetch_assoc();$plan->close();
         if (!$locked || (int)$locked['server_id']!==$serverId ||
+            $locked['type']!==$p['server_type'] ||
             (int)$locked['inbound_id']!==0 || !achbotSupportsAccount($locked['type'],0) ||
-            ($locked['type']==='marzban' && $locked['panel_group_id']!==null && $locked['valid_group']===null) ||
             (string)$locked['panel_url']==='')
             throw new RuntimeException('nonpaid_effect_target_changed');
-        $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,null,$locked);
+        if ((int)$locked['category_active']!==1 || (int)$locked['category_parent']!==0 ||
+            ($kind==='free_trial' && ((int)$locked['price']!==0 ||
+                (float)$locked['days']!==(float)$days || (float)$locked['volume']!==(float)$volume)))
+            throw new DomainException('nonpaid_offering_denied');
+        $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,$locked);
         $group=$targetIdentity['group'];$endpoint=$targetIdentity['endpoint'];
         $credentials=$targetIdentity['credentials'];$targetKey=$targetIdentity['key'];
-        $operation=bin2hex(random_bytes(16));
-        $expiry=time()+86400*$days;
-        $bytes=$volume*1073741824;
-        $fingerprint=hash('sha256',json_encode([
-            $kind,$sourceRef,$actor,$ordinal,$count,$planId,$serverId,
-            $group,$endpoint,$remark,$expiry,$bytes
-        ],JSON_THROW_ON_ERROR));
-
         $existing=$db->prepare("SELECT ordinal,state,reserved_count,
             plan_id,target_server_id
             FROM service_effects WHERE source_kind=? AND source_ref=?
@@ -1070,6 +302,21 @@ function achbotCreateNonPaymentAccount(
         $rows=$existing->get_result()->fetch_all(MYSQLI_ASSOC);$existing->close();
         if (count($rows)!==$ordinal-1)
             throw new RuntimeException('nonpaid_effect_already_reserved_or_gap');
+        $mode=(string)($p['naming_mode']??'manual');
+        $remark=achbotAvailableAccountRemarkLocked($db,$targetKey,$targetIdentity['connection_id'],$remark,
+            $kind==='free_trial' && $mode==='manual',$kind==='admin_bulk' && $mode==='manual');
+        if (!achbotEffectValidUsername($remark,$targetIdentity['provider']))
+            throw new RuntimeException('nonpaid_effect_invalid_request');
+        $operation=bin2hex(random_bytes(16));
+        $now=time();
+        if ($days>achbotServiceDaysMax($now)) throw new RuntimeException('nonpaid_effect_invalid_request');
+        $expiry=$now+86400*$days;
+        $bytes=$volume*1073741824;
+        $fingerprint=hash('sha256',json_encode([
+            $kind,$sourceRef,$actor,$ordinal,$count,$planId,$serverId,
+            $group,$endpoint,$remark,$expiry,$bytes
+        ],JSON_THROW_ON_ERROR));
+
         $reserved=0;
         if ($ordinal===1) {
             $reserve=$db->prepare('UPDATE server_info SET ucount=ucount-?
@@ -1128,114 +375,4 @@ function achbotCreateNonPaymentAccount(
 /** Bind the exact verified source/account to its local order in a short txn. */
 function achbotLinkNonPaymentAccountEffect(mysqli $db, int $effectId, int $orderId): void {
     achbotProviderLinkEffect($db,$effectId,$orderId,false);
-}
-
-function achbotMarzbanLinkNonPaymentAccountEffect(mysqli $db, int $effectId, int $orderId): void {
-    if ($effectId<=0 || $orderId<=0) throw new RuntimeException('nonpaid_effect_order_invalid');
-    [$lockedServerId]=achbotEffectLockLinkRows($db,$effectId,false);
-    $stmt=$db->prepare("UPDATE service_effects e
-        INNER JOIN orders_list o ON o.id=?
-        INNER JOIN server_info i ON i.id=e.target_server_id
-        INNER JOIN server_config c ON c.id=i.id
-        LEFT JOIN setting g ON g.id=i.panel_group_id
-            AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
-        SET e.order_id=o.id,e.state='local_recorded'
-        WHERE e.id=? AND e.target_server_id=? AND e.pay_row_id IS NULL
-          AND e.source_kind IN ('free_trial','admin_bulk')
-          AND e.state='verified' AND e.order_id IS NULL
-          AND o.userid=e.actor_userid AND o.fileid=e.plan_id
-          AND o.server_id=e.target_server_id AND o.inbound_id=0
-          AND o.remark=e.remote_username
-          AND c.type='marzban' AND i.panel_group_id <=> e.target_group_id
-          AND (i.panel_group_id IS NULL OR g.id IS NOT NULL)
-          AND SHA2(TRIM(TRAILING '/' FROM c.panel_url),256)=e.endpoint_sha256");
-    if (!$stmt) throw new RuntimeException('nonpaid_effect_link_prepare');
-    $stmt->bind_param('iii',$orderId,$effectId,$lockedServerId);
-    if (!$stmt->execute() || $stmt->affected_rows!==1)
-        throw new RuntimeException('nonpaid_effect_link_unconfirmed');
-    $stmt->close();
-}
-
-/**
- * Reserve a BUY_SUB's whole physical capacity atomically WITH its customer
- * wallet debit and processing_wallet claim, while the caller owns one
- * transaction. This is a source-local 007 "wallet_hold", NOT a remote CREATE.
- * Without this marker a post-debit competing buyer could consume the last
- * server slot and leave an avoidable paid/no-capacity limbo.
- */
-function achbotEffectReserveWalletCapacityLocked(mysqli $db, array $pay): void {
-    achbotEffectRequireUniqueLine($db);
-    $payId=(int)($pay['id']??0);
-    $planId=(int)($pay['plan_id']??0);
-    $serverId=(int)($pay['server_id']??0);
-    $count=max(1,(int)($pay['agent_count']??0));
-    if ($payId<=0 || $planId<=0 || $serverId<=0 ||
-        ($pay['type']??'')!=='BUY_SUB')
-        throw new RuntimeException('wallet_hold_invalid_payment');
-    $tx=$db->query('SELECT @@in_transaction AS tx');
-    if (!$tx || (int)($tx->fetch_assoc()['tx']??0)!==1)
-        throw new RuntimeException('wallet_hold_requires_transaction');
-
-    achbotEffectLockTargetRows($db,$serverId,$planId,$payId);
-    $stmt=$db->prepare("SELECT p.id,p.user_id,p.type,p.state,
-        s.server_id,s.inbound_id,s.active,i.panel_group_id,
-        c.type AS panel_type,c.panel_url,g.id AS valid_group
-        FROM pays p
-        JOIN server_plans s ON s.id=p.plan_id
-        JOIN server_info i ON i.id=s.server_id
-        JOIN server_config c ON c.id=i.id
-        LEFT JOIN setting g ON g.id=i.panel_group_id
-            AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
-        WHERE p.id=? FOR UPDATE");
-    if (!$stmt) throw new RuntimeException('wallet_hold_plan_prepare');
-    $stmt->bind_param('i',$payId);
-    if (!$stmt->execute()) throw new RuntimeException('wallet_hold_plan_read');
-    $row=$stmt->get_result()->fetch_assoc();$stmt->close();
-    if (!$row || (int)$row['user_id']!==(int)$pay['user_id'] ||
-        $row['type']!=='BUY_SUB' || $row['state']!=='processing_wallet' ||
-        (int)$row['server_id']!==$serverId ||
-        (int)$row['inbound_id']!==0 || (int)$row['active']!==1 ||
-        !achbotSupportsAccount($row['panel_type'],0) ||
-        ($row['panel_type']==='marzban' && $row['panel_group_id']!==null && $row['valid_group']===null) ||
-        (string)$row['panel_url']==='')
-        throw new RuntimeException('wallet_hold_plan_changed');
-
-    achbotEffectAssertNotArchivedLocked($db,$payId,false,true);
-    $check=$db->prepare("SELECT id FROM service_effects
-        WHERE pay_row_id=? AND effect_kind='wallet_hold' AND ordinal=0
-        FOR UPDATE");
-    if (!$check) throw new RuntimeException('wallet_hold_existing_prepare');
-    $check->bind_param('i',$payId);
-    if (!$check->execute()) throw new RuntimeException('wallet_hold_existing_read');
-    $exists=$check->get_result()->fetch_all(MYSQLI_ASSOC);$check->close();
-    if ($exists) throw new RuntimeException('wallet_hold_duplicate_claim');
-
-    $capacity=$db->prepare("UPDATE server_info SET ucount=ucount-?
-        WHERE id=? AND active=1 AND state=1 AND ucount>=?");
-    if (!$capacity) throw new RuntimeException('wallet_hold_capacity_prepare');
-    $capacity->bind_param('iii',$count,$serverId,$count);
-    if (!$capacity->execute() || $capacity->affected_rows!==1)
-        throw new RuntimeException('wallet_hold_capacity_unconfirmed');
-    $capacity->close();
-
-    $holdTarget=achbotEffectTargetIdentity($db,$serverId,$planId,$payId,$row);
-    $group=$holdTarget['group'];$key=$holdTarget['key'];$endpoint=$holdTarget['endpoint'];
-    $operation=bin2hex(random_bytes(16));
-    $remark='#wallet_hold_'.$payId;  // impossible Marzban username, not remote
-    $expiry=0;$bytes=0;
-    $fingerprint=hash('sha256',json_encode([
-        'wallet_hold',$payId,$count,$planId,$serverId,$group,$endpoint
-    ],JSON_THROW_ON_ERROR));
-    $stmt=$db->prepare("INSERT INTO service_effects
-        (pay_row_id,ordinal,operation_id,effect_kind,target_server_id,
-         target_group_id,target_key,endpoint_sha256,plan_id,
-         remote_username,requested_expire,requested_bytes,request_sha256,
-         reserved_count,state)
-        VALUES (?,0,?,'wallet_hold',?,?,?,?,?,?,?,?,?,?,'reserved')");
-    if (!$stmt) throw new RuntimeException('wallet_hold_insert_prepare');
-    $stmt->bind_param('isiissisiisi',$payId,$operation,$serverId,$group,
-        $key,$endpoint,$planId,$remark,$expiry,$bytes,$fingerprint,$count);
-    if (!$stmt->execute() || $stmt->affected_rows!==1)
-        throw new RuntimeException('wallet_hold_insert_unconfirmed');
-    $stmt->close();
 }

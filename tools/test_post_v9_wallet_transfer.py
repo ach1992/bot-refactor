@@ -14,14 +14,16 @@ import subprocess
 import time
 from pathlib import Path
 
-import test_access_state as owned
-import test_post_v9_purchases as stage_mod
-import test_v6_native as native
-import test_v8_native as purchase
+import database_fixture as owned
+import wallet_transfer_fixture as stage_mod
+import database_fixture as native
+import database_fixture as purchase
 
 ROOT = Path(__file__).resolve().parents[1]
 DB = purchase.SIDE[1]
 TEST_ROUTE = rb"""<?php
+$telegramWebhookSecret='fixture-transfer-report-secret-2026';
+$botState['rewardChannel']='@fixture_report';
 $message_id=(int)($spec['message_id']??$message_id);
 $update=(object)['update_id'=>(int)($spec['update_id']??(8000+$from_id)),
     'message'=>(object)['from'=>(object)['id'=>$from_id,'is_bot'=>false,'username'=>'fixture','first_name'=>'Fixture'],
@@ -98,9 +100,13 @@ def seed_flow(work, env, actor, step):
 def prepare(work, env, sender=50000, recipient=50000,
             step="achbotTransferAmount:9002:8000:70:7900:69"):
 
+    query(work,env,"DROP TABLE IF EXISTS payment_followup_attempts; DROP TABLE IF EXISTS payment_followup_intents; DROP TABLE IF EXISTS service_operations;")
     purchase.init(work, env, "http://127.0.0.1:9")
     query(work, env, "DROP TABLE IF EXISTS wallet_adjustments")
     query(work, env, (ROOT / 'migrations/post-v9/005_wallet_adjustments.sql').read_text())
+    query(work, env, "DROP TABLE IF EXISTS wallet_entries")
+    query(work, env, (ROOT / 'migrations/post-v9/024_wallet_entries.sql').read_text())
+    query(work,env,owned.current_wallet_report_ddl())
     query(work, env, "UPDATE users SET wallet={},step='{}' WHERE userid=1001;".format(sender, step))
     query(work, env, "UPDATE users SET wallet={},step='none' WHERE userid=9002;".format(recipient))
     query(work,env,"DELETE FROM setting WHERE type LIKE 'ACHBOT_WALLET_TRANSFER_%'")
@@ -108,13 +114,20 @@ def prepare(work, env, sender=50000, recipient=50000,
 
 
 def execute(work, env, stage, text, actor=1001, data="", **source):
-    orig = purchase.block
-    try:
-        purchase.block = lambda kind, modern: TEST_ROUTE if kind == "wallet_transfer_guard" else orig(kind, modern)
-        return purchase.run(work, env, stage, DB, "wallet_transfer_guard",
-                            {"actor": actor, "text": text, "data": data, **source}, modern=True)
-    finally:
-        purchase.block = orig
+    spec={"actor":actor,"text":text,"data":data,**source}
+    (stage/"case.json").write_text(json.dumps(spec,ensure_ascii=False))
+    (stage/"access-sequence.php").write_bytes(TEST_ROUTE)
+    output=stage/"result.json"
+    if output.exists():output.unlink()
+    run_env=dict(env,ACHBOT_PRIVATE_TEST="1",ACHBOT_V7_NATIVE="1",
+                 ACHBOT_DATABASE=DB,ACHBOT_SOCKET=str(work/"mysql.sock"))
+    p=subprocess.run(worker_cmd(stage,work),cwd=stage,env=run_env,capture_output=True,timeout=25)
+    if p.returncode or p.stdout or p.stderr or not output.exists():
+        raise RuntimeError("Wallet transfer PHP runner failed: "+repr((p.returncode,p.stdout[-550:],p.stderr[-550:])))
+    result=json.loads(output.read_text())
+    if result["exception"] or any(x.startswith(("FATAL:","EXCEPTION:")) for x in result["warnings"]):
+        raise RuntimeError("Wallet transfer PHP error: "+repr(result)[:1800])
+    return result
 
 
 def assert_events(result, successful):
@@ -154,7 +167,7 @@ def race(work, env, workers, label):
     try:
         for number, (actor, amount, *extra) in enumerate(workers, start=1):
             stage = work / ("transfer-" + label + "-race-" + str(number))
-            stage_mod.stage_source(stage, True)
+            stage_mod.stage_source(stage)
             (stage / "access-sequence.php").write_bytes(
                 b"<?php\n"
                 + ("file_put_contents('" + str(barrier) + "." + str(number)
@@ -202,23 +215,26 @@ def race(work, env, workers, label):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--run-disposable", action="store_true", required=True)
+    parser.add_argument("--current-only", action="store_true",
+                        help="Current Stable CI; do not execute historical RED source")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     reports = []
     with owned.owned_database() as (work, env):
         stage = work / "current-wallet"
-        stage_mod.stage_source(stage, True)
-        baseline_stage = work / "baseline-wallet"
-        stage_mod.stage_source(baseline_stage, True)
-        (baseline_stage / "src/Finance/Routes/WalletTransfer.php").write_bytes(
-            subprocess.check_output(["git","-C",str(ROOT),"show",
-                "ea6834cb0612b5fa687ec492fbd9c6e1fd0b6a50:src/Finance/Routes/WalletTransfer.php"]))
-        prepare(work, env, step="tranfserUserAmount9002")
-        assert_events(execute(work, env, baseline_stage, "300"),True)
-        if balances(work, env) != [(1001,49700,"none"),(9002,50300,"none")] or query(
-                work, env,"SELECT COUNT(*) FROM wallet_adjustments").strip() != "0":
-            raise RuntimeError("Baseline no longer reproduces unjournaled transfer")
-        reports.append("transfer_baseline_red_money_moves_without_journal")
+        stage_mod.stage_source(stage)
+        if not args.current_only:
+            baseline_stage = work / "baseline-wallet"
+            stage_mod.stage_source(baseline_stage)
+            (baseline_stage / "src/Finance/Routes/WalletTransfer.php").write_bytes(
+                subprocess.check_output(["git","-C",str(ROOT),"show",
+                    "ea6834cb0612b5fa687ec492fbd9c6e1fd0b6a50:src/Finance/Routes/WalletTransfer.php"]))
+            prepare(work, env, step="tranfserUserAmount9002")
+            assert_events(execute(work, env, baseline_stage, "300"),True)
+            if balances(work, env) != [(1001,49700,"none"),(9002,50300,"none")] or query(
+                    work, env,"SELECT COUNT(*) FROM wallet_adjustments").strip() != "0":
+                raise RuntimeError("Baseline no longer reproduces unjournaled transfer")
+            reports.append("transfer_baseline_red_money_moves_without_journal")
         prepare(work, env)
         expected = [(1001, 49700, "none"), (9002, 50300, "none")]
         first = execute(work, env, stage, "300")
@@ -235,6 +251,16 @@ def main():
             raise RuntimeError("Transfer legs do not retain exact identity and balances: "+rows)
         reports.append("transfer_positive_atomic")
         reports.append("transfer_paired_immutable_journal_exact_evidence")
+        targets=query(work,env,"SELECT GROUP_CONCAT(f.recipient ORDER BY f.recipient) FROM payment_followup_intents f JOIN wallet_entries w ON w.id=f.wallet_entry_id WHERE w.source_kind='transfer' AND w.leg=2").strip()
+        assert targets=="9001,@fixture_report",targets
+        reports.append("transfer_credit_has_owner_and_channel_report")
+        money_rows=query(work,env,"SELECT CONCAT(source_kind,':',source_ref,':',leg,':',userid,':',"
+            "delta_toman,':',balance_before,':',balance_after,':',actor_userid) "
+            "FROM wallet_entries ORDER BY leg").strip()
+        assert money_rows==("transfer:9001:1:1001:-300:50000:49700:1001\n"
+                            "transfer:9001:2:9002:300:50000:50300:1001"),money_rows
+        reports.append("transfer_both_legs_use_shared_money_journal")
+
 
         # Redelivery cannot debit again even if the UI starts another transfer.
         # Unique journal identity is independent of the consumed legacy step.
@@ -276,6 +302,30 @@ def main():
             if balances(work, env) != before:
                 raise RuntimeError("Incompatible journal permitted transfer: "+drift)
         reports.append("transfer_missing_or_incompatible_journal_fails_closed")
+        for drift in ("DROP TABLE payment_followup_attempts; DROP TABLE payment_followup_intents; DROP TABLE service_operations; DROP TABLE wallet_entries",
+                      "ALTER TABLE wallet_entries DROP INDEX uq_wallet_entry_source",
+                      "DROP TABLE payment_followup_attempts; DROP TABLE payment_followup_intents; DROP TABLE service_operations; ALTER TABLE wallet_entries ENGINE=MyISAM"):
+            prepare(work,env)
+            before=balances(work,env)
+            query(work,env,drift)
+            assert_events(execute(work,env,stage,"300"),False)
+            assert balances(work,env)==before,drift
+            assert query(work,env,"SELECT COUNT(*) FROM wallet_adjustments").strip()=="0"
+        reports.append("transfer_shared_journal_schema_drift_fails_closed")
+
+        prepare(work,env)
+        before=balances(work,env)
+        query(work,env,"CREATE TRIGGER owned_money_leg_failure BEFORE INSERT ON wallet_entries "
+            "FOR EACH ROW SET NEW.leg=IF(NEW.leg=1,NULL,NEW.leg)")
+        try:
+            assert_events(execute(work,env,stage,"300"),False)
+            assert balances(work,env)==before
+            assert query(work,env,"SELECT COUNT(*) FROM wallet_entries").strip()=="0"
+            assert query(work,env,"SELECT COUNT(*) FROM wallet_adjustments").strip()=="0"
+        finally:
+            query(work,env,"DROP TRIGGER owned_money_leg_failure")
+        reports.append("transfer_second_money_leg_failure_rolls_back_everything")
+
 
         # Second-leg failure happens AFTER BOTH monetary writes and first leg.
         # Test-only trigger forces a real MariaDB insert failure.
@@ -365,7 +415,7 @@ def main():
         # Simulated Telegram failure AFTER COMMIT must never undo the SQL
         # transfer. Continue other notifications and alert the private admin.
         notify_stage = work / "failed-notification-wallet"
-        stage_mod.stage_source(notify_stage, True)
+        stage_mod.stage_source(notify_stage)
         synthetic_php = notify_stage / "native-purchase.php"
         fixture_text = synthetic_php.read_text()
         original_send = "function sendMessage(...$args){achEvent('sendMessage',$args);return (object)['ok'=>true];}"
@@ -545,7 +595,7 @@ def main():
         # never be treated as proof that the money was reverted.
         def make_commit_fixture(name, override):
             fixture_stage = work / name
-            stage_mod.stage_source(fixture_stage, True)
+            stage_mod.stage_source(fixture_stage)
             php_path = fixture_stage / "native-purchase.php"
             code = php_path.read_text()
             declaration = "class SyntheticCommitConnection extends mysqli {\n" + override + "\n}\n"
@@ -666,7 +716,7 @@ def main():
 
     result = {"complete": True, "cases": len(reports), "scenarios": reports,
               "original_mariadb_socket_only": True, "external_requests": 0,
-              "active_schema_migration": False, "baseline_red": True}
+              "active_schema_migration": False, "baseline_red": not args.current_only}
     if args.report:
         args.report.write_text(json.dumps(result, indent=2, ensure_ascii=False) + "\n")
     print(json.dumps(result, ensure_ascii=False))

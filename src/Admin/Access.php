@@ -156,16 +156,16 @@ function achbotAdminRequestCapability(string $value): ?string {
         'review'=>'~^attention(?:Inbox|Case)~D',
         'gateway_rules'=>'~^(?:gatewayAudienceSettings|gr\\|)~D',
         'gateways'=>'~^(?:gateWays_Channels|changeGateWays|changePaymentKeys|achbotPaymentKey\\||cycleGatewayAudience_|paymentPolicy|editPaymentPolicy_|editcartToCartAutoAcceptTime)~D',
-        'bot_settings'=>'~^(?:botSettings|changeBot|changeUpdateConfigLinkState|changeConfigRemarkType|editSupportID|editRewardChannel|editLockChannel|inviteSetting|inviteBanner|editInvite|editRewaredTime|addExemptUser|removeExempt|achbotExempt:|ic\\||achbotInstance:)~D',
+        'bot_settings'=>'~^(?:botSettings|changeBot|changeConfigRemarkType|editSupportID|editRewardChannel|editLockChannel|inviteSetting|inviteBanner|editInvite|editRewaredTime|addExemptUser|removeExempt|achbotExempt:|ic\\||achbotInstance:)~D',
         'stats'=>'~^(?:botReports|show_stats_menu|stats_|top_50_|agent_users_list|plan_sales|server_sales|custom_sales_date|awaitingDateRange)~D',
-        'servers'=>'~^(?:serversSetting|nextServerPage|showServerSettings|toggleServerState|setServerState|addNewServer|addManagedServer|addNewMarzbanPanel|pgConnections|pgAddConnection|pgNewServer|managePanelGroups|manageMarzbanPanelGroups|addMarzbanPanelGroup|newMarzbanPanelGroup|deleteMarzbanPanelGroup_|editPanelGroup|editMarzbanGroup|setServerPanelGroup_|changesServer|editServer|editsServer|changeServerType|chhangeServerType|changePortType|changeRealityState|wizwizdeleteserver|yesDeleteServer|cancelDeleteServer|marzbanHostSettings|selectHost|saveServerHost|editSubLinks|subLinksInput|serverDisplay|achbotDisplay\\||achbotManage\\||achbotField\\||am\\||addserverName|addServer|pg:|pgRotate|pgServerGroups)~D',
-        'plans'=>'~^(?:backplan|planDetails|plansList|togglePlanState|setPlanSale|confirmDeletePlan|cancelDeletePlan|addNewPlan|addNewRahgozarPlan|newPlanForServer|addManagedPlan|addNewMarzbanPlan|planDays|planVolume|pgPlanGroups|categoriesSetting|nextCategoryPage|addNewCategory|wizwizcategory|wizwizplan|editCustom|volumePlanSettings|dayPlanSettings|addNewDayPlan|addNewVolumePlan|deleteDayPlan|deleteVolumePlan|changeDayPlan|changeVolumePlan|addon)~D',
+        'servers'=>'~^(?:serversSetting|nextServerPage|showServerSettings|toggleServerState|setServerState|addManagedServer|managePanelGroups|addPanelGroup|newPanelGroup|deletePanelGroup_|editPanelGroup|setServerPanelGroup_|changesServer|editServer|wizwizdeleteserver|yesDeleteServer|cancelDeleteServer|editSubLinks|subLinksInput|serverDisplay|achbotDisplay\\||achbotManage\\||achbotField\\||am\\||addServer|pg:|pgRotate|pgServerGroups)~D',
+        'plans'=>'~^(?:backplan|planDetails|plansList|togglePlanState|setPlanSale|confirmDeletePlan|cancelDeletePlan|newPlanForServer|addManagedPlan|planDays|planVolume|pgPlanGroups|categoriesSetting|nextCategoryPage|addNewCategory|wizwizcategory|wizwizplan|editCustom|volumePlanSettings|dayPlanSettings|addNewDayPlan|addNewVolumePlan|deleteDayPlan|deleteVolumePlan|changeDayPlan|changeVolumePlan|addon)~D',
         'agents'=>'~^(?:agentsList|nextAgentList|agentDetails|removeAgent|toggleAgent_|agentPercentDetails|editAgentDiscount|nextAgentDiscount|addDiscountServerAgent|addDiscountPlanAgent|removePercentOfAgent|agencyApprove|agencyDecline|rejectedAgentList|releaseRejectedAgent)~D',
         'customers'=>'~^(?:userReports|userInfoDetails|quickUserDetails)~D',
         'moderation'=>'~^(?:banUser|unbanUser|toggleBan_)~D',
-        'orders'=>'~^(?:switchLocation|switchServer|manageorderdatabase|showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleNotif_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|quickUserOrderDetails_|userOrderDetails|searchUsersConfig|adminToggleAutoRenew|awaitingOrderRemarkOnly|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)~D',
-        'payments'=>'~^(?:attentionDelivery|attentionWallet|attW(?:Original|Add|Report)|accept[A-Za-z0-9_-]|accCustom|approveRenewAcc|approveIncreaseDay|approveIncreaseVolume|approvePayment|declineAction|apiReview_|apiEvidence(?:Resume|Execute|Override)_|gatewayReview_)~D',
-        'operations'=>'~^(?:managePanel|messageToSpeceficUser|sendMessageToUser|increaseUserWallet|decreaseUserWallet|achbotWalletAdmin|increaseWalletUser|decreaseWalletUser|debtWalletUser|achbotWalletReason:|achbotWalletDebt:|createUserWalletDebt|walletDebt|addSubscriptionToCustomer|createMultipleAccounts|createAcc|awaiting_userid_input|giftVolumeAndDay|giftTo|giftServer|achbotDirectGift|mainMenuButtons|delMainButton|addNewMainButton|setMainButtonAnswer|discount_codes|addDiscount|editDiscount|delDiscount|editD|setDiscount|removeDiscountUser|toggleDiscount|copyHash|message2All|broadcast|editBroadcastAsk_|chooseSendGroup_|cancelBroadcast|noDontSend2all|yesSend2All|pinManageAll|pinManageSelect_|jobCancel_|jobCreate_|jobsStatus|s2a_|bc_edit_|ticketsList|ticketsCategory|addTicketCategory|delTicketCat_|allTickets|newTickets|openTickets|reply_|answer_|changeCustomPort|changeCustomSni|changeCustomPath|pgResetAccount)~D',
+        'orders'=>'~^(?:switchLocation|switchServer|manageorderdatabase|showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|quickUserOrderDetails_|userOrderDetails|searchUsersConfig|adminToggleAutoRenew|awaitingOrderRemarkOnly|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)~D',
+        'payments'=>'~^(?:attentionReceipt_|attentionDelivery|attentionService|attentionReport|accept[A-Za-z0-9_-]|accCustom|approveRenewAcc|approveIncreaseDay|approveIncreaseVolume|approvePayment|declineAction|apiReview_|apiEvidenceResume_|gatewayReview_[ARV]_)~D',
+        'operations'=>'~^(?:managePanel|messageToSpeceficUser|sendMessageToUser|increaseUserWallet|decreaseUserWallet|achbotWalletAdmin|increaseWalletUser|decreaseWalletUser|achbotWalletReason:|achbotWalletDebt:|walletDebt|addSubscriptionToCustomer|createMultipleAccounts|createAcc|awaiting_userid_input|giftVolumeAndDay|giftTo|giftServer|achbotDirectGift|mainMenuButtons|delMainButton|addNewMainButton|setMainButtonAnswer|discount_codes|addDiscount|editDiscount|delDiscount|editD|setDiscount|removeDiscountUser|toggleDiscount|copyHash|message2All|broadcast|editBroadcastAsk_|chooseSendGroup_|cancelBroadcast|noDontSend2all|yesSend2All|pinManageAll|pinManageSelect_|jobCancel_|jobCreate_|jobsStatus|s2a_|bc_edit_|ticketsList|ticketsCategory|addTicketCategory|delTicketCat_|allTickets|newTickets|openTickets|reply_|answer_|pgResetAccount)~D',
     ];
     foreach ($groups as $capability=>$pattern) if (preg_match($pattern,$value)) return $capability;
     return null;
@@ -200,6 +200,36 @@ function achbotAdminDeny(): void {
     if (!empty($GLOBALS['callbackId'])) answerCallbackQuery($GLOBALS['callbackId'],$message,true);
     else sendMessage($message,null,'HTML');
 }
+/** Content operations never authorize arbitrary configuration objects.
+ * Recheck role inside the mutation transaction using the existing role lock. */
+function achbotDeleteContentSetting(mysqli $db,int $actor,int $primary,int $id,string $kind): bool {
+    if ($id<=0) return false;
+    require_once __DIR__.'/../Presentation/MainMenu.php';
+    $scope=match($kind) {
+        'main'=>achbotMainButtonNamespace(),
+        'ticket'=>"BINARY type=BINARY 'TICKETS_CATEGORY'",
+        default=>null,
+    };
+    if ($scope===null) return false;
+    $begun=false;
+    try {
+        if (!$db->begin_transaction()) return false;
+        $begun=true;
+        if (!achbotAdminCanLocked($db,$actor,$primary,'operations'))
+            throw new DomainException('content_setting_denied');
+        $s=$db->prepare('DELETE FROM setting WHERE id=? AND '.$scope);
+        if (!$s || !$s->bind_param('i',$id) || !$s->execute())
+            throw new RuntimeException('content_setting_delete_failed');
+        $deleted=$s->affected_rows===1;$s->close();
+        if (!$db->commit()) throw new RuntimeException('content_setting_commit_unconfirmed');
+        return $deleted;
+    } catch (Throwable $e) {
+        if ($begun) try {$db->rollback();} catch (Throwable $ignored) {}
+        error_log('achbot_content_setting_delete_deferred actor='.$actor.' id='.$id.' class='.get_class($e));
+        return false;
+    }
+}
+
 /** Owner-only idempotent staff assignment; no new tables or private config edits. */
 function achbotAdminAssignLevel(mysqli $db,int $owner,int $primary,int $target,?string $level): bool {
     if ($owner<=0 || $owner!==$primary || $target<=0 || $target===$primary ||
@@ -219,7 +249,7 @@ function achbotAdminAssignLevel(mysqli $db,int $owner,int $primary,int $target,?
         if ($level===null) {
             $s=$db->prepare('DELETE FROM setting WHERE type=?');$s->bind_param('s',$key);
         } elseif ($roles) {
-            $s=$db->prepare('UPDATE setting SET value=? WHERE id=?');$roleId=(int)$roles[0]['id'];$s->bind_param('si',$level,$roleId);
+            $s=$db->prepare('UPDATE setting SET value=? WHERE id=? AND type=?');$roleId=(int)$roles[0]['id'];$s->bind_param('sis',$level,$roleId,$key);
         } else {
             $s=$db->prepare('INSERT INTO setting(type,value) VALUES(?,?)');$s->bind_param('ss',$key,$level);
         }

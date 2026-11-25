@@ -16,7 +16,7 @@ function diagnosticContext(): array {
     $source=$GLOBALS['achbotTelegramDiagnosticContext']??null;
     if (!is_array($source)) return [];
     $out=[];
-    foreach (['pay_id','delivery_ordinal','delivery_attempt','delivery_actor'] as $k) {
+    foreach (['pay_id','service_operation_id','delivery_ordinal','delivery_attempt','delivery_actor','delivery_part','delivery_id','followup_id'] as $k) {
         if (isset($source[$k]) && is_int($source[$k]) && $source[$k]>=0)
             $out[$k]=$source[$k];
     }
@@ -149,6 +149,9 @@ function requestOnce($botToken,$runtimeDir,$method,$datas=[]) {
     logResult($runtimeDir,$method,$timing,$http,$errno,$elapsed,$decoded,$hasFile);
     // Preserve old calling contract. Never mask an unknown send as ACK.
     if ($errno!==0) return null;
+    $context=diagnosticContext();
+    if (isset($context['delivery_part']) || isset($context['followup_id']))
+        return \AchBot\Telegram\Response\deliveryTransportResponse($decoded,$http,$errno);
     return $decoded;
 }
 

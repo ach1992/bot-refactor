@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 import subprocess
 import test_post_v9_payment_key_admin as keys
-import test_access_state as owned
+import database_fixture as owned
 
 ROOT=Path(__file__).resolve().parents[1]
 TOKEN='SYNTHETIC_SMS_ADMIN_SECRET_2026'
@@ -21,10 +21,9 @@ CANCEL_COPY=json.loads(subprocess.check_output(
 def main():
     parser=argparse.ArgumentParser()
     parser.add_argument('--run-disposable',required=True,action='store_true')
-    parser.add_argument('--evidence-module',type=Path)
     parser.add_argument('--report',type=Path)
     args=parser.parse_args()
-    evidence=(args.evidence_module or ROOT/'src/Finance/PaymentEvidence.php').resolve()
+    evidence=ROOT/'src/Finance/PaymentEvidence.php'
     if not evidence.is_file():
         raise RuntimeError('PaymentEvidence source dependency is unavailable')
     evidence_bytes=evidence.read_bytes()
@@ -41,7 +40,7 @@ def main():
     writers=b'<?php\n'+cfg[start:stop]
     driver=keys.DRIVER.replace(
         "require $root.'/src/Finance/PaymentKeyAdmin.php';",
-        "require $spec['evidence_module'];\n"
+        "require_once $root.'/src/Finance/PaymentEvidence.php';\n"
         "require $root.'/src/Subscription/DirectGift.php';\n"
         "require $root.'/src/Finance/PaymentKeyAdmin.php';\n"
         "require $argv[9];"
@@ -56,17 +55,10 @@ def main():
 } elseif ($kind==='menu') {""")
     with owned.owned_database() as (w,env):
         keys.setup(w,env)
-        # Preserve current runtime-relative imports inside the disposable
-        # fixture: PaymentEvidence now loads the shared private diagnostics.
-        evidence_snapshot=w/'src/Finance/PaymentEvidence.php'
-        evidence_snapshot.parent.mkdir(parents=True,exist_ok=True)
-        evidence_snapshot.write_bytes(evidence_bytes)
-        # PHP require_once identifies the canonical physical module. The
-        # genuine DirectGift/ProviderRuntime source also loads this shared
-        # helper, so point the fixture at the SAME file, not a second copy.
-        diagnostic=w/'src/Diagnostics/EventLog.php'
-        diagnostic.parent.mkdir(parents=True,exist_ok=True)
-        diagnostic.symlink_to(ROOT/'src/Diagnostics/EventLog.php')
+        # Extracted entrypoint fragments run in the disposable directory,
+        # but every real runtime module must resolve from the same source tree.
+        # Copying PaymentEvidence alone creates two physical PHP definitions
+        # when ReceiptHelpers transitively loads the real module.
         paths={}
         for name,data in [('webhook',webhook),('menu',menu),('route',route),
                           ('gateway_menu_route',gateway),('writers',writers)]:
@@ -77,7 +69,7 @@ def main():
         def call(kind='callback',data='',text='',actor=9002,**extra):
             seq[0]+=1
             spec={'kind':kind,'data':data,'text':text,'actor':actor,
-                  'update_id':seq[0],'evidence_module':str(evidence_snapshot),**extra}
+                  'update_id':seq[0],**extra}
             cmd=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
                  '-d','display_errors=0','-d','log_errors=1',
                  '-d',f'error_log={w}/api-admin.log','-d','allow_url_fopen=0',

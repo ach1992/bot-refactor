@@ -21,7 +21,7 @@ if($data=="supportSection"){
         ]]));
 }
 if($data== "usersNewTicket"){
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'TICKETS_CATEGORY'");
+    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE BINARY `type` = BINARY 'TICKETS_CATEGORY'");
     $stmt->execute();
     $ticketCategory = $stmt->get_result();
     $stmt->close();

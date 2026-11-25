@@ -57,6 +57,25 @@ function achbotRefreshUserProfile(mysqli $db, $update, int $actor): bool {
 }
 
 
+/** Supported current navigation shortcuts; no arbitrary callback dispatch. */
+function achbotCustomerShortcut($update,int $actor): ?string {
+    $message=$update->message??null;
+    $callback=$update->callback_query??null;
+    if (is_object($message) && !is_object($callback)) {
+        $sender=$message->from??null;$chat=$message->chat??null;
+        $input=$message->text??null;
+        if (!is_string($input) || !preg_match('~\A(?:/(buy|mysubs)|/start (buy|mysubs)(?:_[A-Za-z0-9_-]+)?)\z~D',$input,$m)) return null;
+        $command=$m[1]?:$m[2];
+    } elseif (is_object($callback) && !is_object($message)) {
+        $sender=$callback->from??null;$chat=$callback->message->chat??null;
+        if (!preg_match('~\AhaveJoined/start (buy|mysubs)\z~D',(string)($callback->data??''),$m)) return null;
+        $command=$m[1];
+    } else return null;
+    if ($actor<=0 || ($sender->id??null)!==$actor || ($sender->is_bot??false)===true ||
+        ($chat->type??null)!=='private' || ($chat->id??null)!==$actor) return null;
+    return $command;
+}
+
 /**
  * Resolve one Telegram actor on the first authenticated /start, including the
  * haveJoined callback. Registration happens only AFTER the forced-join gate.
@@ -77,13 +96,13 @@ function achbotRegisterStartUser(
         $sender = $message->from ?? null;
         $chat = $message->chat ?? null;
         if (!is_string($message->text ?? null) ||
-            preg_match('/\\A\\/[Ss]tart(?:@[A-Za-z0-9_]{1,32})?(?:\\s|$)/D', $message->text) !== 1)
+            (preg_match('/\\A\\/[Ss]tart(?:@[A-Za-z0-9_]{1,32})?(?:\\s|$)/D', $message->text) !== 1 && achbotCustomerShortcut($update,$actor)===null))
             return null;
     } elseif (is_object($callback) && !is_object($message)) {
         $sender = $callback->from ?? null;
         $chat = $callback->message->chat ?? null;
         if (!is_string($callback->data ?? null) ||
-            preg_match('/\\AhaveJoined(?:\\/start(?: [1-9][0-9]{0,18})?)?\\z/D', $callback->data) !== 1)
+            (preg_match('/\\AhaveJoined(?:\\/start(?: [1-9][0-9]{0,18})?)?\\z/D', $callback->data) !== 1 && achbotCustomerShortcut($update,$actor)===null))
             return null;
     } else return null;
 
@@ -128,6 +147,10 @@ function achbotRegisterStartUser(
         if (count($rows) === 1) return ['user'=>$rows[0], 'created'=>false, 'reward'=>null];
         if ($rows) throw new RuntimeException('identity_ambiguous');
 
+        $stage = 'schema';
+        require_once __DIR__.'/../Wallet/Ledger.php';
+        if (!achbotWalletLedgerReady($db)) throw new RuntimeException('wallet_schema_unavailable');
+
         $stage = 'begin';
         if (!$db->begin_transaction()) throw new RuntimeException('begin_failed');
         $begun = true;
@@ -160,7 +183,9 @@ function achbotRegisterStartUser(
         }
         if (!$stmt->execute() || $stmt->affected_rows !== 1)
             throw new RuntimeException('insert_failed');
+        $newUserPk=(int)$stmt->insert_id;
         $stmt->close();
+        if ($newUserPk<=0) throw new RuntimeException('registration_identity_missing');
 
         if ($referrer !== null && $inviteReward > 0) {
             $stage = 'reward';
@@ -170,12 +195,15 @@ function achbotRegisterStartUser(
             if ($inviteReward > 2147483647 - $old)
                 throw new RuntimeException('reward_out_of_range');
             $new = $old + $inviteReward;
-            $referrerId = (int)$referrer['id'];
-            $stmt = $db->prepare('UPDATE users SET wallet=? WHERE id=? AND wallet=?');
-            $stmt->bind_param('iii', $new, $referrerId, $old);
-            if (!$stmt->execute() || $stmt->affected_rows !== 1)
+            // Preserve the current one-reward-per-created-account policy.
+            // The new durable registration PK distinguishes a genuinely
+            // deleted/re-created account from repeated delivery of /start.
+            $entry=achbotWalletApplyLocked($db,$inviter,'onboarding_referral',
+                $actor.':'.$newUserPk,0,$inviteReward);
+            if ($entry['replayed'] || $entry['before']!==$old || $entry['after']!==$new)
                 throw new RuntimeException('reward_write_failed');
-            $stmt->close();
+            require_once __DIR__.'/../Finance/WalletReports.php';
+            achbotWalletReportStageLocked($db,$entry['id'],(int)($GLOBALS['admin']??0));
             $reward = ['inviter'=>$inviter, 'old_wallet'=>$old,
                        'new_wallet'=>$new, 'amount'=>$inviteReward];
         }

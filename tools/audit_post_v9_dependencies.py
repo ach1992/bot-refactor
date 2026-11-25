@@ -8,24 +8,21 @@ import re
 import subprocess
 from pathlib import Path
 import inventory as lexical
-import package_post_v9 as package
+import package_current as package
 
 ROOT = Path(__file__).resolve().parents[1]
 ENTRYPOINTS = {
     "index.php": "owner-supplied PHP root landing page",
     "bot.php": "authenticated Telegram webhook",
     "health.php": "public health endpoint",
-    "pay/index.php": "public hosted checkout",
+    "pay/checkout.php": "public hosted checkout",
     "pay/back.php": "public gateway return/IPN",
-    "settings/subLink.php": "public subscription endpoint",
     "settings/cronRunner.php": "current scheduled coordinator",
     "settings/gift2all.php": "current gift worker entrypoint",
-    "settings/messagewizwiz.php": "current broadcast worker entrypoint",
     "settings/rewardReport.php": "current reward/backup/renewal worker entrypoint",
-    "settings/warnusers.php": "current warning worker entrypoint",
     "baseInfo.example.php": "intentionally shipped synthetic private-config template",
 }
-CANDIDATES = {"admins", "black_list", "servers"}
+
 
 def audit():
     members = package.members()
@@ -45,8 +42,10 @@ def audit():
             expr, _ = lexical.expr_until(tokens, index+1, {";"})
             for part in re.findall(r"""['"]([^'"]+\.php)['"]""", expr):
                 base = (ROOT/file).parent if "__DIR__" in expr else ROOT
-                if "dirname(__DIR__)" in expr:
-                    base = base.parent
+                parents = re.search(r"dirname\(\s*__DIR__\s*(?:,\s*(\d+))?\s*\)", expr)
+                if parents:
+                    for _ in range(int(parents.group(1) or 1)):
+                        base = base.parent
                 target = (base/part.lstrip("/")).resolve()
                 if target.is_relative_to(ROOT):
                     name = target.relative_to(ROOT).as_posix()
@@ -65,9 +64,10 @@ def audit():
             if re.search(r"\b(?:FROM|JOIN|INTO|UPDATE|TABLE)\s+\x60?\{?\$", text, re.I):
                 dynamic.append(dict(site, expression=text))
     original = re.findall(r"CREATE TABLE \x60([^\x60]+)\x60", (ROOT/"database/legacy-schema.sql").read_text())
-    current = set(original)
-    for path in (ROOT/"migrations/post-v9").glob("0*.sql"):
-        current.update(re.findall(r"CREATE TABLE\s+\x60?([a-zA-Z_]\w*)", path.read_text(), re.I))
+    current = set(re.findall(r"CREATE TABLE \x60([^\x60]+)\x60", (ROOT/"database/current-schema.sql").read_text()))
+    # The loader uses a closed, fixed admin/user audience selection.
+    for catalog in ("messages/fa/admin.php", "messages/fa/user.php"):
+        references[catalog].append({"file": "messages/loader.php", "line": 17, "dynamic": True})
     files = [{
         "path": p,
         "sha256": hashlib.sha256((ROOT/p).read_bytes()).hexdigest(),
@@ -77,6 +77,7 @@ def audit():
     unresolved = [f["path"] for f in files if not f["included_by"] and f["path"] not in ENTRYPOINTS]
     if unresolved:
         raise RuntimeError("Review unresolved runtime roles: "+repr(unresolved))
+
     def grouped_sites(table):
         groups = {}
         for site in sql:
@@ -90,10 +91,12 @@ def audit():
         "limitations": ["Source references do not prove installed absence, emptiness, external non-use, or retention disposition.",
                         "This inventory is a pinned audit, not a runtime/startup gate."],
         "runtime_files": files,
+        "unresolved_literal_include_roles": unresolved,
         "tables": [{"name": table, "original": table in original,
-                    "disposition": "optional candidate; tenant audit required" if table in CANDIDATES else "active; preserve",
+                    "disposition": "current install schema; inspect literal and dynamic consumers",
                     "literal_sql_sites": grouped_sites(table)} for table in sorted(current)],
         "dynamic_table_sites": dynamic,
+        "unclassified_lexical_sql_tokens_outside_schema": sorted({r["table"] for r in sql} - current),
     }
 
 def main():

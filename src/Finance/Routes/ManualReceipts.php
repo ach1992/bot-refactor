@@ -17,26 +17,25 @@ $adminCallback=(string)($data??'');
 // the receiving route performs fresh payment, actor and Native checks.
 if (str_starts_with($adminCallback,'attentionInbox') ||
     str_starts_with($adminCallback,'attentionCase_') ||
+    str_starts_with($adminCallback,'attentionReceipt_') ||
     str_starts_with($adminCallback,'attentionDelivery') ||
-    str_starts_with($adminCallback,'attentionWallet') ||
-    str_starts_with($adminCallback,'attWOriginal') ||
-    str_starts_with($adminCallback,'attWAdd') ||
-    str_starts_with($adminCallback,'attWReport') ||
-    str_starts_with($adminCallback,'gatewayReview_')) {
+    str_starts_with($adminCallback,'attentionService') ||
+    str_starts_with($adminCallback,'attentionReport') ||
+    preg_match('/^gatewayReview_[ARV]_[1-9][0-9]{0,17}$/D',$adminCallback)===1) {
     require __DIR__.'/AutomaticGatewayReview.php';
     return;
 }
 
 // An existing authenticated bank/gift API proof can finish the ORIGINAL
 // payment. No provider GET, second financial ledger, or new access grant.
-if (preg_match('/^apiEvidence(Resume|Execute|Override)_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/D',
+if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',
     (string)$data,$apiResume)) {
     if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments') ||
         (int)($chat_id??0)!==(int)$from_id) {
         answerCallbackQuery($callbackId,achbotMessage('manual_payment.manual_receipts.alert.0a23f88410'),true);
         return;
     }
-    $payId=(int)$apiResume[2];
+    $payId=(int)$apiResume[1];
     try {
         // The direct callback may be the first admin route in this process.
         // Do not depend on having opened the attention inbox beforehand.
@@ -44,7 +43,7 @@ if (preg_match('/^apiEvidence(Resume|Execute|Override)_([1-9][0-9]{0,17})(?:_([a
         $pay=achbotApiPaymentRow($connection,$payId);
         $attempt=$pay?achbotApiPaymentAttempt($connection,$payId):null;
         $proof=$pay?achbotPaymentEvidenceGetProof($connection,$payId):null;
-        if (!$pay || !$attempt || ($attempt['review_archived_at']??null)!==null) {
+        if (!$pay || !$attempt) {
             answerCallbackQuery($callbackId,achbotMessage('manual_receipt_final.status_stale'),true);
             return;
         }
@@ -53,113 +52,30 @@ if (preg_match('/^apiEvidence(Resume|Execute|Override)_([1-9][0-9]{0,17})(?:_([a
         // invoice: the original coordinator dispatches only PENDING delivery
         // packets, never money/native effects or UNKNOWN Telegram sends.
         $terminalDeliveryOnly=achbotApiPaymentTerminal($pay) &&
-            in_array((string)$attempt['provider'],['bank_transfer','gift_card'],true) &&
+            achbotCreditMethodHas((string)$attempt['provider'],'api_checker') &&
             ($proof['mode']??null)==='settle';
         if ((!achbotApiPaymentCanResume($connection,$pay) && !$terminalDeliveryOnly) ||
             !is_array($proof)) {
             answerCallbackQuery($callbackId,achbotMessage('manual_receipt_final.status_stale'),true);
             return;
         }
-        $confirmed=in_array($apiResume[1],['Execute','Override'],true);
-        $needsConfirmation=achbotApiPaymentNeedsOperatorConfirmation(
-            $connection,$pay,$attempt);
-        $operatorOverride=null;
-        // Native inspection is read-only. Only an already paid/dispatched
-        // operation with a proven original identity can offer the exceptional
-        // explicit "apply original terms" decision.
-        $preview=$needsConfirmation && $apiResume[1]!=='Execute'
-            ?achbotApiPaymentOperatorEditPreview($connection,$pay,$attempt,$proof)
-            :null;
-        if ($apiResume[1]==='Override') {
-            $expected=$preview && $preview['disposition']==='drift'
-                ?achbotApiPaymentOperatorOverrideToken($pay,$attempt,$proof,
-                    (int)$from_id,$preview)
-                :null;
-            if (!$needsConfirmation || !is_string($expected) ||
-                !hash_equals($expected,(string)($apiResume[3]??''))) {
-                answerCallbackQuery($callbackId,
-                    achbotMessage('automatic_gateway_review.service_override_changed'),true);
-                return;
-            }
-            $operatorOverride=['actor_id'=>(int)$from_id,
-                'entitlement_digest'=>$preview['entitlement_digest'],
-                'generation'=>$preview['generation'],
-                'target_expire'=>$preview['target_expire'],
-                'target_bytes'=>$preview['target_bytes']];
-        } elseif ($apiResume[1]==='Execute') {
-            $expected=achbotApiPaymentOperatorToken(
-                $pay,$attempt,$proof,(int)$from_id);
-            if (!$needsConfirmation || !hash_equals(
-                $expected,(string)($apiResume[3]??''))) {
-                answerCallbackQuery($callbackId,
-                    achbotMessage('manual_receipt_final.status_stale'),true);
-                return;
-            }
-        } elseif ($needsConfirmation) {
-            // One fresh Native GET establishes an informed, actor-bound
-            // override choice. The final callback GETs again before any write.
-            $override=$preview && $preview['disposition']==='drift';
-            if ($override) {
-                $token=achbotApiPaymentOperatorOverrideToken($pay,$attempt,
-                    $proof,(int)$from_id,$preview);
-                $formatDate=static fn($epoch):string => $epoch===null
-                    ?achbotMessage('automatic_gateway_review.unlimited_expiry'):gmdate('Y-m-d H:i',(int)$epoch).' UTC';
-                $formatGiB=static fn($bytes):string =>
-                    number_format((int)$bytes/1073741824,2,'.','');
-                $message=achbotMessageHtml('automatic_gateway_review.service_override_confirm',[
-                    'payment'=>$payId,
-                    'currentExpiry'=>$formatDate($preview['native_expire']),
-                    'targetExpiry'=>$formatDate($preview['target_expire']),
-                    'currentVolume'=>$formatGiB($preview['native_bytes']),
-                    'targetVolume'=>$formatGiB($preview['target_bytes']),
-                    'currentStatus'=>$preview['native_status'],
-                    'currentGroups'=>$preview['native_groups']
-                        ?implode(',',array_map('strval',$preview['native_groups'])):'[]']);
-                $callback='apiEvidenceOverride_'.$payId.'_'.$token;
-                $actionLabel=achbotMessage('automatic_gateway_review.service_override_execute');
-            } else {
-                $token=achbotApiPaymentOperatorToken(
-                    $pay,$attempt,$proof,(int)$from_id);
-                $message=achbotMessageHtml('automatic_gateway_review.service_confirm',[
-                    'payment'=>$payId]);
-                $callback='apiEvidenceExecute_'.$payId.'_'.$token;
-                $actionLabel=achbotMessage('automatic_gateway_review.service_execute');
-            }
-            $buttons=json_encode(['inline_keyboard'=>[
-                [['text'=>$actionLabel,'callback_data'=>$callback]],
-                [['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),
-                  'callback_data'=>'attentionCase_'.$payId]]
-            ]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-            $reply=editText($message_id,$message,$buttons,'HTML',(int)$from_id);
-            if (!is_object($reply)||($reply->ok??false)!==true)
-                sendMessage($message,$buttons,'HTML',(int)$from_id);
-            answerCallbackQuery($callbackId);
-            return;
-        }
         answerCallbackQuery($callbackId,achbotMessage('manual_receipt_final.checking'));
-        $outcome=achbotApiPaymentSettle($connection,$payId,$proof,
-            $confirmed?(int)$from_id:0,$confirmed?(int)$admin:0,$operatorOverride);
-        // A settled invoice is not necessarily an ACKed customer message.
-        // The terminal fast-path returns 'settled' after pending-only delivery;
-        // inspect the original per-message journal before reporting success.
-        $acknowledged=false;
-        if (in_array($outcome,['confirmed','settled'],true)) {
-            $delivery=achbotDeliveryAggregate($connection,$payId);
-            $acknowledged=$delivery && (int)$delivery['total']>0 &&
-                (int)$delivery['ack']===(int)$delivery['total'];
-        }
-        $result=$acknowledged
-            ? achbotMessage('manual_receipt_final.status_completed')
-            : (in_array($outcome,['confirmed','settled'],true)
-                ? achbotMessage('manual_receipt_final.status_delivery_unconfirmed')
-                : achbotMessage('manual_receipt_final.status_unknown'));
+        $outcome=achbotApiPaymentSettle($connection,$payId,$proof);
+        $result=achbotCheckoutReceiptOutcomeText(in_array($outcome,['confirmed','settled'],true)?
+            achbotCheckoutReceiptOutcome($connection,$payId):'unknown');
         // This action began inside the shared attention inbox. Its result
         // always returns there, even if the original case is now closed.
         $rows=[[['text'=>achbotMessage('manual_receipt_final.back'),
             'callback_data'=>'attentionInbox']]];
         // A deferred result is NOT a terminal denial: expose the original
         // case directly, where the next confirmed preview uses fresh evidence.
-        if (!in_array($outcome,['confirmed','settled'],true))
+        require_once __DIR__.'/../../Services/Resolution.php';
+        require_once __DIR__.'/../GatewayClient.php';
+        $serviceId=(int)($pay['checkout_operation_id']??0);
+        if ($serviceId>0 && achbotServiceAttentionCaseOpen($connection,$serviceId))
+            array_unshift($rows,[['text'=>achbotMessage('automatic_gateway_review.open_case'),
+                'callback_data'=>'attentionService_'.$serviceId]]);
+        elseif (!in_array($outcome,['confirmed','settled'],true) && achbotGatewayAttentionCaseOpen($connection,$payId))
             array_unshift($rows,[['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),
                 'callback_data'=>'attentionCase_'.$payId]]);
         $buttons=json_encode(['inline_keyboard'=>$rows],
@@ -177,71 +93,9 @@ if (preg_match('/^apiEvidence(Resume|Execute|Override)_([1-9][0-9]{0,17})(?:_([a
 }
 
 if (preg_match('/^approvePayment(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
-    $hash_id = $match[1];
-    // Keep the existing receipt display identifiers for post-commit updates.
-    $stmt = $connection->prepare('SELECT * FROM pays WHERE hash_id=? LIMIT 1');
-    $stmt->bind_param('s', $hash_id);
-    $stmt->execute();
-    $payInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$payInfo) {
-        alert(\achbotMessage('manual_payment.manual_receipts.alert.9e5ae0bfa1'));
-        return;
-    }
-    $approved = achbotApproveManualWalletTopup($connection, $hash_id, (int)$from_id, (int)$admin);
-    if ($approved === null) {
-        alert(\achbotMessage('manual_payment.manual_receipts.alert.2d252fd96f'));
-        return;
-    }
-
-    // These values are read from the committed transaction, not from stale
-    // Telegram buttons or a pre-commit estimate.
-    $price = $approved['price'];
-    $userId = $approved['user_id'];
-    $currentWallet = $approved['wallet_before'];
-    $newWallet = $approved['wallet_after'];
-    $methodName = achbotManualLabel(
-        achbotManualSelectedMethod($connection, $payInfo) ?? 'bank_transfer'
-    );
-
-    require_once __DIR__.'/../ApiPaymentPresentation.php';
-    $keys=achbotManualFinalReceiptKeyboard(
-        $connection,(int)$payInfo['id'],payTypeToDescription('INCREASE_WALLET'));
-
-    // ویرایش پیام ادمین اصلی
-    try {
-        editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']);
-    } catch (Throwable $ignored) {
-        // Keep the buyer notification attempt even if editing Telegram fails.
-    }
-
-    // ویرایش پیام سایر ادمین‌ها
-    $adminMessages = json_decode($payInfo['admins_messages'], true);
-    if (is_array($adminMessages)) {
-        foreach ($adminMessages as $msgInfo) {
-            if (
-                isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
-                $msgInfo['chat_id'] != $payInfo['chat_id'] &&
-                achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
-            ) {
-                try {
-                    editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
-                } catch (Throwable $ignored) {
-                    // One stale administrator message must not block the buyer.
-                }
-            }
-        }
-    }
-
-    // ارسال پیام به ادمین‌ها
-    $adminMessages = \achbotMessage('manual_payment.manual_receipts.admin_messages.31d90c5e69', ['methodName' => $methodName, 'userId' => $userId]) . number_format($currentWallet) . \achbotMessage('manual_payment.manual_receipts.text.c0780ce268') . number_format($newWallet) . \achbotMessage('manual_payment.manual_receipts.text.89a4910ebe', ['hash_id' => $hash_id]);
-    sendToAllAdmins('sendMessage', ['text' => $adminMessages, 'parse_mode' => "html"]);
-
-    // ارسال پیام به ادمین خاص
-    sendMessage($adminMessages, null, "html", $admin);
-
-    // ارسال پیام به کاربر
-    sendMessage(\achbotMessage('manual_payment.manual_receipts.message.f568baa065') . number_format($price) . \achbotMessageHtml('manual_payment.manual_receipts.message.f6331b33af', ['supportID' => $supportID]), null, "HTML", $userId);
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'topup');
+    return;
 }
 
 // Decline Cart To Cart by ACh
@@ -273,7 +127,7 @@ if (preg_match('/^declineAction_(.+)$/', $data, $match) && achbotAdminCanFor($co
             achbotFollowupDispatchPending($connection,(int)$payInfo['id'],'manual_reject');
         return;
     }
-    if ($payInfo['state'] !== 'have_sent') {
+    if (!in_array($payInfo['state'],['have_sent','service_superseded'],true)) {
         // Never reverse a potentially delivered Processing/native operation.
         alert(\achbotMessage('manual_payment.manual_receipts.alert.af4cc41dc0'));
         return;
@@ -292,6 +146,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
     (string)($data??'')==='' &&
     $text != \achbotMessage('legacy_buttons.cancel') &&
     achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    if ((int)($chat_id??0)!==(int)$from_id) return;
     // Only a freshly typed administrator message can supply the reason;
     // a callback's previously rendered message must not finalize rejection.
     if (!is_string($text) || trim($text)==='') {
@@ -323,7 +178,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
             achbotFollowupDispatchPending($connection,(int)$payInfo['id'],'manual_reject');
         return;
     }
-    if ($payInfo['state'] !== 'have_sent') {
+    if (!in_array($payInfo['state'],['have_sent','service_superseded'],true)) {
         alert(\achbotMessage('manual_payment.manual_receipts.alert.af4cc41dc0'));
         return;
     }
@@ -378,13 +233,13 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
             \achbotMessageHtml('manual_payment.manual_receipts.message.df4f415ed5',
                 ['hash_id'=>$hash_id]);
     };
-    $operatorNotice=static function(string $name) use ($payId,$uid,$payInfo,$hash_id): string {
+    $operatorNotice=static function(string $name) use ($payId,$uid,$payInfo,$hash_id,$from_id): string {
         return \achbotMessage('manual_receipt_final.status_rejected')."\n".
             \achbotMessageHtml('manual_receipt_final.rejected_report',[
                 'id'=>$payId,'user'=>(int)$uid,
                 'amount'=>number_format((int)$payInfo['price']),'hash'=>$hash_id])."\n".
             \achbotMessageHtml('manual_payment.manual_receipts.message.61d75413a2',
-                ['remark'=>$name]);
+                ['remark'=>$name])."\n".achbotMessageHtml('operational_reports.actor',['actor'=>(int)$from_id]);
     };
     // Telegram bounds parsed HTML in UTF-16 units (4096); escaping an
     // otherwise valid reason/name can exceed that limit. Never COMMIT a
@@ -429,62 +284,27 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         'callback_data'=>'banUserDirect_'.$uid]]]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
     // These messages are staged BEFORE Telegram is called. Never assert that
     // the customer's rejection notice was delivered: its ACK may be unknown.
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    require_once __DIR__.'/../GatewayClient.php';
+    $lease=achbotOriginalDispatchLeaseBegin($connection,$payId);
+    if ($lease!=='owned') {
+        alert(achbotMessage('manual_payment.manual_receipts.alert.872f260882'));return;
+    }
     $opened=false;
     try {
         if (!$connection->begin_transaction()) throw new RuntimeException('manual_reject_begin');
         $opened=true;
-        $q=$connection->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
-        $q->bind_param('i',$payId);$q->execute();$locked=$q->get_result()->fetch_assoc();$q->close();
-        if (!$locked || $locked['state']!=='have_sent' ||
-            (string)$locked['hash_id']!==(string)$hash_id ||
-            (int)$locked['user_id']!==(int)$uid ||
-            (int)$locked['chat_id']!==(int)$payInfo['chat_id'] ||
+        $actor=(int)$from_id;
+        $locked=achbotCheckoutRejectReceiptLocked($connection,$payId,(int)$uid,$actor,(int)$admin,(string)$hash_id);
+        if ((int)$locked['chat_id']!==(int)$payInfo['chat_id'] ||
             (int)$locked['message_id']!==(int)$payInfo['message_id'])
             throw new RuntimeException('manual_reject_stale');
-        // A previously opened reason editor cannot reject an original after
-        // another authorized operator Archives it. Match Archive's lock order
-        // (pays -> original attempt) and inspect before consuming users.step.
-        // Only absent pre-003/022 schema is optional; other SQL failures
-        // must roll back the financial decision and its follow-up intents.
-        $archiveProbe=null;$archiveSchemaMissing=false;
-        try {
-            $archiveProbe=$connection->prepare('SELECT review_archived_at
-                FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE');
-        } catch (mysqli_sql_exception $error) {
-            if (!in_array((int)$error->getCode(),[1054,1146],true)) throw $error;
-            $archiveSchemaMissing=true;
-        }
-        if (!$archiveProbe && !$archiveSchemaMissing) {
-            if (!in_array((int)$connection->errno,[1054,1146],true))
-                throw new RuntimeException('manual_reject_archive_probe_unavailable');
-            $archiveSchemaMissing=true;
-        }
-        if ($archiveProbe) {
-            $archiveProbe->bind_param('i',$payId);
-            if (!$archiveProbe->execute())
-                throw new RuntimeException('manual_reject_archive_read_unavailable');
-            $original=$archiveProbe->get_result()->fetch_assoc();$archiveProbe->close();
-            if (($original['review_archived_at']??null)!==null)
-                throw new RuntimeException('manual_reject_archived');
-        }
-        // The pays lock alone cannot freeze staff authority or the active
-        // reason editor. Lock current membership/role, then atomically claim
-        // only the same persisted editor before financial settlement.
-        $actor=(int)$from_id;
-        if (!achbotAdminCanLocked($connection,$actor,(int)$admin,'payments'))
-            throw new RuntimeException('manual_reject_actor_revoked');
-        // users.step uses a case-insensitive legacy collation. Compare bytes,
-        // not collation-equivalent text, to consume only this exact editor.
+        // Consume only the current private reason editor; rollback also
+        // restores the payment/command if another editor replaced it.
         $q=$connection->prepare("UPDATE users SET step='none' WHERE userid=? AND BINARY step=BINARY ?");
         $q->bind_param('is',$actor,$expectedEditor);
         $editorClaimed=$q->execute() && $q->affected_rows===1;$q->close();
         if (!$editorClaimed) throw new RuntimeException('manual_reject_editor_stale');
-        $q=$connection->prepare("UPDATE pays SET state='declined',approved_by=?
-            WHERE id=? AND state='have_sent'");
-        $q->bind_param('ii',$actor,$payId);
-        $ok=$q->execute() && $q->affected_rows===1;$q->close();
-        if (!$ok) throw new RuntimeException('manual_reject_cas_failed');
-        $locked['state']='declined';$locked['approved_by']=$actor;
         achbotFollowupInsertLocked($connection,$locked,'manual_reject',
             'receipt_primary','edit',(string)(int)$locked['chat_id'],
             (int)$locked['message_id'],['text'=>$keys,'keys'=>null,'mode'=>null]);
@@ -511,24 +331,24 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         achbotFollowupInsertLocked($connection,$locked,'manual_reject',
             'customer','send',(string)(int)$uid,null,
             ['text'=>$message,'keys'=>$retryButton,'mode'=>'HTML']);
-        achbotFollowupInsertLocked($connection,$locked,'manual_reject',
-            'operator','send',(string)$actor,null,
-            ['text'=>$adminReport,'keys'=>$adminAfterSendKeys,'mode'=>'HTML']);
+        achbotFollowupStageAdminReportLocked($connection,$payId,null,'manual_reject',
+            achbotPaymentEvidencePayFingerprint($locked),(int)$admin,(string)($GLOBALS['botState']['rewardChannel']??''),
+            ['text'=>$adminReport,'keys'=>null,'mode'=>'HTML'],$actor,null,$adminAfterSendKeys);
         if (!$connection->commit()) throw new RuntimeException('manual_reject_commit_unknown');
         $opened=false;
     } catch(Throwable $error) {
         if ($opened) try {$connection->rollback();} catch(Throwable $ignored) {}
         // Preserve a bounded, non-secret reason for operator diagnostics.
         $code=in_array($error->getMessage(),[
-            'manual_reject_stale','manual_reject_archived',
+            'manual_reject_stale',
             'manual_reject_actor_revoked','manual_reject_editor_stale',
-            'manual_reject_cas_failed',
+            'manual_reject_cas_failed','manual_reject_original_evidence_pending',
         ],true)?$error->getMessage():'transaction_unconfirmed';
         error_log('achbot_manual_reject_claim_unconfirmed pay_id='.$payId.
             ' code='.$code.' class='.get_class($error));
         alert(\achbotMessage('manual_payment.manual_receipts.alert.872f260882'));
         return;
-    }
+    } finally {achbotOriginalDispatchLeaseEnd($connection,$payId,$lease);}
     // An edit exception never suppresses independent customer/staff notices.
     // Missing ACK is UNKNOWN, not permission for a duplicate message.
     achbotFollowupDispatchPending($connection,$payId,'manual_reject');

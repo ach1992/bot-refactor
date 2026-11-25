@@ -65,47 +65,6 @@ if (!function_exists('insertOrder')) {
     }
 }
 
-if (!function_exists('decreaseServerCapacity')) {
-    function decreaseServerCapacity($connection, $server_id, $inbound_id, $plan_id, $count = 1, $requireConfirmed = false)
-    {
-        $count      = (int)$count;
-        $server_id  = (int)$server_id;
-        $inbound_id = (int)$inbound_id;
-        $plan_id    = (int)$plan_id;
-
-        if ($count <= 0) {
-            if ($requireConfirmed) throw new RuntimeException('capacity_invalid_count');
-            return;
-        }
-
-        if ($inbound_id === 0) {
-            $stmt = $connection->prepare(
-                "UPDATE `server_info` SET `ucount` = `ucount` - ?
-                 WHERE `id` = ? AND `ucount` >= ?"
-            );
-            if (!$stmt) throw new RuntimeException('server_capacity_prepare_failed');
-            $stmt->bind_param("iii", $count, $server_id, $count);
-            $saved=$stmt->execute();
-            $changed=$stmt->affected_rows;
-            $stmt->close();
-            if ($requireConfirmed && ($saved!==true || $changed!==1))
-                throw new RuntimeException('server_capacity_update_unconfirmed');
-        } else {
-            $stmt = $connection->prepare(
-                "UPDATE `server_plans` SET `acount` = `acount` - ?
-                 WHERE `id` = ? AND `acount` >= ?"
-            );
-            if (!$stmt) throw new RuntimeException('plan_capacity_prepare_failed');
-            $stmt->bind_param("iii", $count, $plan_id, $count);
-            $saved=$stmt->execute();
-            $changed=$stmt->affected_rows;
-            $stmt->close();
-            if ($requireConfirmed && ($saved!==true || $changed!==1))
-                throw new RuntimeException('plan_capacity_update_unconfirmed');
-        }
-    }
-}
-
 if (!function_exists('ensureAccountCreationSucceeded')) {
     function ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, $throwOnError = false)
     {
@@ -264,9 +223,37 @@ if (!function_exists('achbotImportedOrderOrigin')) {
         return achbotOrderImportOrigin($db,$order,$lock)!==null;
     }
 
-    /** Product selection stays available for verified imports without inventing a paid amount. */
+    /** Commercial origin is not a price or representative-mode classification.
+     * Current BUY ordinals must be bound to the original completed command.
+     * Verified imported/relocated references keep their own origin; historical
+     * migrated paid references and explicitly created administrator bulk
+     * accounts retain their previously established paid-plan eligibility. */
     function achbotOrderMayUsePaidPlan(mysqli $db,array $order,bool $lock=false): bool {
+        if ((int)($order['status']??0)!==1 || (int)($order['provider_effect_id']??0)<=0) return false;
+        require_once __DIR__.'/../Services/Ownership.php';
+        $id=(int)$order['id'];
+        $account=achbotProviderAccountByOrder($db,$id,$lock);
+        if (!$account || !in_array($account['state'],['linked','mutating'],true) ||
+            $account['effect_id']!==(int)$order['provider_effect_id'] ||
+            $account['remote_user_id']!==(int)$order['provider_remote_user_id'] ||
+            $account['remote_created_at']!==$order['provider_remote_created_at'] ||
+            $account['remote_username']!==$order['remark']) return false;
+        // Importing a link cannot turn an ordinary trial into a commercial service.
+        if ($account['source_kind']==='free_trial') return false;
+        // An imported local reference has its own proven origin, even when
+        // attached to an already-existing physical account.
         if (achbotOrderImportOrigin($db,$order,$lock)!==null) return true;
+        $effect=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=?'.($lock?' FOR UPDATE':''),'i',[$account['effect_id']]);
+        if (!$effect || $effect['state']!=='local_recorded') return false;
+        if ($effect['source_kind']==='service_operation') {
+            $op=achbotServiceOriginalBuy($db,$effect,$lock);
+            return $op['stage']==='completed' &&
+                (int)$effect['order_id']===$id &&
+                (int)$op['userid']===(int)$order['userid'];
+        }
+        if (!in_array($effect['source_kind'],['legacy_migration','admin_bulk'],true)) return false;
+        if ($effect['source_kind']==='admin_bulk' &&
+            ((int)$effect['order_id']!==$id || (int)$effect['actor_userid']!==(int)$order['userid'])) return false;
         $amount=$order['amount']??null;
         return (is_int($amount) && $amount>0) || (is_string($amount) &&
             preg_match('/^[1-9][0-9]*$/D',$amount)===1 && strlen($amount)<=10 && (int)$amount<=2147483647);
@@ -321,42 +308,66 @@ if (!function_exists('achbotImportedOrderOrigin')) {
     }
 }
 
-if (!function_exists('createIncreaseOrder')) {
-    function createIncreaseOrder(
-        $connection,
-        $uid,
-        $server_id,
-        $inbound_id,
-        $remark,
-        $amount,
-        $date,
-        $volume = null,
-        $day = null,
-        $requireConfirmed = false
-    ) {
-        $stmt = $connection->prepare("
-            INSERT INTO `increase_order`
-                (`userid`, `server_id`, `inbound_id`, `remark`, `amount`, `date`, `volume`, `day`)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ");
-        $stmt->bind_param(
-            "iiisiiii",
-            $uid,
-            $server_id,
-            $inbound_id,
-            $remark,
-            $amount,
-            $date,
-            $volume,
-            $day
-        );
-        $saved=$stmt->execute();
-        $inserted=$stmt->affected_rows;
-        $stmt->close();
-        if ($requireConfirmed && ($saved!==true || $inserted!==1)) {
-            // Only explicitly gated financial paths demand strict receipt;
-            // keep other historical callers' exception contract unchanged.
-            throw new RuntimeException('increase_order_insert_unconfirmed');
-        }
+/**
+ * Validate the selected product separately from the action admission policy.
+ * New selections require the same logical server. Existing relocated services
+ * retain their original plan only within the already verified physical panel.
+ */
+function achbotValidPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock=false,
+    bool $sameLogicalServer=true,bool $allowCurrentInactive=false,bool $allowUnlimitedVolume=false): ?array {
+    if ($planId<=0 || (int)($order['status']??0)!==1) return null;
+    $historical=$allowCurrentInactive && (int)($order['fileid']??0)===$planId;
+    $stmt=$db->prepare('SELECT p.*,c.type AS provider_type,i.active AS server_active,i.state AS server_state
+        FROM server_plans p JOIN server_info i ON i.id=p.server_id
+        JOIN server_config c ON c.id=p.server_id
+        WHERE p.id=? AND p.price>0'.($historical?'':' AND p.active=1').($lock?' FOR UPDATE':''));
+    $stmt->bind_param('i',$planId);$stmt->execute();$plan=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!$plan || (int)$plan['server_active']!==1 ||
+        !achbotSupportsAccount($plan['provider_type'], $plan['inbound_id']) ||
+        achbotWholeServiceUnits($plan['days'],achbotServiceDaysMax())===null ||
+        achbotWholeServiceUnits($plan['volume'],achbotServiceVolumeMax(),$allowUnlimitedVolume)===null ||
+        !achbotSupportsPlan($db,$planId,0,(int)$plan['server_id'],$lock,$historical) ||
+        !in_array((int)$plan['server_state'],[1,2],true))
+        return null;
+    $orderServer=(int)($order['server_id']??0);$planServer=(int)$plan['server_id'];
+    if ($orderServer!==$planServer &&
+        ($sameLogicalServer || !achbotSameProviderPanel($db,$orderServer,$planServer))) return null;
+    $stmt=$db->prepare('SELECT i.active,i.state,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=?'.($lock?' FOR UPDATE':''));
+    $stmt->bind_param('i',$orderServer);$stmt->execute();$server=$stmt->get_result()->fetch_assoc();$stmt->close();
+    if (!$server || (int)$server['active']!==1 ||
+        !achbotSupportsAccount($server['type'],$order['inbound_id']??null) ||
+        !in_array((int)$server['state'],[1,2],true)) return null;
+    return $plan;
+}
+function achbotPaidPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock=false,
+    bool $sameLogicalServer=true,bool $allowCurrentInactive=false,bool $allowUnlimitedVolume=false): ?array {
+    if ($planId<=0 || (int)($order['status']??0)!==1 ||
+        !achbotOrderMayUsePaidPlan($db,$order,$lock)) return null;
+    return achbotValidPlanForOrder($db,$order,$planId,$lock,$sameLogicalServer,$allowCurrentInactive,$allowUnlimitedVolume);
+}
+function achbotSelectedPaidPlan(\mysqli $db,array $order,bool $lock=false,bool $allowUnlimitedVolume=false): ?array {
+    return achbotPaidPlanForOrder($db,$order,(int)($order['fileid']??0),$lock,false,true,$allowUnlimitedVolume);
+}
+
+/** One operation-policy switch used by both presentation and new admission.
+ * Automatic renewal retains its distinct opt-in policy; a manual sale
+ * switch must not cancel a separately approved automatic renewal. */
+function achbotManagedServicePolicyAllows(string $kind,array $states,bool $automatic=false): bool {
+    if ($automatic) return $kind==='RENEW' && ($states['renewAutoState']??'off')==='on';
+    $flag=match($kind) {
+        'RENEW'=>'renewAccountState','ADD_TIME'=>'increaseTimeState','ADD_VOLUME'=>'increaseVolumeState',
+        default=>null
+    };
+    return $flag!==null && ($states['sellState']??'off')==='on' && ($states[$flag]??'off')==='on';
+}
+
+/** New managed commands use an eligible commercial subject and selected
+ * plan. Current locking state is supplied by the caller, never by a callback. */
+function achbotManagedServicePlan(mysqli $db,array $order,string $kind,array $states,bool $lock=false,bool $automatic=false): ?array {
+    if (!achbotManagedServicePolicyAllows($kind,$states,$automatic)) return null;
+    if ($lock) {
+        $owner=achbotProviderRow($db,'SELECT step FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? FOR UPDATE','i',[(int)$order['userid']]);
+        if (!$owner || $owner['step']==='banned') return null;
     }
+    return achbotSelectedPaidPlan($db,$order,$lock,$automatic);
 }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Source-real per-method/category dynamic eligibility and Telegram editor.
 
-Own disposable socket-only MariaDB, real PHP + original indexed 23-table schema,
+Own disposable socket-only MariaDB, real PHP + consolidated current schema,
 actual config.php writer and bot.php route extraction, no provider/Telegram calls.
 """
 from __future__ import annotations
@@ -10,8 +10,8 @@ import json
 import subprocess
 import time
 from pathlib import Path
-import test_access_state as owned
-import test_post_v9_checkout_serialization as dbops
+import database_fixture as owned
+from database_fixture import sql_command
 import test_post_v9_gateway_admin_source as gateway_source
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -29,7 +29,7 @@ $connection->set_charset('utf8mb4');
 $botState=$spec['snapshot']??[];
 require $argv[1].'/src/Finance/PaymentLifecycle.php';
 if (!empty($spec['history_boundary'])) {
-    $result=achbotGatewayRuleHistoryCount(
+    $result=achbotCustomerHistoryCount(
        $connection,(int)$spec['actor'],'buy',90,
        (string)$spec['direction'],false,(int)$spec['clock']);
     echo json_encode(['count'=>$result],JSON_THROW_ON_ERROR);
@@ -109,7 +109,7 @@ require $argv[6]; // extracted real bot.php callbacks, including wizard
 echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 
-def sql(w,e,q):return dbops.sql(w,e,q)
+def sql(w,e,q):return sql_command(w,e,q,DB).strip()
 def quoted(s):return "'" + s.replace("'", "''") + "'"
 
 def main():
@@ -119,7 +119,7 @@ def main():
     a=parser.parse_args()
     cases=[]
     now=int(time.time())
-    with owned.owned_database() as (w,e):
+    with owned.owned_database(ROOT/'database/current-schema.sql') as (w,e):
         initial={'walletState':'on','nowPaymentOther':'on','nowPaymentWallet':'on',
                  'zarinpal':'on','nextpay':'on','cartToCartState':'on',
                  'giftCardState':'on','manualUsdtState':'on','gatewayAudience':{}}
@@ -215,6 +215,50 @@ def main():
             return php(eva,{'snapshot':snapshot if snapshot is not None else s,
                 'method':method,'actor':who,'final':final,'subject':subject,
                 'isolation':isolation})['allowed']
+        # Preserve completed-service eligibility after the receipt/service
+        # split. These are shape-valid local history fixtures, not Native
+        # execution claims. Existing terminal unbound rows remain history.
+        sql(w,e,"INSERT INTO users(userid,name,username,refcode,wallet,date,is_agent) "
+            f"VALUES(1450,'Current history','history_fixture','0',0,'{now-200*86400}',0)")
+        sql(w,e,f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) "
+            f"VALUES('history-funding-only',1450,'BUY_SUB',0,{now-5*86400},'paid'),"
+            f"('history-complete',1450,'BUY_SUB',0,{now-5*86400},'paid_with_wallet')")
+        def operation(ref,kind,stage,command='checkout',order=0,age=5):
+            payload=quoted(json.dumps({'request':{'order_id':order,'server_id':2}},separators=(',',':')))
+            sql(w,e,"INSERT INTO service_operations(command_kind,command_ref,user_row_id,userid,kind,"
+                "quote_payload,quote_sha256,price_toman,stage,created_at,updated_at) "
+                f"SELECT '{command}','{ref}',id,userid,'{kind}',{payload},SHA2({payload},256),0,"
+                f"'{stage}',FROM_UNIXTIME({now-age*86400}),NOW(6) FROM users WHERE userid=1450")
+        for h,stage in [('history-funding-only','funded'),('history-complete','completed')]:
+            pay=int(sql(w,e,f"SELECT id FROM pays WHERE hash_id='{h}'"))
+            operation(str(pay),'BUY',stage)
+            sql(w,e,f"UPDATE pays SET checkout_operation_id=(SELECT id FROM service_operations WHERE "
+                f"command_kind='checkout' AND command_ref='{pay}') WHERE id={pay}")
+        operation('cycle-complete','RENEW','completed','automatic_renewal',order=99)
+        operation('cycle-funded','RENEW','funded','automatic_renewal',order=99)
+        operation('cycle-refusal','RENEW','cancelled','automatic_renewal_refusal',order=99)
+        for final in (False,True):
+            for metric in ('buy','renew'):
+                rule=blank('all');rule['metrics'][metric]['count']=1
+                assert allowed(policy('wallet',[rule]),who=1450,final=final)
+                rule['metrics'][metric]['count']=2
+                assert not allowed(policy('wallet',[rule]),who=1450,final=final)
+                rule['metrics'][metric]={'count':1,'days':3,'direction':'recent'}
+                assert not allowed(policy('wallet',[rule]),who=1450,final=final)
+                rule['metrics'][metric]['days']=10
+                assert allowed(policy('wallet',[rule]),who=1450,final=final)
+            for mode in ('buyers','non_buyers'):
+                assert allowed({**initial,'gatewayAudience':{'wallet':mode}},
+                    who=1450,final=final)==(mode=='buyers')
+        sql(w,e,"UPDATE service_operations SET stage='cancelled' WHERE command_ref="
+            "(SELECT CAST(id AS CHAR) FROM pays WHERE hash_id='history-complete') AND command_kind='checkout'")
+        for final in (False,True):
+            assert not allowed(policy('wallet',[blank('buyers')]),who=1450,final=final)
+            assert allowed({**initial,'gatewayAudience':{'wallet':'non_buyers'}},who=1450,final=final)
+        sql(w,e,"DELETE FROM pays WHERE user_id=1450")
+        sql(w,e,"DELETE FROM service_operations WHERE userid=1450")
+        sql(w,e,"DELETE FROM users WHERE userid=1450")
+        cases.append('current_service_history_funding_only_excluded_auto_renew_counted_once')
         # B1: all-history means local success, not request_date validity.
         for iso in ('READ-COMMITTED','REPEATABLE-READ'):
             for user,label in ((1400,'zero'),(1401,'future')):
@@ -272,9 +316,9 @@ def main():
             cases.append('new_category_'+category)
         sql(w,e,("INSERT INTO orders_list "
             "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
-            "protocol,expire_date,link,amount,status,date) "
+            "expire_date,link,amount,status,date) "
             "VALUES(1001,'synthetic','',7,2,0,'rules-active-order',"
-            "'rules-active-uuid','vless',2000000000,'[]',100,1,'synthetic')"))
+            "'rules-active-uuid',2000000000,'[]',100,1,'synthetic')"))
         assert allowed(policy('wallet',[blank('has_active_order')]))
         assert not allowed(policy('wallet',[blank('no_active_order')]))
         for shape,expiry,status,expected in [('unlimited',0,1,True),('disabled_unlimited',0,0,False),
@@ -362,10 +406,14 @@ def main():
         cases.append('or_valid_history_with_invalid_age_and_default_and_fail')
         sql(w,e,f"UPDATE users SET date='{now-140*86400}' WHERE userid=1001")
         s=policy('wallet',[blank('all')])
+        # The current schema prohibits duplicate IDs. Deliberately degrade
+        # only this isolated index for the corrupt-schema denial regression.
+        sql(w,e,"ALTER TABLE users DROP INDEX idx_users_userid_v1, ADD INDEX idx_users_userid_v1(userid)")
         sql(w,e,"INSERT INTO users(userid,name,username,refcode,wallet,date) "
             "VALUES (1001,'Duplicate','duplicate','0',0,'1700000000')")
         assert not allowed(s)
         sql(w,e,"DELETE FROM users WHERE username='duplicate'")
+        sql(w,e,"ALTER TABLE users DROP INDEX idx_users_userid_v1, ADD UNIQUE INDEX idx_users_userid_v1(userid)")
         cases.append('duplicate_customer_rejected')
         # Exact cutoff inclusive on both sides; +/- one second matters.
         for offset,older,recent in [(0,1,1),(-1,1,0),(1,0,1)]:

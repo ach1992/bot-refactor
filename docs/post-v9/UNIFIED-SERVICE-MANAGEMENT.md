@@ -1,5 +1,7 @@
 # Unified server, plan and service lifecycle — Owner request 2026-10-28
 
+**Wallet-first boundary:** The Wallet-first replacement ships PasarGuard only and requires the consolidated current schema. The shared service engine, current provider registration, [architecture](WALLET-FIRST-ARCHITECTURE.md) and [automatic renewal](AUTOMATIC-RENEWAL-SAFETY.md) supersede the older two-provider, optional-schema and payment-executor descriptions below. The older implementation sections record accepted product intent and historical evidence, not a compatibility or deployment contract.
+
 ## Accepted outcome
 The administrator operates Marzban and PasarGuard through the same familiar server list and step-by-step journeys. Implementation details must not create a separate connection hierarchy in the primary UI. Configuration/link display belongs to each server. Plan onboarding and editing offer only the actual provider's entitlement controls. Cancel/back recover in one action. Customer journeys remain provider-neutral. Expiry, quota warnings, automatic renewal and delayed deletion use one common policy over validated provider observations.
 

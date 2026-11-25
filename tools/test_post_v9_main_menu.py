@@ -22,6 +22,7 @@ set_error_handler(static function($level,$message) { throw new ErrorException($m
 $root=$argv[1];
 $spec=json_decode($argv[2],true,512,JSON_THROW_ON_ERROR);
 require_once $root.'/src/Presentation/Text.php';
+require_once $root.'/src/Purchase/AgentPricing.php';
 require_once $root.'/messages/loader.php';
 $buttonValues=achbotMessages('legacy_buttons');
 $adminSearchLabel=achbotMessage('admin_settings.config.get_main_keys.button.11b0188fcb');
@@ -63,7 +64,8 @@ class Statement {
 class DB {
     public function prepare($query):Statement {
         $sql=str_replace(chr(96),'',trim($query));
-        if (!preg_match("/\ASELECT\s+\*\s+FROM\s+setting\s+WHERE\s+type\s+LIKE\s+'%MAIN_BUTTONS%'\z/i",$sql))
+        if ($sql!=="SELECT * FROM setting WHERE BINARY LEFT(type,12)=BINARY 'MAIN_BUTTONS' AND CHAR_LENGTH(type)>12" &&
+            !preg_match("/\ASELECT\s+\*\s+FROM\s+setting\s+WHERE\s+type\s+LIKE\s+'%MAIN_BUTTONS%'\z/i",$sql))
             throw new RuntimeException('unexpected_custom_button_query');
         return new Statement();
     }
@@ -73,7 +75,11 @@ $source=file_get_contents($root.'/config.php');
 $start=strpos($source,'function getMainKeys(){');
 $end=strpos($source,'function getAgentKeys(){',$start);
 if ($start===false || $end===false) throw new RuntimeException('getMainKeys source missing');
-$current=substr($source,$start,$end-$start);
+$wrapper=substr($source,$start,$end-$start);
+$helper=file_get_contents($root.'/src/Presentation/MainMenu.php');
+$start=strpos($helper,'function achbotMainButtonNamespace(');
+if ($start===false) throw new RuntimeException('main menu context source missing');
+$current=substr($helper,$start);
 // Mutations affect only the current function; the accepted Git baseline stays unchanged.
 foreach ([
     'mutate_callback'=>["'callback_data'=>\"myInfo\"","'callback_data'=>\"myInfoBROKEN\""],
@@ -86,12 +92,23 @@ foreach ([
         throw new RuntimeException('mutation_target_missing:'.$probe);
     $current=str_replace($replacement[0],$replacement[1],$current);
 }
-eval($current);
+eval($current);eval($wrapper);
 $prior=base64_decode($argv[3],true);
 if ($prior===false) throw new RuntimeException('missing_prior_source');
 eval($prior);
 $rows=json_decode(getMainKeys(),true,512,JSON_THROW_ON_ERROR)['inline_keyboard'];
 $previous=json_decode(getMainKeysBaseline(),true,512,JSON_THROW_ON_ERROR)['inline_keyboard'];
+// Owner-approved delta: closed sales hides only ordinary purchase buttons
+// for secondary staff. Keep all unrelated rows and their exact labels.
+if (($botState['sellState']??'off')!=='on' && $from_id!==$admin && $userInfo['isAdmin']) {
+    $expected=[];
+    foreach ($previous as $row) {
+        $filtered=array_values(array_filter($row,static fn($button)=>
+            !in_array($button['callback_data']??'', ['buySubscription','agentOneBuy','agentMuchBuy'],true)));
+        if ($filtered || !$row) $expected[]=$filtered;
+    }
+    $previous=$expected;
+}
 // Compare complete Telegram keyboard structure, including empty rows.
 // Existing pinned visual checks separately inspect only the nonempty rows.
 if ($rows!==$previous)
@@ -122,6 +139,12 @@ def check(root: Path = ROOT) -> dict:
     end=prior_source.index('function getAgentKeys(){',start)
     prior_function=prior_source[start:end].replace(
         'function getMainKeys(){','function getMainKeysBaseline(){',1)
+    start=prior_function.index("        ((($botState['sharedExistence']")
+    end=prior_function.index("        // Keep the optional customer import",start)
+    prior_function=prior_function[:start]+"""        ((($botState['individualExistence'] ?? 'off') == "on")?
+            [['text'=>$buttonValues['individual_existence'],'callback_data'=>"availableServers2"]] : []
+        ),
+"""+prior_function[end:]
     prior_arg=base64.b64encode(prior_function.encode()).decode('ascii')
     with tempfile.TemporaryDirectory(prefix='achbot-main-menu-') as temp:
         driver=Path(temp)/'menu.php'
@@ -238,6 +261,9 @@ def check(root: Path = ROOT) -> dict:
             ('owner_agent',{'admin':True,'agent':True}),
             ('owner_custom_button',{'admin':True,'extra':True}),
             ('staff_sales_disabled',{'secondary_admin':True,'sales_off':True}),
+            ('staff_agent_sales_disabled',{'secondary_admin':True,'agent':True,'sales_off':True}),
+            ('owner_sales_disabled',{'admin':True,'sales_off':True}),
+            ('owner_agent_sales_disabled',{'admin':True,'agent':True,'sales_off':True}),
         ]:
             staff=execute(**options)
             srows=staff['rows']

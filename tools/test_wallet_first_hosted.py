@@ -1,0 +1,521 @@
+#!/usr/bin/env python3
+"""Real registered hosted issuance/verification -> common Wallet settlement.
+
+Exact source (except literal endpoint redirection in a disposable copy), real
+curl HTTP against an owned loopback peer, SOAP argument spy, socket MariaDB.
+No real merchant, Telegram or Native access. SOAP wire protocol itself is not
+emulated by the spy; exact WebGate arguments and response handling are tested.
+"""
+from __future__ import annotations
+
+import argparse
+from concurrent.futures import ThreadPoolExecutor
+from decimal import Decimal
+import hashlib
+import hmac
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+from pathlib import Path
+import shutil
+import subprocess
+import threading
+from urllib.parse import parse_qs
+
+import package_current as package
+import database_fixture as owned
+
+ROOT = Path(__file__).resolve().parents[1]
+DB = owned.NAMES[1]
+PHP = r'''<?php
+declare(strict_types=1);
+mysqli_report($argv[4]==='strict'?MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT:MYSQLI_REPORT_OFF);
+$telegramWebhookSecret='SyntheticHostedEvidenceSecret_2026';
+$GLOBALS['telegramWebhookSecret']=$telegramWebhookSecret;
+$GLOBALS['admin']=9001;$GLOBALS['botState']=[];
+$GLOBALS['loopback']=$argv[6];
+class SoapClient {
+    function __construct($wsdl,$opts){
+        if ($wsdl!=='https://www.zarinpal.com/pg/services/WebGate/wsdl' ||
+            ($opts['connection_timeout']??null)!==5) throw new RuntimeException('fixture_soap_contract');
+    }
+    function request($op,$args){
+        $ch=curl_init($GLOBALS['loopback'].'/soap/'.$op);
+        curl_setopt_array($ch,[CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>json_encode($args),
+            CURLOPT_RETURNTRANSFER=>true,CURLOPT_TIMEOUT=>10]);
+        $raw=curl_exec($ch);$code=curl_getinfo($ch,CURLINFO_HTTP_CODE);unset($ch);
+        if ($raw===false || $code!==200) throw new RuntimeException('fixture_soap_unavailable');
+        return (object)json_decode($raw,true,32,JSON_THROW_ON_ERROR);
+    }
+    function PaymentRequest($args){return $this->request('issue',$args);}
+    function PaymentVerification($args){return $this->request('verify',$args);}
+}
+$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$db->set_charset('utf8mb4');
+$c=json_decode($argv[5],true,512,JSON_THROW_ON_ERROR);
+$connection=$db;$botUrl='https://bot.fixture.invalid/';$botUsername='fixture_bot';
+$paymentKeys=['nextpay'=>'next-original','zarinpal'=>'zarin-original','nowpayment'=>'np-original','manualUsdtRateToman'=>100];
+$nowpaymentsIpnSecret='fixture-ipn';
+if (array_key_exists('settlement_policy',$c)) $nowpaymentsSettlementPolicy=$c['settlement_policy'];
+$botState=json_decode($db->query("SELECT value FROM setting WHERE type='BOT_STATES' LIMIT 1")->fetch_row()[0]??'{}',true);
+$botState['rewardChannel']='@fixture_report';
+if (isset($c['stale_state'])) $botState=array_replace($botState,$c['stale_state']);
+if (isset($c['stale_keys'])) $paymentKeys=array_replace($paymentKeys,$c['stale_keys']);
+function sendMessage(...$args){return (object)['ok'=>true,'result'=>(object)['message_id'=>572]];}
+if ($c['op']==='browser_issue') {
+    // The actual public script calls exit; capture its final status without
+    // following redirects to real providers. Only merchant endpoints in the
+    // disposable copy point to our owned loopback.
+    $_GET=[$c['flag']=>'', 'hash_id'=>$c['hash']];
+    ob_start();
+    register_shutdown_function(static function(){
+        $body=ob_get_clean();
+        echo json_encode(['ok'=>true,'result'=>['status'=>http_response_code()?:200,'body'=>strlen($body)]]);
+    });
+    require $argv[1].'/pay/checkout.php';
+    exit;
+}
+if ($c['op']==='browser_return') {
+    $_GET=$c['query'];
+    ob_start();
+    require $argv[1].'/src/Finance/GatewayReturn.php';
+    $body=ob_get_clean();
+    echo json_encode(['ok'=>true,'result'=>['status'=>http_response_code()?:200,'body'=>strlen($body)]]);
+    exit;
+}
+define('ACHBOT_NP_RECONCILE_ONLY',true);
+require $argv[1].'/src/Finance/HostedReceipt.php';
+require $argv[1].'/src/Finance/GatewayReturn.php';
+require_once $argv[1].'/src/Finance/GatewayReview.php';
+try {
+    $id=(int)($c['id']??0);$owner=(int)($c['owner']??1001);
+    if ($c['op']==='fund') $db->begin_transaction();
+    $r=match ($c['op']) {
+        'fund'=>achbotServiceFundLocked($db,$owner,(int)$c['service']),
+        'issue'=>achbotHostedReceiptIssue($db,$id,$owner,$c['method'],$c['service']??null,
+            $c['quote']??[], $c['keys']??['nextpay'=>'next-original','zarinpal'=>'zarin-original','nowpayment'=>'np-original'],
+            'https://bot.fixture.invalid/','Fixture description',$c['draft_states']??null,$c['ipn_secret']??'fixture-ipn'),
+        'verify'=>achbotHostedReceiptVerify($db,$id,$owner,$c['method'],$c['ref']),
+        'ipn'=>achbotHostedReceiptIngestIpn($db,$c['raw'],$c['sig']),
+        'maintain'=>achbotHostedReceiptMaintain($db,3),
+        'review'=>achbotGatewayReviewCommit($db,(int)($c['actor']??9001),(int)$c['attempt'],$c['decision'],9001),
+        'outcome'=>achbotCheckoutReceiptOutcome($db,$id),
+        default=>throw new RuntimeException('fixture_unknown_op')
+    };
+    if ($c['op']==='fund' && !$db->commit()) throw new RuntimeException('fixture_fund_commit');
+    if ($c['lost_ack']??false) exit(19);
+    echo json_encode(['ok'=>true,'result'=>$r],JSON_THROW_ON_ERROR);
+} catch(Throwable $e) {
+    $db->rollback();
+    echo json_encode(['ok'=>false,'reason'=>$e->getMessage()],JSON_THROW_ON_ERROR);
+}
+'''
+
+
+def main():
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--run-disposable',required=True,action='store_true')
+    parser.add_argument('--report',type=Path)
+    args=parser.parse_args()
+    checks=[]
+    with owned.owned_database(ROOT/'database/current-schema.sql') as (work,env):
+        cli=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+str(work/'mysql.sock'),'-uroot','--batch','--skip-column-names',DB]
+        def sql(q):
+            p=subprocess.run(cli,input=q,text=True,env=env,capture_output=True,timeout=20,check=True)
+            return p.stdout.strip()
+        sql("""INSERT INTO server_config(id,panel_url,type,username,password)
+            VALUES (2,'https://fixture.invalid','pasarguard','fixture','fixture');
+            INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES(2,'Fixture','100','fixture','',1,1);
+            UPDATE server_config SET provider_connection_id=2,provider_instance_key=REPEAT('a',32),provider_version='5.5.1',provider_enabled=1 WHERE id=2;
+            INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)
+            VALUES(7,1,2,0,'Fixture',30,2,100,'description',1,'fixture','[1,2]');""")
+        calls=[];responses={};errors=[];lock=threading.Lock()
+        class Handler(BaseHTTPRequestHandler):
+            def log_message(self,*a):pass
+            def dispatch(self):
+                try:
+                    wire=self.rfile.read(int(self.headers.get('Content-Length',0)))
+                    if self.path.startswith('/next/'):
+                        body={k:v[0] for k,v in parse_qs(wire.decode()).items()}
+                    else:body=json.loads(wire) if wire else {}
+                    with lock:
+                        calls.append((self.command,self.path,body,self.headers.get('X-Api-Key')))
+                        response=responses[self.path]
+                    # A second DB session can write the original rows during
+                    # HTTP. This is a real check for released SQL row locks.
+                    sql('SET innodb_lock_wait_timeout=1; UPDATE pays SET updated_at=NOW()')
+                    if callable(response):response=response()
+                    http,payload=response
+                    data=json.dumps(payload).encode()
+                    self.send_response(http);self.send_header('Content-Type','application/json')
+                    self.send_header('Content-Length',str(len(data)));self.end_headers();self.wfile.write(data)
+                except Exception as e:
+                    errors.append(repr(e));self.send_error(500)
+            do_POST=dispatch
+            do_GET=dispatch
+        server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+        thread=threading.Thread(target=server.serve_forever,daemon=True);thread.start()
+        base='http://127.0.0.1:'+str(server.server_port)
+        try:
+            source=work/'source';members=set(package.members())|{'src/Finance/WalletReports.php','src/Panel/PasarGuardServiceExecution.php','src/Finance/HostedMethods.php','src/Finance/HostedReceipt.php','src/Finance/ReceiptReports.php'}
+            for member in members:
+                target=source/member;target.parent.mkdir(parents=True,exist_ok=True);shutil.copyfile(ROOT/member,target)
+            for file,replacements in {
+                'src/Finance/HostedMethods.php':{
+                    'https://nextpay.org/nx/gateway/token':base+'/next/issue',
+                    'https://nextpay.org/nx/gateway/verify':base+'/next/verify',
+                    'https://api.nowpayments.io/v1/invoice':base+'/np/issue'},
+                'src/Finance/GatewayClient.php':{
+                    'https://api.nowpayments.io/v1/payment/':base+'/np/payment/'},
+            }.items():
+                p=source/file;s=p.read_text()
+                for before,after in replacements.items():
+                    assert s.count(before)==1,(file,before)
+                    s=s.replace(before,after)
+                p.write_text(s)
+            driver=work/'driver.php';driver.write_text(PHP)
+            def run(mode,op,**kw):
+                p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=curl',
+                    '-d','allow_url_fopen=0','-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
+                    str(driver),str(source),str(work/'mysql.sock'),DB,mode,json.dumps(dict(op=op,**kw)),base],
+                    env=env,capture_output=True,text=True,timeout=25)
+                if kw.get('lost_ack'):
+                    assert p.returncode==19 and not p.stdout,(p.returncode,p.stdout,p.stderr)
+                    return None
+                assert p.returncode==0,(p.returncode,p.stderr)
+                assert all(x.startswith('[AChBot] ') for x in p.stderr.splitlines()),p.stderr
+                return json.loads(p.stdout)
+            def result(mode,op,**kw):
+                r=run(mode,op,**kw);assert r['ok'],r
+                return r['result']
+            def seed(name,price=100,kind='INCREASE_WALLET'):
+                sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state,checkout_draft_context) VALUES ('{name}',1001,'{kind}',{price},UNIX_TIMESTAMP(),'pending',JSON_OBJECT('version',1))")
+                return int(sql(f"SELECT id FROM pays WHERE hash_id='{name}'"))
+            def snapshot():
+                return tuple(sql(q) for q in [
+                    'SELECT userid,wallet FROM users ORDER BY id',
+                    'SELECT source_kind,source_ref,delta_toman FROM wallet_entries ORDER BY id',
+                    'SELECT id,stage,COALESCE(wallet_credit_entry_id,0),COALESCE(wallet_funding_result,"") FROM payment_attempts ORDER BY id',
+                    'SELECT id,stage,COALESCE(debit_entry_id,0) FROM service_operations ORDER BY id'])
+            def bal():return int(sql('SELECT wallet FROM users WHERE userid=1001'))
+            def reject(mode,op,reason,**kw):
+                before=snapshot();start=len(calls)
+                r=run(mode,op,**kw)
+                assert r==dict(ok=False,reason=reason) and snapshot()==before and len(calls)==start,r
+            def verify(mode,pid,method,ref,**kw):
+                return result(mode,'verify',id=pid,method=method,ref=ref,**kw)
+            def issue(mode,pid,method,**kw):
+                return result(mode,'issue',id=pid,method=method,**kw)
+            def sign(payload,secret=b'fixture-ipn'):
+                raw=json.dumps(payload,separators=(',',':'),sort_keys=True)
+                return dict(raw=raw,sig=hmac.new(secret,raw.encode(),hashlib.sha512).hexdigest())
+            for mode in ('strict','off'):
+                def case(name):checks.append(mode+':'+name)
+                pid=seed(mode+'-next')
+                ref=mode+'-next-id'
+                responses['/next/issue']=(200,dict(code=-1,trans_id=ref))
+                b=bal();start=len(calls)
+                r=issue(mode,pid,'nextpay')
+                assert r==dict(status='issued',url='https://nextpay.org/nx/gateway/payment/'+ref),r
+                assert calls[-1][2]==dict(api_key='next-original',amount='100',order_id=str(pid),currency='IRT',
+                    callback_uri='https://bot.fixture.invalid/pay/back.php?nextpay&hash_id='+mode+'-next')
+                assert issue(mode,pid,'nextpay')==r and len(calls)==start+1 and bal()==b
+                assert sql(f"SELECT wallet_merchant_profile FROM payment_attempts WHERE pay_row_id={pid}").startswith('achpe1:')
+                assert 'next-original' not in sql(f"SELECT wallet_merchant_profile FROM payment_attempts WHERE pay_row_id={pid}")
+                case('nextpay_issue_once')
+                reject(mode,'verify','hosted_reference_mismatch',id=pid,method='nextpay',ref='wrong-ref')
+                reject(mode,'verify','payment_credit_owner_mismatch',id=pid,method='nextpay',ref=ref,owner=9002)
+                responses['/next/verify']=(503,dict(code=0))
+                assert verify(mode,pid,'nextpay',ref)['status']=='unavailable' and bal()==b
+                responses['/next/verify']=(200,dict(code=-1))
+                assert verify(mode,pid,'nextpay',ref)['status']=='pending' and bal()==b
+                case('outage_and_pending_not_credited')
+                responses['/next/verify']=(200,dict(code=0))
+                assert verify(mode,pid,'nextpay',ref)['status']=='credited'
+                assert calls[-1][2]==dict(api_key='next-original',amount='100',currency='IRT',trans_id=ref)
+                start=len(calls)
+                replay=verify(mode,pid,'nextpay',ref)
+                assert replay['credit']['replayed'] and len(calls)==start and bal()==b+100
+                assert sql(f"SELECT p.state,a.stage FROM pays p JOIN payment_attempts a ON p.id=a.pay_row_id WHERE p.id={pid}")=='paid\tdone'
+                assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin,service_channel'
+                case('nextpay_receipt_once')
+                pid=seed(mode+'-zarin');ref=mode+'-authority'
+                responses['/soap/issue']=(200,dict(Status=100,Authority=ref))
+                assert issue(mode,pid,'zarinpal')['status']=='issued'
+                assert calls[-1][2]==dict(MerchantID='zarin-original',Amount=100,Description='Fixture description',Email='',Mobile='',
+                    CallbackURL='https://bot.fixture.invalid/pay/back.php?zarinpal&hash_id='+mode+'-zarin')
+                b=bal();responses['/soap/verify']=(200,dict(Status='100.9'))
+                assert verify(mode,pid,'zarinpal',ref)['status']=='review' and bal()==b
+                # Provider verified, local commit fails; next exact verification
+                # returns documented already-verified status 101.
+                responses['/soap/verify']=(200,dict(Status=100,RefID=91234))
+                sql("CREATE TRIGGER fixture_credit_fail BEFORE UPDATE ON payment_attempts FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture'")
+                try:
+                    r=run(mode,'verify',id=pid,method='zarinpal',ref=ref);assert not r['ok'] and bal()==b,r
+                finally:sql('DROP TRIGGER fixture_credit_fail')
+                responses['/soap/verify']=(200,dict(Status=101,RefID=91234))
+                assert verify(mode,pid,'zarinpal',ref)['status']=='credited' and bal()==b+100
+                assert calls[-1][2]==dict(MerchantID='zarin-original',Authority=ref,Amount=100)
+                assert verify(mode,pid,'zarinpal',ref)['credit']['replayed'] and bal()==b+100
+                assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin,service_channel'
+                case('zarinpal_101_after_local_rollback')
+                pid=seed(mode+'-np');ref=mode+'-invoice';child=mode+'-child'
+                responses['/np/issue']=(200,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
+                b=bal()
+                assert issue(mode,pid,'nowpayments',quote={'usd':'2.05'})['status']=='issued'
+                assert calls[-1][2]['price_amount']==2.05 and calls[-1][2]['order_id']==mode+'-np' and calls[-1][3]=='np-original'
+                reject(mode,'verify','hosted_child_not_known',id=pid,method='nowpayments',ref=child)
+                payload=dict(payment_id=child,invoice_id=ref,order_id=mode+'-np',price_amount='2.05',price_currency='usd',payment_status='confirmed')
+                assert result(mode,'ipn',**sign(payload))==200
+                assert bal()==b
+                responses['/np/payment/'+child]=(200,dict(payload,payment_status='finished',invoice_id='wrong'))
+                assert verify(mode,pid,'nowpayments',child)['status']=='review' and bal()==b
+                responses['/np/payment/'+child]=(200,dict(payload,payment_status='finished',price_amount='2.04'))
+                assert verify(mode,pid,'nowpayments',child)['status']=='review' and bal()==b
+                responses['/np/payment/'+child]=(200,dict(payload,payment_status='finished'))
+                assert verify(mode,pid,'nowpayments',child)['status']=='credited' and bal()==b+100
+                assert calls[-1][3]=='np-original'
+                child2=child+'-second';payload2=dict(payload,payment_id=child2,payment_status='finished')
+                assert result(mode,'ipn',**sign(payload2))==200
+                responses['/np/payment/'+child2]=(200,payload2)
+                assert verify(mode,pid,'nowpayments',child2)['credit']['replayed'] and bal()==b+100
+                assert sql(f"SELECT COUNT(*) FROM payment_transactions t JOIN payment_attempts a ON a.id=t.attempt_id WHERE a.pay_row_id={pid}")=='2'
+                assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin,service_channel'
+                case('signed_child_verified_exact_quote_once')
+                pid=seed(mode+'-uncertain')
+                responses['/next/issue']=(503,dict(code=-1,trans_id='lost-reference'))
+                start=len(calls)
+                assert issue(mode,pid,'nextpay')['status']=='issuance_uncertain'
+                assert issue(mode,pid,'nextpay')['status']=='issuance_uncertain' and len(calls)==start+1
+                case('uncertain_creation_not_reissued')
+                # Actual new service funding handoff: create the immutable
+                # quote via the common source, then lose service availability
+                # while merchant creation or verification is in flight.
+                qdriver=work/'service.php';qdriver.write_text("""<?php
+require $argv[1].'/src/Services/Funding.php';
+$db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$db->begin_transaction();
+$q=['kind'=>'BUY','variant'=>'standard','price'=>100,'server_id'=>2,'plan_id'=>7,'order_id'=>0,'quantity'=>1,'days'=>30,'volume'=>2,'remark'=>'fixture-12345','uuid'=>'','naming_mode'=>'digits','explicit_name'=>false];
+$id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo $id;
+""")
+                oid=int(subprocess.check_output(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',str(qdriver),str(source),str(work/'mysql.sock'),DB,mode+'-service'],env=env,text=True))
+                pid=seed(mode+'-late',kind='BUY_SUB');ref=mode+'-late-id'
+                responses['/next/issue']=(200,dict(code=-1,trans_id=ref))
+                assert issue(mode,pid,'nextpay',service=oid)['status']=='issued'
+                sql("UPDATE server_info SET active=0 WHERE id=2")
+                responses['/next/verify']=(200,dict(code=0))
+                b=bal();r=verify(mode,pid,'nextpay',ref)
+                assert r['funding']=='request_invalidated' and bal()==b+100,r
+                assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='awaiting_funds'
+                assert verify(mode,pid,'nextpay',ref)['credit']['replayed']
+                assert bal()==b+100
+                sql("UPDATE server_info SET active=1 WHERE id=2")
+                case('actual_hosted_service_receipt_survives_disabled_panel')
+                oid=int(subprocess.check_output(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',str(qdriver),str(source),str(work/'mysql.sock'),DB,mode+'-rejected-service'],env=env,text=True))
+                pid=seed(mode+'-rejected',kind='BUY_SUB');ref=mode+'-rejected-id'
+                responses['/next/issue']=(200,dict(code=-1,trans_id=ref))
+                assert issue(mode,pid,'nextpay',service=oid)['status']=='issued'
+                responses['/next/verify']=(503,dict(code=0))
+                assert verify(mode,pid,'nextpay',ref)['status']=='unavailable'
+                aid=int(sql(f'SELECT id FROM payment_attempts WHERE pay_row_id={pid}'))
+                b=bal()
+                assert result(mode,'review',attempt=aid,decision='reject',actor=1001)['status']=='denied'
+                sql("INSERT INTO setting(type,value) VALUES ('ADMIN_NOTIFY_9002','off')")
+                r=result(mode,'review',attempt=aid,decision='reject',actor=9002)
+                assert r['status']=='rejected',r
+                assert result(mode,'review',attempt=aid,decision='reject')['status']=='stale'
+                assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
+                assert sql(f"SELECT GROUP_CONCAT(CONCAT(role,':',recipient) ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject'")=='customer:1001,report_actor:9002,service_admin:9001,service_channel:@fixture_report'
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject' AND state<>'acknowledged'")=='0'
+                sql("DELETE FROM setting WHERE type='ADMIN_NOTIFY_9002'")
+                case('hosted_rejection_actual_actor_owner_channel')
+                assert bal()==b
+                # A later unverified observation cannot reopen the declined receipt.
+                assert verify(mode,pid,'nextpay',ref)['status']=='unavailable'
+                assert sql(f'SELECT stage FROM payment_attempts WHERE id={aid}')=='done'
+                responses['/next/verify']=(200,dict(code=0))
+                r=verify(mode,pid,'nextpay',ref)
+                assert r['funding']=='request_invalidated' and bal()==b+100,r
+                assert result(mode,'outcome',id=pid)=='wallet_credited'
+                assert verify(mode,pid,'nextpay',ref)['credit']['replayed'] and bal()==b+100
+                assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
+                case('hosted_rejection_shared_outbox_late_verified_credit_no_service')
+
+                # A distinct issued receipt must not dispose an original
+                # service already funded independently by the common engine.
+                oid=int(subprocess.check_output(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',str(qdriver),str(source),str(work/'mysql.sock'),DB,mode+'-separately-funded-service'],env=env,text=True))
+                pid=seed(mode+'-separately-funded',kind='BUY_SUB');ref=mode+'-separately-funded-id'
+                responses['/next/issue']=(200,dict(code=-1,trans_id=ref))
+                assert issue(mode,pid,'nextpay',service=oid)['status']=='issued'
+                assert result(mode,'fund',service=oid)=='funded'
+                responses['/next/verify']=(503,dict(code=0))
+                assert verify(mode,pid,'nextpay',ref)['status']=='unavailable'
+                aid=int(sql(f'SELECT id FROM payment_attempts WHERE pay_row_id={pid}'))
+                service_before=sql(f'SELECT * FROM service_operations WHERE id={oid}')
+                b=bal()
+                assert result(mode,'review',attempt=aid,decision='reject')['status']=='rejected'
+                assert sql(f'SELECT * FROM service_operations WHERE id={oid}')==service_before and bal()==b
+                responses['/next/verify']=(200,dict(code=0))
+                assert verify(mode,pid,'nextpay',ref)['funding']=='request_invalidated'
+                assert result(mode,'outcome',id=pid)=='wallet_credited' and bal()==b+100
+                assert sql(f'SELECT * FROM service_operations WHERE id={oid}')==service_before
+                # A fabricated funding projection cannot report success.
+                sql(f"UPDATE payment_attempts SET wallet_funding_result='invalid_projection' WHERE id={aid}")
+                assert result(mode,'outcome',id=pid)=='unknown'
+                sql(f"UPDATE payment_attempts SET wallet_funding_result='request_invalidated' WHERE id={aid}")
+                case('hosted_rejection_preserves_independently_funded_service')
+
+                pid=seed(mode+'-lost-ack');ref=mode+'-ack-ref'
+                responses['/next/issue']=(200,dict(code=-1,trans_id=ref))
+                issue(mode,pid,'nextpay')
+                b=bal()
+                run(mode,'verify',id=pid,method='nextpay',ref=ref,lost_ack=True)
+                assert verify(mode,pid,'nextpay',ref)['credit']['replayed'] and bal()==b+100
+                case('actual_hosted_commit_ack_loss')
+                pid=seed(mode+'-race');ref=mode+'-race-ref'
+                responses['/next/issue']=(200,dict(code=-1,trans_id=ref))
+                issue(mode,pid,'nextpay');b=bal()
+                with ThreadPoolExecutor(4) as pool:
+                    rs=list(pool.map(lambda _:verify(mode,pid,'nextpay',ref),range(4)))
+                assert all(r['status']=='credited' for r in rs) and sum(not r['credit']['replayed'] for r in rs)==1 and bal()==b+100,rs
+                case('parallel_actual_hosted_verification')
+                # Production-style pinned method selection for a topup and
+                # lost invoice creation response recovered by original signed IPN.
+                sql("DELETE FROM setting WHERE type='BOT_STATES'; INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"nowPaymentWallet\":\"on\"}')")
+                sql("DELETE FROM setting WHERE type='PAYMENT_KEYS'; INSERT INTO setting(type,value) VALUES ('PAYMENT_KEYS','{\"nowpayment\":\"np-original\",\"manualUsdtRateToman\":100}')")
+                pid=seed(mode+'-signed-recovery',price=205)
+                ref=mode+'-recovered-invoice';child=mode+'-recovered-child'
+                responses['/np/issue']=(503,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
+                b=bal();start=len(calls)
+                r=issue(mode,pid,'nowpayments',quote={'usd':'2.05','local_price':100},draft_states={})
+                assert r['status']=='issuance_uncertain',r
+                assert issue(mode,pid,'nowpayments',quote={'local_price':100},draft_states={})['status']=='issuance_uncertain'
+                assert len(calls)==start+1
+                payload=dict(payment_id=child,invoice_id=ref,order_id=mode+'-signed-recovery',price_amount='2.05',price_currency='usd',payment_status='finished')
+                assert result(mode,'ipn',**sign(payload,b'changed-current-key'))==401
+                assert result(mode,'ipn',**sign(dict(payload,price_amount='2.04')))==422
+                assert result(mode,'ipn',**sign(payload))==200
+                assert result(mode,'ipn',**sign(payload))==200
+                assert bal()==b and len(calls)==start+1
+                assert sql(f"SELECT CONCAT(stage,':',provider_reference,':',IF(checkout_url IS NULL,'no-url','url')) FROM payment_attempts WHERE pay_row_id={pid}")=='review:'+ref+':no-url'
+                responses['/np/payment/'+child]=(200,payload)
+                # Isolate this due item from unrelated pending fixture rows.
+                sql("UPDATE payment_attempts SET last_checked_at=NOW()")
+                sql("UPDATE payment_transactions SET merchant_checked_at=NOW()")
+                sql(f"UPDATE payment_transactions SET merchant_checked_at=NULL WHERE payment_id='{child}'")
+                r=result(mode,'maintain')
+                assert r['completed']==1 and bal()==b+205 and calls[-1][3]=='np-original',r
+                assert sql(f"SELECT merchant_verified_at IS NOT NULL FROM payment_transactions WHERE payment_id='{child}'")=='1'
+                assert result(mode,'maintain')['completed']==0 and bal()==b+205
+                case('actual_admission_lost_creation_original_secret_ipn_recovery_and_poll_once')
+                # Source-real public checkout and browser return controllers.
+                sql("DELETE FROM setting WHERE type IN ('BOT_STATES','PAYMENT_KEYS'); INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"nowPaymentWallet\":\"on\",\"nextpay\":\"on\",\"zarinpal\":\"on\"}'),('PAYMENT_KEYS','{\"nextpay\":\"next-original\",\"zarinpal\":\"zarin-original\",\"nowpayment\":\"np-original\",\"manualUsdtRateToman\":100}')")
+                pid=seed(mode+'-old-browser')
+                sql(f"UPDATE pays SET checkout_draft_context=NULL WHERE id={pid}")
+                before=snapshot();start=len(calls)
+                for flag in ('nextpay','zarinpal','nowpayment'):
+                    assert result(mode,'browser_issue',flag=flag,hash=mode+'-old-browser')['status']!=302
+                assert snapshot()==before and len(calls)==start
+                assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
+                case('historical_browser_draft_never_issued')
+                for flag,method in [('nextpay','nextpay'),('zarinpal','zarinpal'),('nowpayment','nowpayments')]:
+                    name=mode+'-browser-'+flag;pid=seed(name,price=205)
+                    ref=mode+'-browser-'+flag+'-ref';child=ref+'-child';b=bal()
+                    if flag=='nextpay':
+                        responses['/next/issue']=(200,dict(code=-1,trans_id=ref))
+                        responses['/next/verify']=(200,dict(code=0))
+                        query=dict(nextpay='',trans_id=ref,hash_id=name)
+                    elif flag=='zarinpal':
+                        responses['/soap/issue']=(200,dict(Status=100,Authority=ref))
+                        responses['/soap/verify']=(200,dict(Status=100,RefID=123))
+                        query=dict(zarinpal='',Authority=ref,hash_id=name)
+                    else:
+                        responses['/np/issue']=(200,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
+                        query=dict(nowpayment='',NP_id=child,hash_id=name)
+                    start=len(calls)
+                    assert result(mode,'browser_issue',flag=flag,hash=name)['status']==302
+                    assert sql(f"SELECT provider FROM payment_attempts WHERE pay_row_id={pid}")==method
+                    assert result(mode,'browser_issue',flag=flag,hash=name)['status']==302
+                    assert len(calls)==start+1 and bal()==b
+                    # Invalid browser references cannot verify/credit another invoice.
+                    result(mode,'browser_return',query=dict(query,hash_id='wrong-'+name))
+                    assert len(calls)==start+1 and bal()==b
+                    result(mode,'browser_return',query=query)
+                    if flag=='nowpayment':
+                        assert len(calls)==start+1 and bal()==b
+                        payload=dict(payment_id=child,invoice_id=ref,order_id=name,price_amount='2.05',price_currency='usd',payment_status='confirmed')
+                        assert result(mode,'ipn',**sign(payload))==200
+                        responses['/np/payment/'+child]=(200,payload)
+                        assert verify(mode,pid,method,child)['status']!='credited' and bal()==b
+                        responses['/np/payment/'+child]=(200,dict(payload,payment_status='finished',order_id='wrong-order'))
+                        assert verify(mode,pid,method,child)['status']=='review' and bal()==b
+                        responses['/np/payment/'+child]=(200,dict(payload,payment_status='finished'))
+                        assert verify(mode,pid,method,child)['status']=='credited'
+                    assert bal()==b+205,(flag,b,bal())
+                    result(mode,'browser_return',query=query)
+                    assert bal()==b+205
+                    case('actual_public_'+flag+'_checkout_and_return')
+
+                # The actual browser route must use exactly the same local
+                # quote input and validation as method availability. Invalid
+                # explicit policy cannot issue a remote invoice or persist
+                # an attempt; valid policy remains pinned across reopen.
+                for i,policy in enumerate([None,{}, {'outcome_currency':['usdttrc20'],'minimum_outcome_per_usd':'0.8'},
+                        {'outcome_currency':'usdttrc20','minimum_outcome_per_usd':['0.8']},
+                        {'outcome_currency':'usdttrc20','minimum_outcome_per_usd':'0'}]):
+                    name=f'{mode}-browser-invalid-policy-{i}'
+                    pid=seed(name,price=205)
+                    before=snapshot();start=len(calls)
+                    r=result(mode,'browser_issue',flag='nowpayment',hash=name,settlement_policy=policy)
+                    assert r['status']!=302 and snapshot()==before and len(calls)==start,r
+                    assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
+                    assert sql(f"SELECT COALESCE(payid,'') FROM pays WHERE id={pid}")==''
+                name=mode+'-browser-strict-policy';pid=seed(name,price=205);ref=name+'-ref'
+                policy={'outcome_currency':'USDTTRC20','minimum_outcome_per_usd':'0.8'}
+                responses['/np/issue']=(200,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
+                start=len(calls);before=bal()
+                assert result(mode,'browser_issue',flag='nowpayment',hash=name,settlement_policy=policy)['status']==302
+                # 2.05 USD * 0.8 = 1.64; retain the original exact quote
+                # and settlement metadata, independent of later settings.
+                original=sql(f"SELECT quote_amount,settlement_currency,minimum_settlement_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}").split('\t')
+                assert Decimal(original[0])==Decimal('2.05') and original[1]=='usdttrc20' and Decimal(original[2])==Decimal('1.64'),original
+                assert len(original[3])==64 and len(calls)==start+1 and bal()==before
+                assert result(mode,'browser_issue',flag='nowpayment',hash=name,settlement_policy=None)['status']==302
+                assert sql(f"SELECT quote_amount,settlement_currency,minimum_settlement_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}").split('\t')==original
+                assert len(calls)==start+1 and bal()==before
+                case('actual_browser_nowpayments_local_policy_validation_and_original_reopen')
+                # HTTP entry and locked issuer must not disagree on method
+                # flags or merchant credentials due to cached request state.
+                name=mode+'-browser-current-config';pid=seed(name,price=205)
+                ref=name+'-ref';responses['/np/issue']=(200,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
+                start=len(calls);before=bal()
+                r=result(mode,'browser_issue',flag='nowpayment',hash=name,
+                    stale_state={'nowPaymentWallet':'off'},stale_keys={'nowpayment':'old','manualUsdtRateToman':1000})
+                assert r['status']==302 and len(calls)==start+1 and calls[-1][3]=='np-original',r
+                assert Decimal(sql(f"SELECT quote_amount FROM payment_attempts WHERE pay_row_id={pid}"))==Decimal('2.05')
+                # An existing pin can reopen without a current credential,
+                # but disabling its link remains independent of recovery.
+                sql("UPDATE setting SET value='{}' WHERE type='PAYMENT_KEYS'")
+                assert result(mode,'browser_issue',flag='nowpayment',hash=name)['status']==302
+                assert len(calls)==start+1 and bal()==before
+                sql("UPDATE setting SET value=JSON_SET(value,'$.nowPaymentWallet','off') WHERE type='BOT_STATES'")
+                assert result(mode,'browser_issue',flag='nowpayment',hash=name,stale_state={'nowPaymentWallet':'on'})['status']!=302
+                assert len(calls)==start+1
+                name=mode+'-browser-disabled-current';pid=seed(name,price=205)
+                assert result(mode,'browser_issue',flag='nowpayment',hash=name,stale_state={'nowPaymentWallet':'on'})['status']!=302
+                assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
+                sql("UPDATE setting SET value=JSON_SET(value,'$.nowPaymentWallet','on') WHERE type='BOT_STATES'")
+                assert result(mode,'browser_issue',flag='nowpayment',hash=name,
+                    stale_keys={'nowpayment':'np-original','manualUsdtRateToman':100})['status']!=302
+                assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
+                assert len(calls)==start+1 and bal()==before
+                case('actual_browser_current_config_not_request_snapshot_and_original_receipt')
+
+
+            assert not errors,errors
+        finally:server.shutdown();server.server_close();thread.join(timeout=5)
+    report=dict(complete=True,cases=len(checks),checks=checks,owned_loopback_requests=len(calls),
+        actual_curl=True,soap_argument_spy=True,owned_socket_mariadb=True,external_requests=0)
+    if args.report:args.report.write_text(json.dumps(report,indent=2)+'\n')
+    print(json.dumps(report))
+
+
+if __name__=='__main__':main()

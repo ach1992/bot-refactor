@@ -30,7 +30,7 @@ if($data=="ticketsList" and ($from_id == $admin || $userInfo['isAdmin'] == true)
     editText($message_id, \achbotMessage('support.categories.tickets_list.message.41905ef3f3'),$ticketSection);
 }
 if($data=='ticketsCategory' and ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'TICKETS_CATEGORY'");
+    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE BINARY `type` = BINARY 'TICKETS_CATEGORY'");
     $stmt->execute();
     $ticketCategory = $stmt->get_result();
     $stmt->close();
@@ -63,7 +63,7 @@ if ($userInfo['step']=="addTicketCategory" and ($from_id == $admin || $userInfo[
 	$stmt->close();
     setUser();
     sendMessage(\achbotMessage('legacy_messages.saved_successfuly'), null, 'HTML');
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'TICKETS_CATEGORY'");
+    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE BINARY `type` = BINARY 'TICKETS_CATEGORY'");
     $stmt->execute();
     $ticketCategory = $stmt->get_result();
     $stmt->close();
@@ -87,16 +87,13 @@ if ($userInfo['step']=="addTicketCategory" and ($from_id == $admin || $userInfo[
     $keys =  json_encode(['inline_keyboard'=>$keys]);
     sendMessage(\achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),$keys, 'HTML');
 }
-if(preg_match("/^delTicketCat_(\d+)/",$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("DELETE FROM `setting` WHERE `id` = ?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $stmt->close();
-    
+if(preg_match("/\AdelTicketCat_([1-9][0-9]*)\z/D",$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
+    if (!achbotDeleteContentSetting($connection,(int)$from_id,(int)$admin,(int)$match[1],'ticket')) return;
+
     alert(\achbotMessage('support.categories.add_ticket_category.alert.e1e7245408'));
         
 
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'TICKETS_CATEGORY'");
+    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE BINARY `type` = BINARY 'TICKETS_CATEGORY'");
     $stmt->execute();
     $ticketCategory = $stmt->get_result();
     $stmt->close();

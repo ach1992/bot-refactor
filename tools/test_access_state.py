@@ -26,8 +26,17 @@ INSERT INTO chats (id,user_id,create_date,title,category,state,rate) VALUES(7,10
 INSERT INTO chats_info (id,chat_id,sent_date,msg_type,text) VALUES (70,7,1700000000,'USER','Existing message');
 """
 
+def current_wallet_report_ddl():
+    # Partial route fixtures keep their historical negative-schema checks,
+    # then install the exact current report dependencies, not mock DDL.
+    import re
+    source=(ROOT/'database/current-schema.sql').read_text()
+    return "\n".join(re.search(r"CREATE TABLE `"+name+r"` \(.*?\n\) ENGINE=.*?;",source,re.S)[0]
+                      for name in ("service_operations","payment_followup_intents","payment_followup_attempts"))
+
+
 @contextlib.contextmanager
-def owned_database():
+def owned_database(schema_path=ROOT/'database/legacy-schema.sql'):
     for tool in ['mariadb-install-db','mariadbd','mariadb','php']:
         if not shutil.which(tool):raise RuntimeError('Missing existing prerequisite: '+tool)
     env={'PATH':os.environ.get('PATH','/usr/bin:/bin'),'LANG':'C.UTF-8','HOME':'/nonexistent'}
@@ -67,7 +76,7 @@ def owned_database():
                 else:raise RuntimeError('Owned fixture not ready')
                 for name in NAMES:
                     subprocess.run(client+['-e','CREATE DATABASE '+name+' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci'],env=env,check=True,capture_output=True,timeout=5)
-                    sql=(ROOT/'database/legacy-schema.sql').read_bytes()+SEED.encode()
+                    sql=schema_path.read_bytes()+SEED.encode()
                     # MariaDB DDL on a shared development VM may briefly be
                     # I/O-bound. A 10-second subprocess timeout incorrectly
                     # classified slow fixture initialization as product failure.

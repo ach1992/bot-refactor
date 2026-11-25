@@ -20,8 +20,8 @@ import tempfile
 import concurrent.futures
 from pathlib import Path
 
-import test_access_state as owned
-import test_v6_native as native
+import database_fixture as owned
+import database_fixture as native
 
 def fixture_gift_code(label):
     """Canonical issuer-shaped synthetic code; the fake /verify owns identity."""

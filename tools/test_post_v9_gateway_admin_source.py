@@ -12,9 +12,9 @@ import json
 import subprocess
 from pathlib import Path
 
-import test_access_state as owned
-import test_post_v9_checkout_serialization as dbops
-import test_v8_native as fixture
+import database_fixture as owned
+from database_fixture import sql_command
+import database_fixture as fixture
 
 ROOT = Path(__file__).resolve().parents[1]
 BASE = "502976c4419a865e7e7183c9874c469815d04c20"
@@ -85,7 +85,7 @@ def extraction(config: bytes, bot: bytes, webhook: bytes) -> tuple[bytes,bytes,b
     return b'<?php\n'+config[start:stop]+b'\n',b'<?php\n'+bot[a:b]+b'\n',b'<?php\n'+webhook[wa:wb]+b'\n'
 
 def sql(w,e,q):
-    return dbops.sql(w,e,q)
+    return sql_command(w,e,q,DB).strip()
 
 def reset(w,e,states: dict,role=1):
     raw=json.dumps(states,ensure_ascii=False,separators=(',',':')).replace("'","''")

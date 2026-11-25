@@ -36,20 +36,6 @@ function achbotManagementPgChoices(array $panel): array {
     if (!$out) throw new RuntimeException('management_targets');
     return $out;
 }
-function achbotManagementMarzbanCheck(array $v): void {
-    $ch=curl_init(rtrim($v['url'],'/').'/api/admin/token');
-    curl_setopt_array($ch,[CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>http_build_query([
-        'username'=>$v['username'],'password'=>$v['password']]),
-        CURLOPT_RETURNTRANSFER=>true,CURLOPT_FOLLOWLOCATION=>false,
-        CURLOPT_CONNECTTIMEOUT=>3,CURLOPT_TIMEOUT=>10,
-        CURLOPT_SSL_VERIFYPEER=>true,CURLOPT_SSL_VERIFYHOST=>2,
-        CURLOPT_PROTOCOLS=>CURLPROTO_HTTP|CURLPROTO_HTTPS,
-        CURLOPT_HTTPHEADER=>['Content-Type: application/x-www-form-urlencoded','Accept: application/json']]);
-    $raw=curl_exec($ch);$status=(int)curl_getinfo($ch,CURLINFO_HTTP_CODE);$errno=curl_errno($ch);curl_close($ch);
-    $r=is_string($raw)?json_decode($raw,true):null;
-    if ($errno!==0 || $status!==200 || !is_array($r) || !is_string($r['access_token']??null) ||
-        $r['access_token']==='') throw new RuntimeException('management_connection');
-}
 function achbotServerWizardPrepare(mysqli $db,array &$d): void {
     // Native PasarGuard Groups are configured only at plan level.
 }
@@ -69,7 +55,7 @@ function achbotManagementChoices(array $d,array $selected,string $action='pick')
 function achbotServerWizardView(mysqli $db,array $d): array {
     $v=$d['values'];$stage=$d['stage'];$keys=[];
     if ($stage==='provider') {
-        foreach (['marzban','pasarguard'] as $type) $keys[]=[[
+        foreach (['pasarguard'] as $type) $keys[]=[[
             'text'=>achbotManagementText($type),'callback_data'=>achbotManagementButton($d,'provider',$type)]];
     } elseif ($stage==='url' && $v['provider']==='pasarguard') {
         // Saved connections are an optional shortcut INSIDE add-server, not a separate catalog.
@@ -108,10 +94,11 @@ function achbotServerWizardView(mysqli $db,array $d): array {
 }
 function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $input): ?int {
     $v=&$d['values'];$stage=$d['stage'];
-    if ($stage==='provider' && $action==='provider' && in_array($input,['marzban','pasarguard'],true)) {
+    if ($stage==='provider' && $action==='provider' && in_array($input,['pasarguard'],true)) {
         $v=['provider'=>$input];$d['stage']='title';return null;
     }
-    if (in_array($stage,['title','remark','flag','url','username','password','api_key','capacity'],true)) {
+    if (($v['provider']??null)!=='pasarguard') throw new RuntimeException('management_input');
+    if (in_array($stage,['title','remark','flag','url','api_key','capacity'],true)) {
         if ($stage==='url' && $v['provider']==='pasarguard' && $action==='page') {
             $page=achbotManagementInteger($input,0);
             $count=count(achbotProviderConnections($db));$size=8;
@@ -127,10 +114,10 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
             $d['stage']='panelgroup';return null;
         }
         if ($action!=='text') throw new RuntimeException('management_input');
-        $input=$stage==='password'?$input:trim($input);
-        if ($stage==='capacity') $v['capacity']=achbotManagementInteger($input,1,100000000);
+        $input=trim($input);
+        if ($stage==='capacity') $v['capacity']=achbotManagementInteger($input);
         elseif ($stage==='url') {
-            $v['url']=achbotManagementUrl($input,$v['provider']==='pasarguard'?1000:254);unset($v['panel_id'],$v['api_key'],$v['password'],$v['username'],$v['panel_fingerprint'],$d['choices'],$d['page']);
+            $v['url']=achbotManagementUrl($input,1000);unset($v['panel_id'],$v['api_key'],$v['password'],$v['username'],$v['panel_fingerprint'],$d['choices'],$d['page']);
         } elseif ($stage==='remark') {
             if (preg_match('/^[a-zA-Z0-9_-]{1,60}$/D',$input)!==1) throw new RuntimeException('management_input');
             $v['remark']=$input;
@@ -141,15 +128,11 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
             $v[$stage]=$input;
         }
         $next=['title'=>'capacity','capacity'=>'remark','remark'=>'flag','flag'=>'url',
-            'url'=>$v['provider']==='pasarguard'?'api_key':'username','username'=>'password',
-            'password'=>'panelgroup','api_key'=>'panelgroup'];
-        if (in_array($stage,['password','api_key'],true)) {
-            if ($stage==='password') achbotManagementMarzbanCheck($v);
-            else {
-                $v['instance_key']=bin2hex(random_bytes(16));
-                $p=achbotServerWizardPanel($db,$v);
-                $v['panel_fingerprint']=hash('sha256',json_encode($p,JSON_THROW_ON_ERROR));
-            }
+            'url'=>'api_key','api_key'=>'panelgroup'];
+        if ($stage==='api_key') {
+            $v['instance_key']=bin2hex(random_bytes(16));
+            $p=achbotServerWizardPanel($db,$v);
+            $v['panel_fingerprint']=hash('sha256',json_encode($p,JSON_THROW_ON_ERROR));
         }
         if ($stage==='flag' && !empty($v['panel_id'])) {
             $p=achbotServerWizardPanel($db,$v);
@@ -181,8 +164,7 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
             if ($locked['instance_key']!==$p['instance_key'] || $locked['api_key']!==$p['api_key'] ||
                 $locked['api_url']!==$p['api_url']) throw new RuntimeException('management_connection');
         }
-    } elseif ($provider==='marzban') achbotManagementMarzbanCheck($v);
-    else throw new RuntimeException('management_input');
+    } else throw new RuntimeException('management_input');
     // Both providers use the same logical server row; native access stays on plans.
     $s=achbotManagementSql($db,'INSERT INTO server_info(title,ucount,remark,flag,active) VALUES(?,?,?,?,1)',
         'siss',[$v['title'],$v['capacity'],$v['remark'],$v['flag']]);
@@ -190,13 +172,10 @@ function achbotServerWizardAdvance(mysqli $db,array &$d,string $action,string $i
     if ($provider==='pasarguard') {
         // Each logical server owns its connection; reused aliases keep the same stable instance.
         $pid=$pid??$id;
-        $s=achbotManagementSql($db,"INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type,
+        $s=achbotManagementSql($db,"INSERT INTO server_config(id,panel_url,username,password,type,
             provider_connection_id,provider_instance_key,provider_version,provider_enabled)
-            VALUES(?,?,'','','none','','','none','','',?,'pasarguard',?,?,?,1)",
+            VALUES(?,?,'',?,'pasarguard',?,?,?,1)",
             'ississ',[$id,$v['url'],$p['api_key'],$pid,$p['instance_key'],$check['version']]);$s->close();
-    } else {
-        $s=achbotManagementSql($db,"INSERT INTO server_config(id,panel_url,ip,sni,header_type,request_header,response_header,security,tlsSettings,username,password,type)
-            VALUES(?,?,'','','none','','','none','',?,?,?)",'issss',[$id,$v['url'],$v['username']??'',$v['password']??'',$provider]);$s->close();
     }
     achbotSetPanelGroup($db,$id,(int)$v['panel_group_id']);
     return $id;

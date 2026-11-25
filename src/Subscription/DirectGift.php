@@ -331,7 +331,7 @@ function achbotDirectGiftAdvance(mysqli $db,array $source,int $primary,
                 $source['update_id']<=$payload['last_update_id'] ||
                 $source['message_id']<=$payload['last_message_id'])
                 throw new RuntimeException('direct_gift_old_update');
-            $days=achbotDirectGiftInt($text,0,36500);
+            $days=achbotDirectGiftInt($text,0,achbotServiceDaysMax());
             if ($days===null) throw new InvalidArgumentException('direct_gift_days_invalid');
             $payload['last_update_id']=$source['update_id'];
             $payload['last_message_id']=$source['message_id'];
@@ -452,7 +452,7 @@ function achbotDirectGiftClaim(mysqli $db,array $source,int $primary,
     if (!preg_match('/\AachbotDirectGiftVolume:([A-Za-z0-9_-]+):([0-9]+)\z/D',$step,$m))
         throw new RuntimeException('direct_gift_claim_step_invalid');
     $payload=achbotDirectGiftDecode($m[1]);
-    $days=achbotDirectGiftInt($m[2],0,36500);
+    $days=achbotDirectGiftInt($m[2],0,achbotServiceDaysMax());
     $volume=achbotDirectGiftInt($text,0,2147483647);
     if ($days===null || $volume===null || ($days===0 && $volume===0) ||
         ($volume>0 && $volume%1024!==0))
@@ -464,6 +464,8 @@ function achbotDirectGiftClaim(mysqli $db,array $source,int $primary,
     $expected=$payload['order'];
     if (!is_int($expected['id']??null) || $expected['id']<=0)
         throw new RuntimeException('direct_gift_order_missing');
+    require_once __DIR__.'/../Finance/OperationalReports.php';
+    achbotOperationalReportRequireReady($db);
     achbotDirectGiftEngines($db);
     $actorPks=achbotDirectGiftActorPks($db,$source['actor_id'],$primary);
     if (!$db->begin_transaction()) throw new RuntimeException('direct_gift_begin_failed');
@@ -532,7 +534,6 @@ function achbotDirectGiftClaim(mysqli $db,array $source,int $primary,
         }
         $referenceProof=achbotGiftReferenceProof($references);
         $referenceProof['native_identity_sha256']=achbotGiftIdentityHash($db,$references);
-        $target=achbotGiftPinNativeIdentity($db,$references,$target);
         $publicTarget=achbotGiftPublicTarget($target);
         $record=[
             'version'=>1,'kind'=>'achbot_direct_gift_v1','state'=>'pending',
@@ -659,6 +660,8 @@ function achbotDirectGiftComplete(mysqli $db,array $claim,object $result): void 
         $marker['state']='completed';
         achbotDirectGiftWrite($db,$claim['type'],$record,$claim['id']);
         achbotDirectGiftWrite($db,$claim['marker_type'],$marker,$markerId);
+        achbotGiftStageReportLocked($db,'direct:'.$claim['id'],$order['remark'],$claim['days'],
+            $claim['volume_mb'],$claim['references'],(int)$record['actor_id']);
         if (!$db->commit()) throw new RuntimeException('direct_gift_finish_commit_unknown');
     } catch (Throwable $e) {
         try {$db->rollback();} catch (Throwable $ignored) {}

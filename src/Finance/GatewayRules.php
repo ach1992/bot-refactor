@@ -1,13 +1,15 @@
 <?php
 /**
  * AChBot per-gateway eligibility rules. No DDL or external provider effects.
- * Only terminal local pays states count. pays.request_date is REQUEST time.
+ * Count original confirmed credits and completed services, never a funding-only
+ * receipt as a completed purchase. Dates remain original request times.
  */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+require_once __DIR__.'/ServiceHistory.php';
 
 function achbotGatewayRuleCategories(): array {
     return array_diff_key(achbotPayUxAudienceModes(),['off'=>true]);
@@ -91,46 +93,6 @@ function achbotGatewayRuleExemptUsersDecode($raw): ?array {
     }
     return $raw;
 }
-/** Return a precise per-user count, never a guessed success count. */
-function achbotGatewayRuleHistoryCount(mysqli $db,int $userId,string $metric,
-                                       int $days,string $direction,
-                                       bool $final,int $now): ?int {
-    $predicates=[
-        'buy'=>"type='BUY_SUB'",
-        'renew'=>"type IN ('RENEW_ACCOUNT','RENEW_SCONFIG')",
-        'volume'=>"type LIKE 'INCREASE!_VOLUME!_%' ESCAPE '!'",
-        'time'=>"type LIKE 'INCREASE!_DAY!_%' ESCAPE '!'",
-        'topup'=>"type='INCREASE_WALLET'"
-    ];
-    if (!isset($predicates[$metric]) || $userId<=0) return null;
-    // An all-history count is a property of confirmed transactions, NOT
-    // their legacy request timestamps. Only a positive-day window depends
-    // on request_date. This also preserves buyers/non_buyers classification.
-    $timeSql='';
-    if ($days>0) {
-        $boundary=$now-$days*86400;
-        $timeSql=' AND request_date>0 AND request_date<=? AND request_date'.
-            ($direction==='recent'?'>=?':'<=?');
-    }
-    $sql="SELECT COUNT(*) AS n FROM pays".
-        ($final?" FORCE INDEX (idx_pays_user_v1)":"").
-        " WHERE user_id=? AND state IN ('paid','approved',
-        'auto_cart_approved','paid_with_wallet') AND ".$predicates[$metric].
-        $timeSql.($final?' FOR UPDATE':'');
-    $stmt=$db->prepare($sql);
-    if (!$stmt) throw new RuntimeException('rule_history_prepare');
-    if ($days>0) {
-        $stmt->bind_param('iii',$userId,$now,$boundary);
-    } else $stmt->bind_param('i',$userId);
-    if (!$stmt->execute()) throw new RuntimeException('rule_history_read');
-    $record=$stmt->get_result()->fetch_assoc();$stmt->close();
-    $value=$record['n']??null;
-    if (!is_int($value) && (!is_string($value) || !preg_match('/\A[0-9]+\z/D',$value)))
-        return null;
-    $parsed=filter_var((string)$value,FILTER_VALIDATE_INT,
-        ['options'=>['min_range'=>0]]);
-    return $parsed===false?null:$parsed;
-}
 function achbotGatewayRuleMatchesUser(mysqli $db,int $userId,array $rule,
                                       array $user,bool $final,int $now): bool {
     $category=$rule['category'];
@@ -161,14 +123,14 @@ function achbotGatewayRuleMatchesUser(mysqli $db,int $userId,array $rule,
         if ($has!==($category==='has_active_order')) return false;
     }
     if ($category==='buyers' || $category==='non_buyers') {
-        $purchased=achbotGatewayRuleHistoryCount(
+        $purchased=achbotCustomerHistoryCount(
             $db,$userId,'buy',0,'older',$final,$now);
         if ($purchased===null ||
             ($purchased>0)!==($category==='buyers')) return false;
     }
     foreach ($rule['metrics'] as $key=>$value) {
         if ($value['count']===0 && $value['days']===0) continue;
-        $found=achbotGatewayRuleHistoryCount($db,$userId,$key,
+        $found=achbotCustomerHistoryCount($db,$userId,$key,
             $value['days'],$value['direction'],$final,$now);
         $required=$value['count']===0?1:$value['count'];
         // An unknown current transaction count cannot be bypassed through OR.

@@ -3,124 +3,40 @@
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 
 /** Stable process lock name shared by transfer and plan selection. */
-function achbotPhysicalLockName(mysqli $db,array $order): string {
+function achbotPhysicalLockName(mysqli $db,array $order,bool $lock=false): string {
     $server=(int)$order['server_id'];
     $type=achbotProviderType($db,$server);
     if ($type==='pasarguard') {
         // Direct admin transfer entrypoints load the shared provider runtime
         // without opening PG storage until needed. Resolve it lazily here.
         achbotPgLoad();
-        $account=achbotProviderAccountByOrder($db,(int)$order['id']);
+        $account=achbotProviderAccountByOrder($db,(int)$order['id'],$lock);
         if (!$account) throw new RuntimeException('physical_account_unverified');
         return 'achbot-plan-'.substr(hash('sha256','pg:'.$account['id']),0,40);
     }
-    if ($type==='marzban') {
-        $group=achbotPanelGroup($db,$server);
-        $s=$db->prepare("SELECT panel_url FROM server_config WHERE id=? AND type='marzban'");
-        $s->bind_param('i',$server);$s->execute();$config=$s->get_result()->fetch_assoc();$s->close();
-        if (!$config) throw new RuntimeException('physical_panel_unavailable');
-        // An ungrouped subscription is anchored to its immutable logical
-        // server ID. A URL is an editable connection, never a durable lock ID.
-        $scope=$group===null?'server:'.$server:'group:'.$group['id'];
-        return 'achbot-edit-'.substr(hash('sha256',$scope."\n".$order['remark']),0,40);
-    }
     throw new RuntimeException('physical_provider_unsupported');
 }
-/**
- * An administrator may not silently rebind an active physical identity or
- * strand an unfinished plan journal. This runs inside the administrator's
- * existing transaction after locking the target configuration.
- *
- * The table may be absent on an older installation before source-only 017;
- * an installed but malformed journal is not treated as absent.
- */
-function achbotPhysicalAssertRebindSafe(mysqli $db,int $serverId,
-    bool $wholeGroup=false,bool $denyActive=true): void {
-    $s=$db->prepare('SELECT i.panel_group_id,c.type FROM server_info i
-        JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE');
-    $s->bind_param('i',$serverId);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
-    if (!$row || !in_array($row['type'],['marzban','pasarguard'],true))
-        throw new RuntimeException('physical_rebind_target_missing');
-    $ids=[$serverId];
-    if ($wholeGroup && $row['panel_group_id']!==null) {
-        $gid=(int)$row['panel_group_id'];$provider=(string)$row['type'];
-        $s=$db->prepare('SELECT i.id FROM server_info i JOIN server_config c ON c.id=i.id
-            WHERE i.panel_group_id=? AND c.type=? ORDER BY i.id');
-        $s->bind_param('is',$gid,$provider);$s->execute();
-        foreach ($s->get_result()->fetch_all(MYSQLI_ASSOC) as $peer) $ids[]=(int)$peer['id'];
-        $s->close();
-    }
-    $ids=array_values(array_unique($ids));
-    $list=implode(',',$ids); // IDs are validated integers from our own tables.
-    if ($denyActive) {
-        $r=$db->query("SELECT id FROM orders_list WHERE status=1 AND server_id IN ($list)
-            ORDER BY id LIMIT 1 FOR UPDATE");
-        if (!$r || $r->num_rows>0) throw new RuntimeException('physical_rebind_active_references');
-        $r->free();
-    }
-    $r=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
-        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_plan_changes'");
-    if (!($r instanceof mysqli_result)) throw new RuntimeException('physical_rebind_journal_unavailable');
-    $shape=$r->fetch_assoc();$count=$r->num_rows;$r->free();
-    if ($shape===null) return; // 017 not yet installed; no plan journal could have been created.
-    if ($count!==1 || $shape['TABLE_TYPE']!=='BASE TABLE' ||
-        strcasecmp((string)$shape['ENGINE'],'InnoDB')!==0)
-        throw new RuntimeException('physical_rebind_journal_unavailable');
-    $r=$db->query("SELECT server_id,intent_json FROM service_plan_changes
-        WHERE state<>'committed' ORDER BY id FOR UPDATE");
-    if (!($r instanceof mysqli_result)) throw new RuntimeException('physical_rebind_journal_unavailable');
-    while ($pending=$r->fetch_assoc()) {
-        if (in_array((int)$pending['server_id'],$ids,true)) {
-            $r->free();throw new RuntimeException('physical_rebind_pending_journal');
-        }
-        try {$intent=json_decode((string)$pending['intent_json'],true,64,JSON_THROW_ON_ERROR);}
-        catch (Throwable $ignored) {$r->free();throw new RuntimeException('physical_rebind_journal_unavailable');}
-        if (!is_array($intent) || !is_array($intent['old_rows']??null)) {
-            $r->free();throw new RuntimeException('physical_rebind_journal_unavailable');
-        }
-        foreach ($intent['old_rows'] as $peer)
-            if (is_array($peer) && in_array((int)($peer['server_id']??0),$ids,true)) {
-                $r->free();throw new RuntimeException('physical_rebind_pending_journal');
-            }
-    }
-    $r->free();
-}
-
 /** Exact connected target evidence, persisted as a digest rather than secrets. */
-function achbotPhysicalTargetFingerprint(mysqli $db,array $order,bool $legacyVersion=false): string {
+function achbotPhysicalTargetFingerprint(mysqli $db,array $order): string {
     $server=(int)$order['server_id'];
-    // Marzban stays usable on its own post-V9 schema: optional PasarGuard
-    // provider_identity columns are NOT a prerequisite for this target pin.
-    $s=$db->prepare('SELECT c.id,c.type,c.panel_url,c.username,c.password,
+    $s=$db->prepare('SELECT c.id,c.type,c.panel_url,
         i.panel_group_id FROM server_config c JOIN server_info i ON i.id=c.id
         WHERE c.id=? FOR UPDATE');
     $s->bind_param('i',$server);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
-    if (!$row || !in_array($row['type'],['marzban','pasarguard'],true))
+    if (!$row || !in_array($row['type'],['pasarguard'],true))
         throw new RuntimeException('physical_target_unavailable');
     $pin=[$row,(int)$order['id'],(string)$order['remark']];
     if ($row['type']==='pasarguard') {
         $p=achbotPgServerPanel($db,$server);
-        // New physical pins never include informational provider version metadata.
-        // The original version-bearing digest remains available ONLY for old
-        // immutable plan intents recorded before physical_target_format=2.
+        // Physical pins never include informational provider version metadata.
         $target=[(int)$p['id'],$p['instance_key'],$p['api_url']];
-        if ($legacyVersion) $target[]=$p['version'];
-        $target[]=hash('sha256',$p['api_key']);
         $pin[]=$target;
     }
     return hash('sha256',json_encode($pin,JSON_THROW_ON_ERROR));
 }
-/** An absent format means an original v1 journal, whose exact version-bearing
- * hash must remain pinned. A future/unknown format is never guessed. */
+/** Only current plan intents are executable. */
 function achbotPhysicalTargetForIntent(mysqli $db,array $order,array $intent): string {
-    $provider=$intent['provider']??null;
-    $hasFormat=array_key_exists('physical_target_format',$intent);
-    if ($provider==='pasarguard') {
-        if ($hasFormat && $intent['physical_target_format']!==2)
-            throw new RuntimeException('physical_target_format_unverified');
-        return achbotPhysicalTargetFingerprint($db,$order,!$hasFormat);
-    }
-    if ($provider!=='marzban' || $hasFormat)
+    if (($intent['provider']??null)!=='pasarguard' || ($intent['physical_target_format']??null)!==2)
         throw new RuntimeException('physical_target_format_unverified');
     return achbotPhysicalTargetFingerprint($db,$order);
 }
@@ -131,30 +47,20 @@ function achbotPhysicalPgIdentityFingerprint(array $ctx): string {
     ],JSON_THROW_ON_ERROR));
 }
 /**
- * Import is an account attachment, not a native mutation. On installations
- * with the source-only plan journal, serialize admission under the SAME
+ * Import is an account attachment, not a native mutation.
+ * Serialize admission under the SAME
  * physical single-flight lock. An already-linked PG account is identified by
  * its persisted provider reference, never by guessed URL/credentials.
- * Return null on older installations without migration 017.
  */
 function achbotPhysicalImportLease(mysqli $db,int $serverId,object $remote): ?string {
     $q=$db->query("SELECT TABLE_TYPE,ENGINE FROM information_schema.TABLES
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_plan_changes'");
     if (!($q instanceof mysqli_result)) throw new RuntimeException('physical_import_journal_unavailable');
     $table=$q->fetch_assoc();$count=$q->num_rows;$q->free();
-    if ($table===null) return null;
-    if ($count!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
+    if ($table===null || $count!==1 || $table['TABLE_TYPE']!=='BASE TABLE' ||
         strcasecmp((string)$table['ENGINE'],'InnoDB')!==0)
         throw new RuntimeException('physical_import_journal_unavailable');
     $type=achbotProviderType($db,$serverId);
-    if ($type==='marzban') {
-        $username=$remote->username??null;
-        if (!is_string($username) || $username==='')
-            throw new RuntimeException('physical_import_identity_unverified');
-        $group=achbotPanelGroup($db,$serverId);
-        $scope=$group===null?'server:'.$serverId:'group:'.$group['id'];
-        return 'achbot-edit-'.substr(hash('sha256',$scope."\n".$username),0,40);
-    }
     if ($type==='pasarguard') {
         achbotPgLoad();
         $panel=achbotPgServerPanel($db,$serverId);
@@ -184,18 +90,10 @@ function achbotPhysicalAssertImportAdmission(mysqli $db,?string $lease,
     }
     if (achbotPhysicalImportLease($db,$serverId,$remote)!==$lease)
         throw new RuntimeException('physical_import_scope_changed');
-    $s=$db->prepare("SELECT id FROM service_plan_changes
-        WHERE lock_key=? AND state<>'committed' LIMIT 1 FOR UPDATE");
-    $s->bind_param('s',$lease);$s->execute();
-    $pending=$s->get_result()->num_rows>0;$s->close();
-    if ($pending) throw new RuntimeException('physical_import_plan_requires_review');
-    if (achbotProviderType($db,$serverId)==='marzban') {
-        $username=$remote->username??null;
-        if (!is_string($username) || $username==='')
-            throw new RuntimeException('physical_import_identity_unverified');
-        achbotPhysicalAssertMarzbanGroupJournalClear($db,$serverId,$username,
-            [],'physical_import_plan_requires_review');
-    }
+    require_once __DIR__.'/../Services/Ownership.php';
+    achbotServiceRetirePreparedPlansLocked($db,$lease);
+    if (achbotServicePlanChangePendingLocked($db,$lease))
+        throw new RuntimeException('physical_import_plan_requires_review');
 }
 /**
  * Import admission is per customer and proven physical account, not per
@@ -232,16 +130,6 @@ function achbotPhysicalImportAlreadyAttached(mysqli $db,int $serverId,
                 throw new RuntimeException('physical_import_active_identity_ambiguous');
             if ((int)$account['remote_user_id']!==$identity['remote_user_id'] ||
                 $account['remote_created_at']!==$identity['remote_created_at'])
-                throw new RuntimeException('physical_import_active_incarnation_conflict');
-        } elseif ($type==='marzban') {
-            // Origin is immutable even after a logical-server transfer.
-            // Purchased orders may have no imported origin; their declared
-            // panel scope + exact username still identifies the active peer.
-            require_once __DIR__.'/../Purchase/OrderWrites.php';
-            $origin=achbotOrderImportOrigin($db,$order,true);
-            if ($origin!==null && ($origin['provider']!=='marzban' ||
-                ($origin['native_identity']['remote_created_at']??null)!==
-                    $identity['remote_created_at']))
                 throw new RuntimeException('physical_import_active_incarnation_conflict');
         } else throw new RuntimeException('physical_import_provider_unavailable');
         return true;
@@ -290,23 +178,6 @@ function achbotPhysicalActiveOrders(mysqli $db,array $selected,bool $lock=false,
         $effect=(int)$anchor['effect_id'];
         $s=$db->prepare('SELECT * FROM orders_list WHERE provider_effect_id=? AND status=1 ORDER BY id'.($lock?' FOR UPDATE':''));
         $s->bind_param('i',$effect);
-    } elseif ($type==='marzban') {
-        $group=achbotPanelGroup($db,$server);
-        if ($group!==null) {
-            $gid=(int)$group['id'];
-            $s=$db->prepare("SELECT o.* FROM orders_list o
-                JOIN server_info i ON i.id=o.server_id
-                JOIN server_config c ON c.id=o.server_id AND c.type='marzban'
-                WHERE o.status=1 AND i.panel_group_id=?
-                  AND BINARY o.remark=BINARY ? ORDER BY o.id".($lock?' FOR UPDATE':''));
-            $s->bind_param('is',$gid,$remark);
-        } else {
-            $s=$db->prepare("SELECT o.* FROM orders_list o
-                JOIN server_config c ON c.id=o.server_id AND c.type='marzban'
-                WHERE o.status=1 AND o.server_id=?
-                  AND BINARY o.remark=BINARY ? ORDER BY o.id".($lock?' FOR UPDATE':''));
-            $s->bind_param('is',$server,$remark);
-        }
     } else throw new RuntimeException('physical_provider_unsupported');
     $s->execute();$rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
     $contains=false;
@@ -359,141 +230,14 @@ function achbotPhysicalPlanResult(bool $ok,string $reason='',int $count=0): arra
     return ['success'=>$ok,'reason'=>$reason,'shared_count'=>$count];
 }
 
-/**
- * Retire only unclaimed, service-bound quotes inside an already-open
- * administrator/customer plan-change or transfer transaction.
- *
- * Durable pays/003 identity and original signed/provider/manual evidence are
- * never deleted, rewritten or marked paid/refunded. All old callbacks must
- * fail their normal state CAS after the same transaction changes the service
- * (transfer) or commits its nonreplayable Native intent (plan selection).
- * An in-flight claim/native effect is NOT an old quote: it keeps the hold.
- */
-function achbotPhysicalRetireOpenPaymentsLocked(mysqli $db,array $rows,
-    bool $commitRetirement=false): array {
-    require_once __DIR__.'/../Finance/ReceiptHelpers.php';
-    $ids=[];$owners=[];
-    foreach ($rows as $row) {
-        $id=(int)($row['id']??0);
-        $user=(int)($row['userid']??0);
-        if (!is_array($row) || $id<=0 || $user<=0 ||
-            (int)($row['status']??0)!==1 ||
-            (isset($owners[$id]) && $owners[$id]!==$user))
-            throw new RuntimeException('physical_payment_subject_invalid');
-        $ids[]=$id;$owners[$id]=$user;
-    }
-    $ids=array_values(array_unique($ids));
-    if (!$ids || count($ids)>10000)
-        throw new RuntimeException('physical_payment_subject_invalid');
-    $mode=achbotManualLedgerMode($db);
-    if (!in_array($mode,['legacy','current'],true))
-        throw new RuntimeException('physical_payment_ledger_unavailable');
-    $apiColumns=false;
-    if ($mode==='current') {
-        // 014 is optional on older installations; a partially applied 014 is
-        // not evidence that its existing receipt/fulfillment claims are absent.
-        $q=$db->query("SELECT COLUMN_NAME FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_attempts'
-              AND COLUMN_NAME IN ('evidence_claim_token','evidence_fulfillment_state')");
-        if (!($q instanceof mysqli_result))
-            throw new RuntimeException('physical_payment_evidence_unavailable');
-        $cols=array_column($q->fetch_all(MYSQLI_ASSOC),'COLUMN_NAME');$q->free();
-        if (count($cols)===1)
-            throw new RuntimeException('physical_payment_evidence_unavailable');
-        $apiColumns=count($cols)===2;
-        if ($apiColumns) {
-            require_once __DIR__.'/../Finance/PaymentEvidence.php';
-            if (!achbotPaymentEvidenceSchemaReady($db))
-                throw new RuntimeException('physical_payment_evidence_unavailable');
-        }
-    }
-    // One indexed locking reader also protects legacy add-ons (order_id=0).
-    $payments=achbotServicePaymentRowsLocked($db,$ids);
-    $retired=[];
-    foreach ($payments as $payment) {
-        $state=(string)$payment['state'];
-        // Insufficient-wallet invoices are also unfinished original-service
-        // quotes: a later wallet recharge cannot revive old-plan pricing.
-        if (!in_array($state,['pending','send','have_sent','low_wallet'],true)) continue;
-        if ($state==='low_wallet' && (string)($payment['payid']??'')!=='')
-            throw new RuntimeException('physical_pending_financial_effect');
-        $type=(string)$payment['type'];
-        $target=0;
-        if ($type==='RENEW_ACCOUNT') $target=(int)$payment['order_id'];
-        elseif (preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_([1-9][0-9]*)$/D',$type,$m)===1) {
-            $target=(int)$m[1];
-            if ((int)($payment['order_id']??0)!==0 &&
-                (int)$payment['order_id']!==$target)
-                throw new RuntimeException('physical_payment_subject_invalid');
-        } else continue; // Unrelated payment type never silently retired.
-        if (!isset($owners[$target]) ||
-            (int)$payment['user_id']!==$owners[$target])
-            throw new RuntimeException('physical_payment_subject_invalid');
-        // Lock the exact attempt after its pays parent, in the same order
-        // as authenticated provider/webhook/manual/finance claims.
-        if ($mode==='current') {
-            $payId=(int)$payment['id'];
-            $fields='id,stage,provider_status'.($apiColumns?
-                ',evidence_claim_token,evidence_fulfillment_state':'');
-            $q=$db->prepare("SELECT $fields FROM payment_attempts
-                WHERE pay_row_id=? FOR UPDATE");
-            $q->bind_param('i',$payId);$q->execute();
-            $attempt=$q->get_result()->fetch_assoc();$q->close();
-            if ($attempt) {
-                $stage=(string)$attempt['stage'];
-                $status=(string)($attempt['provider_status']??'');
-                // The original claim may already be inside Native/financial
-                // execution even if the parent payment was not finalized.
-                // Fail closed for any unrecognized state/progress marker.
-                $readOnlyStatuses=['','waiting','confirming','partially_paid',
-                    'pending','finished','failed','expired','receipt_started'];
-                $reviewOnlyStatuses=['verification_uncertain','multiple_payments',
-                    'identity_mismatch','amount_mismatch','receipt_started'];
-                if (($stage==='pending' && !in_array($status,$readOnlyStatuses,true)) ||
-                    ($stage==='review' && !in_array($status,$reviewOnlyStatuses,true)) ||
-                    !in_array($stage,['pending','review'],true))
-                    throw new RuntimeException('physical_pending_financial_effect');
-                if ($apiColumns) {
-                    if ($attempt['evidence_claim_token']!==null ||
-                        $attempt['evidence_fulfillment_state']!==null)
-                        throw new RuntimeException('physical_pending_financial_effect');
-                    $aid=(int)$attempt['id'];
-                    $q=$db->prepare('SELECT id FROM payment_transactions
-                        WHERE attempt_id=? AND evidence_operation IS NOT NULL
-                        LIMIT 1 FOR UPDATE');
-                    $q->bind_param('i',$aid);$q->execute();
-                    $operation=$q->get_result()->num_rows>0;$q->close();
-                    if ($operation)
-                        throw new RuntimeException('physical_pending_financial_effect');
-                }
-            }
-        }
-        // An issued merchant payid or submitted receipt is *not* a refund.
-        // Keep both immutable, only end this original product fulfillment.
-        $id=(int)$payment['id'];
-        $retired[$id]=$id;
-        if ($commitRetirement) {
-            // Only the VERIFIED native-change finalization may end the old
-            // invoice. The change + original journal commit in the SAME txn.
-            $q=$db->prepare("UPDATE pays SET state='service_superseded',updated_at=NOW()
-                WHERE id=? AND state=?");
-            $q->bind_param('is',$id,$state);$q->execute();
-            $changed=$q->affected_rows;$q->close();
-            if ($changed!==1)
-                throw new RuntimeException('physical_payment_retirement_unconfirmed');
-        }
-    }
-    return $retired;
-}
-
 /** After a committed REAL service change, remove stale manual receipt
- * approval/rejection buttons from their original administrator messages.
- * This is display cleanup ONLY: state='service_superseded' has already
- * fenced all old callbacks in SQL. Telegram failure never reactivates the
- * invoice, rewrites a receipt, or replays a financial/Native effect.
+ * service-specific approval/rejection buttons from original messages.
+ * An actual submitted receipt remains financially actionable through the
+ * existing case link. Telegram failure cannot reopen the old service.
  */
 function achbotPhysicalHideRetiredReceiptActions(mysqli $db,array $rows): void {
     try {
+        require_once __DIR__.'/../Finance/GatewayClient.php';
         $ids=[];$owners=[];
         foreach ($rows as $row) {
             $id=(int)($row['id']??0);$owner=(int)($row['userid']??0);
@@ -504,12 +248,11 @@ function achbotPhysicalHideRetiredReceiptActions(mysqli $db,array $rows): void {
         if (!$ids) return;
         $list=implode(',',$ids);
         $userIds=implode(',',array_unique(array_values($owners)));
-        $pattern='^INCREASE_(DAY|VOLUME)_('.implode('|',$ids).')_';
         $q=$db->prepare("SELECT id,type,order_id,user_id,chat_id,message_id,
             admins_messages FROM pays WHERE state='service_superseded'
-            AND user_id IN ($userIds)
-            AND (order_id IN ($list) OR type REGEXP ?) ORDER BY id");
-        $q->bind_param('s',$pattern);$q->execute();$pays=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+            AND checkout_draft_context IS NOT NULL AND user_id IN ($userIds)
+            AND order_id IN ($list) ORDER BY id");
+        $q->execute();$pays=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
         $sent=[];$ownerAdmin=(int)($GLOBALS['admin']??0);
         foreach ($pays as $pay) {
             $type=(string)$pay['type'];$oid=0;
@@ -528,11 +271,16 @@ function achbotPhysicalHideRetiredReceiptActions(mysqli $db,array $rows): void {
                 if (!achbotAdminStoredRecipientAllowed($db,$chat,$ownerAdmin)) continue;
                 $sent[$key]=true;
                 try {
-                    // Bot API: omitting optional reply_markup removes the
-                    // old inline keyboard without rewriting receipt evidence.
-                    $response=bot('editMessageReplyMarkup',[
-                        'chat_id'=>$chat,'message_id'=>$message
-                    ]);
+                    $args=['chat_id'=>$chat,'message_id'=>$message];
+                    // Do not make staff search the inbox for real money.
+                    // This is the existing financial case, not a stale
+                    // service-specific approval or a new decision.
+                    if (achbotGatewayAttentionCaseOpen($db,(int)$pay['id']))
+                        $args['reply_markup']=json_encode(['inline_keyboard'=>[[
+                            ['text'=>achbotMessage('automatic_gateway_review.open_case'),
+                             'callback_data'=>'attentionCase_'.(int)$pay['id']]
+                        ]]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+                    $response=bot('editMessageReplyMarkup',$args);
                     if (!is_object($response) || ($response->ok??false)!==true)
                         error_log('achbot_retired_receipt_keyboard_unconfirmed pay_id='.
                             (int)$pay['id'].' chat_id='.$chat.' message_id='.$message);
@@ -559,125 +307,34 @@ function achbotPhysicalPlanChangesLocalPlan(array $rows,int $planId): bool {
 function achbotPhysicalNoPendingPayments(mysqli $db,array $rows,
     bool $retireOpen=false,bool $nativeVerifiedFinal=false): void {
     require_once __DIR__.'/../Finance/ReceiptHelpers.php';
-    // An unclaimed old invoice is safe to FENCE (by the durable plan journal)
-    // before Native GET/PUT, but NOT to terminally retire. Probe its original
-    // payment/003/014 evidence under the same locks without changing pays.
-    // Terminal retirement occurs only during the verified local plan commit.
-    $eligible=$retireOpen?
-        achbotPhysicalRetireOpenPaymentsLocked($db,$rows,$nativeVerifiedFinal):[];
-    if (!achbotSharedAccountWorkSettledLocked($db,$rows,0,0,$retireOpen,true,
-        $nativeVerifiedFinal?[]:$eligible))
+    // Only an actual in-flight service or Native effect owns this account.
+    // A verified change retires current unpaid service drafts through the
+    // same ownership boundary; receipt verification remains independent.
+    if (!achbotSharedAccountWorkSettledLocked($db,$rows))
+        throw new RuntimeException('physical_pending_financial_effect');
+    if ($retireOpen && $nativeVerifiedFinal && !achbotServiceSubjectWorkSettledLocked($db,$rows,true))
         throw new RuntimeException('physical_pending_financial_effect');
 }
 
 /**
- * An administrator may freely reassign a Panel Group, but no consumer
- * may escape an unresolved Marzban plan intent by using a new group-derived
- * lock or by deleting/re-importing its original local order. Intent creation
- * persists the original Native username and group. Older 017 journals have
- * neither field: if the current operation touches one of their recorded
- * logical servers (or a currently declared peer), conservatively hold it
- * regardless of username; live order rows are NOT historical evidence.
- * This fence is consumption-only, never an admin Group assignment gate.
- */
-function achbotPhysicalAssertMarzbanGroupJournalClear(mysqli $db,int $serverId,
-    string $remark,array $orderIds,string $error): void {
-    if ($serverId<=0 || $remark==='')
-        throw new RuntimeException('physical_journal_identity_invalid');
-    $ids=[];
-    foreach ($orderIds as $id) {
-        if (!is_int($id) || $id<=0)
-            throw new RuntimeException('physical_journal_identity_invalid');
-        $ids[$id]=true;
-    }
-    // Scan is intentionally current-state read. A matching unresolved row is
-    // then rechecked with FOR UPDATE inside the consumer transaction.
-    $s=$db->prepare("SELECT id,server_id,source_order_id,intent_json
-        FROM service_plan_changes WHERE provider='marzban'
-        AND state<>'committed' ORDER BY id");
-    $s->execute();$pending=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
-    if (!$pending) return;
-    $group=achbotPanelGroup($db,$serverId);
-    $groupId=$group===null?null:(int)$group['id'];
-    $confirm=$db->prepare("SELECT state FROM service_plan_changes WHERE id=? FOR UPDATE");
-    try {
-        foreach ($pending as $row) {
-            try {$intent=json_decode((string)$row['intent_json'],true,64,JSON_THROW_ON_ERROR);}
-            catch (Throwable $ignored) {
-                throw new RuntimeException('physical_journal_identity_unverified');
-            }
-            if (!is_array($intent) || !is_array($intent['old_rows']??null))
-                throw new RuntimeException('physical_journal_identity_unverified');
-            $oldServer=(int)$row['server_id'];
-            if ($oldServer<=0) throw new RuntimeException('physical_journal_identity_unverified');
-            $oldServers=[$oldServer=>true];
-            $conflict=isset($ids[(int)$row['source_order_id']]);
-            foreach ($intent['old_rows'] as $ref) {
-                if (!is_array($ref) || !is_int($ref['id']??null) ||
-                    $ref['id']<=0 || !is_int($ref['server_id']??null) ||
-                    $ref['server_id']<=0)
-                    throw new RuntimeException('physical_journal_identity_unverified');
-                $oldServers[$ref['server_id']]=true;
-                if (isset($ids[$ref['id']])) $conflict=true;
-            }
-            if (!$conflict) {
-                // The original server ID remains in the journal even after
-                // all orders_list rows have been locally deleted.
-                $scope=isset($oldServers[$serverId]);
-                if (!$scope)
-                    foreach (array_keys($oldServers) as $oldServer)
-                        if ($oldServer>0 && achbotSamePanelGroup($db,$oldServer,$serverId)) {
-                            $scope=true;break;
-                        }
-                // New intents pin the ORIGINAL physical Group, so moving the
-                // old server later does not free other entries left in A.
-                if (array_key_exists('physical_group_id',$intent) &&
-                    $intent['physical_group_id']!==null &&
-                    (!is_int($intent['physical_group_id']) ||
-                     $intent['physical_group_id']<=0))
-                    throw new RuntimeException('physical_journal_identity_unverified');
-                if (!$scope && $groupId!==null &&
-                    ($intent['physical_group_id']??null)===$groupId)
-                    $scope=true;
-                if (!$scope) continue;
-                if (array_key_exists('native_username',$intent)) {
-                    if (!is_string($intent['native_username']) ||
-                        $intent['native_username']==='')
-                        throw new RuntimeException('physical_journal_identity_unverified');
-                    if ($intent['native_username']!==$remark) continue;
-                }
-                // Legacy journal with no immutable username: a current order
-                // lookup cannot prove a negative after local deletion or edit.
-                // Fence only the historical server/group scope until reviewed.
-            }
-            $id=(int)$row['id'];
-            $confirm->bind_param('i',$id);$confirm->execute();
-            $current=$confirm->get_result()->fetch_assoc();
-            if ($current && $current['state']!=='committed')
-                throw new RuntimeException($error);
-        }
-    } finally {$confirm->close();}
-}
-
-/**
  * Recheck source rows, target and all financial ledgers at the LAST local
- * boundary before a Native access PUT. This check also works after the
- * PasarGuard service_effects account fence entered 'mutating', when normal
- * account-discovery helpers deliberately refuse to return it as linked.
- * The physical journal remains an unretryable hold on any failure.
+ * boundary before a Native access PUT. The account is still linked here;
+ * atomically claim its mutation and mark the plan journal dispatching.
+ * No outbound write is authorized until both durable markers commit.
  */
-function achbotPhysicalBeforeNativeWrite(mysqli $db,array $intent,int $journalId): void {
-    $transaction=false;$commitAttempted=false;
+function achbotPhysicalBeforeNativeWrite(mysqli $db,array $intent,int $journalId,
+    array $ctx,array $groupsBefore): array {
+    $transaction=false;
     try {
         if (!$db->begin_transaction()) throw new RuntimeException('physical_before_put_begin');
         $transaction=true;
         $s=$db->prepare("SELECT id FROM service_plan_changes
-            WHERE id=? AND lock_key=? AND state='dispatching' FOR UPDATE");
+            WHERE id=? AND lock_key=? AND state='prepared' FOR UPDATE");
         $s->bind_param('is',$journalId,$intent['lock_key']);$s->execute();
         $valid=$s->get_result()->num_rows===1;$s->close();
         if (!$valid) throw new RuntimeException('physical_before_put_journal_changed');
         $old=$intent['old_rows'];
-        if (!$old || count($old)>10000) throw new RuntimeException('physical_before_put_references_invalid');
+        if (!$old) throw new RuntimeException('physical_before_put_references_invalid');
         $ids=array_map(static fn($r)=>(int)$r['id'],$old);
         if (min($ids)<=0 || count(array_unique($ids))!==count($ids))
             throw new RuntimeException('physical_before_put_references_invalid');
@@ -693,9 +350,7 @@ function achbotPhysicalBeforeNativeWrite(mysqli $db,array $intent,int $journalId
             if ((int)$row['status']!==1 ||
                 $row['remark']!==$rows[0]['remark'])
                 throw new RuntimeException('physical_before_put_references_changed');
-        // Detect a newly attached peer *before* outbound PUT. PasarGuard
-        // cannot use linked-only active-order helpers here because its
-        // durable account is already fenced as 'mutating'.
+        // Detect a newly attached peer before claiming the Native fence.
         if ($intent['provider']==='pasarguard') {
             $effect=(int)($rows[0]['provider_effect_id']??0);
             if ($effect<=0) throw new RuntimeException('physical_before_put_identity_invalid');
@@ -718,36 +373,56 @@ function achbotPhysicalBeforeNativeWrite(mysqli $db,array $intent,int $journalId
         if (achbotPhysicalTargetForIntent($db,$selected,$intent)!==$intent['physical_target_sha256'])
             throw new RuntimeException('physical_before_put_target_changed');
         achbotPhysicalNoPendingPayments($db,$rows,achbotPhysicalPlanChangesLocalPlan($intent['old_rows'],(int)$intent['new_plan_id']));
-        $commitAttempted=true;
+        $plan=achbotProviderRow($db,'SELECT * FROM server_plans WHERE id=? AND server_id=? FOR UPDATE',
+            'ii',[(int)$intent['new_plan_id'],(int)$intent['selected_server_id']]);
+        if (!$plan || (int)$plan['active']!==1 ||
+            achbotPhysicalPlanFingerprint($plan)!==$intent['plan_sha256'])
+            throw new RuntimeException('physical_plan_changed_before_write');
+        $fresh=achbotPgOrderContext($db,(int)$selected['id'],true);
+        if (achbotPhysicalPgIdentityFingerprint($fresh)!==$intent['pg_identity_sha256'] ||
+            $fresh['identity']!==$ctx['identity'] ||
+            !hash_equals($fresh['panel']['api_key'],$ctx['panel']['api_key']))
+            throw new RuntimeException('physical_pg_target_changed_before_write');
+        $mutation=achbotPgBeginMutation($db,$fresh,'plan:'.$journalId,
+            'select_plan',['plan_id'=>(int)$intent['new_plan_id'],'group_ids'=>$intent['native_target']['groups']],true);
+        $mutation=achbotPgPersistMutationIntent($db,$fresh,$mutation,[
+            'group_ids'=>$intent['native_target']['groups'],'before'=>$groupsBefore]);
+        $stmt=achbotProviderStatement($db,"UPDATE service_plan_changes SET state='dispatching'
+            WHERE id=? AND state='prepared'",'i',[$journalId]);
+        $n=$stmt->affected_rows;$stmt->close();
+        if ($n!==1) throw new RuntimeException('physical_plan_dispatch_hold');
         if (!$db->commit()) throw new RuntimeException('physical_before_put_commit_unknown');
         $transaction=false;
+        return $mutation;
     } catch (Throwable $error) {
-        if ($transaction && !$commitAttempted) {try{$db->rollback();}catch(Throwable $ignored){}}
+        if ($transaction) {try{$db->rollback();}catch(Throwable $ignored){}}
         throw $error;
     }
 }
 
 function achbotPhysicalPlanFingerprint(array $plan): string {
     return hash('sha256',json_encode([
-        (int)$plan['id'],(int)$plan['server_id'],(int)$plan['active'],
-        (int)$plan['inbound_id'],(string)($plan['custom_sni']??''),
+        (int)$plan['id'],(int)$plan['server_id'],
+        (int)$plan['inbound_id'],
         $plan['provider_group_ids']??null
     ],JSON_THROW_ON_ERROR));
 }
 
 /** Authorize and choose a native access plan, then synchronize every local reference.
  *
- * The immutable service_plan_changes row is COMMITTED before any provider HTTP
- * mutation. It retains reconciliation evidence across crashes. Any uncertain
- * remote/DB result holds its physical subscription; no automatic second PUT.
+ * A prepared journal protects the subject during preflight. Only the final
+ * write callback commits the dispatch and Native fence together. No-effect
+ * preflight failures retire their intent; uncertain writes retain the hold.
  */
 function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $actorId,bool $adminAllowed=false): array {
     if (min($orderId,$newPlanId,$actorId)<=0)
         return achbotPhysicalPlanResult(false,'physical_plan_invalid');
+    require_once __DIR__.'/../Services/Ownership.php';
     require_once __DIR__.'/../Admin/Access.php';
-    require_once __DIR__.'/../Panel/MarzbanPlanAccess.php';
     $lease=null;$tx=false;$journalId=0;$dispatch=false;$commitAttempted=false;
     try {
+        require_once __DIR__.'/../Finance/OperationalReports.php';
+        achbotOperationalReportRequireReady($db);
         $s=$db->prepare('SELECT * FROM orders_list WHERE id=? AND status=1');
         $s->bind_param('i',$orderId);$s->execute();$initial=$s->get_result()->fetch_assoc();$s->close();
         if (!$initial) throw new RuntimeException('physical_order_unavailable');
@@ -774,23 +449,15 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         if (!achbotServerCommerceAvailable($db,$server,false,true))
             throw new RuntimeException('physical_server_operations_disabled');
         $provider=achbotProviderType($db,$server);
-        if (!in_array($provider,['marzban','pasarguard'],true) ||
+        if (!in_array($provider,['pasarguard'],true) ||
             !achbotSupportsOrder($db,$orderId,null,(int)$order['userid'],true))
             throw new RuntimeException('physical_service_unavailable');
         $s=$db->prepare('SELECT p.* FROM server_plans p WHERE p.id=? AND p.server_id=? AND p.active=1 AND p.inbound_id=0 FOR UPDATE');
         $s->bind_param('ii',$newPlanId,$server);$s->execute();$plan=$s->get_result()->fetch_assoc();$s->close();
         if (!$plan || !achbotSupportsPlan($db,$newPlanId,0,$server,true))
             throw new RuntimeException('physical_plan_unavailable');
-        $groups=null;$inbounds=null;
-        if ($provider==='pasarguard') {
-            $snapshot=achbotPgPlanSnapshot($db,$server,$newPlanId,true);
-            $groups=$snapshot['group_ids'];
-        } else $inbounds=achbotMarzbanPlanInbounds($plan);
-        if (!$admin) {
-            require_once __DIR__.'/../Purchase/OrderWrites.php';
-            if (!achbotOrderMayUsePaidPlan($db,$order,true))
-                throw new RuntimeException('physical_plan_not_eligible');
-        }
+        $snapshot=achbotPgPlanSnapshot($db,$server,$newPlanId,true);
+        $groups=$snapshot['group_ids'];
         $all=achbotPhysicalActiveOrders($db,$order,true);
         foreach ($all as $peer) {
             $peerServer=(int)$peer['server_id'];
@@ -799,17 +466,17 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
                 throw new RuntimeException('physical_peer_server_mismatch');
         }
         achbotPhysicalNoPendingPayments($db,$all,achbotPhysicalPlanChangesLocalPlan($all,$newPlanId));
-        if ($provider==='marzban')
-            achbotPhysicalAssertMarzbanGroupJournalClear($db,$server,(string)$order['remark'],
-                array_map(static fn($r)=>(int)$r['id'],$all),'physical_plan_requires_review');
+        if (!$admin) {
+            require_once __DIR__.'/../Purchase/OrderWrites.php';
+            if (achbotPaidPlanForOrder($db,$order,$newPlanId,true)===null)
+                throw new RuntimeException('physical_plan_not_eligible');
+        }
         $targetSha=achbotPhysicalTargetFingerprint($db,$order);
         $pgIdentitySha=$provider==='pasarguard'?
             achbotPhysicalPgIdentityFingerprint(achbotPgOrderContext($db,$orderId,true)):null;
-        $s=$db->prepare("SELECT id FROM service_plan_changes
-            WHERE lock_key=? AND state<>'committed' LIMIT 1 FOR UPDATE");
-        $s->bind_param('s',$lease);$s->execute();
-        $held=$s->get_result()->num_rows>0;$s->close();
-        if ($held) throw new RuntimeException('physical_plan_requires_review');
+        achbotServiceRetirePreparedPlansLocked($db,$lease);
+        if (achbotServicePlanChangePendingLocked($db,$lease))
+            throw new RuntimeException('physical_plan_requires_review');
         // Do not mistake an already-selected fileid for verified native
         // access. A same-plan selection must still read and reconcile the
         // provider Hosts/Groups; only the Native readback proves equivalence.
@@ -821,15 +488,9 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
                 'id'=>(int)$r['id'],'server_id'=>(int)$r['server_id'],
                 'fileid'=>(int)$r['fileid']
             ],$all),
-            'native_target'=>$provider==='pasarguard'?['groups'=>$groups]:['inbounds'=>$inbounds],
+            'native_target'=>['groups'=>$groups],
             'created_at'=>gmdate('c')];
         if ($provider==='pasarguard') $intent['physical_target_format']=2;
-        if ($provider==='marzban') {
-            // Durable native identity without a schema migration or an URL/
-            // credential equality assumption. Survives local order deletion.
-            $intent['native_username']=(string)$order['remark'];
-            $intent['physical_group_id']=achbotPanelGroup($db,$server)['id']??null;
-        }
         $json=json_encode($intent,JSON_THROW_ON_ERROR);
         $s=$db->prepare("INSERT INTO service_plan_changes
             (lock_key,source_order_id,plan_id,server_id,provider,state,intent_json)
@@ -841,18 +502,13 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         $commitAttempted=true;
         if (!$db->commit()) throw new RuntimeException('physical_plan_intent_commit_unknown');
         $tx=false;$commitAttempted=false;
-        $s=$db->prepare("UPDATE service_plan_changes SET state='dispatching' WHERE id=? AND state='prepared'");
-        $s->bind_param('i',$journalId);
-        if (!$s->execute() || $s->affected_rows!==1)
-            throw new RuntimeException('physical_plan_dispatch_hold');
-        $s->close();$dispatch=true;
         // A payment/renewal may have started after the first durable intent
         // commit. Re-lock and recheck every linked reference immediately
         // before Native GET/PUT, without holding a SQL transaction over HTTP.
         if (!$db->begin_transaction()) throw new RuntimeException('physical_plan_preflight_begin');
         $tx=true;
         $s=$db->prepare("SELECT id FROM service_plan_changes
-            WHERE id=? AND state='dispatching' FOR UPDATE");
+            WHERE id=? AND state='prepared' FOR UPDATE");
         $s->bind_param('i',$journalId);$s->execute();
         $pending=$s->get_result()->num_rows===1;$s->close();
         if (!$pending) throw new RuntimeException('physical_plan_journal_changed');
@@ -878,9 +534,6 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         $pgMutation=null;$pgContext=null;$pgResult=null;
         // This callback executes only when Native access ACTUALLY differs.
         // Unchanged Native access has zero PUT and zero redundant catalog reads.
-        $beforeWrite=static function() use($db,$intent,$journalId):void {
-            achbotPhysicalBeforeNativeWrite($db,$intent,$journalId);
-        };
         if ($provider==='pasarguard') {
             $pgContext=achbotPgOrderContext($db,$orderId);
             if ((int)$pgContext['order_server_id']!==$server ||
@@ -897,35 +550,27 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
                 if (($check['success']??false)!==true ||
                     array_diff($groups,achbotPgEligibleGroupIds($check)))
                     throw new RuntimeException('physical_pg_group_authority_unavailable');
-                // The durable Native account fence survives any interrupted
-                // HTTP response. Never automatically call it a second time.
-                $pgMutation=achbotPgBeginMutation($db,$pgContext,'plan:'.$journalId,
-                    'select_plan',['plan_id'=>$newPlanId,'group_ids'=>$groups]);
-                $pgMutation=achbotPgPersistMutationIntent($db,$pgContext,$pgMutation,[
-                    'group_ids'=>$groups,'before'=>$current['user']['group_ids']]);
+                // Claim exactly at the last reversible callback. Read failures
+                // before this point do not create a permanent Native hold.
+                $beforeWrite=static function() use($db,$intent,$journalId,$pgContext,$current,&$pgMutation,&$dispatch):void {
+                    $pgMutation=achbotPhysicalBeforeNativeWrite($db,$intent,$journalId,
+                        $pgContext,$current['user']['group_ids']);
+                    $dispatch=true;
+                };
                 $pgResult=achbotPgModify($pgContext['panel'],$pgContext['identity'],
-                    ['group_ids'=>$groups],$current['user']['group_ids'],$beforeWrite);
+                    ['group_ids'=>$groups],$current['user']['group_ids'],$beforeWrite,
+                    ['group_ids'=>$current['user']['group_ids']]);
                 if (($pgResult['success']??false)!==true ||
                     $pgResult['user']['group_ids']!==$groups ||
                     $pgResult['user']['used_traffic']<$current['user']['used_traffic'])
                     throw new RuntimeException('physical_pg_access_unverified');
             }
-        } else {
-            $result=achbotMarzbanApplyPlanHosts($server,(string)$order['remark'],$inbounds,$beforeWrite);
-            if (($result['success']??false)!==true ||
-                ($result['verified']??false)!==true) {
-                // Only known, bounded adapter reason codes enter diagnostics.
-                // No remote response, account data or credentials are logged.
-                $detail=(string)($result['reason']??'');
-                if (!preg_match('/\Amarzban_[a-z0-9_]{3,72}\z/D',$detail))
-                    $detail='physical_marzban_access_unverified';
-                throw new RuntimeException($detail);
-            }
         }
         if (!$db->begin_transaction()) throw new RuntimeException('physical_plan_finalize_begin');
         $tx=true;
-        $s=$db->prepare('SELECT * FROM service_plan_changes WHERE id=? AND state=\'dispatching\' FOR UPDATE');
-        $s->bind_param('i',$journalId);$s->execute();$effect=$s->get_result()->fetch_assoc();$s->close();
+        $expectedState=$pgMutation===null?'prepared':'dispatching';
+        $s=$db->prepare('SELECT * FROM service_plan_changes WHERE id=? AND state=? FOR UPDATE');
+        $s->bind_param('is',$journalId,$expectedState);$s->execute();$effect=$s->get_result()->fetch_assoc();$s->close();
         if (!$effect || $effect['intent_json']!==$json)
             throw new RuntimeException('physical_plan_journal_changed');
         $s=$db->prepare('SELECT * FROM orders_list WHERE id=? AND status=1 FOR UPDATE');
@@ -952,16 +597,20 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
             throw new RuntimeException('physical_plan_references_changed');
         $s=$db->prepare('SELECT p.* FROM server_plans p WHERE p.id=? AND p.server_id=? FOR UPDATE');
         $s->bind_param('ii',$newPlanId,$server);$s->execute();$freshPlan=$s->get_result()->fetch_assoc();$s->close();
-        if (!$freshPlan || achbotPhysicalPlanFingerprint($freshPlan)!==$intent['plan_sha256'])
+        if (!$freshPlan || ($expectedState==='prepared' && (int)$freshPlan['active']!==1) ||
+            achbotPhysicalPlanFingerprint($freshPlan)!==$intent['plan_sha256'])
             throw new RuntimeException('physical_plan_changed_during_effect');
         achbotPhysicalNoPendingPayments($db,$fresh,
             achbotPhysicalPlanChangesLocalPlan($fresh,$newPlanId),true);
         $count=achbotPhysicalUpdateOrders($db,$fresh,$server,$newPlanId);
-        $s=$db->prepare("UPDATE service_plan_changes SET state='committed' WHERE id=? AND state='dispatching'");
-        $s->bind_param('i',$journalId);
+        $s=$db->prepare("UPDATE service_plan_changes SET state='committed' WHERE id=? AND state=?");
+        $s->bind_param('is',$journalId,$expectedState);
         if (!$s->execute() || $s->affected_rows!==1)
             throw new RuntimeException('physical_plan_finalize_unknown');
         $s->close();
+        $reportRef='plan:'.$journalId;
+        achbotPhysicalStageServiceChangeLocked($db,'plan',$reportRef,
+            $freshOrder+['plan_id'=>$newPlanId,'plan_title'=>$freshPlan['title']],$actorId,$admin);
         $commitAttempted=true;
         if (!$db->commit()) throw new RuntimeException('physical_plan_finalize_commit_unknown');
         $tx=false;$commitAttempted=false;
@@ -969,16 +618,19 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
             ' source_order_id='.$orderId.' active_refs='.$count);
         if (achbotPhysicalPlanChangesLocalPlan($fresh,$newPlanId))
             achbotPhysicalHideRetiredReceiptActions($db,$fresh);
-        return achbotPhysicalPlanResult(true,'committed',$count);
+        return achbotPhysicalPlanResult(true,'committed',$count)+['report_ref'=>$reportRef];
     } catch (Throwable $error) {
         if ($tx) {try{$db->rollback();}catch(Throwable $ignored){}}
         $reason=(string)$error->getMessage();
         $safe=preg_match('/\A[a-z0-9_]{5,100}\z/D',$reason)===1?$reason:'internal_exception';
-        if ($journalId>0 && !$commitAttempted && !$dispatch) {
+        $retired=false;
+        if ($journalId>0 && !$dispatch) {
             try {
-                $s=$db->prepare("UPDATE service_plan_changes SET state='review'
-                    WHERE id=? AND state='prepared'");
-                $s->bind_param('i',$journalId);$s->execute();$s->close();
+                // A lost COMMIT ACK may have published dispatching. The
+                // conditional write cannot cancel that journal.
+                $s=achbotProviderStatement($db,"UPDATE service_plan_changes SET state='cancelled'
+                    WHERE id=? AND state='prepared'",'i',[$journalId]);
+                $retired=$s->affected_rows===1;$s->close();
             } catch (Throwable $ignored) {}
         }
         // Rejected stale/forged plan callbacks are normal expected denials;
@@ -995,7 +647,7 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
             !in_array($safe,$denials,true))
             error_log('achbot_shared_plan_requires_review order_id='.$orderId.
                 ' journal_id='.$journalId.' code='.$safe);
-        return achbotPhysicalPlanResult(false,$journalId>0?
+        return achbotPhysicalPlanResult(false,$journalId>0 && !$retired?
             'physical_plan_requires_review':$safe);
     } finally {
         if ($lease!==null) achbotPhysicalReleaseLock($db,$lease);
@@ -1061,18 +713,12 @@ function achbotPhysicalRecoverySnapshotLocked(
                 throw new RuntimeException('physical_recovery_pg_journal_unverified');
         } elseif ($state!=='linked')
             throw new RuntimeException('physical_recovery_pg_account_unverified');
-    } elseif ($provider==='marzban') {
-        if (!is_string($intent['native_username']??null) ||
-            $intent['native_username']!==$order['remark'] ||
-            !isset($intent['native_target']['inbounds']) ||
-            !is_array($intent['native_target']['inbounds']))
-            throw new RuntimeException('physical_recovery_marzban_identity_unverified');
     } else throw new RuntimeException('physical_recovery_provider_unavailable');
     // Read-only evidence fencing before GET; terminal old-invoice retirement
     // is atomic with the verified GET-only Native plan finalization below.
     achbotPhysicalNoPendingPayments($db,$peers,
         achbotPhysicalPlanChangesLocalPlan($peers,$newPlan),$verifiedNative);
-    return ['order'=>$order,'peers'=>$peers,'pg'=>$pg,'mutation'=>$mutation];
+    return ['order'=>$order,'peers'=>$peers,'pg'=>$pg,'mutation'=>$mutation,'plan'=>$plan];
 }
 
 /**
@@ -1082,11 +728,11 @@ function achbotPhysicalRecoverySnapshotLocked(
  */
 function achbotPhysicalCorrectionJournalLocked(mysqli $db,array $original): ?array {
     $provider=(string)$original['provider'].'_correction';
-    if (!in_array($provider,['marzban_correction','pasarguard_correction'],true))
+    if (!in_array($provider,['pasarguard_correction'],true))
         throw new RuntimeException('physical_correction_provider_invalid');
     $source=(int)$original['source_order_id'];$lease=(string)$original['lock_key'];
     $q=$db->prepare("SELECT id,state,intent_json FROM service_plan_changes
-        WHERE source_order_id=? AND lock_key=? AND provider=? ORDER BY id FOR UPDATE");
+        WHERE source_order_id=? AND lock_key=? AND provider=? AND state<>'cancelled' ORDER BY id FOR UPDATE");
     $q->bind_param('iss',$source,$lease,$provider);$q->execute();
     $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     $match=null;
@@ -1097,7 +743,7 @@ function achbotPhysicalCorrectionJournalLocked(mysqli $db,array $original): ?arr
             $intent['corrects_journal_id']<=0)
             throw new RuntimeException('physical_correction_audit_invalid');
         if ($intent['corrects_journal_id']!==(int)$original['id']) continue;
-        if ($match!==null || !in_array($row['state'],['dispatching','committed'],true))
+        if ($match!==null || !in_array($row['state'],['prepared','dispatching','committed'],true))
             throw new RuntimeException('physical_correction_audit_invalid');
         $match=$row;
         $match['audit']=$intent;
@@ -1109,29 +755,6 @@ function achbotPhysicalCorrectionJournalLocked(mysqli $db,array $original): ?arr
 function achbotPhysicalObserveRecoveryNative(mysqli $db,array $journal,
     array $intent,array $pre): array {
     $server=(int)$journal['server_id'];
-    if ($journal['provider']==='marzban') {
-        $s=$db->prepare("SELECT panel_url,type FROM server_config WHERE id=?");
-        $s->bind_param('i',$server);$s->execute();
-        $target=$s->get_result()->fetch_assoc();$s->close();
-        if (!$target || $target['type']!=='marzban')
-            throw new RuntimeException('physical_recovery_native_target_changed');
-        $url=rtrim((string)$target['panel_url'],'/');
-        $token=getMarzbanToken($server,$url);
-        if (!is_object($token) || !is_string($token->access_token??null) ||
-            $token->access_token==='')
-            throw new RuntimeException('physical_recovery_native_get_unconfirmed');
-        $user=getMarzbanUser($server,$intent['native_username'],$token,true,$url);
-        if (!is_object($user))
-            throw new RuntimeException('physical_recovery_native_get_unconfirmed');
-        $snap=achbotMarzbanNativeAccessSnapshot($user,$intent['native_username']);
-        $complete=$snap['inbounds']===$intent['native_target']['inbounds'];
-        // Live traffic usage can rise between observations; access, identity,
-        // notes, quotas, proxy credentials and schedules cannot silently drift.
-        unset($snap['used_traffic']);
-        return ['complete'=>$complete,
-            'digest'=>hash('sha256',json_encode($snap,JSON_THROW_ON_ERROR)),
-            'native'=>$user];
-    }
     if ($journal['provider']==='pasarguard') {
         $ctx=$pre['pg'];
         $native=achbotPgRead($ctx['panel'],$ctx['identity']);
@@ -1139,8 +762,7 @@ function achbotPhysicalObserveRecoveryNative(mysqli $db,array $journal,
             throw new RuntimeException('physical_recovery_native_get_unconfirmed');
         $user=$native['user'];
         $stable=[];
-        foreach (['id','username','created_at','status','data_limit','expire',
-                  'group_ids','proxy_settings'] as $key) {
+        foreach (['id','username','created_at','group_ids'] as $key) {
             if (!array_key_exists($key,$user))
                 throw new RuntimeException('physical_recovery_native_get_unconfirmed');
             $stable[$key]=$user[$key];
@@ -1158,7 +780,7 @@ function achbotPhysicalRecoveryOriginal(mysqli $db,int $journalId,
     $s=$db->prepare('SELECT * FROM service_plan_changes WHERE id=?');
     $s->bind_param('i',$journalId);$s->execute();
     $journal=$s->get_result()->fetch_assoc();$s->close();
-    if (!$journal || $journal['state']!=='dispatching' ||
+    if (!$journal || $journal['provider']!=='pasarguard' || $journal['state']!=='dispatching' ||
         ($expectedOrderId>0 && (int)$journal['source_order_id']!==$expectedOrderId) ||
         !preg_match('/^achbot-(?:edit|plan)-[a-f0-9]{40}$/D',(string)$journal['lock_key']))
         throw new RuntimeException('physical_recovery_not_dispatched');
@@ -1181,8 +803,8 @@ function achbotPhysicalRecoverPlan(mysqli $db,int $journalId,int $actorId,
     int $expectedOrderId=0): array {
     if ($journalId<=0 || $actorId<=0)
         return achbotPhysicalPlanResult(false,'physical_recovery_invalid');
+    require_once __DIR__.'/../Services/Ownership.php';
     require_once __DIR__.'/../Admin/Access.php';
-    require_once __DIR__.'/../Panel/MarzbanPlanAccess.php';
     $lease=null;$tx=false;$commitAttempted=false;
     try {
         [$journal,$intent]=achbotPhysicalRecoveryOriginal($db,$journalId,$expectedOrderId);
@@ -1190,6 +812,7 @@ function achbotPhysicalRecoverPlan(mysqli $db,int $journalId,int $actorId,
         achbotPhysicalAcquireLock($db,$lease);
         if (!$db->begin_transaction()) throw new RuntimeException('physical_recovery_preflight_begin');
         $tx=true;
+        achbotServiceRetirePreparedPlansLocked($db,$lease);
         $s=$db->prepare("SELECT * FROM service_plan_changes WHERE id=? AND state='dispatching' FOR UPDATE");
         $s->bind_param('i',$journalId);$s->execute();
         $locked=$s->get_result()->fetch_assoc();$s->close();
@@ -1243,6 +866,9 @@ function achbotPhysicalRecoverPlan(mysqli $db,int $journalId,int $actorId,
         if (!$s->execute() || $s->affected_rows!==1)
             throw new RuntimeException('physical_recovery_finalize_unconfirmed');
         $s->close();
+        $reportRef='plan:'.$journalId;
+        achbotPhysicalStageServiceChangeLocked($db,'plan',$reportRef,
+            $final['order']+['plan_id'=>(int)$journal['plan_id'],'plan_title'=>$final['plan']['title']],$actorId,true);
         $commitAttempted=true;
         if (!$db->commit()) throw new RuntimeException('physical_recovery_finalize_commit_unknown');
         $tx=false;$commitAttempted=false;
@@ -1259,7 +885,7 @@ function achbotPhysicalRecoverPlan(mysqli $db,int $journalId,int $actorId,
             error_log('achbot_plan_recovery_receipt_cleanup_unconfirmed journal_id='.$journalId.
                 ' class='.get_class($cleanupError));
         }
-        return achbotPhysicalPlanResult(true,'recovered',$count);
+        return achbotPhysicalPlanResult(true,'recovered',$count)+['report_ref'=>$reportRef];
     } catch (Throwable $error) {
         if ($tx && !$commitAttempted) {try{$db->rollback();}catch(Throwable $ignored){}}
         $reason=(string)$error->getMessage();
@@ -1273,7 +899,7 @@ function achbotPhysicalRecoverPlan(mysqli $db,int $journalId,int $actorId,
 /**
  * A fresh, operator-authorized corrective Native PUT, never a retry of the
  * original unknown PUT. One separate correction journal is durably committed
- * BEFORE this new request; even a pre-write failure consumes this attempt.
+ * BEFORE this new request. Only a possible dispatch consumes the attempt.
  *
  * Confirmed remote success invokes the existing GET-only finalizer after
  * releasing the physical lease. If it cannot finish, both journals remain
@@ -1283,15 +909,18 @@ function achbotPhysicalCorrectPlan(mysqli $db,int $journalId,int $actorId,
     int $expectedOrderId): array {
     if ($journalId<=0 || $actorId<=0 || $expectedOrderId<=0)
         return achbotPhysicalPlanResult(false,'physical_correction_invalid');
+    require_once __DIR__.'/../Services/Ownership.php';
     require_once __DIR__.'/../Admin/Access.php';
-    require_once __DIR__.'/../Panel/MarzbanPlanAccess.php';
     $lease=null;$tx=false;$correctionId=0;
     try {
+        require_once __DIR__.'/../Finance/OperationalReports.php';
+        achbotOperationalReportRequireReady($db);
         [$journal,$intent]=achbotPhysicalRecoveryOriginal($db,$journalId,$expectedOrderId);
         $lease=$journal['lock_key'];
         achbotPhysicalAcquireLock($db,$lease);
         if (!$db->begin_transaction()) throw new RuntimeException('physical_correction_preflight_begin');
         $tx=true;
+        achbotServiceRetirePreparedPlansLocked($db,$lease);
         $s=$db->prepare("SELECT * FROM service_plan_changes
             WHERE id=? AND state='dispatching' FOR UPDATE");
         $s->bind_param('i',$journalId);$s->execute();
@@ -1336,15 +965,13 @@ function achbotPhysicalCorrectPlan(mysqli $db,int $journalId,int $actorId,
         $source=(int)$journal['source_order_id'];
         $s=$db->prepare("INSERT INTO service_plan_changes
             (lock_key,source_order_id,plan_id,server_id,provider,state,intent_json)
-            VALUES (?,?,?,?,?,'dispatching',?)");
+            VALUES (?,?,?,?,?,'prepared',?)");
         $s->bind_param('siiiss',$lease,$source,$plan,$server,$provider,$json);
         if (!$s->execute() || $s->affected_rows!==1)
             throw new RuntimeException('physical_correction_journal_unavailable');
         $correctionId=(int)$s->insert_id;$s->close();
         if (!$db->commit()) throw new RuntimeException('physical_correction_commit_unknown');
         $tx=false;
-        error_log('achbot_plan_correction_dispatched journal_id='.$journalId.
-            ' correction_id='.$correctionId.' actor_id='.$actorId);
 
         // All Native GETs are outside SQL transactions. The adapter invokes
         // this only at the LAST reversible boundary before its single PUT.
@@ -1379,25 +1006,24 @@ function achbotPhysicalCorrectPlan(mysqli $db,int $journalId,int $actorId,
                 achbotPhysicalRecoverySnapshotLocked($db,$locked,$intent,$actorId);
                 $verified=achbotPhysicalCorrectionJournalLocked($db,$locked);
                 if (!$verified || (int)$verified['id']!==$correctionId ||
-                    $verified['state']!=='dispatching' ||
+                    $verified['state']!=='prepared' ||
                     $verified['audit']['requested_by']!==$actorId ||
                     $verified['audit']['native_before_sha256']!==$observed['digest'] ||
                     $verified['audit']['original_intent_sha256']!==hash('sha256',$journal['intent_json']))
                     throw new RuntimeException('physical_correction_journal_changed');
-                if (!$db->commit())
+                $c=achbotProviderStatement($db,"UPDATE service_plan_changes SET state='dispatching'
+                    WHERE id=? AND state='prepared'",'i',[$correctionId]);
+                $changed=$c->affected_rows;$c->close();
+                if ($changed!==1 || !$db->commit())
                     throw new RuntimeException('physical_correction_before_put_commit_unknown');
+                error_log('achbot_plan_correction_dispatched journal_id='.$journalId.
+                    ' correction_id='.$correctionId.' actor_id='.$actorId);
             } catch (Throwable $error) {
                 try {$db->rollback();}catch(Throwable $ignored){}
                 throw $error;
             }
         };
-        if ($journal['provider']==='marzban') {
-            $result=achbotMarzbanApplyPlanHosts($server,
-                $intent['native_username'],$intent['native_target']['inbounds'],$beforeWrite);
-            if (($result['success']??false)!==true ||
-                ($result['verified']??false)!==true)
-                throw new RuntimeException('physical_correction_native_unverified');
-        } else {
+        if ($journal['provider']==='pasarguard') {
             $ctx=$pre['pg'];
             $check=achbotPgCheck($ctx['panel']);
             if (($check['success']??false)!==true ||
@@ -1406,7 +1032,7 @@ function achbotPhysicalCorrectPlan(mysqli $db,int $journalId,int $actorId,
             $current=$observed['native']['user'];
             $result=achbotPgModify($ctx['panel'],$ctx['identity'],
                 ['group_ids'=>$intent['native_target']['groups']],
-                $current['group_ids'],$beforeWrite);
+                $current['group_ids'],$beforeWrite,['group_ids'=>$current['group_ids']]);
             if (($result['success']??false)!==true ||
                 $result['user']['group_ids']!==$intent['native_target']['groups'])
                 throw new RuntimeException('physical_correction_native_unverified');
@@ -1419,10 +1045,16 @@ function achbotPhysicalCorrectPlan(mysqli $db,int $journalId,int $actorId,
         error_log('achbot_plan_correction_verified journal_id='.$journalId.
             ' correction_id='.$correctionId.' actor_id='.$actorId.
             ' shared_count='.$final['shared_count']);
-        return achbotPhysicalPlanResult(true,'corrected',$final['shared_count']);
+        return achbotPhysicalPlanResult(true,'corrected',$final['shared_count'])+['report_ref'=>$final['report_ref']];
     } catch (Throwable $error) {
         if ($tx) {
             try {$db->rollback();} catch (Throwable $ignored) {}
+        }
+        if ($correctionId>0 && $lease!==null) {
+            try {
+                $c=achbotProviderStatement($db,"UPDATE service_plan_changes SET state='cancelled'
+                    WHERE id=? AND state='prepared'",'i',[$correctionId]);$c->close();
+            } catch (Throwable $ignored) {}
         }
         $reason=(string)$error->getMessage();
         $safe=preg_match('/^physical_[a-z0-9_]{5,100}$/D',$reason)?$reason:'physical_correction_internal_error';
@@ -1433,53 +1065,28 @@ function achbotPhysicalCorrectPlan(mysqli $db,int $journalId,int $actorId,
     } finally {if ($lease!==null) achbotPhysicalReleaseLock($db,$lease);}
 }
 
-/**
- * Every successful admin/customer service change should reach normal staff
- * recipients AND the configured reporting channel. No report is issued before
- * the authoritative local/Native commit. Telegram failure never replays it.
- */
-function achbotNotifyServiceChange(string $kind,array $subject,int $actorId,bool $adminActor): void {
-    if (!in_array($kind,['server','plan'],true) ||
-        $actorId<=0 || (int)($subject['id']??0)<=0 ||
-        (int)($subject['userid']??0)<=0 ||
-        !is_string($subject['remark']??null) ||
-        (string)$subject['remark']==='') return;
-    try {
-        $escape=static fn($s): string =>
-            htmlspecialchars((string)$s,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
-        $params=[
-            'remark'=>$escape($subject['remark']),
-            'order_id'=>(string)(int)$subject['id'],
-            'user_id'=>(string)(int)$subject['userid'],
-            'actor_id'=>(string)$actorId
-        ];
-        if ($kind==='server') {
-            $source=(int)($subject['source_id']??0);
-            $target=(int)($subject['target_id']??0);
-            if (!$adminActor || $source<=0 || $target<=0) return;
-            $params['source_id']=(string)$source;
-            $params['target_id']=(string)$target;
-            $params['target_title']=$escape($subject['title']??'');
-        } else {
-            $id=(int)($subject['plan_id']??0);
-            if ($id<=0) return;
-            $params['actor_role']=$adminActor
-                ? achbotMessage('subscription.service_change_report.admin')
-                : achbotMessage('subscription.service_change_report.customer');
-            $params['plan_id']=(string)$id;
-            $params['plan_title']=$escape($subject['plan_title']??'');
-        }
-        $text=achbotMessage(
-            $kind==='server'
-                ? 'subscription.service_change_report.server'
-                : 'subscription.service_change_report.plan',
-            $params
-        );
-        // Default general notification fanout includes botState.rewardChannel.
-        // Do not pass report_channel=null: that explicitly disables it.
-        achbotNotifyAdmins('sendMessage',['text'=>$text,'parse_mode'=>'HTML']);
-    } catch (Throwable $error) {
-        error_log('achbot_service_change_report_unconfirmed order_id='.
-            (int)$subject['id'].' kind='.$kind.' class='.get_class($error));
+/** The original local/Native commit owns the report, not a UI reread. */
+function achbotPhysicalStageServiceChangeLocked(mysqli $db,string $kind,string $reference,
+    array $subject,int $actorId,bool $adminActor): void {
+    if (!in_array($kind,['server','plan'],true) || $actorId<=0 ||
+        (int)($subject['id']??0)<=0 || (int)($subject['userid']??0)<=0 ||
+        !is_string($subject['remark']??null) || $subject['remark']==='')
+        throw new RuntimeException('physical_report_source_invalid');
+    require_once __DIR__.'/../Finance/OperationalReports.php';
+    $params=['remark'=>$subject['remark'],'order_id'=>(int)$subject['id'],
+        'user_id'=>(int)$subject['userid'],'actor_id'=>$actorId];
+    if ($kind==='server') {
+        $source=(int)($subject['source_id']??0);$target=(int)($subject['target_id']??0);
+        if (!$adminActor || $source<=0 || $target<=0) throw new RuntimeException('physical_report_source_invalid');
+        $params+=['source_id'=>$source,'target_id'=>$target,'target_title'=>$subject['title']];
+    } else {
+        $id=(int)($subject['plan_id']??0);
+        if ($id<=0) throw new RuntimeException('physical_report_source_invalid');
+        $params+=['actor_role'=>achbotMessage($adminActor?'subscription.service_change_report.admin':'subscription.service_change_report.customer'),
+            'plan_id'=>$id,'plan_title'=>$subject['plan_title']];
     }
+    $text=($kind==='server'?achbotMessageHtml('subscription.service_change_report.server',$params):achbotMessageHtml('subscription.service_change_report.plan',$params))."\n".
+        achbotMessageHtml('operational_reports.source_reference',['reference'=>$reference]);
+    achbotOperationalReportStageLocked($db,$reference,(int)$subject['userid'],
+        $adminActor?$actorId:0,'orders',$text);
 }

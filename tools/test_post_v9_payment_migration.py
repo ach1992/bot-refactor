@@ -14,7 +14,6 @@ from pathlib import Path
 import test_access_state as owned
 import test_v6_native as native
 import test_v8_native as purchase
-import test_post_v9_finance_routes as finance
 
 ROOT = Path(__file__).resolve().parents[1]
 RC4_SOURCE = "58d98e05839b4aa5b28e985bcd1473173f590eda"
@@ -40,7 +39,8 @@ def run():
             "review_notice_claim_token" not in historic):
             raise RuntimeError("Historic RC4 schema is not exact expected form")
         native.sql(work,env,historic,DB)
-        finance.seed_payment(work,env,"migration-preserve","INCREASE_WALLET",0,0,"old-invoice")
+        sql(work,env,"INSERT INTO pays(hash_id,payid,user_id,type,plan_id,server_id,volume,day,price,request_date,state) "
+            "VALUES ('migration-preserve','old-invoice',1001,'INCREASE_WALLET',0,0,0,0,100,UNIX_TIMESTAMP(),'pending')")
         sql(work,env,"INSERT INTO achbot_nowpayments_attempts "
             "(pay_row_id,order_hash,invoice_id,payment_id,invoice_url,quote_usd,"
             "local_amount_toman,expected_outcome_currency,minimum_outcome_amount,"

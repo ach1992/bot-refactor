@@ -2,7 +2,7 @@
 /**
  * AChBot manual crypto choices. No live chain/provider calls or money effects.
  * Resolve a one-letter network callback to the existing guarded manual receipt
- * route. All legacy token-transfer buttons are converted to the safe selector.
+ * route. Only the current network selector can issue a crypto choice.
  */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
@@ -13,18 +13,13 @@ require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
 
-// A legacy USDT button is not a choice of chain; require explicit selection.
-if (preg_match('/^pay(?:Buy|Custom|Renew|IncreaseWallet|IncreaseDay|Increase)WithManualUsdt([A-Za-z0-9_-]{1,50})$/D',
-               $data, $legacyCrypto)) {
-    $data = 'mcm_' . $legacyCrypto[1];
-}
 
 $isMenu = preg_match('/^mcm_([A-Za-z0-9_-]{1,50})$/D', $data, $menuMatch) === 1;
 $isPick = preg_match('/^mc_([bcet])_([A-Za-z0-9_-]{1,50})$/D', $data, $pickMatch) === 1;
 if ($isMenu || $isPick) {
     $hashId = $isMenu ? $menuMatch[1] : $pickMatch[2];
     try {
-        $stmt=$connection->prepare('SELECT id,user_id,type,state,payid,day,volume FROM pays
+        $stmt=$connection->prepare('SELECT id,user_id,type,state,payid,day,volume,checkout_draft_context FROM pays
             WHERE hash_id=? LIMIT 1');
         $stmt->bind_param('s',$hashId);$stmt->execute();
         $selectedPay=$stmt->get_result()->fetch_assoc();$stmt->close();
@@ -33,27 +28,24 @@ if ($isMenu || $isPick) {
             answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.d0d07ef447'), true);
             return;
         }
-        $stmt=$connection->prepare('SELECT provider,stage,checkout_url FROM payment_attempts
+        if (!achbotPayUxCurrentDraft($selectedPay)) {
+            prepareStartFallback();
+            return '__ACHBOT_V8_GOTO_START__';
+        }
+        $stmt=$connection->prepare('SELECT provider,stage,checkout_url,wallet_invoice_sha256 FROM payment_attempts
             WHERE pay_row_id=? LIMIT 1');
         $payId=(int)$selectedPay['id'];
         $stmt->bind_param('i',$payId);$stmt->execute();
         $previous=$stmt->get_result()->fetch_assoc();$stmt->close();
-        if ($previous && (!in_array((string)$previous['provider'],
+        if ($previous && (!achbotCurrentReceiptPin($previous) || !in_array((string)$previous['provider'],
                                    ['manual_usdt','manual_trx'],true) ||
                           (string)$previous['stage']!=='pending')) {
             answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.4d788a75be'), true);
             return;
         }
-        $options=achbotManualCryptoOptions((int)$from_id);
-        // A current grant is needed to create a new claim. Existing pinned
-        // claims remain visible for receipt/support even if policy changes.
-        if (!$previous) {
-            foreach ($options as $networkKey=>$candidate) {
-                if (!achbotPayUxAudienceAllowed($connection,
-                    (string)$candidate['provider'],(int)$from_id))
-                    unset($options[$networkKey]);
-            }
-        }
+        require_once __DIR__.'/../CheckoutAdmission.php';
+        $options=$previous?[]:achbotManualCryptoOptions(
+            achbotCheckoutDraftPaymentOptions($connection,$payId,(int)$from_id));
         if ($previous) {
             $intent=achbotManualIntentDecode((string)$previous['checkout_url'],
                                              (string)$previous['provider']);
@@ -63,9 +55,7 @@ if ($isMenu || $isPick) {
             }
             // Do not substitute a newly configured wallet for a pinned one.
             $originalNetwork=(string)($intent['network'] ?? '');
-            $tag=match ($originalNetwork) {
-                'BEP20'=>'b','TRC20'=>'c','ERC20'=>'e','TRON'=>'t',default=>null
-            };
+            $tag=achbotManualCryptoTag($originalNetwork);
             if ($tag===null) {
                 answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.5ce97176e4'), true);
                 return;
@@ -104,19 +94,8 @@ if ($isMenu || $isPick) {
             answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.93decba032'), true);
             return;
         }
-        $type=(string)$selectedPay['type'];
-        $target=match(true) {
-            $type==='INCREASE_WALLET' => 'payIncreaseWalletWithManualUsdt',
-            $type==='RENEW_ACCOUNT' => 'payRenewWithManualUsdt',
-            $type==='BUY_SUB' && ((int)$selectedPay['day']>0 || (int)$selectedPay['volume']>0)
-                => 'payCustomWithManualUsdt',
-            $type==='BUY_SUB', $type==='RENEW_SCONFIG' => 'payBuyWithManualUsdt',
-            preg_match('/^INCREASE_DAY_[0-9]+_[0-9]+$/D',$type)===1
-                => 'payIncreaseDayWithManualUsdt',
-            preg_match('/^INCREASE_VOLUME_[0-9]+_[0-9]+$/D',$type)===1
-                => 'payIncreaseWithManualUsdt',
-            default => null
-        };
+        $mode=achbotCheckoutMode($selectedPay);
+        $target=$mode===null?null:achbotCheckoutCallbackPrefix($mode).'WithManualUsdt';
         if ($target===null) {
             answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.fc9718b40b'), true);
             return;

@@ -15,7 +15,7 @@ import time
 
 import test_access_state as owned
 import test_v8_native as purchase
-import test_post_v9_checkout_serialization as checkout
+from test_v5_native import sql_command
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=purchase.SIDE[1]
@@ -60,7 +60,7 @@ def source_functions(previous=False):
     return b'<?php\n'+content[a:b]+b'\n'
 
 def sql(w,e,q):
-    return checkout.sql(w,e,q)
+    return sql_command(w,e,q,DB).strip()
 
 def settings(w,e):
     raw=sql(w,e,"SELECT value FROM setting WHERE type='BOT_STATES' LIMIT 1")

@@ -122,7 +122,7 @@ def run_real_php(rows:list[dict]) -> list[dict]:
     require 'tools/source_scan.php';
     require 'messages/loader.php';
     eval(achbotExtractFunction('src/Admin/ManagementFlow.php','achbotManagementText'));
-    eval(achbotExtractFunction('config.php','achbotPaymentPolicyFields'));
+    eval(achbotExtractFunction('src/Finance/PaymentLifecycle.php','achbotPaymentPolicyFields'));
     $cases=json_decode($argv[1],true,512,JSON_THROW_ON_ERROR);$out=[];
     function produce(array $c):array {
         $prefix=$c['prefix']===''?'':achbotManagementText($c['prefix']);

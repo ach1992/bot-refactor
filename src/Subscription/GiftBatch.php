@@ -20,6 +20,7 @@ function achbotGiftOrder(mysqli $db,int $id,bool $lock=false): array {
     if (!$stmt) throw new RuntimeException('gift_order_prepare');
     $stmt->bind_param('i',$id);
     $ok=$stmt->execute();$row=$ok?$stmt->get_result()->fetch_assoc():null;$stmt->close();
+    if (!$ok) throw new RuntimeException('gift_order_read_failed');
     if (!$row) throw new RuntimeException('gift_order_missing');
     // Legacy userid is VARCHAR: never let numeric coercion redirect a notice.
     $rawUserid=$row['userid']??null;
@@ -114,8 +115,8 @@ function achbotGiftReferences(mysqli $db,int $serverId,string $remark,bool $lock
     $stmt->bind_param('s',$remark);
     $ok=$stmt->execute();$ids=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):null;$stmt->close();
     if ($ids===null) throw new RuntimeException('gift_references_unreadable');
-    $provider=achbotProviderType($db,$serverId);$orders=[];$identity=null;$originIdentity=null;
-    if (!in_array($provider,['marzban','pasarguard'],true))
+    $provider=achbotProviderType($db,$serverId);$orders=[];$identity=null;
+    if ($provider!=='pasarguard')
         throw new RuntimeException('gift_provider_unsupported');
     foreach ($ids as $id) {
         $sid=(int)$id['server_id'];
@@ -127,18 +128,9 @@ function achbotGiftReferences(mysqli $db,int $serverId,string $remark,bool $lock
     }
     if ($lock) achbotGiftLockReferences($db,$orders);
     foreach ($orders as $order) {
-        $origin=achbotGiftReferenceOrigin($db,$order);
-        if ($provider==='pasarguard') {
-            $ctx=achbotGiftPgOrderContext($db,$order['id'],$lock);
-            $candidate=[$ctx['account']['id'],$ctx['identity']];
-        } else {
-            $candidate=[$order['remark']];
-            if ($origin!==null) {
-                if ($originIdentity!==null && $originIdentity!==$origin['native_identity'])
-                    throw new RuntimeException('gift_native_identity_conflict');
-                $originIdentity=$origin['native_identity'];
-            }
-        }
+        achbotGiftReferenceOrigin($db,$order);
+        $ctx=achbotGiftPgOrderContext($db,$order['id'],$lock);
+        $candidate=[$ctx['account']['id'],$ctx['identity']];
         if ($identity!==null && $identity!==$candidate)
             throw new RuntimeException('gift_native_identity_conflict');
         $identity=$candidate;
@@ -156,53 +148,26 @@ function achbotGiftReferenceProof(array $orders): array {
 
 function achbotGiftValidateReferences(mysqli $db,array $expected,bool $lock=false): void {
     if ($lock) achbotGiftLockReferences($db,$expected);
-    $identity=null;$originIdentity=null;
+    $identity=null;
     foreach ($expected as $order) {
         if (achbotGiftOrder($db,$order['id'],$lock)!==$order)
             throw new RuntimeException('gift_reference_changed_after_claim');
-        $origin=achbotGiftReferenceOrigin($db,$order);
-        if (achbotProviderType($db,$order['server_id'])==='pasarguard') {
-            $ctx=achbotGiftPgOrderContext($db,$order['id'],$lock);
-            $candidate=[$ctx['account']['id'],$ctx['identity']];
-        } else {
-            $candidate=[$order['remark']];
-            if ($origin!==null) {
-                if ($originIdentity!==null && $originIdentity!==$origin['native_identity'])
-                    throw new RuntimeException('gift_native_identity_conflict');
-                $originIdentity=$origin['native_identity'];
-            }
-        }
+        achbotGiftReferenceOrigin($db,$order);
+        $ctx=achbotGiftPgOrderContext($db,$order['id'],$lock);
+        $candidate=[$ctx['account']['id'],$ctx['identity']];
         if ($identity!==null && $identity!==$candidate)
             throw new RuntimeException('gift_native_identity_conflict');
         $identity=$candidate;
     }
 }
 
-/** SQL-only identity digest pins the provider incarnation independently of local plan/cache. */
-function achbotGiftPinNativeIdentity(mysqli $db,array $orders,array $target): array {
-    if (($target['provider']??'marzban')!=='marzban') return $target;
-    $identity=null;
-    foreach ($orders as $order) {
-        $origin=achbotGiftReferenceOrigin($db,$order);
-        if ($origin===null) continue;
-        if ($identity!==null && $identity!==$origin['native_identity'])
-            throw new RuntimeException('gift_native_identity_conflict');
-        $identity=$origin['native_identity'];
-    }
-    if ($identity!==null) $target['marzban_native_identity']=$identity;
-    return $target;
-}
-
 function achbotGiftIdentityHash(mysqli $db,array $orders): string {
     $proof=[];$targets=[];
     foreach ($orders as $order) {
-        $origin=achbotGiftReferenceOrigin($db,$order);
+        achbotGiftReferenceOrigin($db,$order);
         $type=achbotProviderType($db,$order['server_id']);
-        $identity=$origin['native_identity']??null;
-        if ($type==='pasarguard') {
-            $ctx=achbotPgOrderContext($db,$order['id']);
-            $identity=[$ctx['account']['id'],$ctx['panel']['id'],$ctx['panel']['instance_key'],$ctx['identity']];
-        }
+        $ctx=achbotPgOrderContext($db,$order['id']);
+        $identity=[$ctx['account']['id'],$ctx['panel']['id'],$ctx['panel']['instance_key'],$ctx['identity']];
         $sid=$order['server_id'];
         if (!isset($targets[$sid]))
             $targets[$sid]=achbotGiftPublicTarget(achbotGiftPhysicalTarget($db,$sid));
@@ -212,35 +177,47 @@ function achbotGiftIdentityHash(mysqli $db,array $orders): string {
     return hash('sha256',json_encode($proof,JSON_THROW_ON_ERROR));
 }
 
-function achbotGiftCompletionReport(string $reference,string $remark,int $days,int $volume,
-    array $references,array $notices): bool {
-    try {
-        $ack=achbotNotifyAdmins('sendMessage',['text'=>\achbotMessage('gifts.completed_report',[
-            'reference'=>htmlspecialchars($reference,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),
-            'remark'=>htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),
-            'days'=>$days,'volume_mb'=>$volume,'reference_count'=>count($references),
-            'recipient_count'=>count(achbotGiftReferenceProof($references)['recipient_userids']),
-            'notice_unconfirmed_count'=>count($notices['unconfirmed'])
-        ]),'parse_mode'=>'HTML'],['event'=>'general']);
-        if (!achbotAdminFanoutAcknowledged($ack))
-            throw new RuntimeException('gift_report_partial_acknowledgement');
-        return true;
-    } catch (Throwable $error) {
-        error_log('achbot_gift_completion_report_unconfirmed reference='.$reference);
-        return false;
+/** Capture the verified entitlement change, independently of customer delivery. */
+function achbotGiftStageReportLocked(mysqli $db,string $reference,string $remark,int $days,int $volume,
+    array $references,int $actor=0): void {
+    require_once __DIR__.'/../Finance/OperationalReports.php';
+    $text=achbotMessageHtml('gifts.completed_report',[
+        'reference'=>$reference,'remark'=>$remark,'days'=>$days,'volume_mb'=>$volume,
+        'reference_count'=>count($references),
+        'recipient_count'=>count(achbotGiftReferenceProof($references)['recipient_userids'])
+    ]);
+    if ($actor>0) $text.="\n".achbotMessageHtml('operational_reports.actor',['actor'=>$actor]);
+    achbotOperationalReportStageLocked($db,$reference,0,$actor,'operations',$text);
+    $customerMessage=\achbotMessage('jobs.gift2all.message.1bf0942a3d',[
+        'remark'=>htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),
+        'giftText'=>achbotGiftCustomerText($volume,$days)]);
+    $seen=[];
+    foreach ($references as $order) {
+        $uid=$order['userid'];
+        if (isset($seen[$uid])) continue;
+        $seen[$uid]=true;
+        achbotOperationalGiftCustomerStageLocked($db,$reference,$actor,$order,$customerMessage);
     }
 }
 
-function achbotGiftDeliverNotices(mysqli $db,int $journalId,string $reference,
-    array $orders,string $remark,int $volume,int $days): array {
-    $notices=['acknowledged'=>[],'unconfirmed'=>achbotGiftReferenceProof($orders)['recipient_userids'],'send_exceptions'=>[]];
-    try {$notices=achbotGiftNotifyCustomers($db,$orders,$remark,achbotGiftCustomerText($volume,$days));}
-    catch (Throwable $error) {error_log('achbot_gift_customer_text_unconfirmed source_id='.$journalId);}
-    $notices['report_acknowledged']=achbotGiftCompletionReport($reference,$remark,$days,$volume,$orders,$notices);
-    achbotGiftRecordNotices($db,$journalId,$notices);
-    return $notices;
+/** Resolve the actual administrator from the original durable enqueue claim.
+ * No actor is inferred from the current Cron worker or current admin. */
+function achbotGiftReportActor(mysqli $db,array $receipt): int {
+    $type=$receipt['enqueue_source_type']??null;
+    if (!is_string($type) || !preg_match('/^ACHBOT_GIFT_SOURCE_[a-f0-9]{64}$/D',$type)) return 0;
+    $s=achbotProviderStatement($db,'SELECT value FROM setting WHERE type=? LIMIT 2','s',[$type]);
+    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    if (count($rows)!==1) return 0;
+    $claim=json_decode($rows[0]['value'],true);
+    if (!is_array($claim) || ($claim['gift_id']??null)!==$receipt['gift_id'] ||
+        ($claim['server_id']??null)!==$receipt['server_id'] ||
+        ($claim['volume_mb']??null)!==$receipt['volume_mb'] ||
+        ($claim['days']??null)!==$receipt['days'] || ($claim['source_type']??null)!==$type ||
+        !is_array($claim['source']??null)) return 0;
+    try {
+        return achbotGiftSourceType($claim['source'])===$type?$claim['source']['actor_id']:0;
+    } catch (Throwable $e) {return 0;}
 }
-
 
 function achbotGiftCustomerText(int $volume,int $days): string {
     $text='';
@@ -248,29 +225,6 @@ function achbotGiftCustomerText(int $volume,int $days): string {
     if ($days>0) $text.=($text===''?'':\achbotMessage('jobs.gift2all.text.1a51e219ec')).
         \achbotMessage('jobs.gift2all.text.b70363d685',['day'=>$days]);
     return $text;
-}
-
-/** Best effort notice projection, separate from the already committed native outcome. */
-function achbotGiftRecordNotices(mysqli $db,int $id,array $notices): void {
-    try {
-        $stmt=$db->prepare('SELECT value FROM setting WHERE id=?');
-        if (!$stmt) throw new RuntimeException('gift_notice_journal_prepare');
-        $stmt->bind_param('i',$id);$ok=$stmt->execute();
-        $row=$ok?$stmt->get_result()->fetch_assoc():null;$stmt->close();
-        $record=$row?json_decode($row['value'],true):null;
-        if (!is_array($record) || ($record['state']??null)!=='completed' ||
-            array_key_exists('customer_notices',$record))
-            throw new RuntimeException('gift_notice_journal_changed');
-        $record['customer_notices']=$notices;$record['notices_recorded_at']=gmdate('c');
-        $json=json_encode($record,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
-        $stmt=$db->prepare('UPDATE setting SET value=? WHERE id=? AND BINARY value=BINARY ?');
-        if (!$stmt) throw new RuntimeException('gift_notice_journal_update_prepare');
-        $stmt->bind_param('sis',$json,$id,$row['value']);
-        $ok=$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
-        if (!$ok || $changed!==1) throw new RuntimeException('gift_notice_journal_unconfirmed');
-    } catch (Throwable $error) {
-        error_log('achbot_gift_notice_journal_unconfirmed source_id='.$id);
-    }
 }
 
 /** Only lifecycle warning state is local. Native expiry/quota and purchase facts stay intact. */
@@ -288,39 +242,6 @@ function achbotGiftFinishReferences(mysqli $db,array $expected,bool $resetWarnin
     }
 }
 
-/** A failed/lost Telegram acknowledgement never reopens native gift admission. */
-function achbotGiftNotifyCustomers(mysqli $db,array $orders,string $remark,string $giftText): array {
-    $sent=[];$failed=[];$sendExceptions=[];
-    foreach ($orders as $order) {
-        $uid=$order['userid'];
-        if (isset($sent[$uid]) || isset($failed[$uid])) continue;
-        try {
-            if (achbotGiftOrder($db,$order['id'])!==$order)
-                throw new RuntimeException('gift_notice_reference_changed');
-            $stmt=$db->prepare('SELECT id FROM users WHERE BINARY userid=BINARY ? LIMIT 2');
-            if (!$stmt) throw new RuntimeException('gift_notice_customer_prepare');
-            $uidText=(string)$uid;
-            $stmt->bind_param('s',$uidText);$ok=$stmt->execute();
-            $rows=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):[];$stmt->close();
-            if (count($rows)!==1) throw new RuntimeException('gift_notice_customer_ambiguous');
-            $customerMessage=\achbotMessage('jobs.gift2all.message.1bf0942a3d',[
-                'remark'=>htmlspecialchars($remark,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),'giftText'=>$giftText]);
-            try {$response=sendMessage($customerMessage,null,'HTML',$uid);}
-            catch (Throwable $sendError) {
-                $sendExceptions[$uid]=true;
-                throw $sendError;
-            }
-            if (!is_object($response) || ($response->ok??false)!==true)
-                throw new RuntimeException('gift_notice_unacknowledged');
-            $sent[$uid]=true;
-        } catch (Throwable $error) {
-            $failed[$uid]=true;
-            error_log('achbot_gift_customer_notice_unconfirmed order_id='.$order['id'].' userid='.$uid);
-        }
-    }
-    return ['acknowledged'=>array_keys($sent),'unconfirmed'=>array_keys($failed),
-        'send_exceptions'=>array_keys($sendExceptions)];
-}
 if (!function_exists('achbotGiftPhysicalTarget')) {
     function achbotGiftPhysicalTarget(mysqli $db, int $serverId,
                                       bool $lock=false): array {
@@ -339,91 +260,20 @@ if (!function_exists('achbotGiftPhysicalTarget')) {
                 'panel_url'=>$panel['api_url'],'credential_hash'=>hash('sha256',$panel['api_key']),
                 'group_id'=>null,'has_group_column'=>false];
         }
-        if (!$row || ($row['type']??null)!=='marzban')
-            throw new RuntimeException('gift_target_unsupported');
-        $url=rtrim((string)($row['panel_url']??''),'/');
-        $urlParts=parse_url($url);
-        if (!is_array($urlParts) ||
-            !in_array($urlParts['scheme']??null,['http','https'],true) ||
-            empty($urlParts['host']) ||
-            (isset($urlParts['user']) || isset($urlParts['pass'])) ||
-            isset($urlParts['query']) || isset($urlParts['fragment']) ||
-            $url==='') throw new RuntimeException('gift_target_url_invalid');
-        $username=(string)($row['username']??'');
-        $password=(string)($row['password']??'');
-        if ($username==='' || $password==='')
-            throw new RuntimeException('gift_target_credentials_missing');
-
-        // Legacy schema has no panel_group_id column; an installed 001
-        // migration may add it. Mirror the CREATE/edit transport semantics.
-        $columns=$db->query("SHOW COLUMNS FROM server_info LIKE 'panel_group_id'");
-        if (!$columns) throw new RuntimeException('gift_group_schema_unverified');
-        $hasGroup=$columns->num_rows===1;
-        $columns->free();
-        $group=null;
-        if (!$hasGroup) {
-            $stmt=$db->prepare('SELECT id FROM server_info WHERE id=?'.$suffix);
-            if (!$stmt) throw new RuntimeException('gift_server_inventory_prepare');
-            $stmt->bind_param('i',$serverId);
-            $ok=$stmt->execute();
-            $inventory=$ok?$stmt->get_result()->fetch_assoc():null;
-            $stmt->close();
-            if (!$inventory) throw new RuntimeException('gift_server_inventory_missing');
-        }
-        if ($hasGroup) {
-            $stmt=$db->prepare('SELECT panel_group_id FROM server_info WHERE id=?'.$suffix);
-            if (!$stmt) throw new RuntimeException('gift_group_prepare');
-            $stmt->bind_param('i',$serverId);
-            $ok=$stmt->execute();
-            $record=$ok?$stmt->get_result()->fetch_assoc():null;
-            $stmt->close();
-            if (!$record) throw new RuntimeException('gift_group_missing');
-            if ($record['panel_group_id']!==null) {
-                $group=(int)$record['panel_group_id'];
-                if ($group<=0) throw new RuntimeException('gift_group_invalid');
-                $stmt=$db->prepare(
-                    "SELECT id FROM setting WHERE id=? AND type='ACHBOT_MARZBAN_PANEL_GROUP'");
-                if (!$stmt) throw new RuntimeException('gift_group_identity_prepare');
-                $stmt->bind_param('i',$group);
-                $ok=$stmt->execute();
-                $present=$ok?$stmt->get_result()->fetch_assoc():null;
-                $stmt->close();
-                if (!$present) throw new RuntimeException('gift_group_identity_missing');
-            }
-        }
-        $credentialHash=hash('sha256',json_encode(
-            [$username,$password],JSON_THROW_ON_ERROR));
-        return [
-            'panel_url'=>$url,'username'=>$username,'password'=>$password,
-            'credential_hash'=>$credentialHash,'group_id'=>$group,
-            'has_group_column'=>$hasGroup
-        ];
+        throw new RuntimeException('gift_target_unsupported');
     }
 
     function achbotGiftPublicTarget(array $target): array {
-        if (($target['provider']??'')==='pasarguard') return array_intersect_key($target,array_flip([
+        if (($target['provider']??'')!=='pasarguard')
+            throw new RuntimeException('gift_target_unsupported');
+        return array_intersect_key($target,array_flip([
             'provider','panel_id','instance_key','panel_url','credential_hash','group_id','has_group_column']));
-        return [
-            'panel_url'=>$target['panel_url'],
-            'credential_hash'=>$target['credential_hash'],
-            'group_id'=>$target['group_id'],
-            'has_group_column'=>$target['has_group_column'],
-        ]+(isset($target['marzban_native_identity'])?
-            ['marzban_native_identity'=>$target['marzban_native_identity']]:[]);
     }
 
     function achbotGiftTargetMatches(mysqli $db,int $serverId,array $original): bool {
         try {
-            $current=achbotGiftPhysicalTarget($db,$serverId);
-            $expected=achbotGiftPublicTarget($original);
-            unset($expected['marzban_native_identity']);
-            $actual=achbotGiftPublicTarget($current);
-            if (($expected['provider']??'')==='pasarguard') return $expected===$actual;
-            return is_string($expected['credential_hash']??null) &&
-                hash_equals($expected['credential_hash'],$actual['credential_hash']) &&
-                $expected['panel_url']===$actual['panel_url'] &&
-                $expected['group_id']===$actual['group_id'] &&
-                $expected['has_group_column']===$actual['has_group_column'];
+            return achbotGiftPublicTarget($original)===
+                achbotGiftPublicTarget(achbotGiftPhysicalTarget($db,$serverId));
         } catch (Throwable $e) {
             return false;
         }
@@ -513,7 +363,7 @@ if (!function_exists('achbotGiftPhysicalTarget')) {
     ): array {
         $sourceType=achbotGiftSourceType($source);
         $actor=$source['actor_id'];
-        if ($serverId<=0 || $volume<0 || $days<0 ||
+        if ($serverId<=0 || $volume<0 || $volume>2147483647 || $days<0 || $days>achbotServiceDaysMax() ||
             ($volume===0 && $days===0) ||
             ($volume>0 && $volume%1024!==0) ||
             $primaryAdminId<=0 ||

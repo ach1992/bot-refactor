@@ -5,7 +5,45 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+require_once __DIR__.'/../Purchase/AgentPricing.php';
 
+
+/** Preview and definitive redemption share the same audience predicate.
+ * The existing order-based audiences mean a stored order reference, not
+ * the gateway's active-entitlement category. Keep that distinction. */
+function achbotDiscountAudienceAllowed(mysqli $db,array $discount,int $userId,bool $final): bool {
+    require_once __DIR__.'/ServiceHistory.php';
+    $mode=$discount['audience_type']?:'all';
+    if ($mode==='all') return true;
+    if ($mode==='user') return (int)$discount['audience_user_id']===$userId;
+    if ($mode==='buyers' || $mode==='non_buyers') {
+        $count=achbotCustomerHistoryCount($db,$userId,'buy',0,'older',$final,time());
+        return $count!==null && ($count>0)===($mode==='buyers');
+    }
+    $lock=$final?' FOR UPDATE':'';
+    if ($mode==='agents' || $mode==='non_agents') {
+        $user=achbotProviderRow($db,'SELECT is_agent FROM users WHERE userid=?'.$lock,'i',[$userId]);
+        return $user!==null && ((int)$user['is_agent']===1)===($mode==='agents');
+    }
+    if ($mode==='has_active_order' || $mode==='no_active_order') {
+        $order=achbotProviderRow($db,'SELECT id FROM orders_list'.
+            ($final?' FORCE INDEX (idx_orders_userid_v1)':'').' WHERE userid=? LIMIT 1'.$lock,'i',[$userId]);
+        return ($order!==null)===($mode==='has_active_order');
+    }
+    return false;
+}
+
+function achbotDiscountTargetAllowed(mysqli $db,array $discount,int $planId,bool $final): bool {
+    $mode=$discount['target_type']?:'all';
+    $id=(int)$discount['target_id'];
+    if ($mode==='all') return true;
+    if ($planId<=0) return false;
+    if ($mode==='plan') return $planId===$id;
+    if ($mode!=='server' && $mode!=='category') return false;
+    $plan=achbotProviderRow($db,'SELECT server_id,catid FROM server_plans WHERE id=?'.
+        ($final?' FOR UPDATE':''),'i',[$planId]);
+    return $plan!==null && (int)$plan[$mode==='server'?'server_id':'catid']===$id;
+}
 
 function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $username, $first_name, $admin, $botState){
     // گرفتن اطلاعات پرداخت
@@ -15,7 +53,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     $payInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    if(!$payInfo){
+    if(!$payInfo || (int)$payInfo['user_id']!==(int)$from_id){
         // پرداخت یافت نشد
         sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
         return [
@@ -71,86 +109,12 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     $maxDiscount  = isset($discountInfo['max_discount']) && $discountInfo['max_discount'] !== null
                     ? (int)$discountInfo['max_discount'] : 0;
 
-    $audienceType    = !empty($discountInfo['audience_type']) ? $discountInfo['audience_type'] : 'all';
-    $audienceUserId  = !empty($discountInfo['audience_user_id']) ? (int)$discountInfo['audience_user_id'] : null;
-    $targetType      = !empty($discountInfo['target_type']) ? $discountInfo['target_type'] : 'all';
-    $targetId        = !empty($discountInfo['target_id']) ? (int)$discountInfo['target_id'] : null;
-
-    // چک نوع کاربر (audience_type)
-
-    // گرفتن اطلاعات کاربر از جدول users
-    $stmt = $connection->prepare("SELECT `is_agent` FROM `users` WHERE `userid` = ? LIMIT 1");
-    $stmt->bind_param("i", $from_id);
-    $stmt->execute();
-    $userRow = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $isAgent = ($userRow && isset($userRow['is_agent'])) ? (int)$userRow['is_agent'] : 0;
-
-    $allowedForUser = true;
-
-    switch ($audienceType) {
-        case 'user':
-            // کد فقط برای یک userid خاص
-            $allowedForUser = ($audienceUserId == $from_id);
-            break;
-
-        case 'agents':
-            // فقط برای همکاران (is_agent = 1)
-            $allowedForUser = ($isAgent == 1);
-            break;
-			
-		case 'non_agents':
-            // کاربران غیر همکار = هر کسی که is_agent != 1
-            $allowedForUser = ($isAgent != 1);
-            break;
-
-        case 'buyers':
-        case 'non_buyers':
-            // چک خرید موفق در جدول pays
-            $stmt = $connection->prepare("
-                SELECT COUNT(*) AS c FROM `pays`
-                WHERE `user_id` = ? AND `state` IN ('auto_cart_approved','approved','paid')
-            ");
-            $stmt->bind_param("i", $from_id);
-            $stmt->execute();
-            $result = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            $hasBuy = $result && $result['c'] > 0;
-
-            if ($audienceType == 'buyers') {
-                $allowedForUser = $hasBuy;
-            } else { // non_buyers
-                $allowedForUser = !$hasBuy;
-            }
-            break;
-
-        case 'has_active_order':
-        case 'no_active_order':
-            // تعریف شما: هر رکورد در orders_list = سفارش فعال
-            $stmt = $connection->prepare("
-                SELECT COUNT(*) AS c FROM `orders_list`
-                WHERE `userid` = ?
-            ");
-            $stmt->bind_param("i", $from_id);
-            $stmt->execute();
-            $result = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            $hasActiveOrder = $result && $result['c'] > 0;
-
-            if ($audienceType == 'has_active_order') {
-                $allowedForUser = $hasActiveOrder;
-            } else { // no_active_order
-                $allowedForUser = !$hasActiveOrder;
-            }
-            break;
-
-        case 'all':
-        default:
-            $allowedForUser = true;
-            break;
+    try {
+        require_once __DIR__.'/../Panel/ProviderStorage.php';
+        $allowedForUser=achbotDiscountAudienceAllowed($connection,$discountInfo,(int)$from_id,false);
+    } catch (Throwable $e) {
+        $allowedForUser=false;
+        error_log('achbot_discount_audience_deferred user_id='.(int)$from_id.' class='.get_class($e));
     }
 
     if (!$allowedForUser) {
@@ -171,38 +135,11 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         ];
     }
 
-    // چک هدف سرویس (target_type)
-
-    // اگر کد محدود به پلن/سرور/دسته است، باید پلن پرداخت را هم داشته باشیم
-    if ($targetType !== 'all' && $planId > 0) {
-        $stmt = $connection->prepare("SELECT `server_id`, `catid` FROM `server_plans` WHERE `id` = ? LIMIT 1");
-        $stmt->bind_param("i", $planId);
-        $stmt->execute();
-        $planRow = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-    } else {
-        $planRow = null;
-    }
-
-    $allowedForPlan = true;
-
-    switch ($targetType) {
-        case 'plan':
-            $allowedForPlan = ($planId > 0 && $targetId == $planId);
-            break;
-
-        case 'server':
-            $allowedForPlan = ($planRow && $targetId == (int)$planRow['server_id']);
-            break;
-
-        case 'category':
-            $allowedForPlan = ($planRow && $targetId == (int)$planRow['catid']);
-            break;
-
-        case 'all':
-        default:
-            $allowedForPlan = true;
-            break;
+    try {
+        $allowedForPlan=achbotDiscountTargetAllowed($connection,$discountInfo,$planId,false);
+    } catch (Throwable $e) {
+        $allowedForPlan=false;
+        error_log('achbot_discount_target_deferred user_id='.(int)$from_id.' class='.get_class($e));
     }
 
     if (!$allowedForPlan) {
@@ -269,41 +206,63 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         ];
     }
 
-    $usedBy[] = $from_id;
-    $encodeUsedBy = json_encode($usedBy, JSON_UNESCAPED_UNICODE);
+    // Revalidate both source rows under the same owner/checkout lock.
+    // A failed or concurrent redemption must never consume a discount
+    // independently of the original unpaid invoice.
+    require_once __DIR__.'/CheckoutAdmission.php';
+    $started=false;
+    try {
+        achbotCheckoutRequireSchema($connection);
+        if (!$connection->begin_transaction()) throw new RuntimeException('discount_begin_failed');
+        $started=true;
+        achbotPayUxLockDraftOwner($connection,(int)$from_id);
+        $current=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=? FOR UPDATE','i',[(int)$rowId]);
+        if (!$current || $current!==$payInfo) throw new DomainException('discount_draft_changed');
+        $view=achbotCheckoutDraftViewLocked($connection,$current,(int)$from_id,$botState);
+        if ((int)$current['price']<=0 || !empty($view['context']['discount_applied']))
+            throw new DomainException('discount_already_applied');
+        $locked=achbotProviderRow($connection,'SELECT * FROM discounts WHERE id=? FOR UPDATE','i',[(int)$discountInfo['id']]);
+        if (!$locked || $locked!==$discountInfo ||
+            ((int)$locked['expire_date']!==0 && (int)$locked['expire_date']<=time()) ||
+            (int)$locked['is_active']!==1)
+            throw new DomainException('discount_changed');
+        if (!achbotDiscountAudienceAllowed($connection,$locked,(int)$from_id,true))
+            throw new DomainException('discount_audience_changed');
+        if (!achbotDiscountTargetAllowed($connection,$locked,(int)$current['plan_id'],true))
+            throw new DomainException('discount_target_changed');
+        $usedBy[] = $from_id;
+        $encodeUsedBy = json_encode($usedBy, JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        $discountValue=$type==='percent'?achbotPercentageAmount(max(0,$price),max(0,min(100,$amount))):$amount;
+        if ($maxDiscount>0) $discountValue=min($maxDiscount,$discountValue);
+        $discountValue=max(0,min($price,$discountValue));
+        $newPrice=$price-$discountValue;
+        $view['payment_methods']=array_keys(achbotCheckoutPaymentOptionsLocked($connection,(int)$from_id,$current['type'],$newPrice));
+        if ($newPrice>0 && !$view['payment_methods'])
+            throw new DomainException('discount_no_monetary_method');
+        $view['context']['discount_applied']=true;
+        $encodedContext=achbotServiceJson($view['context']);
 
-    if ($count != -1) {
-        $query = "UPDATE `discounts` SET `expire_count` = `expire_count` - 1, `used_by` = ? WHERE `id` = ?";
-    } else {
-        $query = "UPDATE `discounts` SET `used_by` = ? WHERE `id` = ?";
+        $query=$count!=-1
+            ? 'UPDATE discounts SET expire_count=expire_count-1,used_by=? WHERE id=?'
+            : 'UPDATE discounts SET used_by=? WHERE id=?';
+        $stmt=achbotProviderStatement($connection,$query,'si',[$encodeUsedBy,(int)$discountInfo['id']]);
+        $n=$stmt->affected_rows;$stmt->close();
+        if ($n!==1) throw new RuntimeException('discount_counter_failed');
+        $stmt=achbotProviderStatement($connection,'UPDATE pays SET price=?,checkout_draft_context=? WHERE id=?','isi',[$newPrice,$encodedContext,(int)$rowId]);
+        $stmt->close();
+        if (!$connection->commit()) throw new RuntimeException('discount_commit_unknown');
+        $started=false;
+        $price=$newPrice;
+        $payInfo['price']=$newPrice;$payInfo['checkout_draft_context']=$encodedContext;
+        $view['pay']=$payInfo;
+    } catch (Throwable $e) {
+        if ($started) {try {$connection->rollback();} catch (Throwable $ignored) {}}
+        if ($e instanceof DomainException && $e->getMessage()==='discount_no_monetary_method')
+            return ['success'=>false,'price'=>$price,'hash_id'=>$hash_id,'discount_value'=>0,
+                'discount_text'=>'','payInfo'=>$payInfo,'reason'=>'discount_no_monetary_method'];
+        sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'),null,'HTML');
+        return ['success'=>false,'price'=>0,'hash_id'=>'','discount_value'=>0,'discount_text'=>'','payInfo'=>null];
     }
-
-    $stmt = $connection->prepare($query);
-    $stmt->bind_param("si", $encodeUsedBy, $discountInfo['id']);
-    $stmt->execute();
-    $stmt->close();
-
-    // اعمال تخفیف روی قیمت
-
-    if($type == "percent"){
-        $discountValue = floor($price * $amount / 100);
-    } else {
-        $discountValue = $amount;
-    }
-
-    // اعمال سقف تخفیف اگر تعیین شده باشد
-    if ($maxDiscount > 0 && $discountValue > $maxDiscount) {
-        $discountValue = $maxDiscount;
-    }
-
-    $price -= $discountValue;
-    if($price < 0) $price = 0;
-
-    // آپدیت قیمت در جدول pays
-    $stmt = $connection->prepare("UPDATE `pays` SET `price` = ? WHERE `id` = ?");
-    $stmt->bind_param("ii", $price, $rowId);
-    $stmt->execute();
-    $stmt->close();
 
     // پیام به کاربر
 
@@ -338,6 +297,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         'success'        => true,
         'price'          => $price,
         'hash_id'        => $hash_id,
+        'view'           => $view,
         'discount_value' => $discountValue,
         'discount_text'  => $discountText,
         'payInfo'        => $payInfo,

@@ -3,24 +3,51 @@
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__.'/PasarGuard.php';
 
-/** SQL errors are private reason codes, never database text or parameter values. */
-function achbotProviderStatement(mysqli $db,string $sql,string $types='',array $values=[]): mysqli_stmt {
+/** Preserve SQL classification in both MySQLi reporting modes without
+ * logging the SQL, bound values or credentials. */
+final class AchbotProviderStorageException extends RuntimeException {
+    public function __construct(public readonly int $sqlErrno,public readonly string $sqlState,?Throwable $previous=null) {
+        parent::__construct('provider_storage_unavailable',0,$previous);
+    }
+}
+function achbotProviderStorageFailure(mysqli $db,?mysqli_stmt $s,?Throwable $e=null): AchbotProviderStorageException {
+    if ($e instanceof mysqli_sql_exception)
+        return new AchbotProviderStorageException((int)$e->getCode(),$e->getSqlState(),$e);
+    if ($e!==null) return new AchbotProviderStorageException(0,'00000',$e);
     try {
-        $s=$db->prepare($sql);
-        if (!$s || ($types!=='' && !$s->bind_param($types,...$values)) || !$s->execute())
-            throw new RuntimeException('provider_storage_unavailable');
+        $errno=$s?->errno?:$db->errno;
+        $state=$s?->errno?$s->sqlstate:$db->sqlstate;
+        return new AchbotProviderStorageException($errno,$state);
+    } catch (Throwable $cause) {
+        return new AchbotProviderStorageException(0,'00000',$cause);
+    }
+}
+function achbotProviderStatement(mysqli $db,string $sql,string $types='',array $values=[]): mysqli_stmt {
+    $s=null;
+    try {
+        $prepared=$db->prepare($sql);
+        if (!$prepared) throw achbotProviderStorageFailure($db,null);
+        $s=$prepared;
+        if (($types!=='' && !$s->bind_param($types,...$values)) || !$s->execute())
+            throw achbotProviderStorageFailure($db,$s);
         return $s;
     } catch (Throwable $e) {
-        // Keep SQLSTATE/errno available to the owning operation without
-        // exposing SQL text, bound values or provider credentials in logs.
-        throw new RuntimeException('provider_storage_unavailable',0,$e);
+        $failure=$e instanceof AchbotProviderStorageException?$e:achbotProviderStorageFailure($db,$s,$e);
+        if ($s!==null) {
+            try {$s->close();} catch (Throwable $ignored) {}
+        }
+        throw $failure;
     }
 }
 function achbotProviderRow(mysqli $db,string $sql,string $types='',array $values=[]): ?array {
     $s=achbotProviderStatement($db,$sql,$types,$values);
-    try { return $s->get_result()->fetch_assoc(); }
-    catch (Throwable $e) { throw new RuntimeException('provider_storage_unavailable'); }
-    finally { $s->close(); }
+    try {
+        $r=$s->get_result();
+        if (!$r) throw achbotProviderStorageFailure($db,$s);
+        return $r->fetch_assoc();
+    } catch (Throwable $e) {
+        throw $e instanceof AchbotProviderStorageException?$e:achbotProviderStorageFailure($db,$s,$e);
+    } finally { $s->close(); }
 }
 /** Native connection/operation evidence lives in the existing shared tables (012). */
 function achbotProviderRequireSchema(mysqli $db): void {
@@ -164,9 +191,9 @@ function achbotProviderSnapshot(mysqli $db,int $serverId,?int $planId=null): arr
         'endpoint_sha256'=>hash('sha256',rtrim($panel['api_url'],'/')),
         'group_ids'=>achbotProviderGroups($groups)];
 }
-function achbotProviderPanelForSnapshot(mysqli $db,array $snapshot): array {
+function achbotProviderPanelForSnapshot(mysqli $db,array $snapshot,bool $lock=false): array {
     $snapshot=achbotProviderCanonicalSnapshot($snapshot);
-    $p=achbotProviderPanel($db,$snapshot['panel_id']);
+    $p=achbotProviderPanel($db,$snapshot['panel_id'],$lock);
     if (!hash_equals($snapshot['instance_key'],$p['instance_key']) ||
         !hash_equals($snapshot['endpoint_sha256'],hash('sha256',rtrim($p['api_url'],'/'))))
         throw new RuntimeException('provider_snapshot_target_changed');
@@ -200,7 +227,7 @@ function achbotProviderAccountRow(?array $r): ?array {
  * remains unchanged. Validate that the held mutation is attached to precisely
  * this historical physical identity, without making it a new purchase.
  */
-function achbotProviderLegacyCutoverMutationValid(array $e,array $account): bool {
+function achbotProviderLegacyCutoverMutationValid(mysqli $db,array $e,array $account): bool {
     $state=$e['provider_state']??null;
     if ($state==='linked') return true;
     if (!in_array($state,['mutating','deleted'],true)) return false;
@@ -208,6 +235,17 @@ function achbotProviderLegacyCutoverMutationValid(array $e,array $account): bool
         $key=$e['provider_mutation_key']??null;
         if (!is_string($key) || $key==='' || strlen($key)>100)
             return false;
+        // New service claims keep the original historical snapshot intact.
+        // Their actual normalized journal, not a fabricated legacy history,
+        // proves the temporary physical ownership.
+        if ($state==='mutating' && preg_match('/^service:([1-9][0-9]*)$/D',$key,$m)) {
+            $claim=achbotProviderRow($db,"SELECT m.account_effect_id,m.phase,o.stage
+                FROM service_mutations m JOIN service_operations o ON o.id=m.service_operation_id
+                WHERE m.service_operation_id=?", 'i',[(int)$m[1]]);
+            return $claim && (int)$claim['account_effect_id']===(int)$e['id'] &&
+                in_array($claim['phase'],['observe','reset','modify','verified'],true) &&
+                in_array($claim['stage'],['funded','prepared','dispatching','applied'],true);
+        }
         $held=json_decode((string)($e['provider_mutation_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
         if (!is_array($held) || ($held['version']??null)!==1 ||
             ($held['key']??null)!==$key ||
@@ -240,7 +278,7 @@ function achbotProviderLegacyCutoverMutationValid(array $e,array $account): bool
  * references. Nothing here authorizes a Native CREATE or a financial replay.
  * This validator pins the exact source and target ledger shape before use.
  */
-function achbotProviderLegacyCutoverEvidence(array $e,array $account): array {
+function achbotProviderLegacyCutoverEvidence(mysqli $db,array $e,array $account): array {
     try {
         $snap=json_decode((string)($e['provider_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
         $native=json_decode((string)($e['provider_entitlement_snapshot']??''),true,64,JSON_THROW_ON_ERROR);
@@ -285,7 +323,7 @@ function achbotProviderLegacyCutoverEvidence(array $e,array $account): array {
             $e['pay_row_id']!==null || $e['actor_userid']!==null ||
             (int)$e['ordinal']!==1 || (int)$e['reserved_count']!==0 ||
             $e['state']!=='local_recorded' ||
-            !achbotProviderLegacyCutoverMutationValid($e,$account) ||
+            !achbotProviderLegacyCutoverMutationValid($db,$e,$account) ||
             (int)$e['provider_reference_id']!==(int)$e['id'] ||
             $e['source_ref']!=='legacy:'.$migration['source_server_id'].':'.hash('sha256',$account['remote_username']) ||
             (int)$e['target_server_id']!==$migration['source_server_id'] ||
@@ -336,7 +374,7 @@ function achbotProviderAccountByOrder(mysqli $db,int $orderId,bool $lock=false):
         $anchor['remote_user_id']!==(int)$order['provider_remote_user_id'] ||
         $anchor['remote_created_at']!==$order['provider_remote_created_at']) throw new RuntimeException('provider_order_identity_invalid');
     $historical=($effect['source_kind']??null)==='legacy_migration'?
-        achbotProviderLegacyCutoverEvidence($effect,$anchor):null;
+        achbotProviderLegacyCutoverEvidence($db,$effect,$anchor):null;
     require_once __DIR__.'/../Purchase/OrderWrites.php';
     $origin=achbotOrderImportOrigin($db,$order,$lock);
     if ($historical!==null && isset($historical[$orderId])) {
@@ -493,7 +531,7 @@ function achbotProviderAccountIdentity(mysqli $db,array $account,bool $lock=fals
         throw new RuntimeException('provider_account_provenance_invalid');
     $e=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=?'.($lock?' LOCK IN SHARE MODE':''),'i',[(int)$account['effect_id']]);
     if (($e['source_kind']??null)==='legacy_migration') {
-        achbotProviderLegacyCutoverEvidence($e,$account);
+        achbotProviderLegacyCutoverEvidence($db,$e,$account);
         return $identity+['identity_mode'=>'adopted','remote_username'=>$account['remote_username'],
             'adoption_sha256'=>hash('sha256',(string)$e['provider_snapshot'])];
     }
@@ -534,6 +572,34 @@ function achbotProviderAccountIdentity(mysqli $db,array $account,bool $lock=fals
     return $identity+['identity_mode'=>'adopted','remote_username'=>$account['remote_username'],
         'adoption_sha256'=>$digest];
 }
+/**
+ * Physical account occupancy, regardless of the originating effect's
+ * target_key. The caller locks the current physical panel (all aliases)
+ * in its transaction before checking or reserving a name. Attachments
+ * have no independent provider_reference_id. A deleted incarnation with
+ * a live local reference remains an identity/routing conflict.
+ * Locking reads include the live-reference check, not an older snapshot.
+ */
+function achbotProviderPhysicalNameClaimsLocked(mysqli $db,int $connectionId,string $first,
+    string $last,?int $exceptNativeId=null): array {
+    $sql="SELECT e.remote_username FROM service_effects e
+        WHERE e.provider_connection_id=? AND e.remote_username BETWEEN ? AND ?
+          AND e.provider_reference_id IS NOT NULL AND e.state<>'cancelled'
+          AND (e.provider_state IS NULL OR e.provider_state<>'deleted' OR EXISTS
+              (SELECT 1 FROM orders_list o WHERE o.provider_effect_id=e.id AND o.status=1 FOR UPDATE))";
+    $types='iss';$args=[$connectionId,$first,$last];
+    if ($exceptNativeId!==null) {
+        $sql.=" AND (e.provider_remote_user_id IS NULL OR e.provider_remote_user_id<>?)";
+        $types.='i';$args[]=$exceptNativeId;
+    }
+    $s=achbotProviderStatement($db,$sql.' FOR UPDATE',$types,$args);
+    try {
+        $names=[];$r=$s->get_result();
+        while ($row=$r->fetch_assoc()) $names[]=$row['remote_username'];
+        return $names;
+    } finally {$s->close();}
+}
+
 /** Caller owns one transaction spanning the order, source credential and both evidence rows. */
 function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array $proof,
     int $owner,int $orderId,int $actor,int $primary): void {
@@ -542,7 +608,7 @@ function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array
     if ((int)($tx['tx']??0)!==1 || min($serverId,$owner,$orderId,$actor)<=0)
         throw new RuntimeException('provider_adoption_transaction_invalid');
     $native=achbotPgNormalizeUser($native);
-    $panel=achbotPgServerPanel($db,$serverId);
+    $panel=achbotPgServerPanel($db,$serverId,true);
     if (achbotPgImportTarget($panel)!==($proof['target']??null))
         throw new RuntimeException('provider_adoption_target_changed');
     $s=achbotProviderStatement($db,'SELECT userid,isAdmin,step FROM users WHERE userid=? LIMIT 2 FOR UPDATE','i',[$actor]);
@@ -577,14 +643,9 @@ function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array
     if ($physical===null) {
         // Reused Native usernames must not hide an active old identity or
         // a deleted account that still has live local references.
-        $conflict=achbotProviderRow($db,"SELECT e.id FROM service_effects e
-            WHERE e.provider_connection_id=? AND e.remote_username=?
-              AND e.provider_reference_id IS NOT NULL
-              AND (e.provider_remote_user_id IS NULL OR e.provider_remote_user_id<>?)
-              AND (e.provider_state IS NULL OR e.provider_state<>'deleted' OR EXISTS
-                  (SELECT 1 FROM orders_list o WHERE o.provider_effect_id=e.id AND o.status=1))
-            LIMIT 1 FOR UPDATE",'isi',[$panel['id'],$native['username'],$native['id']]);
-        if ($conflict!==null) throw new RuntimeException('provider_adoption_username_conflict');
+        if (achbotProviderPhysicalNameClaimsLocked($db,$panel['id'],$native['username'],
+            $native['username'],$native['id']))
+            throw new RuntimeException('provider_adoption_username_conflict');
     }
     if ($physical!==null) {
         $physicalIdentity=achbotProviderAccountIdentity($db,$physical,true);

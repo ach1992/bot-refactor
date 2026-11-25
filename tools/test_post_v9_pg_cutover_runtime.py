@@ -11,7 +11,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import test_post_v9_scoped_api_pg as api
+import native_identity_fixture as api
 
 ROOT=Path(__file__).resolve().parents[1]
 CREATED="2026-11-14T21:00:00.000000Z"
@@ -119,7 +119,7 @@ try {
 
 def run():
     checks=[]
-    with api.sandbox(imported_empty=False) as (sql, runner, provider, bank, expiry):
+    with api.sandbox(imported_empty=False) as (sql, runner, provider, expiry):
         effect_id=fixture_effect(sql)
         with tempfile.TemporaryDirectory(prefix="pg-cutover-runtime-") as d:
             source=Path(d)/"runtime.php"

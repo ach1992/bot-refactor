@@ -55,18 +55,23 @@ function achbotApiPaymentPresentation(mysqli $db,array $pay,array $attempt): arr
             if (is_string($o['remark']??null) && $o['remark']!=='')
                 $display=(string)$o['remark'].' (#'.$orderId.')';
         }
-        if ($type==='BUY_SUB' && (int)($pay['id']??0)>0) {
-            $id=(int)$pay['id'];
-            // Only locally recorded CREATE effects identify issued accounts.
-            // A dispatching/unknown remote effect must never be called created.
+        $operation=(int)($attempt['service_operation_id']??0);
+        if ($type==='BUY_SUB' && $operation>0) {
+            // Current service ownership, never the retired pay-owned effect.
+            $checkout=(int)($pay['checkout_operation_id']??0);
+            if ($checkout>0 && $checkout!==$operation)
+                throw new RuntimeException('payment_presentation_source_mismatch');
+            $predicate="source_kind='service_operation' AND source_ref=?";
+            $reference=(string)$operation;
+            $bind='s';
             $q=$db->prepare("SELECT COUNT(*) AS count FROM service_effects
-                WHERE pay_row_id=? AND effect_kind='create' AND state='local_recorded'");
-            $q->bind_param('i',$id);$q->execute();
+                WHERE $predicate AND effect_kind='create' AND state='local_recorded'");
+            $q->bind_param($bind,$reference);$q->execute();
             $recordedCount=(int)($q->get_result()->fetch_assoc()['count']??0);$q->close();
             $q=$db->prepare("SELECT remote_username,order_id FROM service_effects
-                WHERE pay_row_id=? AND effect_kind='create' AND state='local_recorded'
+                WHERE $predicate AND effect_kind='create' AND state='local_recorded'
                 ORDER BY ordinal ASC LIMIT 8");
-            $q->bind_param('i',$id);$q->execute();
+            $q->bind_param($bind,$reference);$q->execute();
             $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
             foreach ($rows as $row) {
                 $name=(string)($row['remote_username']??'');
@@ -76,11 +81,6 @@ function achbotApiPaymentPresentation(mysqli $db,array $pay,array $attempt): arr
             }
             if ($accountNames)$display=$accountNames[0].($recordedCount>1?' +'.($recordedCount-1):'');
             elseif ($planName!=='')$display=$planName;
-        } elseif($type==='RENEW_SCONFIG' && $display===$label) {
-            $decoded=json_decode((string)($pay['description']??''),true);
-            $remark=is_array($decoded)?($decoded['remark']??null):null;
-            if (is_string($remark) && $remark!=='' && strlen($remark)<=100)
-                $display=$remark;
         }
     } catch (Throwable $error) {
         error_log('achbot_api_presentation_read_deferred pay_id='.(int)($pay['id']??0).
@@ -102,7 +102,7 @@ function achbotApiPaymentPresentation(mysqli $db,array $pay,array $attempt): arr
     $templateKey=match(true) {
         $type==='INCREASE_WALLET'=>'increase_wallet_request_message',
         $type==='BUY_SUB'=>'buy_new_account_request',
-        in_array($type,['RENEW_ACCOUNT','RENEW_SCONFIG'],true)=>'renew_account_request_message',
+        $type==='RENEW_ACCOUNT'=>'renew_account_request_message',
         default=>''
     };
     $template=$templateKey!==''?achbotMessage('legacy_messages.'.$templateKey):'';
@@ -127,87 +127,7 @@ function achbotApiPaymentRichReport(array $pay,string $body,array $presentation)
     return $body."\n\n".$details;
 }
 
-/**
- * Customer success is the existing MANUAL path copy, never an API-specific
- * confirmation. This module only renders/notifies; financial and native
- * effects have already committed under the original payment identity.
- * A failed or ambiguous Telegram acknowledgement is NOT successful delivery.
- */
-function achbotApiPaymentManualCustomerText(mysqli $db,array $pay): ?string {
-    $type=(string)($pay['type']??'');
-    $uid=(int)($pay['user_id']??0);
-    if($uid<=0)return null;
-    if($type==='INCREASE_WALLET') {
-        return achbotMessage('manual_payment.manual_receipts.message.f568baa065').
-            number_format((int)$pay['price']).
-            achbotMessageHtml('manual_payment.manual_receipts.message.f6331b33af',
-                ['supportID'=>(string)($GLOBALS['supportID']??'')]);
-    }
-    $remark='';
-    if($type==='RENEW_SCONFIG') {
-        $data=json_decode((string)($pay['description']??''),true);
-        $remark=is_array($data)?(string)($data['remark']??''):'';
-    } else {
-        $orderId=(int)($pay['order_id']??0);
-        if(preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_[1-9][0-9]*$/D',$type,$match))
-            $orderId=(int)$match[1];
-        if($orderId<=0)return null;
-        try {
-            $stmt=$db->prepare('SELECT remark FROM orders_list WHERE id=? AND userid=? LIMIT 1');
-            $stmt->bind_param('ii',$orderId,$uid);
-            $stmt->execute();
-            $row=$stmt->get_result()->fetch_assoc();$stmt->close();
-            $remark=(string)($row['remark']??'');
-        } catch(Throwable $error) {
-            error_log('achbot_api_customer_subject_read_deferred pay_id='.(int)($pay['id']??0));
-            return null;
-        }
-    }
-    if($remark==='')return null;
-    if($type==='RENEW_SCONFIG')
-        return achbotMessage('manual_payment.automatic_receipts.message.cca1075329',['remark'=>$remark]);
-    if($type==='RENEW_ACCOUNT')
-        return achbotMessage('renewal.renewal_checkout.message.47b1149fb0',['remark'=>$remark]);
-    $units=achbotPinnedAddonUnits($pay);
-    if(!is_int($units)||$units<=0)return null;
-    if(str_starts_with($type,'INCREASE_DAY_'))
-        return achbotMessage('renewal.extensions.message.24dea9b122',['volume'=>$units,'remark'=>$remark]);
-    if(str_starts_with($type,'INCREASE_VOLUME_'))
-        return achbotMessage('renewal.extensions.message.d5b6a4e6e7',['volume'=>$units,'remark'=>$remark]);
-    return null;
-}
-function achbotApiPaymentDeliverManualCustomer(mysqli $db,array $pay): bool {
-    $text=achbotApiPaymentManualCustomerText($db,$pay);
-    if($text===null)return false;
-    try {
-        $mode=(string)$pay['type']==='RENEW_SCONFIG'?null:'HTML';
-        return achbotApiPaymentAck(sendMessage($text,null,$mode,(int)$pay['user_id']));
-    } catch(Throwable $error) {
-        error_log('achbot_api_customer_delivery_unconfirmed pay_id='.(int)$pay['id'].
-            ' class='.get_class($error));
-        return false;
-    }
-}
-
-/**
- * Read the actual committed human actor and original payment identity.
- * All receipt copies can reuse this informational three-row projection;
- * presentation never changes financial/native state or sends notifications.
- */
-function achbotManualFinalReceiptKeyboard(mysqli $db,int $payId,string $subject): string {
-    if ($payId<=0 || $subject==='') throw new RuntimeException('manual_final_subject_invalid');
-    $q=$db->prepare('SELECT hash_id,type,state,approved_by FROM pays WHERE id=? LIMIT 1');
-    $q->bind_param('i',$payId);$q->execute();
-    $pay=$q->get_result()->fetch_assoc();$q->close();
-    if (!$pay || !in_array((string)$pay['state'],
-            ['approved','paid','auto_cart_approved'],true) ||
-        (int)$pay['approved_by']<=0 ||
-        !preg_match('/^[A-Za-z0-9_-]{1,50}$/D',(string)$pay['hash_id']))
-        throw new RuntimeException('manual_final_commit_not_verified');
-    return achbotApiPaymentFinalKeyboard($pay,'',false,['subject'=>$subject]);
-}
-
-function achbotApiPaymentFinalKeyboard(array $pay,string $fallback,bool $automatic,array $presentation): string {
+function achbotApiPaymentFinalKeyboard(array $pay,string $fallback,bool $automatic,array $presentation,?bool $walletSubject=null): string {
     $hash=(string)($pay['hash_id']??'');
     $actor=(int)($pay['approved_by']??0);
     $approver=$automatic?achbotMessage('manual_payment.api_payment.auto_approved'):
@@ -219,7 +139,7 @@ function achbotApiPaymentFinalKeyboard(array $pay,string $fallback,bool $automat
     if (preg_match('/\A.{57}/us',$subject)) {
         if (preg_match('/\A(.{1,55})/us',$subject,$short))$subject=$short[1].'...';
     }
-    $subjectButton=($pay['type']??'')==='INCREASE_WALLET'?$subject:
+    $subjectButton=($walletSubject??(($pay['type']??'')==='INCREASE_WALLET'))?$subject:
         achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.last_remark_for_admin_msg.2b262756e6',
             ['lastRemarkForAdminMsg'=>$subject]);
     return inlineKeyboard([

@@ -70,25 +70,13 @@ Use Gateway/Channel Settings to configure each API independently beneath its exi
 
 Use the actual trusted HTTPS WordPress API base on its default port or 443, including any installation subdirectory, without query/fragment, embedded credentials or redirects. Do not assume the APIs are reachable or authenticated because their settings show complete. Existing method switches and eligibility still apply; these API toggles do not enable a previously disabled payment method. The separate `cartToCartAutoAcceptState` applies only to receipts without an API profile; it is never an SMS verification fallback.
 
-Before either API switch is enabled, an authorized operator must verify the exact installed Stable runtime against its release manifest, full [014 source schema](../../migrations/post-v9/014_api_payment_evidence.sql) capability on the existing shared ledger, working OpenSSL AES-256-GCM and the unchanged per-bot webhook secret. Migration 014 contains 19 nullable attempt fields, 5 transaction fields, `idx_payment_evidence_due` and `uq_payment_evidence_operation`. There is no new table, old-invoice backfill or automatic migration. The read-only preflight's 014 capability PASS does not certify complete DDL/history or decrypt/test the API profile.
+Before either API switch is enabled, an authorized operator must verify the exact installed runtime against the trusted manifest and the mandatory consolidated current schema, working OpenSSL AES-256-GCM and the correct per-bot webhook secret. Use [fresh installation](FRESH-INSTALL.md) and the [current read-only preflight](PAYMENT-READINESS-PREFLIGHT.md). The preflight does not decrypt or test the live API profile. Never apply historical 014 or earlier migrations to make this runtime ready.
 
 The SMS monitoring horizon is a policy choice in hours measured from original invoice issuance; it is not a receipt-submission delay. Reliable timestamp interpretation and an exact source/amount match are still required without optional filters. Gift funding always uses redeem_amount; choose its actual unit rather than inferring it from a face-value/display label. Enable and live-test each API only under the separately approved rollout/acceptance plan. Old unpinned invoices stay manual; already pinned invoices retain their original profile even if the new-issuance switch is later turned OFF.
 
-## Current operator exceptions and manual Archive
+## Current operator exceptions
 
-The original API receipt retains its subject and normal manual review controls,
-but a genuinely unresolved case now links to the **shared** operator
-attention detail instead of only displaying a dead "نیازمند بررسی مدیر"
-callback. Authentic settled evidence can resume the original one-shot
-service/delivery path only while unarchived. A payments-authorized admin may
-choose **📦 بایگانی** instead of Approve, Reject or Recover: the source
-payment, financial history and unknown Native evidence remain unchanged,
-and no subsequent provider poll, original evidence consumption, service
-dispatch, customer delivery or stale callback may continue that original.
-A live in-flight worker responds busy rather than pretending to undo a
-remote operation. Normal, fully completed payments automatically leave the
-exception queue. Do not inspect external/manual PasarGuard quota changes
-to infer bot delivery. See [shared operator contract](AUTOMATIC-GATEWAY-REVIEW.md).
+The original API receipt links to the shared operations-attention detail when genuinely unresolved. Manual receipt decisions and authenticated API recovery share the original receipt-credit transaction and session lease. Reject an unverified receipt only if no uncertain or consumed API evidence prevents it. Never discard genuine proof or re-consume an item after an unknown response. Funded operations use the same three service decisions regardless of payment method; Telegram delivery remains independently recoverable. There is no archive action or state. See [shared operator contract](AUTOMATIC-GATEWAY-REVIEW.md).
 
 Same-amount SMS uniqueness now scans **all** possible originally issued
 local quotes in small ordered locked pages. The page size limits memory
@@ -139,7 +127,7 @@ API OFF retains screenshot submission and its original human review. API ON repl
 
 ## Durable consumption and recovery
 
-Source-only additive migration 014 extends the existing shared ledger with nullable evidence fields. It does not backfill old invoices, replace receipt stages/leases, create a provider registry, or alter issued 009 identity pins. In particular, original `payment_id`, `provider_reference` and stable `checkout_url` facts remain immutable. API absence/partial schema fails the API path closed; unpinned manual paths remain usable.
+The current schema stores the original receipt attempt, immutable evidence and proof in the shared ledger. The current issuer's immutable pin is mandatory for a new executable API receipt. The shared receipt-credit transaction and funded service engine separate local Wallet credit from Native service completion. Historical unpinned invoices are not runnable current payment commands.
 
 Before an external mutation, commit evidence identity, original expected snapshot, operation key/reference and dispatched intent. Perform network requests outside SQL transactions. Same-operation retries keep the original identity. Timeout, HTTP5xx, lease expiry or process restart is not permission to create a new consume operation.
 
@@ -153,9 +141,12 @@ Capture authenticated provider and native add-on eligibility outside SQL transac
 
 ## Migration, cutover and recovery boundary
 
-Migration 014 is a separately shipped source sidecar; a runtime ZIP never executes it. A compatible RC19 target already has its own verified earlier migration history. Do not rerun 003 or completed 012/013 to prepare014. Missing or partial014 prevents API use rather than authorizing an incomplete schema or a legacy reinterpretation of a pinned invoice.
-
-Use [RC20 → RC21](https://github.com/ach1992/bot-refactor/blob/bc99b227660e21e065af454f6315d08905cda429/docs/post-v9/RC20-TO-RC21.md) for the authorized maintenance window, matching backup/restore plan and consistent runtime replacement. Targets lacking complete014 also need the exact schema preflight in [RC19 → RC20](https://github.com/ach1992/bot-refactor/blob/bc99b227660e21e065af454f6315d08905cda429/docs/post-v9/RC19-TO-RC20.md). MariaDB DDL may commit the first ALTER TABLE before the second fails. Keep writers quiesced, retain the exact error/applied state and obtain an audited roll-forward/completion plan; do not repeatedly run014, drop new fields/indexes, clear a claim or hide a failed step.
+For this replacement use the empty consolidated schema and the separately
+authorized manual transfer/reconciliation contract in
+[the architecture](WALLET-FIRST-ARCHITECTURE.md#cutover-decision--controlled-manual-database-transfer-owner-2026-11-24).
+Migration 014 and RC19–RC21 upgrade procedures are historical release
+evidence only. Do not replay old SQL, clear a claim or activate old/new
+writers together.
 
 Turning an API switch OFF affects new issuance; it is not settlement rollback and does not remove the responsibility to finish/reconcile earlier pinned invoices. After API issuance, consumption, new gift journals or other new writes, an old runtime/database can ignore recovery state or erase newer truth. Keep source, database, private secret and operation evidence paired. Prefer a reviewed roll-forward; a downgrade/restore needs its own explicit current-state plan and must never erase later financial/native evidence or replay an uncertain effect. Do not rotate the webhook secret during this transition: it is also required to decrypt saved API profiles/codes.
 
@@ -199,4 +190,4 @@ Validate actual PHP/socket-MariaDB/loopback behavior: exact quotes and units, mi
 
 Current source acceptance uses the exact candidate's required [PHP 8.5 CI](CI-VALIDATION.md), relevant source-real regression checks, release-matched package verification and author-separated independent review where required. None of these proves installed financial or Telegram acceptance.
 
-API activation requires the actual SMS client/horizon/time interpretation or gift client/value unit, verified 014 capability and a separately authorized per-target rollout/live-acceptance context. A source merge, CI result or published ZIP performs no private configuration, live API verify/redeem, provider/Telegram, database/migration, Cron/PHP/OPcache or installation action. Preserve original Cron leases and every uncertain financial or Native effect; never blindly reapply completed migrations or replay previous customer operations.
+API activation requires the actual SMS client/horizon/time interpretation or gift client/value unit, verified current schema capability and a separately authorized per-target rollout/live-acceptance context. A source merge, CI result or published ZIP performs no private configuration, live API verify/redeem, provider/Telegram, database/migration, Cron/PHP/OPcache or installation action. Preserve original Cron leases and every uncertain financial or Native effect; never blindly reapply completed migrations or replay previous customer operations.

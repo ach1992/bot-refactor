@@ -24,36 +24,36 @@ ROOT = Path(__file__).resolve().parents[1]
 # Expensive cases go first to minimize the tail of a finite parallel pool.
 # Each native suite asserts against current PHP source using its own fixtures.
 NATIVE_TESTS = (
-    ("api_payments", "test_post_v9_scoped_api_pg.py"),
-    ("postcutover_recovery", "test_post_v9_pg_cutover_recovery.py"),
+    ("wallet_first_ledger", "test_wallet_first_ledger.py"),
+    ("wallet_first_cutover_openings", "test_wallet_first_cutover.py"),
+    ("wallet_first_credit", "test_wallet_first_credit.py"),
+    ("wallet_first_funding", "test_wallet_first_funding.py"),
+    ("wallet_first_retirement", "test_wallet_first_retirement.py"),
+    ("wallet_first_fresh_schema", "test_wallet_first_fresh_schema.py"),
+    ("current_payment_readiness", "test_post_v9_payment_readiness.py"),
+    ("current_sales_discount", "test_current_sales_discount.py"),
+    ("current_customer_routes", "test_current_customer_routes.py"),
+    ("wallet_first_hosted", "test_wallet_first_hosted.py"),
+    ("wallet_first_manual", "test_wallet_first_manual.py"),
+    ("wallet_first_service_execution", "test_wallet_first_service_execution.py"),
+    # PASS characterizes the current unsafe remote ordering; not acceptance.
+    ("native_write_counterexample", "test_wallet_first_native_write_fence.py"),
     ("native_import_name_reuse", "test_post_v9_import_name_reuse.py"),
     ("native_import_alias_duplicate", "test_post_v9_import_alias_duplicate.py"),
     ("delete_reconfirmation", "test_post_v9_delete_recovery.py"),
-    ("nowpayments_finality", "test_stable_nowpayments.py"),
+    ("operational_report_fanout", "test_operational_report_fanout.py"),
+    ("operational_report_outbox", "test_operational_report_outbox.py"),
     ("direct_gift_native", "test_post_v9_direct_gift_native.py"),
-    ("automatic_renewal", "test_post_v9_automatic_renewal.py"),
-    ("bank_purchase", "test_post_v9_bank_buy.py"),
+    ("scheduled_gift_native", "test_post_v9_scheduled_gift_native.py"),
     ("gateway_rules", "test_post_v9_gateway_rules.py"),
-    ("wallet_checkout", "test_post_v9_wallet_checkout.py"),
-    ("wallet_archive_schema_modes", "test_post_v9_wallet_archive_schema_modes.py"),
-    ("wallet_sconfig_finality", "test_post_v9_wallet_sconfig.py"),
-    ("wallet_marzban_target", "test_post_v9_wallet_marzban_target.py"),
-    ("wallet_pg_recovery", "test_post_v9_wallet_edit_recovery.py"),
-    ("wallet_original_renewal", "test_post_v9_wallet_renewal_recovery.py"),
-    ("wallet_original_buy_and_marzban", "test_post_v9_wallet_original_recovery.py"),
-    ("wallet_original_buy_pasarguard", "test_post_v9_wallet_pg_original_recovery.py"),
     ("indexed_payment_locks", "test_post_v9_payment_lock_scope.py"),
-    ("service_effects", "test_post_v9_service_effects.py"),
     ("pasarguard_http", "test_post_v9_pasarguard_client.py"),
-    ("low_wallet_reentry", "test_post_v9_low_wallet_reentry.py"),
     ("admin_wallet", "test_post_v9_admin_wallet.py"),
     ("payment_ux", "test_post_v9_payment_ux_lifecycle.py"),
     ("nonpaid_trial_bulk", "test_post_v9_nonpaid_routes.py"),
-    ("provider_registry", "test_unified_provider_registry.py"),
     ("subscription_status_copy", "test_post_v9_subscription_status_detail.py"),
     ("management_menu_context", "test_unified_management_menus.py"),
     ("payment_api_admin", "test_post_v9_payment_api_admin.py"),
-    ("scoped_pg_payments", "test_post_v9_scoped_pg_payments.py"),
     ("onboarding", "test_post_v9_onboarding.py"),
     ("agency_current", "test_post_v9_agency.py"),
     ("api_staff_permissions", "test_post_v9_api_staff_digest.py"),
@@ -61,10 +61,10 @@ NATIVE_TESTS = (
 )
 
 OTHER_TESTS = (
+    ("simple_server_display", ("php", "tools/test_simple_server_display.php"), "stdout"),
+    ("wallet_transfer", ("python3", "tools/test_post_v9_wallet_transfer.py",
+        "--run-disposable", "--current-only"), "report"),
     ("evidence_http_privacy", ("python3", "tools/test_post_v9_evidence_http_diagnostics.py"), "report"),
-    ("manual_unknown_redrive",
-     ("python3", "tools/test_owner_r6_api_flow.py", "--run-disposable", "--ci-redrive"),
-     "report"),
     ("cron_runner", ("python3", "tools/test_post_v9_cron_runner.py"), "report"),
     ("payment_reference", ("python3", "tools/test_post_v9_payment_identity.py"), "stdout"),
     ("wallet_callback_dispatch", ("python3", "tools/test_post_v9_wallet_callback_dispatch.py"), "stdout"),
@@ -87,9 +87,208 @@ OTHER_TESTS = (
      ("python3", "tools/test_post_v9_telegram_html_management_gift.py"), "stdout"),
     ("telegram_html_plan_prompts",
      ("python3", "tools/test_post_v9_telegram_html_plan_prompts.py"), "stdout"),
-    ("marzban_bearer", ("python3", "tools/test_post_v9_marzban_bearer.py"), "stdout"),
 )
 
+
+# Replaced execution families must be covered by affirmative named cases,
+# not merely removed from the roster. See docs/post-v9/CI-VALIDATION.md.
+REQUIRED_CURRENT_CASES = {
+    "wallet_first_service_execution": (
+        "missing_current_report_attempt_no_legacy_fallback",
+        "actual_long_checkout_and_auto_renew_storage_bound",
+        "current_schema_source_execution_without_migrations",
+        "five_real_wallet_callbacks_owner_schema_and_replay_fences",
+        "actual_low_wallet_callback_switch_to_manual",
+        "invalid_native_names_never_debit_or_allocate",
+        "retired_external_renewal_and_provider_denied",
+        "actual_bulk_checkout_draft",
+        "zero_commercial_actual_checkout_native_delivery_reports",
+        "physical_generated_name_collision_before_dispatch_only",
+        "imported_physical_names_paid_explicit_generated_bulk_deleted_and_attachment",
+        "import_create_physical_lock_read_committed_and_original_fence",
+        "actual_addon_current_agency_pricing_and_draft_guard",
+        "positive_addons_shared_configured_method_eligibility",
+        "ordinary_zero_commercial_origin_survives_demotion",
+        "discounted_and_zero_allocated_bulk_commercial_origin",
+        "managed_addon_policy_revocation_blocks_new_funding",
+        "zero_managed_free_confirmation_no_monetary_methods",
+        "actual_auto_renew_current_agency_policy",
+        "manual_receipt_original_frozen_quote",
+        "actual_custom_draft_and_review_completion_truth",
+        "receipt_projection_original_funding_service_and_delivery",
+        "service_report_original_receipt_and_wallet_debit",
+        "receipt_projection_resolved_original_never_reopened",
+        "physical_change_retires_current_draft_not_historical_receipt",
+        "current_draft_scoped_to_own_plan_journal",
+        "plan_prewrite_outage_and_abandoned_preparation_recover_without_manual_hold",
+        "native_mutation_replay_history_has_no_lifetime_count_ceiling",
+        "plan_lost_ack_recovers_with_current_rotated_credential",
+        "plan_correction_prewrite_outage_does_not_consume_dispatch",
+        "funded_buy_allows_actual_credential_rotation",
+        "resolution_refund_after_logical_server_delete",
+        "pre_dispatch_native_target_equality_not_our_effect",
+        "actual_renew_checkout_draft",
+        "actual_scoped_day_manual_checkout_draft",
+        "actual_scoped_volume_manual_checkout_draft",
+        "historical_prepaid_claim_no_adoption_or_new_effect",
+        "automatic_renewal_without_historical_table",
+        "automatic_renewal_alias_single_charge_original_notice",
+        "gateway_history_counts_only_actual_completed_automatic_renewal",
+        "actual_auto_renewal_sales_once_despite_delivery_and_report_retries",
+        "actual_external_sale_not_double_counted_as_wallet_or_delivery",
+        "actual_full_refund_not_service_sale",
+        "actual_partial_checkout_sale_uses_exact_original_refund",
+        "alias_fence_and_lost_put_absolute_addons",
+        "local_commit_failure_recovery",
+        "reset_ack_with_new_traffic_no_repeat_on_put_outage",
+        "manual_rejection_cancels_original_and_recovers_notice_without_money",
+        "actual_private_operator_delivery_and_report_confirmation_once",
+        "resolution_full_refund_once_and_reports",
+        "stalled_funded_worker_visible_without_failure_code",
+        "unknown_delivery_part_visible_even_with_pending_aggregate",
+        "resolution_partial_buy_exact_allocation_and_delivery",
+        "resolution_existing_native_blocks_refund_and_immediate_retry",
+        "resolution_independent_native_state_and_unrelated_field",
+        "resolution_close_releases_account_and_next_operation",
+        "resolution_edit_refund_and_known_applied_fence",
+        "resolution_auto_renewal_service_only_and_reenable",
+        "referral_excludes_current_agent",
+        "referral_excludes_agent_bulk",
+        "referral_customer_purchase_agent_inviter_eligible",
+        "referral_actual_funding_actor_common_audience",
+    ),
+    "wallet_first_manual": (
+        "bank_transfer_actual_issue_and_manual_approval",
+        "actual_approver_owner_channel_reports_without_duplicate_money",
+        "report_channel_malformed_financial_finality",
+        "configured_username_case_normalization",
+        "manual_rejection_dedup_owner_actor_channel_9001",
+        "manual_rejection_dedup_owner_actor_channel_9002",
+        "superseded_api_wallet_report_searchable_and_delivered",
+        "gift_card_actual_issue_and_manual_approval",
+        "manual_usdt_actual_issue_and_manual_approval",
+        "manual_trx_actual_issue_and_manual_approval",
+        "actual_explicit_timer",
+        "actual_bank_scan_lost_remote_ack_service_invalidated",
+        "superseded_submitted_api_receipt_credits_without_service",
+        "superseded_receiving_ack_and_recovery_all_photo_methods",
+        "superseded_receipt_preserves_configured_timer_policy",
+        "typed_gift_claim_atomic_and_superseded_recovery",
+        "superseded_unstarted_receipt_not_reopened",
+        "superseded_started_receipt_preserves_original_family_and_money",
+        "current_manual_approval_cooldown_preserves_configured_policy",
+        "current_review_cooldown_does_not_block_original_recovery",
+        "historical_and_automatic_payments_do_not_create_manual_cooldown",
+        "api_maintenance_rotates_broken_pin_and_skips_historical_projection",
+        "bank_filtered_search_resumes_after_page_budget",
+        "superseded_unfunded_receipt_reject_without_archive",
+        "actual_gift_proven_local_rollback_recovery_reject_denied",
+        "bank_transfer_lost_receipt_ack_recovery_and_independent_report",
+        "gift_card_lost_receipt_ack_recovery_and_independent_report",
+        "manual_usdt_lost_receipt_ack_recovery_and_independent_report",
+        "manual_trx_lost_receipt_ack_recovery_and_independent_report",
+        "rejected_receipt_cannot_reopen_archive_callback_inert",
+        "typed_gift_lost_receipt_ack_recovery",
+    ),
+    "wallet_first_hosted": (
+        "hosted_rejection_shared_outbox_late_verified_credit_no_service",
+        "hosted_rejection_actual_actor_owner_channel",
+        "hosted_rejection_preserves_independently_funded_service",
+        "actual_public_nextpay_checkout_and_return",
+        "actual_public_zarinpal_checkout_and_return",
+        "actual_public_nowpayment_checkout_and_return",
+        "actual_browser_nowpayments_local_policy_validation_and_original_reopen",
+        "actual_browser_current_config_not_request_snapshot_and_original_receipt",
+        "signed_child_verified_exact_quote_once",
+        "actual_admission_lost_creation_original_secret_ipn_recovery_and_poll_once",
+    ),
+    "wallet_first_funding": (
+        "duration_storage_boundary_before_wallet_debit",
+        "custom_duration_overflow_refused",
+        "trial_base_price_refused_at_issue_and_funding",
+        "registered_native_gateway_same_engines_once",
+        "registered_native_nonpaid_opaque_name_namespace",
+        "registered_gateway_foreign_evidence_rejected_by_core",
+        "registered_new_manual_method_same_credit_once",
+    ),
+    "wallet_first_retirement": (
+        "checkout_command_schema_missing:wallet_schema_gate",
+        "checkout_command_schema_partial:wallet_schema_gate",
+        "checkout_command_schema_invalid:wallet_schema_gate",
+        "accepted:schema_accepted",
+    ),
+}
+
+# These suites expose single-scenario evidence rather than strict/off pairs.
+REQUIRED_SCENARIOS = {
+    "nonpaid_trial_bulk": (
+        "commercial_positive_price_denied_at_nonpaid_reservation",
+        "trial_current_policy_and_entitlement_rechecked_before_reservation",
+        "consumed_trial_entitlement_denied_at_reservation",
+        "restricted_or_revoked_bulk_staff_denied_at_reservation",
+        "actual_nonpaid_bulk_physical_name_collision_resolved_before_dispatch",
+        "actual_trial_generated_name_collision_resolved_before_dispatch",
+        "strict_actual_nonpaid_imported_name_occupancy_alias_trial_and_bulk",
+        "off_actual_nonpaid_imported_name_occupancy_alias_trial_and_bulk",
+    ),
+    "current_payment_readiness": (
+        "fresh_empty_structure_ready_not_payment_configured",
+        "select_only_account_cannot_write",
+        "configured_current_methods_and_no_private_output_or_database_writes",
+        "explicit_exemptions_are_potential_not_actual_authorization",
+        "missing_check_nonunique_command_and_missing_foreign_key_block",
+        "untrusted_manifest_commit_or_private_member_rejected_before_db",
+        "tampered_and_symlinked_runtime_member_blocked",
+        "unexpected_executables_and_index_shadow_rejected_without_reading_contents",
+    ),
+    "gateway_rules": (
+        "current_service_history_funding_only_excluded_auto_renew_counted_once",
+    ),
+    "current_customer_routes": (
+        "actual_public_content_namespace_exact_and_no_private_values",
+        "actual_content_deletion_scope_and_staff_capability",
+        "actual_category_actor_owned_drafts_concurrent_submit_and_revocation",
+        "actual_category_delete_preserves_inactive_plan_references",
+        "actual_current_agency_discount_standard_bulk_custom_and_renewal",
+        "actual_bulk_quantity_and_amount_fit_storage_without_coercion",
+        "actual_capacity_entry_catalogue_share_current_native_saleability",
+        "actual_standard_agent_single_and_bulk_discount_to_wallet_admission",
+        "actual_custom_discount_uses_original_plan_units_and_name",
+        "actual_full_discount_zero_price_wallet_admission_and_no_replay",
+        "actual_invalid_discount_preserves_card_and_stale_target_consumes_nothing",
+        "actual_shortcuts_and_callback_share_purchase_methods_and_entry_gates",
+        "actual_owned_renewal_discount_and_subscription_shortcut",
+        "managed_trial_policy_and_revoked_draft_denied_before_effect",
+        "actual_trial_only_and_mixed_catalogue_purpose_and_custom_gate",
+        "actual_trial_conversion_refuses_existing_unfunded_standard_and_custom_drafts",
+        "actual_zero_agent_single_bulk_and_primary_commercial_no_money_or_trial",
+        "zero_commercial_catalogue_without_any_monetary_method",
+        "zero_commercial_current_agency_authorization_rechecked_before_reservation",
+        "zero_commercial_synchronized_role_plan_policy_revocation_before_reservation",
+        "zero_custom_configured_rates_and_agency_without_monetary_methods",
+        "sales_closure_denies_unissued_positive_quote_preserves_independent_trial_switch",
+        "full_discount_zero_confirmation_without_wallet_or_gateway",
+        "fresh_ordinary_agent_bulk_custom_discount_only_routes_atomic_partial_refusal",
+        "current_audience_flag_and_credential_not_stale_request_snapshot",
+        "fresh_renewal_full_discount_without_monetary_methods",
+        "all_eight_configured_methods_positive_discount_and_crypto_audience_exactness",
+        "malformed_payment_destinations_do_not_block_free_or_consume_partial_discount",
+        "configured_methods_shared_by_independent_topup_no_wallet_self_payment",
+        "topup_invalid_config_audience_and_quote_unavailable",
+        "nowpayments_local_policy_quote_validation_atomic_discount_and_zero",
+        "actual_crypto_submenu_and_manual_issuance_current_config_original_receipt",
+        "actual_renewal_hosted_navigation_current_method_configuration",
+    ),
+    "current_sales_discount": (
+        "actual_sales_keyboard_net_completed_value_wallet_origin_and_original_windows",
+        "actual_payment_reports_preserve_incoming_receipts",
+        "actual_custom_date_sales_and_receipt_count_are_distinct",
+        "actual_scheduled_sales_report_uses_same_completed_value",
+        "actual_discount_buyer_inverse_matches_completed_history_and_no_ineligible_consumption",
+        "actual_discount_target_policy_preserved_at_consumption",
+        "actual_discount_revalidates_buyer_history_under_owner_lock",
+    ),
+}
 
 def git(*args: str) -> str:
     return subprocess.check_output(["git", *args], cwd=ROOT, text=True).strip()
@@ -128,6 +327,21 @@ def validate_proof(name: str, raw: str) -> dict:
     if (proof.get("complete") is not True and proof.get("pass") is not True and
             proof.get("status") != "PASS" and proof.get("result") != "PASS"):
         raise ValueError(f"{name}: no affirmative current functional test result")
+    if name in REQUIRED_CURRENT_CASES:
+        reported = proof.get("checks", proof.get("case_names", []))
+        if not isinstance(reported, list):
+            raise ValueError(f"{name}: missing named current cases")
+        for case in REQUIRED_CURRENT_CASES[name]:
+            for mode in ("strict", "off"):
+                if f"{mode}:{case}" not in reported and f"{mode}_{case}" not in reported:
+                    raise ValueError(f"{name}: missing {mode}:{case}")
+    if name in REQUIRED_SCENARIOS:
+        reported = proof.get("scenarios")
+        if not isinstance(reported, list):
+            raise ValueError(f"{name}: missing named scenarios")
+        for case in REQUIRED_SCENARIOS[name]:
+            if case not in reported:
+                raise ValueError(f"{name}: missing {case}")
     cases = proof.get("cases")
     if type(cases) is int and cases <= 0:
         raise ValueError(f"{name}: empty test cases")
@@ -187,22 +401,12 @@ def main() -> int:
         temp_base = Path(os.environ.get("RUNNER_TEMP") or tempfile.gettempdir())
         with tempfile.TemporaryDirectory(prefix="achbot-ci-stable-", dir=temp_base) as folder:
             work = Path(folder)
-            # The bank-purchase fixture seeds both original-schema databases.
-            # Running that seed concurrently with the long PHP/API MariaDB
-            # fixture loop can starve one genuine SQL import beyond its
-            # existing 30-second deadline on a small CI runner. Exercise the
-            # bank case once, alone, then retain parallelism for the rest.
-            # Never turn a timed-out/failed fixture into a synthetic PASS.
-            isolated = next((case for case in tests if case[0] == "bank_purchase"), None)
-            if isolated is None:
-                raise RuntimeError("bank_purchase acceptance missing")
-            early = run_case(isolated, work)
-            remaining = [case for case in tests if case[0] != isolated[0]]
-            with ThreadPoolExecutor(max_workers=min(workers, len(remaining))) as pool:
-                futures = [pool.submit(run_case, spec, work) for spec in remaining]
+            # The obsolete bank-purchase double-schema fixture no longer
+            # runs. Schedule the current service/Native suites directly.
+            with ThreadPoolExecutor(max_workers=min(workers, len(tests))) as pool:
+                futures = [pool.submit(run_case, spec, work) for spec in tests]
                 executed = {x["name"]: x for task in as_completed(futures)
                             for x in [task.result()]}
-            executed[isolated[0]] = early
             results.extend(executed[spec[0]] for spec in tests)
 
     success = all(item["status"] == "PASS" for item in results)

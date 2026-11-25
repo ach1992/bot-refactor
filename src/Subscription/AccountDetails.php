@@ -120,62 +120,17 @@ function canReadAdminOrderDetails(): bool {
     return $actor!==null && ((int)$actor['userid']===(int)($admin??0) || (int)$actor['isAdmin']===1);
 }
 
-/**
- * Validate the selected product separately from the action admission policy.
- * New selections require the same logical server. Existing relocated services
- * retain their original plan only within the already verified physical panel.
- */
-function validPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock=false,
-    bool $sameLogicalServer=true,bool $allowCurrentInactive=false): ?array {
-    if ($planId<=0 || (int)($order['status']??0)!==1) return null;
-    $historical=$allowCurrentInactive && (int)($order['fileid']??0)===$planId;
-    $stmt=$db->prepare('SELECT p.*,c.type AS provider_type,i.active AS server_active
-        FROM server_plans p JOIN server_info i ON i.id=p.server_id
-        JOIN server_config c ON c.id=p.server_id
-        WHERE p.id=? AND p.price>0'.($historical?'':' AND p.active=1').($lock?' FOR UPDATE':''));
-    $stmt->bind_param('i',$planId);$stmt->execute();$plan=$stmt->get_result()->fetch_assoc();$stmt->close();
-    if (!$plan || (int)$plan['server_active']!==1 ||
-        !achbotSupportsAccount($plan['provider_type'], $plan['inbound_id']) ||
-        achbotWholeServiceUnits($plan['days'],36500)===null ||
-        achbotWholeServiceUnits($plan['volume'],achbotServiceVolumeMax())===null ||
-        !achbotSupportsPlan($db,$planId,0,(int)$plan['server_id'],$lock,$historical) ||
-        !achbotServerCommerceAvailable($db,(int)$plan['server_id'],false,$lock))
-        return null;
-    $orderServer=(int)($order['server_id']??0);$planServer=(int)$plan['server_id'];
-    if ($orderServer!==$planServer &&
-        ($sameLogicalServer || !achbotSameProviderPanel($db,$orderServer,$planServer))) return null;
-    $stmt=$db->prepare('SELECT i.active,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=?'.($lock?' FOR UPDATE':''));
-    $stmt->bind_param('i',$orderServer);$stmt->execute();$server=$stmt->get_result()->fetch_assoc();$stmt->close();
-    if (!$server || (int)$server['active']!==1 ||
-        !achbotSupportsAccount($server['type'],$order['inbound_id']??null) ||
-        !achbotServerCommerceAvailable($db,$orderServer,false,$lock)) return null;
-    return $plan;
-}
-function paidPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock=false,
-    bool $sameLogicalServer=true,bool $allowCurrentInactive=false): ?array {
-    if ($planId<=0 || (int)($order['status']??0)!==1 ||
-        !achbotOrderMayUsePaidPlan($db,$order,$lock)) return null;
-    return validPlanForOrder($db,$order,$planId,$lock,$sameLogicalServer,$allowCurrentInactive);
-}
-function selectedPaidPlan(\mysqli $db,array $order,bool $lock=false): ?array {
-    return paidPlanForOrder($db,$order,(int)($order['fileid']??0),$lock,false,true);
-}
 /** Missing/malformed origin evidence is not a free-trial inference. */
 function orderPlanActions(\mysqli $db,array $order): array {
     try {
         $mayChoose=(int)($order['status']??0)===1 &&
             achbotServerCommerceAvailable($db,(int)$order['server_id'],false) &&
             achbotOrderMayUsePaidPlan($db,$order);
-        $paid=$mayChoose?selectedPaidPlan($db,$order):null;
-        // A fully discounted agent purchase keeps its established manual
-        // renewal/add-on path, without becoming an import or new consent.
-        $manual=$paid;
-        if (!$mayChoose && (int)($order['agent_bought']??0)===1)
-            $manual=validPlanForOrder($db,$order,(int)($order['fileid']??0),false,false,true);
-        return ['certain'=>true,'choose'=>$mayChoose,'paid'=>$paid,'manual'=>$manual];
+        $paid=$mayChoose?achbotValidPlanForOrder($db,$order,(int)$order['fileid'],false,false,true):null;
+        return ['certain'=>true,'choose'=>$mayChoose,'paid'=>$paid];
     } catch (\Throwable $error) {
         error_log('achbot_order_plan_actions_unverified order_id='.(int)($order['id']??0));
-        return ['certain'=>false,'choose'=>false,'paid'=>null,'manual'=>null];
+        return ['certain'=>false,'choose'=>false,'paid'=>null];
     }
 }
 
@@ -439,9 +394,8 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         $temp = [];
 
         if ($mutationEligible &&
-            ($botState['sellState'] ?? "off") == "on" &&
-            $planActions['manual']!==null &&
-            ($botState['renewAccountState'] ?? "off") == "on"
+            achbotManagedServicePolicyAllows('RENEW',$botState) &&
+            $planActions['paid']!==null
         ) {
             $temp[] = ['text' => \achbotMessage('legacy_buttons.renew_config'), 'callback_data' => "renewAccountAsk{$id}"];
         }
@@ -457,19 +411,17 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
         $flatButtons = [];
 
         if (
-            ($botState['sellState'] ?? "off") == "on" &&
-            ($botState['increaseVolumeState'] ?? "off") == "on" &&
+            achbotManagedServicePolicyAllows('ADD_VOLUME',$botState) &&
             $canExtendVolume &&
-            $mutationEligible && $planActions['manual']!==null
+            $mutationEligible && $planActions['paid']!==null
         ) {
             $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.increase_config_volume'), 'callback_data' => "increaseAVolume{$id}"];
         }
 
         if (
-            ($botState['sellState'] ?? "off") == "on" &&
-            ($botState['increaseTimeState'] ?? "off") == "on" &&
+            achbotManagedServicePolicyAllows('ADD_TIME',$botState) &&
             $canExtendTime &&
-            $mutationEligible && $planActions['manual']!==null
+            $mutationEligible && $planActions['paid']!==null
         ) {
             $flatButtons[] = ['text' => \achbotMessage('legacy_buttons.increase_config_days'), 'callback_data' => "increaseADay{$id}"];
         }

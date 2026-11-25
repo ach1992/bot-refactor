@@ -89,6 +89,8 @@ foreach ($deletions as $order) {
     // Marzban keeps its existing guarded Cron policy unchanged.
     $deleteLease=null;$deletionComplete=false;
     try {
+        require_once __DIR__.'/../Finance/OperationalReports.php';
+        achbotOperationalReportRequireReady($connection);
         $native=achbotProviderType($connection,$serverId)==='pasarguard';
         if ($native) {
             require_once __DIR__.'/../Subscription/PhysicalService.php';
@@ -129,7 +131,7 @@ foreach ($deletions as $order) {
         }
         if (!is_object($result) || ($result->success??false)!==true ||
             ($native && ($result->delete_restore_capacity??null)!==false) ||
-            !achbotAutoRenewFinalizeDeletion($connection,$id,$serverId,false)) {
+            !achbotAutoRenewFinalizeDeletion($connection,$id,$serverId,false,'expired')) {
             error_log('achbot_warning_local_delete_deferred order_id='.$id);continue;
         }
         $deletionComplete=true;
@@ -142,12 +144,12 @@ foreach ($deletions as $order) {
         if ($deleteLease!==null) achbotPhysicalReleaseLock($connection,$deleteLease);
     }
     if (!$deletionComplete) continue;
+    achbotOperationalReportDispatch($connection,'delete:'.$id);
     $msg=achbotMessage('notifications.warnings.msg.c7907b6342',['remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8')]);
     sendMessage($msg,json_encode(['inline_keyboard'=>[[[
         'text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>'mainMenu'
     ]]]]),'HTML',(int)$order['userid']);
-    achbotNotifyAdmins('sendMessage', ['text'=>achbotMessage('notifications.warnings.channel_message.5e59a4a33e',[
-        'from_id'=>(int)$order['userid'],'remark'=>htmlspecialchars($remark,ENT_QUOTES,'UTF-8')]),'parse_mode'=>'HTML']);
+
 }
 
 // This is traversal metadata only: a cursor never authorizes a deletion.

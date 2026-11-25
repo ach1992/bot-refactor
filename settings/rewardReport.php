@@ -7,22 +7,17 @@ require_once __DIR__ . '/../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 include_once __DIR__ . '/../baseInfo.php';
 include_once __DIR__ . '/../config.php';
 
-$sellState=$botState['sellState']=="off"?\achbotMessage('jobs.reward_report.text.c2dd5f586f'):\achbotMessage('jobs.reward_report.text.f28e680498');
-$searchState=$botState['searchState']=="off"?\achbotMessage('jobs.reward_report.text.c2dd5f586f'):\achbotMessage('jobs.reward_report.text.f28e680498');
 $rewaredTime = ($botState['rewaredTime']??0);
-$rewaredChannel = $botState['rewardChannel'];
+$rewaredChannel = $botState['rewardChannel']??'';
 
 if($rewaredTime>0){
     $lastTime = $botState['lastRewardMessage']??0;
     if(time() > $lastTime){
         $time = time() - ($rewaredTime * 60 * 60);
         
-		$stmt = $connection->prepare("SELECT SUM(price) as total FROM `pays` WHERE `request_date` > ? AND (`state` = 'paid' OR `state` = 'approved' OR `state` = 'auto_cart_approved')");
-        $stmt->bind_param("i", $time);
-        $stmt->execute();
-        $totalRewards = number_format($stmt->get_result()->fetch_assoc()['total']);
-        $stmt->close();
-        
+        require_once __DIR__.'/../src/Finance/ServiceHistory.php';
+        $totalRewards=number_format(achbotServiceSalesTotal($connection,$time+1));
+
         // BOT_STATES must be updated from its locked persisted document:
         // this Cron request may have a stale in-memory $botState. Never
         // overwrite a concurrent administrator's gateway restriction.
@@ -45,20 +40,10 @@ require_once __DIR__ . '/../src/Backup/Database.php';
 );
 
 
-// Existing operator-managed Cron runner also reconciles signed NOWPayments
-// status notifications. It is not a public anonymous payment trigger.
-if (!defined('ACHBOT_NP_RECONCILE_ONLY')) define('ACHBOT_NP_RECONCILE_ONLY',true);
-// Existing browser gateway always loads these QR/subscription helpers. Cron
-// must load the same source before processing BUY_SUB or RENEW_ACCOUNT.
-require_once __DIR__.'/../src/Purchase/Core.php';
-require_once __DIR__ . '/../src/Finance/GatewayReturn.php';
-// A partially applied 003 migration may leave attempts without the child
-// transaction ledger. Skip ONLY NOWPayments work until both are available;
-// automatic receipts below must still run during schema repair.
-if (achbotSharedPaymentTablesReady($connection)) {
-    achbotNpReconcileBatch($connection, is_array($paymentKeys ?? null)?$paymentKeys:[], 3);
-    // Review is a quiet, admin-initiated inbox. Only normal finalized
-    // business-operation reports are delivered outside the payment ledger.
-}
+// Authenticated merchant reconciliation does not execute services itself.
+require_once __DIR__.'/../src/Finance/CheckoutAdmission.php';
+require_once __DIR__.'/../src/Finance/HostedReceipt.php';
+achbotCheckoutRequireSchema($connection);
+achbotHostedReceiptMaintain($connection,3);
 
 require __DIR__ . '/../src/Finance/AutomaticReceipts.php';

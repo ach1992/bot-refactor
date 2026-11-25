@@ -1,5 +1,5 @@
 <?php
-/** AChBot V8: source-pinned financial compatibility module. */
+/** AChBot current payment route and shared receipt presentation. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
@@ -16,210 +16,9 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWalle
     setUser();
 
     $hashId = trim($match[1] ?? '');
-    // Keep the original payment lease across Wallet debit, Native CREATE,
-    // local finality AND direct QR/admin delivery in this same callback.
-    $checkoutLease=achbotWalletCheckoutLeaseBegin(
-        $connection,$hashId,(int)$from_id,'custom');
-    if ($checkoutLease['lease']==='unavailable' ||
-        ($checkoutLease['pay_id']>0 &&
-         !in_array($checkoutLease['lease'],['owned','borrowed'],true))) {
-        alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
-        return;
-    }
-    try {
-    $pendingCustomDelivery=null;
-
-    $result = processWalletPayment($connection, $hashId, function($payInfo, $userRow) use (
-        $connection,
-        $botState,
-        $botUrl,
-        $admin,
-        $userInfo,
-        $username,
-        $first_name,
-        $from_id,
-        &$pendingCustomDelivery
-    ) {
-        $uid    = (int)($payInfo['user_id'] ?: $from_id);
-        $fid    = (int)$payInfo['plan_id'];
-        $volume = (int)$payInfo['volume'];
-        $days   = (int)$payInfo['day'];
-        $remark = $payInfo['description'];
-        $price  = (int)$payInfo['price'];
-        $hashIdLocal = $payInfo['hash_id'];
-
-        // The locked pre-debit plan is this wallet order's authorization.
-        // Do not reread mutable plan settings after its held debit COMMIT.
-        $plan=$payInfo['_achbot_wallet_locked_plan']??null;
-        if (!is_array($plan) || (int)($plan['id']??0)!==$fid ||
-            (int)($plan['server_id']??0)!==(int)$payInfo['server_id'])
-            throw new RuntimeException('wallet_custom_locked_plan_missing');
-
-        $date             = time();
-        $expire_microdate = floor(microtime(true) * 1000) + (864000 * $days * 100);
-        $expire_date      = $date + (86400 * $days);
-
-        $type       = $plan['type'];
-        $protocol   = $plan['protocol'];
-        $server_id  = (int)$plan['server_id'];
-        $netType    = $plan['type'];
-        $acount     = (int)$plan['acount'];
-        $inbound_id = (int)$plan['inbound_id'];
-        $limitip    = $plan['limitip'];
-        $rahgozar   = $plan['rahgozar'];
-        $customPath = $plan['custom_path'];
-        $customPort = $plan['custom_port'];
-        $customSni  = $plan['custom_sni'];
-
-        // Full-count capacity was already committed in this payment's
-        // durable 007 wallet_hold, before the first external CREATE.
-        $uniqid = generateRandomString(42, $protocol);
-
-        // اطلاعات سرور + تنظیمات پنل
-        [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
-        $srv_remark  = $serverInfo['remark'];
-        $serverType  = $serverConfig['type'];
-        $portType    = $serverConfig['port_type'];
-
-        [$port, $last_num] = getNextPortAndIncrease('settings/temp.txt', $portType);
-
-        [$response, $remark, $port, $effectId] = achbotCreatePaidAccount(
-            $connection,(int)$payInfo['id'],1,[
-                'user_id'=>$uid,'server_type'=>$serverType,
-                'server_id'=>$server_id,'inbound_id'=>$inbound_id,
-                'plan_id'=>$fid,'remark'=>$remark,'volume'=>$volume,
-                'days'=>$days,'uniqid'=>$uniqid,'protocol'=>$protocol,
-                'port'=>$port,'expire_microdate'=>$expire_microdate,
-                'net_type'=>$netType,'rahgozar'=>$rahgozar,'limitip'=>$limitip
-            ]
-        );
-
-        ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
-
-        alert(\achbotMessage('legacy_messages.sending_config_to_user'));
-
-        [$token, $vray_link, $uniqid, $accText, $userKeys, $qrLink] = buildLinksAndSendQr(
-            $serverType,
-            $serverConfig,
-            $botState,
-            $botUrl,
-            $server_id,
-            $uniqid,
-            $protocol,
-            $remark,
-            $port,
-            $netType,
-            $inbound_id,
-            $rahgozar,
-            $customPath,
-            $customPort,
-            $customSni,
-            $response,
-            $uid,
-            $volume,
-            $days,
-                [],
-            false,
-            '',
-            null,
-            false
-        );
-
-        $inviterId = $userRow['refered_by'] ?? null;
-        if (!empty($inviterId)) {
-			giveReferralReward($connection, $uid, $inviterId, $admin, $botState, 'wallet');
-        }
-
-        $agentBought = (int)($payInfo['agent_bought'] ?? 0);
-
-        if ($connection->begin_transaction()!==true)
-            throw new RuntimeException('custom_wallet_order_begin');
-        try {
-            $orderId=insertOrder(
-                $connection,$uid,$token,$fid,$server_id,$inbound_id,
-                $remark,$uniqid,$expire_date,$vray_link,
-                $price,$date,$agentBought,true);
-            achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
-            if ($connection->commit()!==true)
-                throw new RuntimeException('custom_wallet_order_commit_unknown');
-        } catch (Throwable $error) {
-            try {$connection->rollback();} catch (Throwable $ignored) {}
-            throw $error;
-        }
-        $pendingCustomDelivery=[
-            'uid'=>$uid,'qr'=>$qrLink,'caption'=>$accText,'keys'=>$userKeys
-        ];
-
-        $keys = json_encode([
-            'inline_keyboard' => [
-                [
-                    ['text' => \achbotMessage('payment.checkout.button.e401f3d5a2'), 'callback_data' => "wizwizch"]
-                ],
-                [
-                    ['text' => \achbotMessage('payment.checkout.hash_id_local.09f20c4022', ['hashIdLocal' => $hashIdLocal]), 'callback_data' => "noop_$hashIdLocal"]
-                ]
-            ]
-        ]);
-
-        $msg = str_replace(
-            ['TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
-            [\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212'), $uid, $username, $first_name, $price, $remark, $volume, $days],
-            \achbotMessage('legacy_messages.buy_custom_account_request')
-        );
-
-        $pendingCustomDelivery['admin_msg']=$msg;
-        $pendingCustomDelivery['admin_keys']=$keys;
-        return true;
-    }, 'custom');
-
-    if ($result['status'] === 'not_found') {
-        $text = "/start";
-        $data = "";
-        delMessage();
-        return '__ACHBOT_V8_GOTO_START__';
-    }
-
-    if ($result['status'] === 'already_paid') {
-        return;
-    }
-    if ($result['status']==='ok' && is_array($pendingCustomDelivery)) {
-        try {
-            $sent=sendQrFromLink(
-                $pendingCustomDelivery['qr'],$pendingCustomDelivery['caption'],
-                $pendingCustomDelivery['keys'],$botUrl,
-                (int)$pendingCustomDelivery['uid'],'',null);
-            if (!$sent) throw new RuntimeException('custom_wallet_qr_unconfirmed');
-        } catch (Throwable $error) {
-            $reviewPay=(int)($result['payInfo']['id']??0);
-            error_log('achbot_custom_wallet_delivery_review pay_id='.
-                $reviewPay.' class='.get_class($error));
-            try {
-                (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.2a6cba0152').
-                    \achbotMessage('payment.checkout.message.4f5582ec37').
-                    \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').$reviewPay,
-                    'reply_markup'=>null,'parse_mode'=>null],
-                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
-            } catch (Throwable $ignored) {
-                error_log('achbot_custom_wallet_owner_notice_failed pay_id='.$reviewPay);
-            }
-        }
-        try {
-            (achbotNotifyAdmins('sendMessage', ['text'=>$pendingCustomDelivery['admin_msg'],
-                    'reply_markup'=>$pendingCustomDelivery['admin_keys'],'parse_mode'=>"html"],
-                    ['primary'=>$admin])[0]['response']??null);
-        } catch (Throwable $error) {
-            error_log('achbot_custom_wallet_admin_notice_failed pay_id='.
-                (int)($result['payInfo']['id']??0));
-        }
-    }
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    achbotCheckoutWalletCallback($connection,$hashId,(int)$from_id,'custom',$botState);
     return;
-    } finally {
-        // An early invalid/missing draft owns no lease and may not have
-        // loaded the Archive/lease module. Borrowed locks stay with parent.
-        if ($checkoutLease['lease']==='owned')
-            achbotOriginalDispatchLeaseEnd($connection,
-                (int)$checkoutLease['pay_id'],(string)$checkoutLease['lease']);
-    }
 }
 
 if (is_string($data) && strlen($data)<=64 &&
@@ -271,54 +70,18 @@ if (is_string($data) && strlen($data)<=64 &&
     }
 }
 
-if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayCustomWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
+if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data : strlen($data) <= 64) && preg_match('/\ApayCustomWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
-    }
-
-    $fid = (int)$payInfo['plan_id'];
-
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=?");
-    $stmt->bind_param("i", $fid);
-    $stmt->execute();
-    $file_detail = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $server_id  = (int)$file_detail['server_id'];
-    $acount     = (int)$file_detail['acount'];
-    $inbound_id = (int)$file_detail['inbound_id'];
-
-    if ($acount == 0 && $inbound_id != 0) {
-        alert(\achbotMessage('legacy_messages.out_of_connection_capacity'), true);
-        exit;
-    }
-
-    if ($inbound_id == 0) {
-        $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `id`=?");
-        $stmt->bind_param("i", $server_id);
-        $stmt->execute();
-        $server_info = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if ((int)$server_info['ucount'] <= 0) {
-            alert(\achbotMessage('legacy_messages.out_of_server_capacity'), true);
-            exit;
-        }
-    } else {
-        if ($acount != 0 && $acount <= 0) {
-            sendMessage(str_replace("AMOUNT", $acount, \achbotMessage('legacy_messages.can_create_specific_account')));
-            exit;
-        }
     }
 
     $method = str_starts_with($data, 'payCustomWithManualUsdt') ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
         (str_starts_with($data, 'payCustomWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
-                           $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
+                           $GLOBALS['achbotManualCryptoChoice'] ?? null,'custom')) {
         alert(\achbotMessage('payment.checkout.alert.1a885aaca4'), true);
         return;
     }
@@ -335,7 +98,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (function_exists('achbotApiPaymentTrackInvoice')) achbotApiPaymentTrackInvoice($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
-    setUser(function_exists('achbotApiPaymentInitialStep') ? achbotApiPaymentInitialStep($connection,(string)$match[1],"payCustomWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]) : "payCustomWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
+    setUser("payCustomWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
@@ -345,18 +108,17 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     exit;
 }
 
-if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\Asend(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
     }
 
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
-    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id,'custom')) {
         alert(\achbotMessage('payment.checkout.alert.d06bc731eb'), true);
         return;
     }
@@ -367,7 +129,7 @@ if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/',
     // Serialize with the six-hour unstarted-invoice expiry sweep.
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
-                                      $method,(int)$from_id)) {
+                                      $method,(int)$from_id,'custom')) {
         alert(\achbotMessage('payment.checkout.alert.560f05f822'),true);
         return;
     }
@@ -382,16 +144,16 @@ if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/',
     exit;
 }
 
-if (preg_match('/cancelCustomCartReceipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\AcancelCustomCartReceipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
     handleCancelFlow( $removeKeyboard);
 }
 
-if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
+if (preg_match('/\Await(?:CustomCart|CustomGift|CustomUsdt)Receipt([A-Za-z0-9_-]{1,50})\z/D', $userInfo['step'], $match)) {
 
     $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match[1]) :
         (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
-    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
+    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id,'custom')) {
         setUser();
         alert(\achbotMessage('payment.checkout.alert.882596d0f1'), true);
         return;
@@ -404,39 +166,11 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
     }
 
 
-    $payInfo = dbFetchPayByHash($connection, $match[1]);
-    if (!$payInfo) {
-        prepareStartFallback();
-        delMessage();
-        return '__ACHBOT_V8_GOTO_START__';
-    }
-
-    $fid    = (int)$payInfo['plan_id'];
-    $volume = $payInfo['volume'];
-    $days   = $payInfo['day'];
-
-
-    $uid = $userInfo['userid'];
-    $name = $userInfo['name'];
-    $username = $userInfo['username'];
-
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=?");
-    $stmt->bind_param("i", $fid);
-    $stmt->execute();
-    $res = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id`=?");
-    $stmt->bind_param("i", $res['catid']);
-    $stmt->execute();
-    $catname = $stmt->get_result()->fetch_assoc()['title'];
-    $stmt->close();
-
-    $filename = $catname . " " . $res['title'];
-    $fileprice = $payInfo['price'];
-    $remark = $payInfo['description'];
-
-
+    $payInfo=$receiptPay;
+    $original=achbotManualOriginalServiceQuote($connection,$receiptPay,(int)$from_id,'custom');
+    if (!$original) {alert(achbotMessage('payment.checkout.alert.882596d0f1'),true);return;}
+    $volume=$original['volume'];$days=$original['days'];
+    $username=$userInfo['username'];$fileprice=$original['price'];$remark=$original['remark'];
 
     $msg = str_replace(
         ['TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
@@ -456,7 +190,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
         !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid,'custom');
     if ($deliveryToken === null) {
         alert(\achbotMessage('payment.checkout.alert.795c4bddb8'), true);
         return;
@@ -482,258 +216,9 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
 }
 
 if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != \achbotMessage('legacy_buttons.cancel')) {
-    if (!achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
-        alert(\achbotMessage('payment.checkout.alert.873a4950ab'), true);
-        return;
-    }
-
-    $hash_id = trim($match[1]);
-
-    require_once __DIR__.'/../ServiceEffects.php';
-    $claimed=false;
-    $claimOpen=false;
-    try {
-        if ($connection->begin_transaction()!==true)
-            throw new RuntimeException('custom_receipt_claim_begin');
-        $claimOpen=true;
-        $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE");
-        $stmt->bind_param("s", $hash_id);
-        $stmt->execute();
-        $payInfo = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if (!achbotManualServiceApprovalAllowedLocked($connection, $payInfo, 'custom') ||
-            !achbotSupportsPaymentSubject($connection, $payInfo)) {
-            $connection->rollback();
-            $claimOpen=false;
-            alert(\achbotMessage('payment.checkout.alert.e733abf9ba'), true);
-            return;
-        }
-
-        $payRowId = (int)$payInfo['id'];
-        // A custom manual BUY_SUB is an operator-approved CREATE as well.
-        // Reserve its complete quantity and own it in 007 in this SAME
-        // original receipt transaction, before any external operation.
-        achbotEffectRequireUniqueLine($connection);
-        $reservedCount=achbotManualCustomReserveCapacityLocked(
-            $connection,$payInfo);
-        achbotEffectRecordManualCapacityLocked(
-            $connection,$payInfo,$reservedCount);
-        $stmt = $connection->prepare("UPDATE `pays` SET `state` = 'processing', `approved_by` = ? WHERE `id` = ? AND `state` = 'have_sent'");
-        $stmt->bind_param('ii', $from_id, $payRowId);
-        $stmt->execute();
-        $changed = $stmt->affected_rows;
-        $stmt->close();
-        if ($changed !== 1) throw new Exception('custom_receipt_claim_failed');
-        // Preserve the original reviewed receipt before any remote action.
-        if ($connection->commit()!==true)
-            throw new RuntimeException('custom_receipt_claim_commit_unknown');
-        $claimOpen=false;
-        $claimed=true;
-
-        $fid    = (int)$payInfo['plan_id'];
-        $uid    = (int)$payInfo['user_id'];
-        $days   = (int)$payInfo['day'];
-        $volume = (int)$payInfo['volume'];
-        $price  = (int)$payInfo['price'];
-        $remark = $payInfo['description'];
-
-        $planDetails = getPlanDetails($connection, $fid);
-        $plan        = $planDetails['plan'];
-
-        $date = time();
-        $expire_microdate = floor(microtime(true) * 1000) + (864000 * $days * 100);
-        $expire_date      = $date + (86400 * $days);
-
-        $type       = $plan['type'];
-        $protocol   = $plan['protocol'];
-        $server_id  = (int)$plan['server_id'];
-        $netType    = $plan['type'];
-        $acount     = (int)$plan['acount'];
-        $inbound_id = (int)$plan['inbound_id'];
-        $limitip    = $plan['limitip'];
-        $rahgozar   = $plan['rahgozar'];
-        $customPath = $plan['custom_path'];
-        $customPort = $plan['custom_port'];
-        $customSni  = $plan['custom_sni'];
-
-        ensureServerCapacity($connection, $server_id, $inbound_id, $acount);
-
-        [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
-        $srv_remark  = $serverInfo['remark'];
-        $serverType  = $serverConfig['type'];
-        $portType    = $serverConfig['port_type'];
-
-        $uniqid = generateRandomString(42, $protocol);
-        [$port] = getNextPortAndIncrease('settings/temp.txt', $portType);
-
-        // اگر خواستی fallback برای remark داشته باشی:
-        // $remark = buildRemark($botState, $srv_remark, $payInfo['description'], $uid, $payInfo['description']);
-
-        [$response, $remark, $port, $effectId] = achbotCreatePaidAccount(
-            $connection,$payRowId,1,[
-                'user_id'=>$uid,'server_type'=>$serverType,
-                'server_id'=>$server_id,'inbound_id'=>$inbound_id,
-                'plan_id'=>$fid,'remark'=>$remark,'volume'=>$volume,'days'=>$days,
-                'uniqid'=>$uniqid,'protocol'=>$protocol,'port'=>$port,
-                'expire_microdate'=>$expire_microdate,'net_type'=>$netType,
-                'rahgozar'=>$rahgozar,'limitip'=>$limitip
-            ]
-        );
-
-        ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, true);
-
-        alert(\achbotMessage('legacy_messages.sending_config_to_user'));
-
-        [$token, $vray_link, $uniqid, $caption, $keys, $qrLink] = buildLinksAndSendQr(
-            $serverType,
-            $serverConfig,
-            $botState,
-            $botUrl,
-            $server_id,
-            $uniqid,
-            $protocol,
-            $remark,
-            $port,
-            $netType,
-            $inbound_id,
-            $rahgozar,
-            $customPath,
-            $customPort,
-            $customSni,
-            $response,
-            $uid,
-            $volume,
-            $days,
-                [],
-            false,
-            '',
-            null,
-            false
-        );
-
-        $agentBought = (int)($payInfo['agent_bought'] ?? 0);
-        if ($connection->begin_transaction()!==true)
-            throw new RuntimeException('custom_receipt_finish_begin');
-        try {
-            $orderId=insertOrder(
-                $connection,$uid,$token,$fid,$server_id,$inbound_id,
-                $remark,$uniqid,$expire_date,$vray_link,
-                $price,$date,$agentBought,true);
-            achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
-            $fin=$connection->prepare("UPDATE pays SET state='approved'
-                WHERE id=? AND type='BUY_SUB' AND state='processing' AND approved_by=?");
-            if (!$fin) throw new RuntimeException('custom_receipt_finish_prepare');
-            $fin->bind_param('ii',$payRowId,$from_id);
-            if (!$fin->execute() || $fin->affected_rows!==1)
-                throw new RuntimeException('custom_receipt_finish_unconfirmed');
-            $fin->close();
-            if ($connection->commit()!==true)
-                throw new RuntimeException('custom_receipt_finish_commit_unknown');
-        } catch (Throwable $error) {
-            try {$connection->rollback();} catch (Throwable $ignored) {}
-            throw $error;
-        }
-
-    } catch (Throwable $e) {
-        if ($claimOpen) {
-            try { $connection->rollback(); } catch (Throwable $ignored) {}
-        }
-        error_log('achbot_custom_receipt_review pay_id='.(int)($payRowId??0).
-            ' class='.get_class($e));
-        // A remote operation could have succeeded before the local rollback.
-        // Never retry it blindly; an operator must reconcile the real service.
-        (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.3b8e6e3a15') . \achbotMessage('payment.checkout.message.eccb64d3cb') . $hash_id,
-                    'reply_markup'=>null,'parse_mode'=>null],
-                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
-        alert(\achbotMessage('payment.checkout.alert.6fa04cd4c0'), true);
-        return;
-    }
-
-    // Register the payment-keyed referral award before any possible
-    // Telegram/UI throw. Never make inviter credit contingent on QR or
-    // administrator message delivery succeeding.
-    $user_detail=achbotReferralAfterCompletedPurchase(
-        $connection,(int)$uid,(int)$payRowId,(int)$admin,$botState);
-
-    setUser();
-    // Both payment and local order now have verified COMMITs.
-    // Delivery failure does not undo a paid service or rearm CREATE.
-    try {
-        $sent=sendQrFromLink($qrLink,$caption,$keys,$botUrl,$uid,'',null);
-        if (!$sent) throw new RuntimeException('custom_receipt_qr_unconfirmed');
-    } catch (Throwable $error) {
-        error_log('achbot_custom_receipt_delivery_review pay_id='.$payRowId.
-            ' class='.get_class($error));
-        try {
-            (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.c97c0eb0f0').
-                \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').$payRowId.
-                \achbotMessage('payment.checkout.message.6cee937835'),
-                    'reply_markup'=>null,'parse_mode'=>null],
-                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
-        } catch (Throwable $ignored) {
-            error_log('achbot_custom_receipt_owner_notice_failed pay_id='.$payRowId);
-        }
-    }
-    require_once __DIR__.'/../ApiPaymentPresentation.php';
-    // Presentation failures after committed financial/referral outcomes must
-    // remain separate owner-visible delivery problems, never reopen CREATE.
-    try {
-    sendMessage(\achbotMessage('payment.checkout.message.5c1a932720'), getMainKeys(), 'HTML');
-
-    $keys=achbotManualFinalReceiptKeyboard($connection,$payRowId,$remark);
-
-    editKeys($keys, $payInfo['message_id'], $payInfo['chat_id']);
-
-    $adminMessages = json_decode($payInfo['admins_messages'], true);
-    if (is_array($adminMessages)) {
-        foreach ($adminMessages as $msgInfo) {
-            if (
-                isset($msgInfo['chat_id'], $msgInfo['message_id']) &&
-                $msgInfo['chat_id'] != $payInfo['chat_id'] &&
-                achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)
-            ) {
-                editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
-            }
-        }
-    }
-
-    if (!empty($user_detail['refered_by'])) {
-        // Invitee fanout is presentation-only; 008 award is already decided.
-        if ($admin != $from_id) {
-            $uname     = $user_detail['name'];
-            $user_name = $user_detail['username'];
-
-            $keys2 = json_encode([
-                'inline_keyboard' => [
-                    [
-                        ['text' => \achbotMessage('payment.checkout.button.e401f3d5a2'), 'callback_data' => "wizwizch"]
-                    ],
-                ]
-            ]);
-
-            $msg = str_replace(
-                ['USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'HASHID'],
-                [$uid, $user_name, $uname, $price, $remark, $hash_id],
-                \achbotMessage('legacy_messages.invite_buy_new_account')
-            );
-
-            achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys2, 'parse_mode'=>'HTML']);
-        }
-    }
-    } catch (Throwable $error) {
-        error_log('achbot_custom_receipt_postcommit_notice_review pay_id='.$payRowId.
-            ' class='.get_class($error));
-        try {
-            (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.3f598b595a').
-                \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').$payRowId.
-                \achbotMessage('payment.checkout.message.cfed3110bf'),
-                    'reply_markup'=>null,'parse_mode'=>null],
-                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
-        } catch (Throwable $ignored) {
-            error_log('achbot_custom_receipt_postcommit_owner_notice_failed pay_id='.$payRowId);
-        }
-    }
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'custom');
+    return;
 }
 
 if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
@@ -741,502 +226,23 @@ if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([
     setUser();
 
     $hashId = trim($match[1] ?? '');
-    // Match the custom Wallet route: settlement internally borrows this
-    // same session-wide lease, while direct QR/Telegram uses its owner.
-    $checkoutLease=achbotWalletCheckoutLeaseBegin(
-        $connection,$hashId,(int)$from_id,'standard');
-    if ($checkoutLease['lease']==='unavailable' ||
-        ($checkoutLease['pay_id']>0 &&
-         !in_array($checkoutLease['lease'],['owned','borrowed'],true))) {
-        alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
-        return;
-    }
-    try {
-    $deferredRenewSuccess = null;
-    $pendingUserQrs = [];
-    $msgToDeleteAfterOk = null;
-    $deferredReferral = null;
-
-    $lastRemark = '';
-    $serverTitle = '-';
-
-    $result = processWalletPayment(
-        $connection,
-        $hashId,
-        function($payInfo, $userRow) use (
-            $connection,
-            $botState,
-            $botUrl,
-                $admin,
-            $from_id,
-            $message_id,
-            $time,
-            &$deferredRenewSuccess,
-            &$pendingUserQrs,
-            &$msgToDeleteAfterOk,
-            &$deferredReferral,
-            &$lastRemark,
-            &$serverTitle
-        ) {
-
-            $uid     = (int)($payInfo['user_id'] ?: $from_id);
-            $fid     = (int)$payInfo['plan_id'];
-            $price   = (int)$payInfo['price'];
-            $payType = $payInfo['type'];
-            $userReferrer = $userRow['refered_by'] ?? null;
-            $hashIdLocal  = $payInfo['hash_id'];
-
-            if ($payType === "RENEW_SCONFIG") {
-
-                $plan=$payInfo['_achbot_wallet_locked_plan']??null;
-                if (!is_array($plan) || (int)($plan['id']??0)!==$fid ||
-                    (int)($plan['server_id']??0)!==(int)$payInfo['server_id'])
-                    throw new RuntimeException('wallet_renew_locked_plan_missing');
-                $days=(int)$plan['days'];
-                $volume=(int)$plan['volume'];
-
-                $server_id  = (int)$plan['server_id'];
-                $inbound_id = (int)$payInfo['volume'];
-
-                $configInfo = json_decode($payInfo['description'], true) ?: [];
-                $uuid       = $configInfo['uuid'] ?? '';
-                $remark     = $configInfo['remark'] ?? '';
-                $isMarzban  = !empty($configInfo['marzban']);
-
-                [$serverInfo,$serverConfig] = getServerInfoAndConfig($connection, $server_id);
-                // The administrator may have repointed the logical server
-                // after our debit COMMIT. Do not mutate a different physical
-                // Marzban panel under the original customer's Wallet claim.
-                if (($serverConfig['type']??null)!=='marzban' ||
-                    rtrim((string)($serverConfig['panel_url']??''),'/')!==
-                    rtrim((string)($plan['panel_url']??''),'/'))
-                    throw new RuntimeException('wallet_renew_provider_changed');
-
-                $response = renewConfigOnServer(
-                    $connection,
-                    $server_id,
-                    $inbound_id,
-                    $uuid,
-                    $remark,
-                    $days,
-                    $volume,
-                    $isMarzban,
-                    (int)$payInfo['id'],
-                    // This identity was captured while the original Wallet
-                    // debit and payment claim were locked. The adapter must
-                    // reject a later provider reread that switches endpoints.
-                    ['provider'=>'marzban','server_id'=>$server_id,
-                     'panel_url'=>rtrim((string)$plan['panel_url'],'/'),
-                     'remark'=>$remark,'pay_id'=>(int)$payInfo['id'],
-                     'days'=>$days,'volume'=>$volume]
-                );
-
-                ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, true);
-
-                // Payment and audit are committed together by the settlement
-                // coordinator AFTER the verified external renewal. An audit
-                // insert here would be independently committed and replayable.
-
-
-                $keys = json_encode([
-                    'inline_keyboard' => [
-                        [ ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"] ]
-                    ]
-                ], JSON_UNESCAPED_UNICODE);
-
-                $deferredRenewSuccess = [
-                    $message_id,
-                    \achbotMessage('payment.checkout.text.cca1075329', ['remark' => $remark]),
-                    $keys
-                ];
-
-                $lastRemark = $remark;
-
-                if (!empty($userReferrer)) {
-                    $deferredReferral = [$uid, (int)$userReferrer];
-                }
-
-                return ['wallet_renewal'=>[
-                    'pay_id'=>(int)$payInfo['id'],'user_id'=>$uid,
-                    'server_id'=>$server_id,'inbound_id'=>$inbound_id,
-                    'remark'=>$remark,'amount'=>$price,'date'=>$time,
-                    'volume'=>$volume,'days'=>$days
-                ]];
-            }
-
-            $accountCount = (int)($payInfo['agent_count'] ?? 1);
-            $accountCount = max(1, $accountCount);
-
-            // The locked plan snapshot pins exactly the dimensions that
-            // authorized wallet debit. A post-COMMIT plan edit cannot
-            // silently reduce (or change) the customer's paid entitlement.
-            $plan=$payInfo['_achbot_wallet_locked_plan']??null;
-            if (!is_array($plan) || (int)($plan['id']??0)!==$fid ||
-                (int)($plan['server_id']??0)!==(int)$payInfo['server_id'])
-                throw new RuntimeException('wallet_standard_locked_plan_missing');
-            $days=(int)$plan['days'];
-            $volume=(int)$plan['volume'];
-            $date=time();
-            $expire_microdate=floor(microtime(true)*1000)+(864000*$days*100);
-            $expire_date=$date+(86400*$days);
-
-            $server_id  = (int)$plan['server_id'];
-            $acount     = (int)$plan['acount'];
-            $inbound_id = (int)$plan['inbound_id'];
-            $protocol   = $plan['protocol'];
-            $limitip    = $plan['limitip'];
-            $netType    = $plan['type'];
-            $rahgozar   = $plan['rahgozar'];
-            $customPath = $plan['custom_path'];
-            $customPort = $plan['custom_port'];
-            $customSni  = $plan['custom_sni'];
-
-            // This order owns the durable reservation already. The server's
-            // currently UNreserved capacity must not be tested again.
-            // The effect dispatcher verifies the exact owned 007 hold.
-            [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
-            $serverTitle = $serverInfo['title'] ?? '-';
-            $srv_remark  = $serverInfo['remark'];
-            $serverType  = $serverConfig['type'];
-            $portType    = $serverConfig['port_type'];
-
-            $agent_bought = (int)($payInfo['agent_bought'] ?? 0);
-
-            alert(\achbotMessage('legacy_messages.sending_config_to_user'));
-
-            $msgToDeleteAfterOk = $message_id;
-
-            for ($i = 1; $i <= $accountCount; $i++) {
-
-                $uniqid = generateRandomString(42, $protocol);
-                [$port] = getNextPortAndIncrease('settings/temp.txt', $portType);
-
-                $remark = buildRemark(
-                    $botState,
-                    $srv_remark,
-                    $payInfo['description'],
-                    $uid
-                );
-
-                $remarkMode=(string)($botState['remark']??'');
-                if ($remarkMode==='manual' && $accountCount>1 &&
-                    (string)$remark==='') {
-                    $remarkMode='';
-                    $remark=buildRemark(['remark'=>''],$srv_remark,'',$uid);
-                }
-                $remark=achbotPaidPurchaseRemark((string)$remark,$serverType,
-                    (int)$payInfo['id'],$i,$accountCount,
-                    $remarkMode==='manual',$remarkMode);
-
-                // Each line owns a durable 007 operation identity.
-                // The first line atomically reserves the FULL quantity.
-                [$response, $remark, $port, $effectId] = achbotCreatePaidAccount(
-                    $connection,(int)$payInfo['id'],$i,[
-                        'user_id'=>$uid,'server_type'=>$serverType,
-                        'server_id'=>$server_id,'inbound_id'=>$inbound_id,
-                        'plan_id'=>$fid,'remark'=>$remark,
-                        'volume'=>$volume,'days'=>$days,'uniqid'=>$uniqid,
-                        'protocol'=>$protocol,'port'=>$port,
-                        'expire_microdate'=>$expire_microdate,
-                        'net_type'=>$netType,'rahgozar'=>$rahgozar,
-                        'limitip'=>$limitip
-                    ]
-                );
-
-                ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, true);
-
-                $lastRemark = $remark;
-
-                [$token, $vray_link, $uniqid2, $acc_text, $userKeys, $qrLink] = buildLinksAndSendQr(
-                    $serverType,
-                    $serverConfig,
-                    $botState,
-                    $botUrl,
-                    $server_id,
-                    $uniqid,
-                    $protocol,
-                    $remark,
-                    $port,
-                    $netType,
-                    $inbound_id,
-                    $rahgozar,
-                    $customPath,
-                    $customPort,
-                    $customSni,
-                    $response,
-                    $uid,
-                    $volume,
-                    $days,
-                                [],
-                    false,
-                    '',
-                    null,
-                    false
-                );
-
-                // Never keep a local transaction open during HTTP. A
-                // partial multi-account order remains linked for recovery.
-                if ($connection->begin_transaction()!==true)
-                    throw new RuntimeException('wallet_buy_order_begin');
-                try {
-                    $orderId=insertOrder(
-                        $connection,$uid,$token,$fid,$server_id,$inbound_id,
-                        $remark,$uniqid2?:$uniqid,$expire_date,
-                        $vray_link,
-                        achbotAllocateOrderAmount((int)$price,$accountCount,$i),
-                        $date,$agent_bought,true);
-                    achbotLinkPaidAccountEffect($connection,$effectId,$orderId);
-                    if ($connection->commit()!==true)
-                        throw new RuntimeException('wallet_buy_order_commit_unknown');
-                } catch (Throwable $error) {
-                    try {$connection->rollback();} catch (Throwable $ignored) {}
-                    throw $error;
-                }
-
-                $pendingUserQrs[] = [
-                    'uid'      => $uid,
-                    'qrLink'   => $qrLink,
-                    'acc_text' => $acc_text,
-                    'keys'     => $userKeys,
-                ];
-            }
-
-            // No second capacity deduction: the initial 007 dispatch
-            // reservation committed all slots before its remote call.
-            if (!empty($userReferrer)) {
-                $deferredReferral = [$uid, (int)$userReferrer];
-            }
-
-            return true;
-        },
-        'standard'
-    );
-
-    if ($result['status'] === 'not_found') {
-        $text = "/start";
-        $data = "";
-        delMessage();
-        return '__ACHBOT_V8_GOTO_START__';
-    }
-
-    if ($result['status'] === 'already_paid') {
-        return;
-    }
-
-    if ($result['status'] === 'in_progress') {
-        return;
-    }
-
-    if ($result['status'] !== 'ok') {
-        return;
-    }
-
-    $payInfo = $result['payInfo'];
-    $uid     = $result['uid'];
-    $price   = $result['price'];
-    $payType = $payInfo['type'];
-    $fid     = (int)$payInfo['plan_id'];
-    $hashId  = $payInfo['hash_id'];
-
-    if (($payInfo['state'] ?? '') !== 'paid_with_wallet') {
-		$uidForLog = (int)($payInfo['user_id'] ?? $from_id);
-
-		(achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.54c81d71b7') .
-			\achbotMessage('payment.checkout.user_i_d_uid_for_log.6a12f817c0', ['uidForLog' => $uidForLog]) .
-			\achbotMessage('payment.checkout.hash_id.2899228604', ['hash_id' => $hashId]),
-                    'reply_markup'=>null,'parse_mode'=>null],
-                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
-		return;
-	}
-
-    if (!empty($deferredRenewSuccess)) {
-        editText(
-            $deferredRenewSuccess[0],
-            $deferredRenewSuccess[1],
-            $deferredRenewSuccess[2]
-        );
-    }
-
-    if (!empty($pendingUserQrs)) {
-        $deliveryReview=[];
-        foreach ($pendingUserQrs as $index=>$pq) {
-            try {
-                $sent=sendQrFromLink(
-                    $pq['qrLink'],$pq['acc_text'],$pq['keys'],
-                    $botUrl,(int)$pq['uid'],'',null);
-                if ($sent!==true)
-                    throw new RuntimeException('wallet_checkout_qr_unconfirmed');
-            } catch (Throwable $error) {
-                $deliveryReview[]=$index+1;
-                error_log('achbot_wallet_checkout_delivery_review pay_id='.
-                    (int)$payInfo['id'].' ordinal='.($index+1).
-                    ' class='.get_class($error));
-            }
-        }
-        if ($deliveryReview) {
-            try {
-                (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.c150d2e039').
-                    \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').(int)$payInfo['id'].
-                    \achbotMessage('payment.checkout.message.e09fe6fd6b').implode(',',$deliveryReview).
-                    \achbotMessage('payment.checkout.text.0ec6de536f'),
-                    'reply_markup'=>null,'parse_mode'=>null],
-                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
-            } catch (Throwable $error) {
-                error_log('achbot_wallet_checkout_owner_notice_failed pay_id='.
-                    (int)$payInfo['id'].' class='.get_class($error));
-            }
-        }
-    }
-
-    if (!empty($msgToDeleteAfterOk)) {
-        delMessage($msgToDeleteAfterOk);
-    }
-
-    if (!empty($deferredReferral) && is_array($deferredReferral) && count($deferredReferral) === 2) {
-        // giveReferralReward($connection, (int)$deferredReferral[0], (int)$deferredReferral[1], $admin, $botState);
-		giveReferralReward($connection, (int)$deferredReferral[0], (int)$deferredReferral[1], $admin, $botState, 'wallet');
-    }
-
-    if ($payType === 'BUY_SUB') {
-        // Report the SAME paid entitlement authorized under the wallet/plan
-        // lock and used for CREATE/readback, never a mutable plan template
-        // reread after settlement. This snapshot is mandatory for paid BUY_SUB
-        // and intentionally not required by the legacy renewal flow.
-        $paidPlan=$payInfo['_achbot_wallet_locked_plan']??null;
-        if (!is_array($paidPlan) ||
-            (int)($paidPlan['id']??0)!==$fid ||
-            (int)($paidPlan['server_id']??0)!==(int)$payInfo['server_id']) {
-            error_log('achbot_wallet_paid_report_quote_unavailable pay_id='.
-                (int)$payInfo['id']);
-            try {
-                (achbotNotifyAdmins('sendMessage', ['text'=>\achbotMessage('payment.checkout.message.7aa67614a5').
-                    \achbotMessage('payment.referral_reward.referral_warn_operator.pay__i_d.9ac91aa748').(int)$payInfo['id'].
-                    \achbotMessage('payment.checkout.message.f8ec758aca'),
-                    'reply_markup'=>null,'parse_mode'=>null],
-                    ['primary'=>$admin,'report_channel'=>null])[0]['response']??null);
-            } catch (Throwable $ignored) {
-                error_log('achbot_wallet_paid_report_owner_notice_failed pay_id='.
-                    (int)$payInfo['id']);
-            }
-            return;
-        }
-        $days=(int)$paidPlan['days'];
-        $volume=(int)$paidPlan['volume'];
-    } else {
-        // The report must describe the same locked entitlement dispatched
-        // after the committed Wallet claim, not a newly changed plan.
-        $paidPlan=$payInfo['_achbot_wallet_locked_plan']??null;
-        if (!is_array($paidPlan) || (int)($paidPlan['id']??0)!==$fid)
-            throw new RuntimeException('wallet_renew_report_plan_missing');
-        $days=(int)$paidPlan['days'];
-        $volume=(int)$paidPlan['volume'];
-    }
-
-    $keys = json_encode([
-        'inline_keyboard' => [
-            [ ['text' => \achbotMessage('payment.checkout.button.e401f3d5a2'), 'callback_data' => "wizwizch"] ],
-            [ ['text' => \achbotMessage('payment.checkout.hash_id.286c7d3faf', ['hashId' => $hashId]),          'callback_data' => "noop_$hashId"] ]
-        ]
-    ], JSON_UNESCAPED_UNICODE);
-
-    $bulkProof=null;
-    if ($payType==='BUY_SUB' && (int)($payInfo['agent_count']??0)>1) {
-        try {
-            require_once __DIR__.'/../../Purchase/BulkReport.php';
-            $bulkProof=achbotBulkRecordedAccounts($connection,
-                (int)$payInfo['agent_count'],(int)$uid,(int)$payInfo['id']);
-            if (!$bulkProof['complete'])
-                error_log('achbot_wallet_bulk_report_incomplete pay_id='.(int)$payInfo['id']);
-        } catch (Throwable $error) {
-            error_log('achbot_wallet_bulk_report_unavailable pay_id='.(int)$payInfo['id'].
-                ' class='.get_class($error));
-        }
-        $lastRemark=achbotMessage('bulk_reporting.bulk_subject');
-    }
-    if ($payType === "RENEW_SCONFIG") {
-        $msg = str_replace(
-            ['TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
-            [\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212'), $from_id, $username, $first_name, $price, $lastRemark, $volume, $days],
-            \achbotMessage('legacy_messages.renew_account_request_message')
-        );
-    } else {
-        $msg = str_replace(
-            ['SERVERNAME', 'TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
-            [$serverTitle, \achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212'), $from_id, $username, $first_name, $price, $lastRemark, $volume, $days],
-            \achbotMessage('legacy_messages.buy_new_account_request')
-        );
-    }
-
-    if ((int)($payInfo['agent_count']??0)>1 && $payType==='BUY_SUB') {
-        if (!empty($deliveryReview))
-            $msg.="\n".achbotMessage('bulk_reporting.delivery_needs_review',
-                ['count'=>count($deliveryReview)]);
-        $msg=$bulkProof===null
-            ?($msg."\n".achbotMessage('bulk_reporting.needs_review',[
-                'confirmed'=>achbotMessage('bulk_reporting.unknown_confirmed'),'requested'=>(int)$payInfo['agent_count']]))
-            :achbotBulkReportAppend($msg,$bulkProof,true);
-    }
-    achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
-    } finally {
-        // An early invalid/missing draft owns no lease and may not have
-        // loaded the Archive/lease module. Borrowed locks stay with parent.
-        if ($checkoutLease['lease']==='owned')
-            achbotOriginalDispatchLeaseEnd($connection,
-                (int)$checkoutLease['pay_id'],(string)$checkoutLease['lease']);
-    }
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    achbotCheckoutWalletCallback($connection,$hashId,(int)$from_id,'standard',$botState);
+    return;
 }
 
-if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayBuyWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
+if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data : strlen($data) <= 64) && preg_match('/\ApayBuyWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
-    }
-
-    $fid = (int)$payInfo['plan_id'];
-
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=?");
-    $stmt->bind_param("i", $fid);
-    $stmt->execute();
-    $file_detail = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $server_id  = (int)$file_detail['server_id'];
-    $acount     = (int)$file_detail['acount'];
-    $inbound_id = (int)$file_detail['inbound_id'];
-
-    if ($payInfo['type'] != "RENEW_SCONFIG") {
-
-        if ($acount == 0 && $inbound_id != 0) {
-            alert(\achbotMessage('legacy_messages.out_of_connection_capacity'), true);
-            exit;
-        }
-
-        if ($inbound_id == 0) {
-            $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `id`=?");
-            $stmt->bind_param("i", $server_id);
-            $stmt->execute();
-            $server_info = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            if ((int)$server_info['ucount'] <= 0) {
-                alert(\achbotMessage('legacy_messages.out_of_server_capacity'), true);
-                exit;
-            }
-        } else {
-            if ($acount <= 0) {
-                alert(str_replace("AMOUNT", $acount, \achbotMessage('legacy_messages.can_create_specific_account')), true);
-                exit;
-            }
-        }
     }
 
     $method = str_starts_with($data, 'payBuyWithManualUsdt') ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
         (str_starts_with($data, 'payBuyWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
-                           $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
+                           $GLOBALS['achbotManualCryptoChoice'] ?? null,'standard')) {
         alert(\achbotMessage('payment.checkout.alert.1a885aaca4'), true);
         return;
     }
@@ -1253,7 +259,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (function_exists('achbotApiPaymentTrackInvoice')) achbotApiPaymentTrackInvoice($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
-    setUser(function_exists('achbotApiPaymentInitialStep') ? achbotApiPaymentInitialStep($connection,(string)$match[1],"payBuyWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]) : "payBuyWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
+    setUser("payBuyWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
@@ -1263,18 +269,17 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     exit;
 }
 
-if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\Asend(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
     }
 
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
-    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id,'standard')) {
         alert(\achbotMessage('payment.checkout.alert.d06bc731eb'), true);
         return;
     }
@@ -1285,7 +290,7 @@ if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $
     // Serialize with the six-hour unstarted-invoice expiry sweep.
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
-                                      $method,(int)$from_id)) {
+                                      $method,(int)$from_id,'standard')) {
         alert(\achbotMessage('payment.checkout.alert.560f05f822'),true);
         return;
     }
@@ -1300,16 +305,16 @@ if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $
     exit;
 }
 
-if (preg_match('/cancelBuyCartReceipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\AcancelBuyCartReceipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
     handleCancelFlow( $removeKeyboard);
 }
 
-if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
+if (preg_match('/\Await(?:BuyCart|BuyGift|BuyUsdt)Receipt([A-Za-z0-9_-]{1,50})\z/D', $userInfo['step'], $match)) {
 
     $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match[1]) :
         (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
-    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
+    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id,'standard')) {
         setUser();
         alert(\achbotMessage('payment.checkout.alert.882596d0f1'), true);
         return;
@@ -1322,52 +327,13 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
     }
 
 
-    $payInfo = dbFetchPayByHash($connection, $match[1]);
-    if (!$payInfo) {
-        prepareStartFallback();
-        delMessage();
-        return '__ACHBOT_V8_GOTO_START__';
-    }
-
-    $fid = (int)$payInfo['plan_id'];
-
-
-    $uid = $userInfo['userid'];
-    $name = $userInfo['name'];
-    $username = $userInfo['username'];
-
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=?");
-    $stmt->bind_param("i", $fid);
-    $stmt->execute();
-    $res = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $days = $res['days'];
-    $volume = $res['volume'];
-
-    $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `id`=?");
-    $stmt->bind_param("i", $res['server_id']);
-    $stmt->execute();
-    $serverInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $serverTitle = $serverInfo['title'];
-
-    if ($payInfo['type'] == "RENEW_SCONFIG") {
-        $configInfo = json_decode($payInfo['description'], true);
-        $filename = $configInfo['remark'];
-    } else {
-        $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id`=?");
-        $stmt->bind_param("i", $res['catid']);
-        $stmt->execute();
-        $catname = $stmt->get_result()->fetch_assoc()['title'];
-        $stmt->close();
-        $filename = $catname . " " . $res['title'];
-    }
-
-    $fileprice = $payInfo['price'];
-
-
+    $payInfo=$receiptPay;
+    $original=achbotManualOriginalServiceQuote($connection,$receiptPay,(int)$from_id,'standard');
+    if (!$original) {alert(achbotMessage('payment.checkout.alert.882596d0f1'),true);return;}
+    $days=$original['days'];$volume=$original['volume'];$fileprice=$original['price'];
+    $name=$userInfo['name'];$username=$userInfo['username'];
+    $serverTitle=$original['labels']['server'];
+    $filename=$original['labels']['category'].' '.$original['labels']['plan'];
 
     if ((int)$payInfo['agent_count'] != 0) {
         $msg = str_replace(
@@ -1395,7 +361,7 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
         !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid,'standard');
     if ($deliveryToken === null) {
         alert(\achbotMessage('payment.checkout.alert.795c4bddb8'), true);
         return;

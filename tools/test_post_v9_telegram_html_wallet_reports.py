@@ -22,7 +22,7 @@ import test_post_v9_telegram_html_callsite_parity as source_audit
 
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_GOLDEN = "57cee4c7bddae598c4744fa4bd8170174ef1ac72d1d6b276fd0c990c5cfeb336"
-EXPECTED_REASON = "62a6d5602923bd75a96e24e48c4cf1d667db2257c822979e02a9bf6c6733c2eb"
+EXPECTED_REASON = "ef90820855868fe4c5aec4a9b4d464e038d6164e08b562acd076e9795933fd37"
 
 # The source function is token-extracted, not copied or reimplemented here.
 DRIVER = r'''
@@ -176,8 +176,10 @@ def reason_prompts() -> list[str]:
     assert len(eligible)==1, 'reason producer removed/duplicated'
     expression,keyboard,mode=eligible[0]
     assert keyboard.strip()=='null' and source_audit.HTML.fullmatch(mode.strip()), eligible[0]
+    # The direct debt wizard is retired. Its reason prompt is not a live
+    # producer; credit/debit bytes stay pinned to the preceding contract.
     values=[]
-    for kind in ('debt','credit','debit'):
+    for kind in ('credit','debit'):
         php="require 'messages/loader.php';$kind=$argv[1];echo json_encode("+expression+",JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);"
         rendered=json.loads(subprocess.check_output(['php','-n','-r',php,kind],cwd=ROOT,text=True))
         assert not re.search(r'[<>&*_`\[\]\\]',rendered), rendered

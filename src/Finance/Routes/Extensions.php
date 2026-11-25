@@ -1,5 +1,5 @@
 <?php
-/** AChBot V8: source-pinned financial compatibility module. */
+/** AChBot current payment route and shared receipt presentation. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
@@ -11,9 +11,10 @@ if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text
 
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
+require_once __DIR__ . '/../../Purchase/AgentPricing.php';
 require_once __DIR__ . '/../../Plans/Addons.php';
 
-if(preg_match('/increaseADay(.*)/', $data, $match)){
+if(preg_match('/\AincreaseADay([1-9][0-9]{0,9})\z/D', $data, $match)){
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
@@ -25,38 +26,30 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
     }
 
     try {
-        $scoped=achbotAddonSchema($connection);
-        $addonContext=$scoped?achbotAddonContext($connection,$orderInfo):null;
+        if (achbotManagedServicePlan($connection,$orderInfo,'ADD_TIME',$botState)===null)
+            throw new DomainException('managed_service_unavailable');
+        achbotAddonSchema($connection);
+        $addonContext=achbotAddonContext($connection,$orderInfo);
         if (!achbotOrderAddonEligibility($connection,$orderInfo,'day',$addonContext)['eligible']) {
             alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
             return;
         }
-        if ($scoped) $catalog=achbotAddonCatalog($connection,'day',$addonContext);
-        else {
-            $q=$connection->prepare("SELECT * FROM increase_day ORDER BY id");
-            $q->execute();$catalog=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
-        }
+        $catalog=achbotAddonCatalog($connection,'day',$addonContext);
     } catch (Throwable $error) {
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
-    $agentBought = $orderInfo['agent_bought'];
     if(!$catalog){
         alert(\achbotMessage('renewal.extensions.alert.6732b29e55'));
         exit;
     }
     $keyboard = [];
     foreach ($catalog as $cat){
-        if (achbotWholeServiceUnits($cat['volume'],36500)===null) continue;
+        if (achbotWholeServiceUnits($cat['volume'],achbotServiceDaysMax())===null) continue;
         $id = $cat['id'];
         $title = $cat['volume'];
         $price = $cat['price'];
-        if($agentBought == true){
-            $discounts = json_decode($userInfo['discount_percent'],true);
-            if($botState['agencyPlanDiscount']=="on") $discount = $discounts['plans'][$orderInfo['fileid']]?? $discounts['normal'];
-            else $discount = $discounts['servers'][$orderInfo['server_id']]?? $discounts['normal'];
-            $price -= floor($price * $discount / 100);
-        }
+        $price=achbotExistingServicePrice($userInfo,$botState,$orderInfo,(int)$price);
         if($price == 0) $price = \achbotMessage('renewal.extensions.price.dda7ff2974');
         else $price = (string)$price . \achbotMessage('renewal.extensions.text.2cc98f7f7c');
         $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.fbb9f61105', ['title' => $title, 'price' => $price]), 'callback_data' => "selectPlanDayIncrease{$match[1]}_$id"]];
@@ -66,7 +59,7 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
             'inline_keyboard' => $keyboard
         ]));
 }
-if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)){
+if(preg_match('/\AselectPlanDayIncrease(?<orderId>[1-9][0-9]{0,9})_(?<dayId>[1-9][0-9]{0,9})\z/D',$data,$match)){
     $data = str_replace('selectPlanDayIncrease','',$data);
     $pid = $match['dayId'];
     $stmt = $connection->prepare("SELECT * FROM `increase_day` WHERE `id` = ?");
@@ -74,7 +67,7 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     $stmt->execute();
     $res = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    $quotedUnits=$res?achbotWholeServiceUnits($res['volume'],36500):null;
+    $quotedUnits=$res?achbotWholeServiceUnits($res['volume'],achbotServiceDaysMax()):null;
     if ($quotedUnits===null) {alert(\achbotMessage('renewal.extensions.alert.584426a8a8'),true);return;}
     $planprice = $res['price'];
 
@@ -89,34 +82,27 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     }
 
     try {
-        $scoped=achbotAddonSchema($connection);
-        $addonContext=$scoped?achbotAddonContext($connection,$orderInfo):null;
+        if (achbotManagedServicePlan($connection,$orderInfo,'ADD_TIME',$botState)===null)
+            throw new DomainException('managed_service_unavailable');
+        achbotAddonSchema($connection);
+        $addonContext=achbotAddonContext($connection,$orderInfo);
         if (!achbotOrderAddonEligibility($connection,$orderInfo,'day',$addonContext)['eligible']) {
             alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
             return;
         }
-        if ($scoped) {
-            $res=achbotAddonOfferById($connection,'day',$addonContext,(int)$pid);
-            if (!$res) throw new RuntimeException('addon_offer_not_applicable');
-            $quotedUnits=$res['volume'];$planprice=$res['price'];
-        }
+        $res=achbotAddonOfferById($connection,'day',$addonContext,(int)$pid);
+        if (!$res) throw new RuntimeException('addon_offer_not_applicable');
+        $quotedUnits=$res['volume'];$planprice=$res['price'];
     } catch (Throwable $error) {
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
-    $agentBought = $orderInfo['agent_bought'];
 
-    if($agentBought == true){
-        $discounts = json_decode($userInfo['discount_percent'],true);
-        if($botState['agencyPlanDiscount']=="on") $discount = $discounts['plans'][$orderInfo['fileid']]?? $discounts['normal'];
-        else $discount = $discounts['servers'][$orderInfo['server_id']]?? $discounts['normal'];
-
-        $planprice -= floor($planprice * $discount / 100);
-    }
+    $planprice=achbotExistingServicePrice($userInfo,$botState,$orderInfo,(int)$planprice);
 
     
     $hash_id = RandomString();
-    achbotRemoveUnclaimedPendingPayments($connection,$from_id,'INCREASE_DAY');
+
 	
     $time = time();
     $plan_id = $orderInfo['fileid'];
@@ -124,17 +110,11 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
 	$order_id = $match['orderId'];
 
     $type = "INCREASE_DAY_$data";
-    if ($scoped) {
-        $addonQuote=achbotAddonQuote($orderInfo,$addonContext,'day',$res,(int)$planprice);
-        $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state,addon_scope_snapshot)
-            VALUES (?,?,?,?,?,?,'0',?,?,?,'pending',?)");
-        $stmt->bind_param("sisiiiiiis",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$quotedUnits,$planprice,$time,$addonQuote);
-    } else {
-        $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state)
-            VALUES (?,?,?,?,?,?,'0',?,?,?,'pending')");
-        $stmt->bind_param("sisiiiiii",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$quotedUnits,$planprice,$time);
-    }
-    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,$scoped);
+    $addonQuote=achbotAddonQuote($orderInfo,$addonContext,'day',$res,(int)$planprice);
+    $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state,addon_scope_snapshot)
+        VALUES (?,?,?,?,?,?,'0',?,?,?,'pending',?)");
+    $stmt->bind_param("sisiiiiiis",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$quotedUnits,$planprice,$time,$addonQuote);
+    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,achbotAgencyQuotePolicy($userInfo,$botState,(int)$plan_id,(int)$server_id),true);
     $stmt->close();
     if ($newDraftId<=0) {
         alert(\achbotMessage('renewal.extensions.alert.ae271a2d1d'),true);
@@ -142,35 +122,29 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     }
 
 
-    $keyboard = array();
-    if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cart_to_cart'),  'callback_data' => "payIncreaseDayWithCartToCart$hash_id"]];
-    if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.gift_card'), 'callback_data' => "payIncreaseDayWithGiftCard$hash_id"]];
-    if (achbotManualCryptoEnabled((int)$from_id) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
-    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'),  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
-    if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'),  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
-    if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'),  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
-    if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.pay_with_wallet'),  'callback_data' => "payIncreaseDayWithWallet$hash_id"]];
-
+    $free=(int)$planprice===0;
+    require_once __DIR__.'/../../Purchase/CheckoutPresentation.php';
+    $methods=$free?[]:array_keys(achbotCheckoutDraftPaymentOptions($connection,$newDraftId,(int)$from_id));
+    $keyboard=achbotCheckoutPaymentKeyboard('day',$hash_id,(int)$planprice,$methods,$botUrl);
     $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.cancel'), 'callback_data'=> "mainMenu"]];
-    $sent=sendMessage(\achbotMessage('renewal.extensions.message.48930749a9'),
+    $sent=sendMessage($free?achbotMessage('renewal.free_confirmation.prompt'):\achbotMessage('renewal.extensions.message.48930749a9'),
         json_encode(['inline_keyboard'=>$keyboard]),'HTML',$from_id);
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
 }
 
-if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayIncreaseDayWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
+if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data : strlen($data) <= 64) && preg_match('/\ApayIncreaseDayWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
     }
 
     $method = str_starts_with($data, 'payIncreaseDayWithManualUsdt') ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
         (str_starts_with($data, 'payIncreaseDayWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
-                           $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
+                           $GLOBALS['achbotManualCryptoChoice'] ?? null,'day')) {
         alert(\achbotMessage('renewal.extensions.alert.1a885aaca4'), true);
         return;
     }
@@ -187,7 +161,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (function_exists('achbotApiPaymentTrackInvoice')) achbotApiPaymentTrackInvoice($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
-    setUser(function_exists('achbotApiPaymentInitialStep') ? achbotApiPaymentInitialStep($connection,(string)$match[1],"payIncreaseDayWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]) : "payIncreaseDayWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
+    setUser("payIncreaseDayWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
@@ -197,18 +171,17 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     exit;
 }
 
-if (preg_match('/send(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\Asend(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
     }
 
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
-    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id,'day')) {
         alert(\achbotMessage('renewal.extensions.alert.d06bc731eb'), true);
         return;
     }
@@ -219,7 +192,7 @@ if (preg_match('/send(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<ha
     // Serialize with the six-hour unstarted-invoice expiry sweep.
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
-                                      $method,(int)$from_id)) {
+                                      $method,(int)$from_id,'day')) {
         alert(\achbotMessage('renewal.extensions.alert.560f05f822'),true);
         return;
     }
@@ -234,16 +207,16 @@ if (preg_match('/send(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<ha
     exit;
 }
 
-if (preg_match('/cancelIncreaseDayReceipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\AcancelIncreaseDayReceipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
     handleCancelFlow( $removeKeyboard);
 }
 
-if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
+if (preg_match('/\Await(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt([A-Za-z0-9_-]{1,50})\z/D', $userInfo['step'], $match)) {
 
     $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match[1]) :
         (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
-    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
+    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id,'day')) {
         setUser();
         alert(\achbotMessage('renewal.extensions.alert.882596d0f1'), true);
         return;
@@ -256,42 +229,10 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     }
 
 
-    $payInfoRes = dbFetchPayByHash($connection, $match[1]);
-    if (!$payInfoRes) {
-        prepareStartFallback();
-        delMessage();
-        return '__ACHBOT_V8_GOTO_START__';
-    }
-
-    $payType = $payInfoRes['type'];
-
-    preg_match('/^INCREASE_DAY_(\d+)_(\d+)/', $payType, $increaseInfo);
-    $orderId = (int)$increaseInfo[1];
-    $planid  = (int)$increaseInfo[2];
-
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $orderId);
-    $stmt->execute();
-    $orderInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
-        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
-        return;
-    }
-
-
-    $remark = $orderInfo['remark'];
-
-    $stmt = $connection->prepare("SELECT * FROM `increase_day` WHERE `id` = ?");
-    $stmt->bind_param("i", $planid);
-    $stmt->execute();
-    $res = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $price  = $payInfoRes['price'];
-    $volume = achbotPinnedAddonUnits($payInfoRes);
-
-
+    $payInfoRes=$receiptPay;
+    $original=achbotManualOriginalServiceQuote($connection,$receiptPay,(int)$from_id,'day');
+    if (!$original) {alert(achbotMessage('renewal.extensions.alert.882596d0f1'),true);return;}
+    $remark=$original['remark'];$price=$original['price'];$volume=$original['days'];
 
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
@@ -311,7 +252,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
         !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid,'day');
     if ($deliveryToken === null) {
         alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
         return;
@@ -337,478 +278,15 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
 }
 
 if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
-    require_once __DIR__.'/../ManualEditRecovery.php';
-    $resume=achbotManualPgResumeEdit($connection,(string)$match[1],(int)$from_id,'day',
-        (int)$admin);
-    if ($resume!==null) {
-        if (in_array($resume['status'],['approved','delivery_only'],true)) {
-            achbotManualPgEditNotify($connection,(int)$resume['pay_id']);
-        } else alert(achbotMessage('manual_receipt_final.edit_unverified'),true);
-        return;
-    }
-    $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;
-    $connection->begin_transaction();
-    $localCommitted=false;
-    try {
-        $hash_id = $match[1];
-
-        $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE");
-        $stmt->bind_param("s", $hash_id);
-        $stmt->execute();
-        $payParam = $stmt->get_result()->fetch_assoc();
-        if (!(function_exists('achbotApiPaymentManualAddonAllowedLocked') ? achbotApiPaymentManualAddonAllowedLocked($connection,$payParam,$apiManualSeen) : achbotSupportsPaymentSubject($connection, $payParam, true))) {
-            $connection->rollback();
-            alert(\achbotMessage('renewal.extensions.alert.135aa8877f'), true);
-            return;
-        }
-
-        $stmt->close();
-
-        if (!achbotManualServiceApprovalAllowedLocked($connection, $payParam, 'day')) {
-            $connection->rollback();
-            alert(\achbotMessage('renewal.extensions.alert.7a08f2df0b'), true);
-            return;
-        }
-
-        $payType = $payParam['type'];
-
-        if (!preg_match('/^INCREASE_DAY_(\d+)_(\d+)/', $payType, $increaseInfo)) {
-            throw new Exception("invalid_increase_type");
-        }
-        $orderId = intval($increaseInfo[1]);
-        $planid  = intval($increaseInfo[2]);
-        $uid     = intval($payParam['user_id']);
-
-        $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-        $stmt->bind_param("i", $orderId);
-        $stmt->execute();
-        $orderInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
-        throw new RuntimeException('day_extension_order_ineligible');
-    }
-
-
-        if (!$orderInfo) {
-            throw new Exception("order_not_found");
-        }
-
-        $server_id  = intval($orderInfo['server_id']);
-        $inbound_id = intval($orderInfo['inbound_id']);
-        $remark     = $orderInfo['remark'];
-        $uuid       = $orderInfo['uuid'] ?? "0";
-
-        $quotedUnits=achbotPinnedAddonUnits($payParam);
-        if ($quotedUnits===null) throw new RuntimeException('service_quote_units_unverified');
-        $price  = intval($payParam['price']);
-        $volume = $quotedUnits;
-        if ($volume===null) throw new RuntimeException('unsupported_service_units');
-
-        $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
-        $stmt->bind_param("i", $server_id);
-        $stmt->execute();
-        $server_info = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if (!$server_info) {
-            throw new Exception("server_config_missing");
-        }
-
-        $serverType = $server_info['type'];
-
-        if (!achbotSupportsPanel($serverType))
-            throw new UnexpectedValueException('unsupported_panel');
-        // Operator receipt approval is financial ownership, not a remote
-        // effect claim. Commit a unique nonterminal claim BEFORE the PUT.
-        // An ambiguous crash/SQL reply can leave review pending, never a
-        // second automatic remote request on this same receipt.
-        if ((int)$payParam['price']!==$price ||
-            (int)$payParam['user_id']!==$uid ||
-            (string)$payParam['type']!=="INCREASE_DAY_{$orderId}_{$planid}")
-            throw new RuntimeException('day_extension_claim_subject_changed');
-        $payId=(int)$payParam['id'];
-        $payType=(string)$payParam['type'];
-        $stmt=$connection->prepare("UPDATE pays SET state='processing'
-            WHERE id=? AND user_id=? AND hash_id=? AND type=?
-              AND price=? AND state='have_sent'");
-        $stmt->bind_param('iissi',$payId,$uid,$hash_id,$payType,$price);
-        $claimed=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$claimed || $connection->commit()!==true)
-            throw new RuntimeException('day_extension_claim_unconfirmed');
-
-        // The old markup keyboard is not part of this settlement path.
-        // Its unset() used an uninitialized variable after a durable claim.
-        if (achbotSupportsPanel($serverType)) {
-            $change=['pay_id'=>(int)$payId,'remark'=>$remark,'plus_day'=>$volume];
-            if ($serverType==='pasarguard') {
-                $change['operation_key']='manual:pay:'.$payId;
-                // The actor and monetary quote belong to the FIRST
-                // human decision, never a later recovery operator.
-                $change['manual_approver_id']=(int)$from_id;
-                $change['manual_local_amount_toman']=$price;
-            }
-            $response = achbotApplyServiceEdit($connection,$server_id,$change);
-        } else {
-            throw new \UnexpectedValueException('unsupported_panel');
-        }
-
-        if (is_null($response)) {
-            throw new Exception("server_connection_null");
-        }
-        if (!is_object($response) && !is_array($response)) {
-            throw new Exception("invalid_response_type");
-        }
-        $success = (is_object($response) && !empty($response->success))
-                || (is_array($response)  && !empty($response['success']));
-        if (!$success) {
-            throw new Exception("provider_rejected");
-        }
-
-        if (!is_object($response) || ($response->verified??false)!==true)
-            throw new RuntimeException('day_extension_provider_result_unverified');
-        if ($connection->begin_transaction()!==true)
-            throw new RuntimeException('day_extension_finalization_begin_failed');
-        $stmt=$connection->prepare("SELECT id,state,user_id,hash_id,type,price
-            FROM pays WHERE id=? FOR UPDATE");
-        $stmt->bind_param('i',$payId);
-        $ok=$stmt->execute();
-        $locked=$ok?$stmt->get_result()->fetch_assoc():null;
-        $stmt->close();
-        if (!$locked || $locked['state']!=='processing' ||
-            (int)$locked['user_id']!==$uid ||
-            (int)$locked['price']!==$price ||
-            (string)$locked['hash_id']!==$hash_id ||
-            (string)$locked['type']!==$payType)
-            throw new RuntimeException('day_extension_claim_stale');
-        achbotStoreVerifiedServiceExpiryLocked($connection,$orderInfo,$response);
-        $timeNow=time();
-        $stmt=$connection->prepare("INSERT INTO increase_order
-            (userid,server_id,inbound_id,remark,amount,date,day)
-            VALUES (?,?,?,?,?,?,?)");
-        $stmt->bind_param('iiisiii',$uid,$server_id,$inbound_id,
-                          $remark,$price,$timeNow,$volume);
-        $saved=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$saved) throw new RuntimeException('day_extension_audit_unconfirmed');
-        $stmt=$connection->prepare("UPDATE pays SET state='approved',approved_by=?
-            WHERE id=? AND user_id=? AND hash_id=? AND state='processing'");
-        $stmt->bind_param('iiis',$from_id,$payId,$uid,$hash_id);
-        $saved=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$saved || $connection->commit()!==true)
-            throw new RuntimeException('day_extension_finish_unconfirmed');
-        $localCommitted=true;
-
-        require_once __DIR__.'/../ApiPaymentPresentation.php';
-        $keys=achbotManualFinalReceiptKeyboard(
-            $connection,$payId,achbotMessage('manual_receipt_final.day_subject',[
-                'remark'=>$remark,'units'=>$volume]));
-
-        // ویرایش پیام ادمین اصلی
-        editKeys($keys, $payParam['message_id'], $payParam['chat_id']);
-
-        // ویرایش پیام سایر ادمین‌ها
-        // A valid primary-only receipt may have no secondary administrators.
-        // Avoid PHP 8.5 deprecations after the irreversible effect commits.
-        $adminMessages = json_decode((string)($payParam['admins_messages']??''), true);
-        if (is_array($adminMessages)) {
-            foreach ($adminMessages as $msgInfo) {
-                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payParam['chat_id'] &&
-                    achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
-                    editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
-                }
-            }
-        }
-
-        sendMessage(\achbotMessage('renewal.extensions.message.24dea9b122', ['volume' => $volume, 'remark' => $remark]), null, "HTML", $uid);
-        return;
-
-    } catch (Throwable $e) {
-        if ($localCommitted) {
-            error_log('achbot_manual_day_notice_unconfirmed pay_id='.(int)($payId??0));
-            return;
-        }
-        try {$connection->rollback();} catch (Throwable $ignored) {}
-
-        // پیام فنی برای ادمین اقدام‌کننده
-        $err = \achbotMessage('renewal.extensions.err.28163d77c1')
-             . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
-             . \achbotMessage('renewal.extensions.admin_from_id.748897de00', ['from_id' => $from_id])
-             . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3') . achbotFinanceDiagnosticReason($e);
-        achbotNotifyAdmins('sendMessage', ['text'=>$err], ['report_channel'=>null]);
-
-        alert(\achbotMessage('renewal.extensions.alert.ba92f03500'), true);
-        return;
-    }
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'day');
+    return;
 }
 
 if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
-    require_once __DIR__.'/../WalletSettlement.php';
-    // One original-pay session lease spans debit, Native, local finality
-    // and the direct Telegram report. Archive cannot win during an active
-    // original callback, even when the draft is older than ten minutes.
-    $walletLease=achbotWalletCheckoutLeaseBegin(
-        $connection,(string)$match[1],(int)$from_id,'day');
-    if ($walletLease['lease']==='unavailable' ||
-        ($walletLease['pay_id']>0 &&
-         !in_array($walletLease['lease'],['owned','borrowed'],true))) {
-        alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
-        return;
-    }
-    try {
-    $connection->begin_transaction();
-    $localCommitted=false;
-    try {
-        // Customer-wallet issuance shares the same owner-first lock as drafts
-        // and manual/hosted claims. Never lock pays before users.userid.
-        achbotPayUxLockDraftOwner($connection,(int)$from_id);
-        $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE");
-        $stmt->bind_param("s", $match[1]);
-        $stmt->execute();
-        $payRes = $stmt->get_result();
-        $stmt->close();
-
-        if($payRes->num_rows == 0){
-            $connection->rollback();
-            $text = "/start";
-            $data = "";
-            delMessage();
-            return '__ACHBOT_V8_GOTO_START__';
-        }
-
-        $payParam = $payRes->fetch_assoc();
-        // Same guarded claim policy as purchase wallet callbacks, while
-        // this exact pays row is already locked in the current transaction.
-        if (!achbotWalletDirectAllowedLocked($connection, $payParam, (int)$from_id)) {
-            $connection->rollback();
-            alert(\achbotMessage('renewal.extensions.alert.9b6f1fa91f'), true);
-            return;
-        }
-
-        if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
-            $connection->rollback();
-            alert(\achbotMessage('renewal.extensions.alert.31d13e9866'), true);
-            return;
-        }
-
-        $hash_id  = $payParam['hash_id'];
-
-        if ($payParam['state'] === "paid_with_wallet") {
-            $connection->rollback();
-            return;
-        }
-
-        $payType = $payParam['type'];
-        if (!preg_match('/^INCREASE_DAY_(\d+)_(\d+)/', $payType, $increaseInfo)) {
-            throw new Exception("invalid_increase_type");
-        }
-        $orderId = intval($increaseInfo[1]);
-        $planid  = intval($increaseInfo[2]);
-        $uid     = intval($payParam['user_id'] ?? $from_id);
-
-        $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-        $stmt->bind_param("i", $orderId);
-        $stmt->execute();
-        $orderInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
-        throw new RuntimeException('wallet_day_order_ineligible');
-    }
-
-
-        if (!$orderInfo){
-            throw new Exception("order_not_found");
-        }
-
-        $server_id  = intval($orderInfo['server_id']);
-        $inbound_id = intval($orderInfo['inbound_id']);
-        $remark     = $orderInfo['remark'];
-        $uuid       = $orderInfo['uuid'] ?? "0";
-
-        $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id` = ?");
-        $stmt->bind_param('i', $server_id);
-        $stmt->execute();
-        $serverConfig = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        if(!$serverConfig){
-            throw new Exception("server_config_missing");
-        }
-        $serverType = $serverConfig['type'];
-
-        $quotedUnits=achbotPinnedAddonUnits($payParam);
-        if ($quotedUnits===null) throw new RuntimeException('service_quote_units_unverified');
-        $price  = intval($payParam['price']);
-        $volume = $quotedUnits;
-        if ($volume===null) throw new RuntimeException('unsupported_service_units');
-
-        $stmt = $connection->prepare("SELECT id,wallet FROM users
-            WHERE userid=? FOR UPDATE");
-        $stmt->bind_param('i',$uid);
-        if (!$stmt->execute()) throw new RuntimeException('wallet_day_owner_read_failed');
-        $owners=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-        $stmt->close();
-        if (count($owners)!==1)
-            throw new RuntimeException('wallet_day_owner_ambiguous');
-        $uRow=$owners[0];
-        $userwallet=(int)$uRow['wallet'];
-        if($userwallet < $price) {
-            $needamount = $price - $userwallet;
-
-            // A declined wallet debit must leave the quote selectable.
-            $connection->rollback();
-
-            alert(\achbotMessage('renewal.extensions.alert.39c72d8044') . number_format($userwallet) . \achbotMessage('renewal.extensions.alert.71a2507661') . number_format($needamount) . \achbotMessage('renewal.extensions.text.2cc98f7f7c'), true);
-            return;
-        }
-
-        if (!achbotSupportsPanel($serverType))
-            throw new UnexpectedValueException('unsupported_panel');
-        if ($serverType==='pasarguard') {
-            // No Wallet debit or Native effect may start when the terminal
-            // finance+one-time delivery outbox cannot be committed.
-            require_once __DIR__.'/../WalletAddonNotices.php';
-            if (!achbotWalletAddonNoticesReady($connection))
-                throw new RuntimeException('wallet_original_outbox_not_ready');
-        }
-        // Reserve the debit and unique payment ownership together BEFORE
-        // dispatch. An unknown remote/local result remains processing_wallet
-        // for operator review; callback replay cannot debit or dispatch again.
-        $payId=(int)$payParam['id'];
-        $payType=(string)$payParam['type'];
-        if ((int)$payParam['price']!==$price ||
-            (int)$payParam['user_id']!==$uid ||
-            $payType!=="INCREASE_DAY_{$orderId}_{$planid}")
-            throw new RuntimeException('wallet_day_claim_subject_changed');
-        $ownerPk=(int)$uRow['id'];
-        $stmt=$connection->prepare("UPDATE users SET wallet=wallet-?
-            WHERE id=? AND userid=? AND wallet>=?");
-        $stmt->bind_param('iiii',$price,$ownerPk,$uid,$price);
-        $reserved=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$reserved) throw new RuntimeException('wallet_day_reservation_unconfirmed');
-        $payState=(string)$payParam['state'];
-        $stmt=$connection->prepare("UPDATE pays SET state='processing_wallet'
-            WHERE id=? AND user_id=? AND hash_id=? AND type=? AND price=?
-              AND state=?");
-        $stmt->bind_param('iissis',$payId,$uid,$hash_id,$payType,
-                          $price,$payState);
-        $claimed=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$claimed || $connection->commit()!==true)
-            throw new RuntimeException('wallet_day_claim_unconfirmed');
-
-        if (achbotSupportsPanel($serverType)){
-            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark'=>$remark, 'plus_day'=>$volume]);
-        } else {
-            throw new \UnexpectedValueException('unsupported_panel');
-        }
-
-        if ($serverType==='pasarguard') {
-            // This paid Wallet operation was claimed and debited before any
-            // HTTP. Its PasarGuard account fence stays mutating until the
-            // SAME original finance/order/audit and notice COMMIT.
-            // Reobserve Native applied-only (even if the response was lost).
-            require_once __DIR__.'/../WalletEditRecovery.php';
-            $settlement=achbotWalletPgResumeAppliedSystem($connection,$payId);
-            if (($settlement['status']??null)!=='settled_delivery_pending')
-                throw new RuntimeException('wallet_day_original_native_uncertain');
-            $localCommitted=true;
-            try {
-                achbotDeliveryDispatchPending($connection,$payId);
-                achbotWalletAddonDispatchReport($connection,$payId);
-            } catch (Throwable $noticeError) {
-                error_log('achbot_wallet_day_pending_notice pay_id='.$payId.
-                    ' class='.get_class($noticeError));
-            }
-            return;
-        }
-        if (is_null($response)) {
-            throw new Exception("server_connection_null");
-        }
-        if (!is_object($response) && !is_array($response)) {
-            throw new Exception("invalid_response_type");
-        }
-        $success = (is_object($response) && !empty($response->success))
-                || (is_array($response)  && !empty($response['success']));
-        if (!$success) {
-            throw new Exception("provider_rejected");
-        }
-
-        if (!is_object($response) || ($response->verified??false)!==true)
-            throw new RuntimeException('wallet_day_provider_result_unverified');
-        if ($connection->begin_transaction()!==true)
-            throw new RuntimeException('wallet_day_finish_begin_failed');
-        $stmt=$connection->prepare("SELECT id,state,user_id,hash_id,type,price
-            FROM pays WHERE id=? FOR UPDATE");
-        $stmt->bind_param('i',$payId);
-        $ok=$stmt->execute();
-        $locked=$ok?$stmt->get_result()->fetch_assoc():null;
-        $stmt->close();
-        if (!$locked || $locked['state']!=='processing_wallet' ||
-            (int)$locked['user_id']!==$uid ||
-            (int)$locked['price']!==$price ||
-            (string)$locked['hash_id']!==$hash_id ||
-            (string)$locked['type']!==$payType)
-            throw new RuntimeException('wallet_day_claim_stale');
-        achbotStoreVerifiedServiceExpiryLocked($connection,$orderInfo,$response);
-        $timeNow=time();
-        $stmt=$connection->prepare("INSERT INTO increase_order
-            (userid,server_id,inbound_id,remark,amount,date,day)
-            VALUES (?,?,?,?,?,?,?)");
-        $stmt->bind_param('iiisiii',$uid,$server_id,$inbound_id,
-                          $remark,$price,$timeNow,$volume);
-        $saved=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$saved) throw new RuntimeException('wallet_day_audit_unconfirmed');
-        $stmt=$connection->prepare("UPDATE pays SET state='paid_with_wallet'
-            WHERE id=? AND user_id=? AND hash_id=? AND state='processing_wallet'");
-        $stmt->bind_param('iis',$payId,$uid,$hash_id);
-        $saved=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$saved || $connection->commit()!==true)
-            throw new RuntimeException('wallet_day_finish_unconfirmed');
-        $localCommitted=true;
-
-        editText($message_id, \achbotMessage('renewal.extensions.message.cce260f97e', ['volume' => $volume]), getMainKeys());
-
-        $keys = json_encode(['inline_keyboard'=>[
-            [
-                ['text'=>\achbotMessage('renewal.extensions.button.aba3054570'),'callback_data'=>"wizwizch"]
-            ],
-            [
-                ['text'=>\achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data'=>"noop_$hash_id"]
-            ]
-        ]]);
-
-        $msg = \achbotMessage('renewal.extensions.msg.bfc1b46322', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'remark' => $remark, 'volume' => $volume, 'price' => $price]);
-        achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
-
-        return;
-
-    } catch (Throwable $e) {
-        if ($localCommitted) {
-            error_log('achbot_wallet_day_notice_unconfirmed pay_id='.(int)($payId??0));
-            return;
-        }
-        try {$connection->rollback();} catch (Throwable $ignored) {}
-
-        // پیام فنی برای ادمین
-        $adminErr = \achbotMessage('renewal.extensions.admin_err.70cf66359f')
-                  . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
-                  . \achbotMessage('renewal.extensions.user_from_id.45aa9ea684', ['from_id' => $from_id])
-                  . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3').achbotFinanceDiagnosticReason($e);
-        achbotNotifyAdmins('sendMessage', ['text'=>$adminErr], ['report_channel'=>null]);
-
-        sendMessage(\achbotMessage('renewal.extensions.message.ba8adc7121'), null, null, $uid);
-
-        return;
-    }
-    } finally {
-        if ($walletLease['lease']==='owned')
-            achbotOriginalDispatchLeaseEnd($connection,
-                (int)$walletLease['pay_id'],(string)$walletLease['lease']);
-    }
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    achbotCheckoutWalletCallback($connection,(string)$match[1],(int)$from_id,'day',$botState);
+    return;
 }
 
 if (is_string($data) && preg_match('/^changePlan_([1-9][0-9]{0,9})$/D', $data, $match)) {
@@ -836,7 +314,7 @@ if (is_string($data) && preg_match('/^changePlan_([1-9][0-9]{0,9})$/D', $data, $
         $buttons=[];
         foreach ($plans as $plan) {
             $planId=(int)$plan['id'];
-            if (\AchBot\Subscription\AccountDetails\paidPlanForOrder($connection,$orderInfo,$planId)===null) continue;
+            if (achbotPaidPlanForOrder($connection,$orderInfo,$planId)===null) continue;
             $buttons[]=[['text'=>$plan['title'],'callback_data'=>'confirmChangePlan_'.$orderId.'_'.$planId]];
         }
         $buttons[]=[['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'mainMenu']];
@@ -868,7 +346,7 @@ if (is_string($data) && preg_match('/^confirmChangePlan_([1-9][0-9]{0,9})_([1-9]
             throw new RuntimeException('plan_actor_denied');
         if (!achbotOrderMayUsePaidPlan($connection,$orderInfo))
             throw new RuntimeException('plan_order_unavailable');
-        $plan=\AchBot\Subscription\AccountDetails\paidPlanForOrder($connection,$orderInfo,$newPlanId);
+        $plan=achbotPaidPlanForOrder($connection,$orderInfo,$newPlanId);
         if ($plan===null) throw new RuntimeException('plan_target_unavailable');
         $result=achbotPhysicalSelectPlan($connection,$orderId,$newPlanId,$actorId,$isAdmin);
         if (!$result['success']) throw new RuntimeException($result['reason']);
@@ -880,14 +358,8 @@ if (is_string($data) && preg_match('/^confirmChangePlan_([1-9][0-9]{0,9})_([1-9]
         alert(\achbotMessage('renewal.extensions.plan_selection_review'),true);
         return;
     }
-    // Failed notifications cannot change a committed product selection.
+    achbotOperationalReportDispatch($connection,$result['report_ref']);
     editText($message_id,\achbotMessage('renewal.extensions.message.3067ddba76'));
-    require_once __DIR__.'/../../Subscription/PhysicalService.php';
-    achbotNotifyServiceChange('plan',[
-        'id'=>$orderId,'userid'=>$orderInfo['userid'],
-        'remark'=>$orderInfo['remark'],'plan_id'=>$newPlanId,
-        'plan_title'=>$plan['title']
-    ],$actorId,$isAdmin);
     return;
 }
 if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
@@ -904,21 +376,18 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
     }
 
 
-    $agentBought = (bool)$orderInfo['agent_bought'];
     try {
-        $scoped=achbotAddonSchema($connection);
-        $addonContext=$scoped?achbotAddonContext($connection,$orderInfo):null;
+        if (achbotManagedServicePlan($connection,$orderInfo,'ADD_VOLUME',$botState)===null)
+            throw new DomainException('managed_service_unavailable');
+        achbotAddonSchema($connection);
+        $addonContext=achbotAddonContext($connection,$orderInfo);
         $eligibility=achbotOrderAddonEligibility($connection,$orderInfo,'volume',$addonContext);
         if (!$eligibility['eligible']) {
             alert(\achbotMessage($eligibility['reason']==='expired'
                 ? 'renewal.extensions.alert.96762b5a42' : 'payment.pre_payment.alert.fa55f5201f'),true);
             return;
         }
-        if ($scoped) $catalog=achbotAddonCatalog($connection,'volume',$addonContext);
-        else {
-            $q=$connection->prepare("SELECT * FROM increase_plan ORDER BY id");
-            $q->execute();$catalog=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
-        }
+        $catalog=achbotAddonCatalog($connection,'volume',$addonContext);
     } catch(Throwable $error) {
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
@@ -933,14 +402,7 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
         $id = $cat['id'];
         $title = $cat['volume'];
         $price = $cat['price'];
-        if ($agentBought == true) {
-            $discounts = json_decode($userInfo['discount_percent'], true);
-            if ($botState['agencyPlanDiscount'] == "on") 
-                $discount = $discounts['plans'][$orderInfo['fileid']] ?? $discounts['normal'];
-            else 
-                $discount = $discounts['servers'][$orderInfo['server_id']] ?? $discounts['normal'];
-            $price -= floor($price * $discount / 100);
-        }
+        $price=achbotExistingServicePrice($userInfo,$botState,$orderInfo,(int)$price);
         if ($price == 0)
             $price = \achbotMessage('renewal.extensions.price.dda7ff2974');
         else
@@ -980,35 +442,28 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
     }
 
     try {
-        $scoped=achbotAddonSchema($connection);
-        $addonContext=$scoped?achbotAddonContext($connection,$orderInfo):null;
+        if (achbotManagedServicePlan($connection,$orderInfo,'ADD_VOLUME',$botState)===null)
+            throw new DomainException('managed_service_unavailable');
+        achbotAddonSchema($connection);
+        $addonContext=achbotAddonContext($connection,$orderInfo);
         $eligibility=achbotOrderAddonEligibility($connection,$orderInfo,'volume',$addonContext);
         if (!$eligibility['eligible']) {
             alert(\achbotMessage($eligibility['reason']==='expired'
                 ? 'renewal.extensions.alert.f5aab191db' : 'payment.pre_payment.alert.fa55f5201f'),true);
             return;
         }
-        if ($scoped) {
-            $res=achbotAddonOfferById($connection,'volume',$addonContext,(int)$match['volumeId']);
-            if (!$res) throw new RuntimeException('addon_offer_not_applicable');
-            $planprice=$res['price'];$plangb=$res['volume'];
-        }
+        $res=achbotAddonOfferById($connection,'volume',$addonContext,(int)$match['volumeId']);
+        if (!$res) throw new RuntimeException('addon_offer_not_applicable');
+        $planprice=$res['price'];$plangb=$res['volume'];
     } catch(Throwable $error) {
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
-    $agentBought = $orderInfo['agent_bought'];
  
-    if($agentBought == true){
-        $discounts = json_decode($userInfo['discount_percent'],true);
-        if($botState['agencyPlanDiscount']=="on") $discount = $discounts['plans'][$orderInfo['fileid']]?? $discounts['normal'];
-        else $discount = $discounts['servers'][$orderInfo['server_id']]?? $discounts['normal'];
-        
-        $planprice -= floor($planprice * $discount / 100);
-    }
+    $planprice=achbotExistingServicePrice($userInfo,$botState,$orderInfo,(int)$planprice);
 
     $hash_id = RandomString();
-    achbotRemoveUnclaimedPendingPayments($connection,$from_id,'INCREASE_VOLUME');
+
 
     $time = time();
     $plan_id = $orderInfo['fileid'];
@@ -1016,57 +471,40 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
 	$order_id = $match['orderId'];
 	
     $type = "INCREASE_VOLUME_$data";
-    if ($scoped) {
-        $addonQuote=achbotAddonQuote($orderInfo,$addonContext,'volume',$res,(int)$planprice);
-        $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state,addon_scope_snapshot)
-            VALUES (?,?,?,?,?,?,?,'0',?,?,'pending',?)");
-        $stmt->bind_param("sisiiiiiis",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$plangb,$planprice,$time,$addonQuote);
-    } else {
-        $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state)
-            VALUES (?,?,?,?,?,?,?,'0',?,?,'pending')");
-        $stmt->bind_param("sisiiiiii",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$plangb,$planprice,$time);
-    }
-    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,$scoped);
+    $addonQuote=achbotAddonQuote($orderInfo,$addonContext,'volume',$res,(int)$planprice);
+    $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state,addon_scope_snapshot)
+        VALUES (?,?,?,?,?,?,?,'0',?,?,'pending',?)");
+    $stmt->bind_param("sisiiiiiis",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$plangb,$planprice,$time,$addonQuote);
+    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,achbotAgencyQuotePolicy($userInfo,$botState,(int)$plan_id,(int)$server_id),true);
 	$stmt->close();
 	if ($newDraftId<=0) {
 	    alert(\achbotMessage('renewal.extensions.alert.ae271a2d1d'),true);
 	    return;
 	}
 
-    $keyboard = array();
-
-    if($planprice == 0) $planprice = \achbotMessage('renewal.extensions.planprice.97e0b2bd8a');
-    else $planprice = " " . number_format($planprice) . \achbotMessage('renewal.extensions.text.2cc98f7f7c');
-
-    
-    if(achbotManualEnabled('bank_transfer') && achbotPayUxAudienceAllowed($connection,'bank_transfer',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cart_to_cart') . $planprice,  'callback_data' => "payIncreaseWithCartToCart$hash_id"]];
-    if(achbotManualEnabled('gift_card') && achbotPayUxAudienceAllowed($connection,'gift_card',(int)$from_id)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.gift_card'), 'callback_data' => "payIncreaseWithGiftCard$hash_id"]];
-    if (achbotManualCryptoEnabled((int)$from_id) && (achbotPayUxAudienceAllowed($connection,'manual_usdt',(int)$from_id) || achbotPayUxAudienceAllowed($connection,'manual_trx',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
-    if(($botState['nowPaymentOther'] == "on" && achbotPayUxAudienceAllowed($connection,'nowpayments',(int)$from_id) && achbotUsdtRateForUser($connection,(int)$from_id)!==null)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'),  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
-    if(($botState['zarinpal'] == "on" && achbotPayUxAudienceAllowed($connection,'zarinpal',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'),  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
-    if(($botState['nextpay'] == "on" && achbotPayUxAudienceAllowed($connection,'nextpay',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'),  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
-    if(($botState['walletState'] == "on" && achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id))) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.5adbd64a32') . $planprice,  'callback_data' => "payIncreaseWithWallet$hash_id"]];
-
+    $free=(int)$planprice===0;
+    require_once __DIR__.'/../../Purchase/CheckoutPresentation.php';
+    $methods=$free?[]:array_keys(achbotCheckoutDraftPaymentOptions($connection,$newDraftId,(int)$from_id));
+    $keyboard=achbotCheckoutPaymentKeyboard('volume',$hash_id,(int)$planprice,$methods,$botUrl);
     $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.cancel'), 'callback_data'=> "mainMenu"]];
-    $sent=sendMessage(\achbotMessage('renewal.extensions.message.48930749a9'),
+    $sent=sendMessage($free?achbotMessage('renewal.free_confirmation.prompt'):\achbotMessage('renewal.extensions.message.48930749a9'),
         json_encode(['inline_keyboard'=>$keyboard]),'HTML',$from_id);
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent);
 }
 
-if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data) && preg_match('/\ApayIncreaseWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
+if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbotManualCryptoVerifiedDispatch'] ?? null) === $data : strlen($data) <= 64) && preg_match('/\ApayIncreaseWith(?:CartToCart|GiftCard|ManualUsdt)([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match[1]);
     if (!$payInfo) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
     }
 
     $method = str_starts_with($data, 'payIncreaseWithManualUsdt') ? (($GLOBALS['achbotManualCryptoChoice'] ?? '') === 'TRON' ? 'manual_trx' : 'manual_usdt') :
         (str_starts_with($data, 'payIncreaseWithGiftCard') ? 'gift_card' : 'bank_transfer');
     if (!achbotManualClaim($connection, $payInfo, $method, (int)$from_id,
-                           $GLOBALS['achbotManualCryptoChoice'] ?? null)) {
+                           $GLOBALS['achbotManualCryptoChoice'] ?? null,'volume')) {
         alert(\achbotMessage('renewal.extensions.alert.1a885aaca4'), true);
         return;
     }
@@ -1083,7 +521,7 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     achbotPayUxTrackByHash($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (function_exists('achbotApiPaymentTrackInvoice')) achbotApiPaymentTrackInvoice($connection,(string)$payInfo['hash_id'],(int)$from_id,$delivered);
     if (is_object($delivered) && !empty($delivered->ok)) {
-    setUser(function_exists('achbotApiPaymentInitialStep') ? achbotApiPaymentInitialStep($connection,(string)$match[1],"payIncreaseWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]) : "payIncreaseWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
+    setUser("payIncreaseWith" . (in_array($method, ['manual_usdt','manual_trx'], true) ? 'ManualUsdt' : ($method === 'gift_card' ? 'GiftCard' : 'CartToCart')) . $match[1]);
         delMessage();
     } else {
         // The pinned attempt may be reopened. Never erase the selection menu
@@ -1093,18 +531,17 @@ if (is_string($data) && (strlen($data) <= 64 || ($GLOBALS['achbotManualCryptoVer
     exit;
 }
 
-if (preg_match('/send(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Receipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\Asend(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Receipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
         prepareStartFallback();
-        delMessage();
         return '__ACHBOT_V8_GOTO_START__';
     }
 
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
-    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id,'volume')) {
         alert(\achbotMessage('renewal.extensions.alert.d06bc731eb'), true);
         return;
     }
@@ -1115,7 +552,7 @@ if (preg_match('/send(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     // Serialize with the six-hour unstarted-invoice expiry sweep.
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
-                                      $method,(int)$from_id)) {
+                                      $method,(int)$from_id,'volume')) {
         alert(\achbotMessage('renewal.extensions.alert.560f05f822'),true);
         return;
     }
@@ -1130,16 +567,16 @@ if (preg_match('/send(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     exit;
 }
 
-if (preg_match('/cancelIncreaseVolumeReceipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\AcancelIncreaseVolumeReceipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
     handleCancelFlow( $removeKeyboard);
 }
 
-if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
+if (preg_match('/\Await(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Receipt([A-Za-z0-9_-]{1,50})\z/D', $userInfo['step'], $match)) {
 
     $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match[1]) :
         (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
-    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
+    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id,'volume')) {
         setUser();
         alert(\achbotMessage('renewal.extensions.alert.882596d0f1'), true);
         return;
@@ -1152,42 +589,10 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     }
 
 
-    $payParam = dbFetchPayByHash($connection, $match[1]);
-    if (!$payParam) {
-        prepareStartFallback();
-        delMessage();
-        return '__ACHBOT_V8_GOTO_START__';
-    }
-
-    $payType = $payParam['type'];
-
-    preg_match('/^INCREASE_VOLUME_(\d+)_(\d+)/', $payType, $increaseInfo);
-    $orderId = (int)$increaseInfo[1];
-    $planid  = (int)$increaseInfo[2];
-
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $orderId);
-    $stmt->execute();
-    $orderInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
-        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
-        return;
-    }
-
-
-    $remark = $orderInfo['remark'];
-
-    $stmt = $connection->prepare("SELECT * FROM `increase_plan` WHERE `id` = ?");
-    $stmt->bind_param("i", $planid);
-    $stmt->execute();
-    $res = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $price  = $payParam['price'];
-    $volume = achbotPinnedAddonUnits($payParam);
-
-
+    $payParam=$receiptPay;
+    $original=achbotManualOriginalServiceQuote($connection,$receiptPay,(int)$from_id,'volume');
+    if (!$original) {alert(achbotMessage('renewal.extensions.alert.882596d0f1'),true);return;}
+    $remark=$original['remark'];$price=$original['price'];$volume=$original['volume'];
 
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
@@ -1207,7 +612,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
         !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid,'volume');
     if ($deliveryToken === null) {
         alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
         return;
@@ -1233,476 +638,13 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
 }
 
 if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
-    require_once __DIR__.'/../ManualEditRecovery.php';
-    $resume=achbotManualPgResumeEdit($connection,(string)$match[1],(int)$from_id,'volume',
-        (int)$admin);
-    if ($resume!==null) {
-        if (in_array($resume['status'],['approved','delivery_only'],true)) {
-            achbotManualPgEditNotify($connection,(int)$resume['pay_id']);
-        } else alert(achbotMessage('manual_receipt_final.edit_unverified'),true);
-        return;
-    }
-    $apiManualSeen=function_exists('achbotApiPaymentManualAddonPreflight') ? achbotApiPaymentManualAddonPreflight($connection,(string)$match[1]) : null;
-    $connection->begin_transaction();
-    $localCommitted=false;
-    try {
-        $hash_id = $match[1];
-
-        $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE");
-        $stmt->bind_param("s", $hash_id);
-        $stmt->execute();
-        $payParam = $stmt->get_result()->fetch_assoc();
-        if (!(function_exists('achbotApiPaymentManualAddonAllowedLocked') ? achbotApiPaymentManualAddonAllowedLocked($connection,$payParam,$apiManualSeen) : achbotSupportsPaymentSubject($connection, $payParam, true))) {
-            $connection->rollback();
-            alert(\achbotMessage('renewal.extensions.alert.135aa8877f'), true);
-            return;
-        }
-
-        $stmt->close();
-
-        if (!achbotManualServiceApprovalAllowedLocked($connection, $payParam, 'volume')) {
-            $connection->rollback();
-            alert(\achbotMessage('renewal.extensions.alert.733308c9fe'), true);
-            return;
-        }
-
-        $payType = $payParam['type'];
-
-        if (!preg_match('/^INCREASE_VOLUME_(\d+)_(\d+)/', $payType, $increaseInfo)) {
-            throw new Exception("invalid_increase_type");
-        }
-        $orderId = intval($increaseInfo[1]);
-        $planid  = intval($increaseInfo[2]);
-        $uid     = intval($payParam['user_id']);
-
-        $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-        $stmt->bind_param("i", $orderId);
-        $stmt->execute();
-        $orderInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
-        throw new RuntimeException('volume_extension_order_ineligible');
-    }
-
-
-        if (!$orderInfo) {
-            throw new Exception("order_not_found");
-        }
-
-        $server_id  = intval($orderInfo['server_id']);
-        $inbound_id = intval($orderInfo['inbound_id']);
-        $remark     = $orderInfo['remark'];
-        $uuid       = $orderInfo['uuid'] ?? "0";
-
-        $quotedUnits=achbotPinnedAddonUnits($payParam);
-        if ($quotedUnits===null) throw new RuntimeException('service_quote_units_unverified');
-        $price  = intval($payParam['price']);
-        $volume = $quotedUnits;
-        if ($volume===null) throw new RuntimeException('unsupported_service_units');
-
-        $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?");
-        $stmt->bind_param("i", $server_id);
-        $stmt->execute();
-        $server_info = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-
-        if (!$server_info) {
-            throw new Exception("server_config_missing");
-        }
-
-        $serverType = $server_info['type'];
-
-        if (!achbotSupportsPanel($serverType))
-            throw new UnexpectedValueException('unsupported_panel');
-        // Operator receipt approval is financial ownership, not a remote
-        // effect claim. Commit a unique nonterminal claim BEFORE the PUT.
-        // An ambiguous crash/SQL reply can leave review pending, never a
-        // second automatic remote request on this same receipt.
-        if ((int)$payParam['price']!==$price ||
-            (int)$payParam['user_id']!==$uid ||
-            (string)$payParam['type']!=="INCREASE_VOLUME_{$orderId}_{$planid}")
-            throw new RuntimeException('volume_extension_claim_subject_changed');
-        $payId=(int)$payParam['id'];
-        $payType=(string)$payParam['type'];
-        $stmt=$connection->prepare("UPDATE pays SET state='processing'
-            WHERE id=? AND user_id=? AND hash_id=? AND type=?
-              AND price=? AND state='have_sent'");
-        $stmt->bind_param('iissi',$payId,$uid,$hash_id,$payType,$price);
-        $claimed=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$claimed || $connection->commit()!==true)
-            throw new RuntimeException('volume_extension_claim_unconfirmed');
-
-        // The old markup keyboard is not part of this settlement path.
-        // Its unset() used an uninitialized variable after a durable claim.
-        if (achbotSupportsPanel($serverType)) {
-            $change=['pay_id'=>(int)$payId,'remark'=>$remark,'plus_volume'=>$volume];
-            if ($serverType==='pasarguard') {
-                $change['operation_key']='manual:pay:'.$payId;
-                // The actor and monetary quote belong to the FIRST
-                // human decision, never a later recovery operator.
-                $change['manual_approver_id']=(int)$from_id;
-                $change['manual_local_amount_toman']=$price;
-            }
-            $response = achbotApplyServiceEdit($connection,$server_id,$change);
-        } else {
-            throw new \UnexpectedValueException('unsupported_panel');
-        }
-
-        if (is_null($response)) {
-            throw new Exception("server_connection_null");
-        }
-        if (!is_object($response) && !is_array($response)) {
-            throw new Exception("invalid_response_type");
-        }
-        $success = (is_object($response) && !empty($response->success))
-                || (is_array($response)  && !empty($response['success']));
-        if (!$success) {
-            throw new Exception("provider_rejected");
-        }
-
-        if (!is_object($response) || ($response->verified??false)!==true)
-            throw new RuntimeException('volume_extension_provider_result_unverified');
-        if ($connection->begin_transaction()!==true)
-            throw new RuntimeException('volume_extension_finalization_begin_failed');
-        $stmt=$connection->prepare("SELECT id,state,user_id,hash_id,type,price
-            FROM pays WHERE id=? FOR UPDATE");
-        $stmt->bind_param('i',$payId);
-        $ok=$stmt->execute();
-        $locked=$ok?$stmt->get_result()->fetch_assoc():null;
-        $stmt->close();
-        if (!$locked || $locked['state']!=='processing' ||
-            (int)$locked['user_id']!==$uid ||
-            (int)$locked['price']!==$price ||
-            (string)$locked['hash_id']!==$hash_id ||
-            (string)$locked['type']!==$payType)
-            throw new RuntimeException('volume_extension_claim_stale');
-        achbotStoreVerifiedServiceExpiryLocked($connection,$orderInfo,$response);
-        $timeNow=time();
-        $stmt=$connection->prepare("INSERT INTO increase_order
-            (userid,server_id,inbound_id,remark,amount,date,volume)
-            VALUES (?,?,?,?,?,?,?)");
-        $stmt->bind_param('iiisiii',$uid,$server_id,$inbound_id,
-                          $remark,$price,$timeNow,$volume);
-        $saved=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$saved) throw new RuntimeException('volume_extension_audit_unconfirmed');
-        $stmt=$connection->prepare("UPDATE pays SET state='approved',approved_by=?
-            WHERE id=? AND user_id=? AND hash_id=? AND state='processing'");
-        $stmt->bind_param('iiis',$from_id,$payId,$uid,$hash_id);
-        $saved=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$saved || $connection->commit()!==true)
-            throw new RuntimeException('volume_extension_finish_unconfirmed');
-        $localCommitted=true;
-
-        require_once __DIR__.'/../ApiPaymentPresentation.php';
-        $keys=achbotManualFinalReceiptKeyboard(
-            $connection,$payId,achbotMessage('manual_receipt_final.volume_subject',[
-                'remark'=>$remark,'units'=>$volume]));
-
-        // ویرایش پیام ادمین اصلی
-        editKeys($keys, $payParam['message_id'], $payParam['chat_id']);
-
-        // ویرایش پیام سایر ادمین‌ها
-        // A valid primary-only receipt may have no secondary administrators.
-        // Avoid PHP 8.5 deprecations after the irreversible effect commits.
-        $adminMessages = json_decode((string)($payParam['admins_messages']??''), true);
-        if (is_array($adminMessages)) {
-            foreach ($adminMessages as $msgInfo) {
-                if (isset($msgInfo['chat_id'], $msgInfo['message_id']) && $msgInfo['chat_id'] != $payParam['chat_id'] &&
-                    achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],(int)$admin)) {
-                    editKeys($keys, $msgInfo['message_id'], $msgInfo['chat_id']);
-                }
-            }
-        }
-
-        sendMessage(\achbotMessage('renewal.extensions.message.d5b6a4e6e7', ['volume' => $volume, 'remark' => $remark]), null, "HTML", $uid);
-        return;
-
-    } catch (Throwable $e) {
-        if ($localCommitted) {
-            error_log('achbot_manual_volume_notice_unconfirmed pay_id='.(int)($payId??0));
-            return;
-        }
-        try {$connection->rollback();} catch (Throwable $ignored) {}
-
-        // پیام فنی برای ادمین اقدام‌کننده
-        $err = \achbotMessage('renewal.extensions.err.322385c9dd')
-             . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
-             . \achbotMessage('renewal.extensions.admin_from_id.748897de00', ['from_id' => $from_id])
-             . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3') . achbotFinanceDiagnosticReason($e);
-        achbotNotifyAdmins('sendMessage', ['text'=>$err], ['report_channel'=>null]);
-
-        alert(\achbotMessage('renewal.extensions.alert.36f9c089de'), true);
-        return;
-    }
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'volume');
+    return;
 }
 
 if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
-    require_once __DIR__.'/../WalletSettlement.php';
-    // One original-pay session lease spans debit, Native, local finality
-    // and the direct Telegram report. Archive cannot win during an active
-    // original callback, even when the draft is older than ten minutes.
-    $walletLease=achbotWalletCheckoutLeaseBegin(
-        $connection,(string)$match[1],(int)$from_id,'volume');
-    if ($walletLease['lease']==='unavailable' ||
-        ($walletLease['pay_id']>0 &&
-         !in_array($walletLease['lease'],['owned','borrowed'],true))) {
-        alert(\achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
-        return;
-    }
-    try {
-    $connection->begin_transaction();
-    $localCommitted=false;
-    try {
-        // Customer-wallet issuance shares the same owner-first lock as drafts
-        // and manual/hosted claims. Never lock pays before users.userid.
-        achbotPayUxLockDraftOwner($connection,(int)$from_id);
-        $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `hash_id` = ? FOR UPDATE");
-        $stmt->bind_param("s", $match[1]);
-        $stmt->execute();
-        $payRes = $stmt->get_result();
-        $stmt->close();
-
-        if($payRes->num_rows == 0){
-            $connection->rollback();
-            $text = "/start";
-            $data = "";
-            delMessage();
-            return '__ACHBOT_V8_GOTO_START__';
-        }
-
-        $payParam = $payRes->fetch_assoc();
-        // Same guarded claim policy as purchase wallet callbacks, while
-        // this exact pays row is already locked in the current transaction.
-        if (!achbotWalletDirectAllowedLocked($connection, $payParam, (int)$from_id)) {
-            $connection->rollback();
-            alert(\achbotMessage('renewal.extensions.alert.9b6f1fa91f'), true);
-            return;
-        }
-
-        if (!achbotSupportsPaymentSubject($connection, $payParam, true)) {
-            $connection->rollback();
-            alert(\achbotMessage('renewal.extensions.alert.31d13e9866'), true);
-            return;
-        }
-
-        $hash_id  = $payParam['hash_id'];
-
-        if ($payParam['state'] === "paid_with_wallet") {
-            $connection->rollback();
-            return;
-        }
-
-        $payType = $payParam['type'];
-        if (!preg_match('/^INCREASE_VOLUME_(\d+)_(\d+)/', $payType, $increaseInfo)) {
-            throw new Exception("invalid_increase_type");
-        }
-        $orderId = intval($increaseInfo[1]);
-        $planid  = intval($increaseInfo[2]);
-        $uid     = intval($payParam['user_id'] ?? $from_id);
-
-        $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-        $stmt->bind_param("i", $orderId);
-        $stmt->execute();
-        $orderInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
-        throw new RuntimeException('wallet_day_order_ineligible');
-    }
-
-
-        if (!$orderInfo){
-            throw new Exception("order_not_found");
-        }
-
-        $server_id  = intval($orderInfo['server_id']);
-        $inbound_id = intval($orderInfo['inbound_id']);
-        $remark     = $orderInfo['remark'];
-        $uuid       = $orderInfo['uuid'] ?? "0";
-
-        $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id` = ?");
-        $stmt->bind_param('i', $server_id);
-        $stmt->execute();
-        $serverConfig = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        if(!$serverConfig){
-            throw new Exception("server_config_missing");
-        }
-        $serverType = $serverConfig['type'];
-
-        $quotedUnits=achbotPinnedAddonUnits($payParam);
-        if ($quotedUnits===null) throw new RuntimeException('service_quote_units_unverified');
-        $price  = intval($payParam['price']);
-        $volume = $quotedUnits;
-        if ($volume===null) throw new RuntimeException('unsupported_service_units');
-
-        $stmt = $connection->prepare("SELECT id,wallet FROM users
-            WHERE userid=? FOR UPDATE");
-        $stmt->bind_param('i',$uid);
-        if (!$stmt->execute()) throw new RuntimeException('wallet_day_owner_read_failed');
-        $owners=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-        $stmt->close();
-        if (count($owners)!==1)
-            throw new RuntimeException('wallet_day_owner_ambiguous');
-        $uRow=$owners[0];
-        $userwallet=(int)$uRow['wallet'];
-        if($userwallet < $price) {
-            $needamount = $price - $userwallet;
-
-            // A declined wallet debit must leave the quote selectable.
-            $connection->rollback();
-
-            alert(\achbotMessage('renewal.extensions.alert.39c72d8044') . number_format($userwallet) . \achbotMessage('renewal.extensions.alert.71a2507661') . number_format($needamount) . \achbotMessage('renewal.extensions.text.2cc98f7f7c'), true);
-            return;
-        }
-
-        if (!achbotSupportsPanel($serverType))
-            throw new UnexpectedValueException('unsupported_panel');
-        if ($serverType==='pasarguard') {
-            // No Wallet debit or Native effect may start when the terminal
-            // finance+one-time delivery outbox cannot be committed.
-            require_once __DIR__.'/../WalletAddonNotices.php';
-            if (!achbotWalletAddonNoticesReady($connection))
-                throw new RuntimeException('wallet_original_outbox_not_ready');
-        }
-        // Reserve the debit and unique payment ownership together BEFORE
-        // dispatch. An unknown remote/local result remains processing_wallet
-        // for operator review; callback replay cannot debit or dispatch again.
-        $payId=(int)$payParam['id'];
-        $payType=(string)$payParam['type'];
-        if ((int)$payParam['price']!==$price ||
-            (int)$payParam['user_id']!==$uid ||
-            $payType!=="INCREASE_VOLUME_{$orderId}_{$planid}")
-            throw new RuntimeException('wallet_day_claim_subject_changed');
-        $ownerPk=(int)$uRow['id'];
-        $stmt=$connection->prepare("UPDATE users SET wallet=wallet-?
-            WHERE id=? AND userid=? AND wallet>=?");
-        $stmt->bind_param('iiii',$price,$ownerPk,$uid,$price);
-        $reserved=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$reserved) throw new RuntimeException('wallet_day_reservation_unconfirmed');
-        $payState=(string)$payParam['state'];
-        $stmt=$connection->prepare("UPDATE pays SET state='processing_wallet'
-            WHERE id=? AND user_id=? AND hash_id=? AND type=? AND price=?
-              AND state=?");
-        $stmt->bind_param('iissis',$payId,$uid,$hash_id,$payType,
-                          $price,$payState);
-        $claimed=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$claimed || $connection->commit()!==true)
-            throw new RuntimeException('wallet_day_claim_unconfirmed');
-
-        if (achbotSupportsPanel($serverType)){
-            $response = achbotApplyServiceEdit($connection,$server_id, ['pay_id'=>(int)$payId, 'remark'=>$remark, 'plus_volume'=>$volume]);
-        } else {
-            throw new \UnexpectedValueException('unsupported_panel');
-        }
-
-        if ($serverType==='pasarguard') {
-            // This paid Wallet operation was claimed and debited before any
-            // HTTP. Its PasarGuard account fence stays mutating until the
-            // SAME original finance/order/audit and notice COMMIT.
-            // Reobserve Native applied-only (even if the response was lost).
-            require_once __DIR__.'/../WalletEditRecovery.php';
-            $settlement=achbotWalletPgResumeAppliedSystem($connection,$payId);
-            if (($settlement['status']??null)!=='settled_delivery_pending')
-                throw new RuntimeException('wallet_volume_original_native_uncertain');
-            $localCommitted=true;
-            try {
-                achbotDeliveryDispatchPending($connection,$payId);
-                achbotWalletAddonDispatchReport($connection,$payId);
-            } catch (Throwable $noticeError) {
-                error_log('achbot_wallet_volume_pending_notice pay_id='.$payId.
-                    ' class='.get_class($noticeError));
-            }
-            return;
-        }
-        if (is_null($response)) {
-            throw new Exception("server_connection_null");
-        }
-        if (!is_object($response) && !is_array($response)) {
-            throw new Exception("invalid_response_type");
-        }
-        $success = (is_object($response) && !empty($response->success))
-                || (is_array($response)  && !empty($response['success']));
-        if (!$success) {
-            throw new Exception("provider_rejected");
-        }
-
-        if (!is_object($response) || ($response->verified??false)!==true)
-            throw new RuntimeException('wallet_day_provider_result_unverified');
-        if ($connection->begin_transaction()!==true)
-            throw new RuntimeException('wallet_day_finish_begin_failed');
-        $stmt=$connection->prepare("SELECT id,state,user_id,hash_id,type,price
-            FROM pays WHERE id=? FOR UPDATE");
-        $stmt->bind_param('i',$payId);
-        $ok=$stmt->execute();
-        $locked=$ok?$stmt->get_result()->fetch_assoc():null;
-        $stmt->close();
-        if (!$locked || $locked['state']!=='processing_wallet' ||
-            (int)$locked['user_id']!==$uid ||
-            (int)$locked['price']!==$price ||
-            (string)$locked['hash_id']!==$hash_id ||
-            (string)$locked['type']!==$payType)
-            throw new RuntimeException('wallet_day_claim_stale');
-        achbotStoreVerifiedServiceExpiryLocked($connection,$orderInfo,$response);
-        $timeNow=time();
-        $stmt=$connection->prepare("INSERT INTO increase_order
-            (userid,server_id,inbound_id,remark,amount,date,volume)
-            VALUES (?,?,?,?,?,?,?)");
-        $stmt->bind_param('iiisiii',$uid,$server_id,$inbound_id,
-                          $remark,$price,$timeNow,$volume);
-        $saved=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$saved) throw new RuntimeException('wallet_day_audit_unconfirmed');
-        $stmt=$connection->prepare("UPDATE pays SET state='paid_with_wallet'
-            WHERE id=? AND user_id=? AND hash_id=? AND state='processing_wallet'");
-        $stmt->bind_param('iis',$payId,$uid,$hash_id);
-        $saved=$stmt->execute() && $stmt->affected_rows===1;
-        $stmt->close();
-        if (!$saved || $connection->commit()!==true)
-            throw new RuntimeException('wallet_day_finish_unconfirmed');
-        $localCommitted=true;
-
-        editText($message_id, \achbotMessage('renewal.extensions.message.2d27ba4eea', ['volume' => $volume]), getMainKeys());
-
-        $keys = json_encode(['inline_keyboard'=>[
-            [
-                ['text'=>\achbotMessage('renewal.extensions.button.9a3cb8176f'),'callback_data'=>"wizwizch"]
-            ],
-            [
-                ['text'=>\achbotMessage('renewal.extensions.hash_id.2899228604', ['hash_id' => $hash_id]), 'callback_data'=>"noop_$hash_id"]
-            ]
-        ]]);
-
-        $msg = \achbotMessage('renewal.extensions.msg.0e12e9ce3d', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'remark' => $remark, 'volume' => $volume, 'price' => $price]);
-        achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
-
-        return;
-
-    } catch (Throwable $e) {
-        if ($localCommitted) {
-            error_log('achbot_wallet_day_notice_unconfirmed pay_id='.(int)($payId??0));
-            return;
-        }
-        try {$connection->rollback();} catch (Throwable $ignored) {}
-
-        // پیام فنی برای ادمین
-        $adminErr = \achbotMessage('renewal.extensions.admin_err.128069a4b4')
-                  . \achbotMessage('renewal.extensions.hash__i_d_match_1.3abb834966', ['match_1' => $match[1]])
-                  . \achbotMessage('renewal.extensions.user_from_id.45aa9ea684', ['from_id' => $from_id])
-                  . \achbotMessage('renewal.extensions.external_effect_unverified_verify_before.10e2ccf8a3').achbotFinanceDiagnosticReason($e);
-        achbotNotifyAdmins('sendMessage', ['text'=>$adminErr], ['report_channel'=>null]);
-
-        sendMessage(\achbotMessage('renewal.extensions.message.ba8adc7121'), null, null, $uid);
-
-        return;
-    }
-    } finally {
-        if ($walletLease['lease']==='owned')
-            achbotOriginalDispatchLeaseEnd($connection,
-                (int)$walletLease['pay_id'],(string)$walletLease['lease']);
-    }
+    require_once __DIR__.'/../CheckoutRoutes.php';
+    achbotCheckoutWalletCallback($connection,(string)$match[1],(int)$from_id,'volume',$botState);
+    return;
 }

@@ -3,6 +3,18 @@
 This is a source-only operator contract. A published ZIP or GitHub release is
 not an installation or authorization for real native/provider effects.
 
+## Current Wallet-first runtime (Issue #204, fresh install)
+
+The following controls supersede conflicting historical Issue #112 notes below:
+
+* PasarGuard is the only current Native provider. Plan selection affects access Groups and current linked plan references only, never a second payment, quota reset or extension. No-PUT selection is valid when actual Groups already match.
+* A verified plan change invalidates only uncharged quotes for affected references. Submitted payment evidence survives; confirmation credits the customer's Wallet once without executing the old plan. Keep a direct financial case link on the original receipt. An already-funded service operation must reach completion or its authorized disposition before a conflicting plan change.
+* Prepared journals contain no possible Native dispatch. The original dispatch journal and Native mutation fence commit together at the last reversible pre-PUT callback. Pre-write failures and abandoned preparations cancel under the physical lease, with evidence retained. Actual uncertain PUTs retain the original hold. One separately authorized correction may dispatch; a failed correction preflight does not consume it.
+* The current intent binds stable connection instance, endpoint, physical identity, order and desired Groups, not API key or informational plan availability. Require a currently active plan before a new write; readback finalization after a possible write does not fail merely because the plan was disabled for sale. Authenticate every request using current credentials. The actual admin rotation route can repair an API key while a journal is unresolved.
+* Retain confirmed local hard-delete behavior. A subsequent authorized service refund restores only the original server's inventory if it exists; a fully removed server is not recreated and another server never gains its capacity.
+
+The older Marzban/legacy-migration discussion below is historical, not a runtime compatibility requirement.
+
 ## Owner-accepted behavior
 
 * Panel Group is an **administrator-owned physical-panel declaration**, not
@@ -187,19 +199,13 @@ Hosts/Groups, linked order rows, and unsettled payment effects. Logs should
 carry bounded order/journal IDs and error codes, not credentials or tokens.
 Never mark a journal settled based on an unchecked HTTP response.
 
-## Source-only schema migrations
+## Fresh installation and existing-instance boundary
 
-* Migration 016_remove_pasarguard_server_groups.sql removes only the obsolete
-  test-era column server_info.provider_group_ids after checking all active
-  PasarGuard plans have explicit native provider_group_ids values.
-  No order, plan, finance, wallet, native account or effect data are deleted.
-* Migration 017_shared_plan_changes.sql introduces the durable plan journal.
-  Both are one-time, non-replayable migration assets. Historical migrations
-  001 through 015 remain untouched.
-* On any separately authorized real tenant: inspect active runtime and actual
-  schema, prove backup/restore on an isolated copy, gate webhook/Cron,
-  apply only missing migrations in documented order, and verify new runtime.
-  In particular, **never replay** completed migrations 012/013/014/015 on NL.
-* Exact-source current PHP 8.5 acceptance plus independent source review is
-  required before integration. This work does not deploy to NL Chili or call
-  actual payment/native providers.
+The consolidated current schema includes the mandatory plan journal and
+explicit per-plan native Groups. It has no old 016/017 migration prerequisite.
+See [fresh installation](FRESH-INSTALL.md) and the
+[Wallet-first cutover decision](WALLET-FIRST-ARCHITECTURE.md#cutover-decision--controlled-manual-database-transfer-owner-2026-11-24).
+Earlier schema transitions are historical evidence, not executable deployment
+steps. Current PHP 8.5 acceptance and independent review are required;
+installed data transfer and real provider/payment actions require separate
+authorization.

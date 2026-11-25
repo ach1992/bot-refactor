@@ -1,5 +1,7 @@
 # AChBot financial lifecycle — current contract and controlled consolidation
 
+**Wallet-first candidate boundary:** For the current PR #234, [Wallet-first architecture](WALLET-FIRST-ARCHITECTURE.md), [the shared exception inbox](AUTOMATIC-GATEWAY-REVIEW.md) and [fresh installation](FRESH-INSTALL.md) take precedence. The following pre-Wallet-first material describes the earlier Stable/RC implementation and historical evidence; it is not an active runtime contract, migration procedure or authorization to replay old effects in the replacement. Use the exact installed release documentation for an older deployment.
+
 **Current baseline note:** This detailed financial behavior and recovery reference contains historical source/RC design checkpoints. The supported forward version is [v0.10.0 Stable](STABLE-BASELINE.md); use the actual current payment/effect journals and [payment delivery recovery](PAYMENT-DELIVERY-RECOVERY.md), not dated rollout checkpoints, for production decisions. Its historical sections remain for nontrivial financial reasoning and source regression provenance.
 
 **Integrated bulk-account identity ([PR #152](https://github.com/ach1992/bot-refactor/pull/152)):** New PasarGuard and
@@ -451,8 +453,8 @@ A genuinely historical 23-table operator-delivered receipt remains
 eligible for human financial review when **both** 003 tables are proven
 absent. Permission failure, incomplete migration and missing operator
 delivery evidence cannot be treated as a valid historical exception.
-Native source-only R1–R6 regression evidence lives in
-`tools/test_post_v9_standard_integrity.py`; no migration is auto-applied.
+Historical source-only R1–R6 regression evidence is preserved in the
+[pinned former driver](https://github.com/ach1992/bot-refactor/blob/3201af015dfd4208e9de5e532cc371541353ae52/tools/test_post_v9_standard_integrity.py). Current financial acceptance uses the Wallet-first suites in [CI-VALIDATION.md](CI-VALIDATION.md); no migration is auto-applied.
 
 
 #### Shared capacity and per-payment referral recovery decisions pending
@@ -803,7 +805,7 @@ then verify operator review, capacity reconciliation and a forward
 recovery plan. A runtime rollback does not undo provider CREATE,
 wallet credits or reservations and cannot safely discard the ledgers.
 
-**Source-only mandatory regression gates:** actual PHP/MariaDB
+**Historical source-only regression gates (not current executable requirements):** actual PHP/MariaDB
 `test_post_v9_service_effects.py`,
 `test_post_v9_wallet_creation.py`,
 `test_post_v9_wallet_checkout.py` (actual single/multi-wallet
@@ -883,14 +885,14 @@ contract. Full unattended post-crash reconciliation, partial multi-account
 refund/fulfillment policy, lost notification delivery and live installed
 operator acceptance remain separately Owner-gated.
 
-Source tests run the actual PHP module + Telegram route against private,
+Historical source tests ran the actual PHP module + Telegram route against private,
 disposable socket-only MariaDB with simulated account GET, concurrent
 endpoint drift, authorization rejection, malformed ledger indexes,
 MYSQLI_REPORT_OFF, partial account line paging and zero payment mutations.
 An additional isolated authenticated loopback HTTP server exercises the
 ACTUAL production curl login and account GET, including target drift during
 authentication, both redirect stages, malformed/oversized responses and
-credential/non-owner confinement. Run
+credential/non-owner confinement. Historical commands (recover the corresponding Git revision, not current HEAD):
 python3 tools/test_post_v9_recovery_inspection.py --run-disposable,
 python3 tools/test_post_v9_recovery_transport.py --run-disposable
 and the aggregate tools/check_post_v9.py at exact candidate HEAD.

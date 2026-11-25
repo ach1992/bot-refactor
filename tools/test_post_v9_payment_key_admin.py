@@ -12,9 +12,9 @@ import json
 from pathlib import Path
 import subprocess
 
-import test_access_state as owned
-import test_post_v9_checkout_serialization as database
-import test_v8_native as fixture
+import database_fixture as owned
+from database_fixture import sql_command
+import database_fixture as fixture
 
 ROOT=Path(__file__).resolve().parents[1]
 BASE='77ae8c8f9c3774aae4fea0817fa5da7bc3e110d3'
@@ -142,7 +142,7 @@ def extract(bot:bytes,cfg:bytes):
     return webhook,menu,route,gateway_menu_route
 
 def sql(w,e,q):
-    return database.sql(w,e,q)
+    return sql_command(w,e,q,DB).strip()
 
 def setup(w,e):
     fixture.init(w,e,'http://127.0.0.1:9')

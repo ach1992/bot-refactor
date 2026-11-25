@@ -21,7 +21,7 @@ function achbotHostedWorkerLockName(mysqli $db,int $payId): string {
 
 /** Dispatch workers borrow an already-held original payment session lease,
  * or acquire their own for the entire external request and its acknowledgement.
- * Archive checks the same lock. Never keep an InnoDB transaction across HTTP.
+ * Human receipt decisions share the lock. Never keep an InnoDB transaction across HTTP.
  * A lease borrowed from a hosted/API/manual parent must NOT be released here.
  */
 function achbotOriginalDispatchLeaseBegin(mysqli $db,int $payId): string {
@@ -64,190 +64,31 @@ function achbotOriginalDispatchLeaseEnd(mysqli $db,int $payId,string $lease): vo
     }
 }
 
-/** One source of truth for active operator-attention cases. Archival is
- * a terminal LOCAL automation fence, not a merchant settlement or refund.
- * Late signed IPN evidence is separate from the immutable archived attempt.
- */
+/** Financial review and delivery failures are independent. A submitted
+ * manual receipt exists even when its first Telegram delivery lost its ACK.
+ * Mere awaiting-payment invoices never enter this queue. */
+function achbotGatewayAttentionReceiptScope(): string {
+    require_once __DIR__.'/ReceiptMethods.php';
+    $hosted=achbotCreditMethodSqlList('hosted');
+    $manual=achbotCreditMethodSqlList('manual_quote');
+    return "(a.wallet_credit_entry_id IS NULL
+        AND a.wallet_invoice_sha256<>'' AND (
+            (p.state IN ('pending','send','service_superseded') AND a.stage='review' AND a.provider IN ($hosted)
+                AND a.provider_status IN ('partially_paid','confirming','confirmed','sending','finished','refunded','amount_mismatch','multiple_payments','verification_unavailable'))
+            OR (a.provider IN ($manual) AND (
+                (p.state IN ('have_sent','service_superseded') AND a.stage='review'
+                    AND p.message_id>0 AND p.chat_id>0)
+                OR (p.state IN ('pending','service_superseded') AND a.stage='receiving'
+                    AND (a.review_notice_claim_token IS NULL OR a.review_notice_claimed_at IS NULL
+                        OR a.review_notice_claimed_at<NOW()-INTERVAL 2 MINUTE))
+            ))
+        ))";
+}
 function achbotGatewayAttentionScope(?mysqli $db=null): string {
-    // Hosted-only installations still have the original review schema.
-    // API cases enter the shared inbox only when their optional evidence
-    // and delivery tables are actually installed.
-    $apiReady=false;$manualReady=false;$followupReady=false;
-    if ($db instanceof mysqli) {
-        try {
-            $q=$db->query('SELECT pay_row_id,state FROM payment_delivery_intents LIMIT 0');
-            if ($q) {$q->free();$manualReady=true;}
-            $q=$db->query('SELECT pay_row_id,effect_kind,state FROM service_effects LIMIT 0');
-            if ($q) $q->free();else $manualReady=false;
-            $q=$db->query('SELECT evidence_profile,evidence_state,evidence_review_sent_at,
-                evidence_fulfillment_state FROM payment_attempts LIMIT 0');
-            if ($q) {$q->free();$apiReady=$manualReady;}
-            $q=$db->query('SELECT pay_row_id,state FROM payment_followup_intents LIMIT 0');
-            if ($q) {$q->free();$followupReady=true;}
-        } catch (Throwable $error) {
-            // A missing optional schema phase is not an unpaid invoice or
-            // permission to fabricate evidence. Hosted cases remain visible.
-        }
-    }
-    // Age, a never-paid invoice, or generic unknown verification is NOT
-    // financial evidence. The inbox is for observed money, a genuine
-    // verification transport outage, or a previously started local effect.
-    $apiSql=$apiReady ? "            OR (a.provider IN ('bank_transfer','gift_card')
-                AND a.evidence_profile IS NOT NULL
-                AND (
-                    (p.state='processing' AND p.approved_by=0)
-                    OR (p.state IN ('pending','have_sent')
-                        AND EXISTS (SELECT 1 FROM payment_transactions et
-                            WHERE et.attempt_id=a.id AND et.evidence_state='proven'))
-                    OR (p.state='have_sent'
-                        AND a.evidence_review_sent_at IS NOT NULL
-                        AND a.evidence_state IN ('review','uncertain','manual','invalid_code'))
-                ))" : '';
-    $followupSql=$followupReady
-        ? " OR EXISTS (SELECT 1 FROM payment_followup_intents fu
-                WHERE fu.pay_row_id=p.id
-                  AND fu.state IN ('pending','dispatching','unknown'))"
-        : '';
-    $manualSql=$manualReady ? " OR (a.provider IN (
-                'bank_transfer','gift_card','manual_usdt','manual_trx')
-            AND p.state='processing'
-            AND (p.approved_by>0 OR EXISTS (
-                SELECT 1 FROM service_effects se WHERE se.pay_row_id=p.id)))" : '';
-    // Terminal finance/native state is not notification completion.
-    // Include PENDING/UNKNOWN original packets for any hosted/manual method,
-    // but never invent a new payment or re-dispatch an UNKNOWN notification.
-    $deliverySql=$manualReady ? " OR (p.state IN (
-            'approved','paid','auto_cart_approved','paid_with_wallet')
-            AND (EXISTS (SELECT 1 FROM payment_delivery_intents dl
-                    WHERE dl.pay_row_id=p.id
-                      AND dl.state IN ('pending','dispatching','unknown'))
-                 $followupSql))" : '';
-    // An original Wallet admin report is independent of customer delivery.
-    // Preserve unresolved original fanout even when the finance pay and
-    // customer acknowledgement have both become terminal. The JSON marker
-    // is exact per payment; a plain old paid invoice is never admitted.
-    $reportSql=$manualReady ? " OR (p.state='paid_with_wallet'
-        AND a.provider='wallet'
-        AND (p.type='RENEW_ACCOUNT' OR p.type='BUY_SUB'
-            OR p.type LIKE 'INCREASE\\_DAY\\_%'
-            OR p.type LIKE 'INCREASE\\_VOLUME\\_%')
-        AND EXISTS (SELECT 1 FROM setting sr
-            WHERE sr.type=CONCAT('WALLET_ADDON_REPORT:',p.id)
-              AND JSON_VALID(sr.value)
-              AND JSON_UNQUOTE(JSON_EXTRACT(sr.value,'$.pay_id'))=CAST(p.id AS CHAR)
-              AND JSON_UNQUOTE(JSON_EXTRACT(sr.value,'$.state')) IN
-                ('pending','dispatching','unknown_or_partial','manual_dispatching')))" : '';
-    // Wallet debits are already committed before `processing_wallet`. Older
-    // untouched invoices are NOT admitted. A wallet invoice may intentionally
-    // have no hosted payment_attempt: INNER JOIN hid Hell #113346 forever.
-    // Suppress a transient active callback for ten minutes; its original
-    // Native/pay journals are not yet safe to interpret as terminal.
-    $walletSql=" OR (p.state='processing_wallet'
-        AND p.request_date<=UNIX_TIMESTAMP()-600
-        AND (p.type IN ('BUY_SUB','RENEW_ACCOUNT','RENEW_SCONFIG')
-            OR p.type LIKE 'INCREASE\_DAY\_%'
-            OR p.type LIKE 'INCREASE\_VOLUME\_%')
-        AND (a.id IS NULL OR a.provider='wallet'))";
-    return "a.review_archived_at IS NULL
-        AND (a.provider IN ('nowpayments','nextpay','zarinpal')
-        AND (
-            (p.state IN ('pending','send') AND (
-                (a.stage='review' AND (
-                    (a.provider='nowpayments' AND a.provider_status IN (
-                        'partially_paid','confirming','confirmed','sending',
-                        'finished','refunded','amount_mismatch','multiple_payments'))
-                    OR (a.provider IN ('nextpay','zarinpal') AND
-                        a.provider_status='verification_unavailable')
-                    OR a.provider_status='operator_fulfillment_unconfirmed'
-                    OR (a.provider_status IN (
-                        'fulfillment_failed','fulfillment_unconfirmed',
-                        'fulfillment_needs_review')
-                        AND a.updated_at<=NOW()-INTERVAL 10 MINUTE)))
-                OR (a.stage='fulfilling' AND
-                    a.updated_at<=NOW()-INTERVAL 10 MINUTE)))
-            OR (p.state IN ('processing','paid') AND
-                a.stage IN ('review','fulfilling') AND
-                a.provider_status IN ('fulfillment_started',
-                    'fulfillment_unconfirmed','fulfillment_failed',
-                    'fulfillment_needs_review','operator_fulfillment_unconfirmed')
-                AND a.updated_at<=NOW()-INTERVAL 10 MINUTE)
-            OR (p.state='service_superseded' AND a.provider='nowpayments'
-                AND EXISTS (SELECT 1 FROM payment_transactions t
-                    WHERE t.attempt_id=a.id AND t.provider=a.provider
-                    AND t.observed_status IN (
-                        'partially_paid','confirming','confirmed','sending','finished')))
-            OR (p.state='service_superseded' AND
-                a.provider IN ('nextpay','zarinpal') AND
-                a.stage='review' AND a.provider_status='retired_verified_funds'
-                AND EXISTS (SELECT 1 FROM payment_transactions t
-                    WHERE t.attempt_id=a.id AND t.provider=a.provider
-                      AND t.payment_id=a.provider_reference
-                      AND t.observed_status='finished'))
-        )
-            $apiSql
-            $manualSql
-            $deliverySql
-            $reportSql
-            $walletSql
-        )";
-}
-
-/** A missing 022 Archive column is acceptable only on a readable 003
- * ledger with the required lookup columns. A genuinely absent pre-003 table
- * (1146) is also supported. Checking only review_archived_at is insufficient:
- * a broken table can be missing BOTH that column and pay_row_id. Handle both
- * throwing and MYSQLI_REPORT_OFF without swallowing any unrelated SQL error.
- */
-function achbotGatewayArchiveSchemaMissing(mysqli $db): bool {
-    try {
-        $probe=$db->query('SELECT review_archived_at FROM payment_attempts LIMIT 0');
-        if ($probe instanceof mysqli_result) {
-            $probe->free();
-            return false;
-        }
-        $code=(int)$db->errno;
-    } catch (mysqli_sql_exception $error) {
-        $code=(int)$error->getCode();
-        if (!in_array($code,[1054,1146],true)) throw $error;
-    }
-    if ($code===1146) return true;
-    if ($code!==1054)
-        throw new RuntimeException('original_archive_schema_probe_unavailable');
-
-    // The Archive column is missing, but migration 003 itself must still be
-    // valid enough for the original pay lookup and fallback provider check.
-    // Missing pay_row_id/id/provider or inaccessible SQL fails closed.
-    $required=$db->query('SELECT id,pay_row_id,provider FROM payment_attempts LIMIT 0');
-    if (!($required instanceof mysqli_result))
-        throw new RuntimeException('original_archive_ledger_schema_unavailable');
-    $required->free();
-    return true;
-}
-
-/** Local original-claim Archive fence. A wallet claim may have no attempt
- * until its first successful Native/local recovery. A missing historical 022
- * column means no Archive has occurred; other SQL errors must surface.
- */
-function achbotGatewayOriginalArchived(mysqli $db,int $payId): bool {
-    if ($payId<=0) return false;
-    try {
-        $q=$db->prepare('SELECT review_archived_at FROM payment_attempts
-            WHERE pay_row_id=? LIMIT 1');
-        if (!$q) {
-            $code=(int)$db->errno;
-            if (in_array($code,[1054,1146],true) &&
-                achbotGatewayArchiveSchemaMissing($db)) return false;
-            throw new RuntimeException('original_archive_read_unavailable');
-        }
-        $q->bind_param('i',$payId);
-        if (!$q->execute()) throw new RuntimeException('original_archive_read_failed');
-        $row=$q->get_result()->fetch_assoc();$q->close();
-        return $row!==null && $row['review_archived_at']!==null;
-    } catch (mysqli_sql_exception $error) {
-        if (in_array((int)$error->getCode(),[1054,1146],true) &&
-            achbotGatewayArchiveSchemaMissing($db)) return false;
-        throw $error;
-    }
+    return "(".achbotGatewayAttentionReceiptScope()."
+        OR EXISTS (SELECT 1 FROM payment_followup_intents f WHERE
+            f.pay_row_id=p.id AND f.service_operation_id IS NULL AND f.stage IN ('wallet_credit','manual_reject')
+            AND f.state IN ('unknown','rejected')))";
 }
 
 /** Same query powers the inbox and the original API receipt's review link.
@@ -256,22 +97,6 @@ function achbotGatewayOriginalArchived(mysqli $db,int $payId): bool {
 function achbotGatewayAttentionCaseOpen(mysqli $db,int $payId): bool {
     if ($payId<=0) return false;
     try {
-        // The original API evidence schema can be present before the additive
-        // 022 Archive migration. Do not offer a case link whose action cannot
-        // run, or emit an SQL warning on every legitimate older API receipt.
-        // Only the known absent column is optional; other SQL failures remain
-        // diagnosable instead of being mistaken for missing installation.
-        try {
-            $probe=$db->query('SELECT review_archived_at FROM payment_attempts LIMIT 0');
-        } catch (mysqli_sql_exception $error) {
-            if ((int)$error->getCode()===1054) return false;
-            throw $error;
-        }
-        if (!($probe instanceof mysqli_result)) {
-            if ((int)$db->errno===1054) return false;
-            throw new RuntimeException('attention_archive_schema_probe_failed');
-        }
-        $probe->free();
         $scope=achbotGatewayAttentionScope($db);
         // Original wallet payments can have no hosted attempt; this read
         // must use the same LEFT JOIN as the inbox/detail renderer.
@@ -301,25 +126,6 @@ function achbotGatewayAttentionCaseOpen(mysqli $db,int $payId): bool {
  * This small adapter decision is shared by the present callback routes;
  * durable payment/effect claims and external fulfillment need a later gate.
  */
-/**
- * A partial 003 schema must not permit checkout issuance: a NOWPayments
- * invoice without child-evidence persistence would strand paid customers.
- * This is a basic availability probe, NOT approval of actual DDL/install.
- */
-function achbotSharedPaymentTablesReady(mysqli $db): bool {
-    try {
-        foreach (['payment_attempts','payment_transactions'] as $table) {
-            // Names are selected from a fixed internal allowlist only.
-            $probe=$db->query('SELECT id FROM '.$table.' LIMIT 0');
-            if (!($probe instanceof mysqli_result)) return false;
-            $probe->free();
-        }
-        return true;
-    } catch (Throwable $ignored) {
-        return false;
-    }
-}
-
 /**
  * Legacy pays.payid has no provider dimension or uniqueness constraint.
  * New provider-scoped attempts MAY reuse an ID held by a different NEW

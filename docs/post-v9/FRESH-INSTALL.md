@@ -2,7 +2,7 @@
 
 This guide is for a **new bot with a new, empty database**. An existing bot, a copied live database or a partly migrated database must use its exact release's upgrade/recovery guide instead. There is no browser installer or automatic schema upgrade.
 
-**Version boundary:** This procedure began with the [first Stable v0.10.0 baseline](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0), whose runtime ZIP contains 132 members. For a new installation, select the [latest Stable release](https://github.com/ach1992/bot-refactor/releases/latest) and use its exact tagged source, runtime member manifest and release-matched schema. An **existing installation** is not eligible for this initialization procedure: audit its schema, financial/provider effects and approved forward migration path before any change. Obsolete experimental migrations 019/021 are not part of a new stable installation.
+**Version boundary:** Select the [latest Stable release](https://github.com/ach1992/bot-refactor/releases/latest) and use the exact tagged runtime manifest and release-matched setup source. The Wallet-first runtime uses one current schema, one monetary ledger and one service engine. It does not upgrade or resume an earlier installation. Existing instances require a separately authorized manual database transfer and reconciliation; see [architecture](WALLET-FIRST-ARCHITECTURE.md#cutover-decision--controlled-manual-database-transfer-owner-2026-11-24).
 
 ## 1. Prepare the installation
 
@@ -19,7 +19,7 @@ Obtain the release's runtime ZIP, manifest and checksum list from [GitHub Releas
 Verify the trusted checksum list and run the matching verifier from that private checkout:
 
 ```sh
-python3 tools/package_post_v9.py verify \
+python3 tools/package_current.py verify \
   --zip /private/setup/runtime.zip \
   --manifest /private/setup/runtime.zip.manifest.json
 ```
@@ -30,57 +30,31 @@ Expected: `verified:true`, the intended candidate/tree and the runtime member co
 
 From the **matching private setup checkout**, have the database administrator create a dedicated empty database with utf8mb4 support. Use an account scoped to that database; schema preparation needs DDL privileges. Do not use a global database administrator credential in the bot's runtime configuration.
 
-Import `database/legacy-schema.sql` exactly once into that empty database, then apply the following matching source files **one at a time in this order**, stopping on any error. This is a full fresh schema for both supported providers:
-
-| Order | Source file | Purpose |
-| --- | --- | --- |
-| Base | `database/legacy-schema.sql` | Empty historical 23-table baseline, not the completed current schema |
-| 1 | `migrations/post-v9/001_marzban_panel_group_id.sql` | Existing server grouping |
-| 2 | `migrations/post-v9/003_payment_attempts.sql` | Shared payment ledger |
-| 3 | `migrations/post-v9/004_automatic_renewal_attempts.sql` | Renewal attempt evidence |
-| 4 | `migrations/post-v9/005_wallet_adjustments.sql` | Wallet movement journal |
-| 5 | `migrations/post-v9/006_payment_message_refs.sql` | Payment message references |
-| 6 | `migrations/post-v9/007_service_effects.sql` | Verified service effects |
-| 7 | `migrations/post-v9/008_referral_awards.sql` | Referral award evidence |
-| 8 | `migrations/post-v9/009_bank_buy_invoice_claims.sql` | Bank invoice claims |
-| 9 | `migrations/post-v9/011_provider_identity.sql` | Identity prerequisites for012 |
-| 10 | `migrations/post-v9/012_shared_provider_storage.sql` | Current shared native storage |
-| 11 | `migrations/post-v9/013_remove_obsolete_order_columns.sql` | Retire unused order columns |
-| 12 | `migrations/post-v9/014_api_payment_evidence.sql` | Nullable API evidence fields/indexes on the shared ledger; required before either API mode is enabled |
-| 13 | `migrations/post-v9/015_scoped_addons.sql` | Seven add-on scope columns across three existing tables and two unique indexes; enables server/native Group-set day/volume prices without a new permanent table |
-| 14 | `migrations/post-v9/016_remove_pasarguard_server_groups.sql` | Guarded removal of obsolete server-level PasarGuard Native Group column, after verifying active plans use explicit plan-level Native Groups |
-| 15 | `migrations/post-v9/017_shared_plan_changes.sql` | Durable service_plan_changes journal for reconciled Native plan changes; must follow 016 |
-| 16 | `migrations/post-v9/018_payment_delivery_intents.sql` | Per-payment sealed delivery intents and Telegram attempt journal; requires 003 and 007, no historical backfill |
-| 17 | `migrations/post-v9/020_payment_followup_intents.sql` | Once-only staff/customer follow-up presentation journal; requires 018 and reviewed payment evidence |
-| 18 | `migrations/post-v9/022_gateway_review_archive.sql` | Two audit fields on the original attempt; safely archive completed operator review without changing payment/provider state |
-| 19 | `migrations/post-v9/023_scoped_payment_lock_indexes.sql` | Two selective indexes on existing `pays` (`order_id,id` and `type,id`) required for bounded invoice locking and avoiding unrelated-payment deadlocks; run before the matching runtime |
-
-**Existing Hell/Vivan databases (in-place upgrade, NOT a fresh import):** migration 023
-must be applied separately **before** installing the corresponding runtime that
-uses `FORCE INDEX (idx_pays_order_ref_v1)` and
-`FORCE INDEX (idx_pays_type_ref_v1)`. Review the existing schema/indexes,
-backup and DDL lock impact, run the migration once with the target owner's
-approval, then verify both indexes via `SHOW INDEX FROM pays` and `EXPLAIN`
-on the service-bound queries. MariaDB `ALTER TABLE` implicitly commits;
-on any interrupted statement inspect the resulting schema rather than
-blindly rerunning it. Do not mutate live wallets, payments or PasarGuard
-Native effects as part of index installation. The runtime ZIP does **not**
-contain or run migration 023.
-
-For example, the MariaDB client can import the baseline with a prompted password:
+Import **only** `database/current-schema.sql` once into the new empty database:
 
 ```sh
-mariadb --user=INSTALL_DB_USER --password NEW_EMPTY_DB < database/legacy-schema.sql
+mariadb --user=INSTALL_DB_USER --password NEW_EMPTY_DB < database/current-schema.sql
 ```
 
-Replace the account/database placeholders and repeat the import form for each subsequent table entry. These paths are relative to the private checkout, not the runtime ZIP. The release may name001 `panel-group-migration.sql` and003 `payment-attempt-migration.sql`; use the contents/checksums matching the selected source. Do not use `--force` to ignore errors or a wildcard SQL loop. Migration 014 has two ALTER TABLE statements; 015 creates a preflight helper procedure, normally drops it after successful validation, then executes three ALTER TABLE statements. Failed preflight may leave the helper procedure pending audited cleanup. Neither is a retry script. 015 rejects duplicate legacy quantities or malformed offers and must run after 012 and 014 on a genuinely empty, correctly initialized database. 016 is a guarded one-time column drop and 017 a one-time journal creation; neither may be rerun after success. A partly applied file requires an exact schema audit and an authorized completion plan; do not use `--force` or rerun completed migrations.
+Replace both placeholders. The consolidated schema contains no customer data,
+credentials, migrations, import decisions or automatic upgrade code.
+It contains the complete current InnoDB schema through 043, excluding five
+unused historical tables (`admins`, `black_list`, `servers`,
+`bank_buy_invoice_claims`, `automatic_renewal_attempts`). Never apply it to an existing database.
+The disposable CI fresh-schema proof compares every retained table definition
+against the historical construction sequence, verifies the omitted tables and eight retired payment execution/review columns, plus nineteen obsolete Native/port/custom-plan/gift cursor columns
+and four retired payment-only delivery columns. It verifies mandatory current multipart
+source/part identities, rejection of historical delivery rows before any construction-only
+column removal, and current money,
+identity, delivery and service schema prerequisites. No X-UI transport or local port settings are required; the Native provider owns connection configuration. Bot and gateway settings menus work on empty and partially configured documents without creating settings rows; payment methods remain off until configured.
 
-All schema/migration files are in the matching **private source checkout**, not the runtime ZIP. New empty databases do **not** require superseded experimental 019/021. Their historical scripts and previously applied historical database evidence must not be erased from existing installations.
-Migration execution remains a separately authorized operator action.
-
-Do **not** run historical002, `legacy_rc4_nowpayments_import.sql`, or optional cleanup010 for a fresh installation. Cleanup010 is separate guarded maintenance, not a startup requirement; original unused tables may remain. Do not insert another bot's settings/users or synthetic test fixtures. The ordinary Owner settings journeys initialize the intended configuration.
-
-If a step fails or any expected object already exists, keep the error and inspect the state before continuing. MariaDB DDL can commit independently; replaying the whole sequence is not recovery. Never run this fresh sequence against an existing installation, and never rerun any completed 012-017 migration. Existing-data consolidation and paired restore are documented in [shared storage](SHARED-PROVIDER-STORAGE.md).
+No legacy migration sequence, opening-balance import or prior invoice
+compatibility step is needed for a new empty bot. Its new users and new
+requests are created by the current runtime. Existing-instance migration
+and the historical SQL files are reference/maintenance material outside
+the runtime ZIP. Do not run old migrations after installing this schema,
+use `--force`, or replay a partly completed import. Investigate the actual
+failed statement and prepare a clean empty database if necessary.
 
 ## 4. Create private per-bot configuration
 
@@ -125,7 +99,7 @@ Before public use, configure:
 - Supported servers and plans. Native PasarGuard requires actual Groups/Hosts, scoped API access and a verified absolute subscription URL prefix before account admission; see its [contract](PASARGUARD-CONTRACT.md).
 - Each server's purchase-delivery and order-page display choices. Current runtime supports subscription/config/auxiliary toggles, ordered exact-name selections (default 3/max 10 inline), purchase-only QR cycling and separate explicit order QR actions; see [presentation](SUBSCRIPTION-PRESENTATION.md).
 - Intended payment credentials, destinations, rates and eligibility before enabling a method. Shared `manualUsdtRateToman` covers USDT/NOWPayments; TRX has its own rate. Manual crypto still needs human receipt verification. The managed invitation gift starts disabled until deliberately set in the same gateway/channel editor.
-- Keep `smsApiVerifyState` and `giftApiVerifyState` OFF until the complete 014 schema, OpenSSL AES-256-GCM support and the existing per-bot webhook secret are verified. Then configure the actual SMS API URL/token and positive monitoring horizon, or gift API URL/key ID/secret and explicit rial/toman unit, through the administrator UI. Optional filters remain optional. See [API setup](API-PAYMENT-EVIDENCE.md#configuration-before-api-enablement); configuration alone does not test a remote credential or consume evidence.
+- Keep `smsApiVerifyState` and `giftApiVerifyState` OFF until the complete current schema, OpenSSL AES-256-GCM support and the existing per-bot webhook secret are verified. Then configure the actual SMS API URL/token and positive monitoring horizon, or gift API URL/key ID/secret and explicit rial/toman unit, through the administrator UI. Optional filters remain optional. See [API setup](API-PAYMENT-EVIDENCE.md#configuration-before-api-enablement); configuration alone does not test a remote credential or consume evidence.
 
 ## 6. Configure Cron and its private lock
 
@@ -147,7 +121,7 @@ Expected lock-directory ownership/mode: `root:root 700`. Do not overwrite or cha
 
 For aaPanel-managed Cron logs, configure log rotation in the **host scheduler** using that installation's actual log path and Owner-approved retention. The bot does not rotate aaPanel-managed files; avoid copying identifiers from another tenant or suppressing useful diagnostics.
 
-Cron diagnostics should remain enabled. The corrected shared `config.php` does not perform Telegram membership lookups or use unbound callback variables during CLI runs. An unsynchronized customer payment message emits `achbot_payment_telegram_edit_deferred` with `pay_id`, `ref_id`, `kind`, `category`, bounded `tg_code` and `markup_only` (a repaired keyboard does **not** prove the old text was changed). Known missing/not-editable/forbidden originals are retried no sooner than six hours; transient failures retry after three minutes. These are per-attempt failure signals, not routine success prints. Missing Marzban authentication never makes an empty-Bearer user read. The normal token boundary emits at most one `achbot_marzban_auth_unverified` message per server per PHP invocation, identifying `reason=transport|http_status|invalid_token` with bounded numeric `http` and `curl_errno`; a malformed supplied token records `stage=get_user`. Never log the endpoint, credentials, token or provider response body. The legacy subscription reader now obtains one token per read instead of re-authenticating up to eleven times, stops on definite auth/user-result failure, and preserves retries of the separate subscription fetch for transient network failure. These logs contain no customer message body, card code or API credentials. Preserve financial and provider failure logs; investigate persistent categories instead of muting them or clearing the log.
+Cron diagnostics should remain enabled. The corrected shared `config.php` does not perform Telegram membership lookups or use unbound callback variables during CLI runs. An unsynchronized customer payment message emits `achbot_payment_telegram_edit_deferred` with `pay_id`, `ref_id`, `kind`, `category`, bounded `tg_code` and `markup_only` (a repaired keyboard does **not** prove the old text was changed). Known missing/not-editable/forbidden originals are retried no sooner than six hours; transient failures retry after three minutes. These are per-attempt failure signals, not routine success prints. Native diagnostics use the current PasarGuard adapter and original account identity. Never log credentials or token-bearing links. Preserve financial and provider failure logs; investigate persistent categories instead of muting them or clearing the log.
 
 After settings/readiness preparation, schedule **one invocation per minute**. In aaPanel select the one-minute schedule and put only the command below in its command field. In a normal crontab, prefix the command with `* * * * *`. Replace paths with this installation's actual paths and pre-create its private writable log directory:
 
@@ -169,10 +143,19 @@ The coordinator runs four separate processes, in order: `gift2all.php`, admitted
 
 ## 7. Verify before customer use
 
-Confirm the exact runtime/manifest, expected schema and intended settings. The [read-only readiness preflight](PAYMENT-READINESS-PREFLIGHT.md) uses a dedicated SELECT-only account and does not load private configuration or invoke workers/providers. It expects configured `BOT_STATES`/`PAYMENT_KEYS` documents and a potentially usable payment method; an untouched new database is not yet payment-ready. Its PASS is local readiness, not proof of a real payment. For 014 it reports runtime schema capability rather than full DDL certification; it never decrypts API credentials or verifies their live authentication. Audit exact column/index definitions and target history separately before API activation. After 016/017, additionally verify the obsolete server-level PasarGuard Native Group column is absent, active plans have valid plan-level Native Groups and the service_plan_changes table has the expected schema; never infer this from a successful ZIP extraction. After 015, also verify both scoped add-on UNIQUE indexes, their exact key order, all seven columns and InnoDB as documented in [scoped add-ons](ADDON-SCOPES.md); do not treat a successful ZIP extraction as schema readiness.
+Confirm the exact runtime/manifest, expected schema and intended settings with the
+[read-only readiness preflight](PAYMENT-READINESS-PREFLIGHT.md). It binds the trusted
+manifest to the clean release checkout and installed source, derives required
+database metadata from the consolidated current schema, and uses current runtime
+storage guards with a SELECT-only account. Exit 3 on an untouched database
+means the structure is ready but payment configuration is not yet complete.
+It does not decrypt credentials, verify the private encryption key, execute
+workers or certify live provider access. Validate actual Native plan groups,
+private configuration and real operational acceptance separately. See the
+[current automatic renewal contract](AUTOMATIC-RENEWAL-SAFETY.md).
 
 On the selected isolated bot, verify Owner access, ordinary-user restrictions, current server/config display, explicit QR actions, cancellation and safe invalid-input behavior. Observe the actual scheduler's private logs and absence of overlapping batches. Use a separately authorized representative provider/payment acceptance plan with controlled accounts and funds; this source guide does not execute or approve live tests. A successful browser payment return is not settlement proof; never automatically retry a transaction or provider mutation after an ambiguous result.
 
 Keep a private installation record: release/source/tree, manifest/checksum, database migration results, PHP web/CLI identities, webhook URL (no token/secret), Cron user/command/lock path, verification results and recovery location. Real source/config/database backups need protected storage and a rehearsed restore; do not publish them in GitHub.
 
-Existing installations must retain financial/native history, active lock files and their private configuration during upgrades. Read the exact transition and use paired source/database recovery after012; do not use this fresh-install sequence as an upgrade or rollback script.
+Existing installations must preserve financial/native history and private configuration during the separately approved manual transfer. Old open requests and workflow steps are not resumed. Resolve actual money, capacity holds and Native effects before activation; never run a fresh schema against an existing database.

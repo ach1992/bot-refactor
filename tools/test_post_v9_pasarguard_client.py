@@ -9,9 +9,9 @@ import argparse, base64, contextlib, copy, json, socket, subprocess, tempfile, t
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
-import test_access_state as owned
-import test_v6_native as native
-import test_v8_native as purchase
+import database_fixture as owned
+import database_fixture as native
+import database_fixture as purchase
 
 ROOT=Path(__file__).resolve().parents[1]
 MARKER='achbot:v1:'+'a'*32
@@ -298,6 +298,7 @@ def storage_checks(work,env):
     r=php(script,ROOT,work/'mysql.sock',db,json.dumps({'op':'missing'}));cases+=r['cases']
     for name in ['001_marzban_panel_group_id.sql','007_service_effects.sql','011_provider_identity.sql','012_shared_provider_storage.sql']:
         native.sql(work,env,(ROOT/'migrations/post-v9'/name).read_text(),db)
+    native.sql(work,env,'ALTER TABLE service_effects'+(ROOT/'migrations/post-v9/035_service_resolution.sql').read_text().split('ALTER TABLE service_effects',1)[1],db)
     snap=dict(provider='pasarguard',panel_id=1,instance_key='b'*32,
         endpoint_sha256=__import__('hashlib').sha256(b'https://panel.example.invalid').hexdigest(),group_ids=[2,5])
     quoted=json.dumps(snap,separators=(',',':'))
@@ -322,6 +323,12 @@ INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,rema
     # Deliberately construct incompatible storage in this disposable DB only;
     # the real FK otherwise prevents converting the payment/effect pair.
     native.sql(work,env,'ALTER TABLE service_effects DROP FOREIGN KEY fk_effect_pay',db)
+    # Aria cannot index a VIRTUAL generated column; keep the same expression
+    # as PERSISTENT for the negative engine fixture only.
+    def generated(storage):
+        native.sql(work,env,"ALTER TABLE service_effects DROP INDEX uq_effect_target_username, DROP COLUMN active_username",db)
+        native.sql(work,env,"ALTER TABLE service_effects ADD active_username VARCHAR(100) COLLATE utf8mb4_bin GENERATED ALWAYS AS (IF(state='cancelled',NULL,remote_username)) "+storage+", ADD UNIQUE KEY uq_effect_target_username (target_key,active_username)",db)
+    generated('PERSISTENT')
     for table in ['service_effects','users','pays',
                   'orders_list','server_info','server_plans','server_config','setting']:
         before=native.sql(work,env,'SELECT COUNT(*) FROM '+table,db)
@@ -333,6 +340,7 @@ INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,rema
             cases.append('nontransactional_'+table+'_blocks_before_provider_dispatch')
         finally:
             native.sql(work,env,'ALTER TABLE '+table+' ENGINE=InnoDB',db)
+    generated('VIRTUAL')
     native.sql(work,env,'ALTER TABLE service_effects ADD CONSTRAINT fk_effect_pay FOREIGN KEY(pay_row_id) REFERENCES pays(id) ON DELETE RESTRICT ON UPDATE RESTRICT',db)
     # Replace the two retired-table engine cases with actual shared-storage
     # shape refusal at the same no-dispatch boundary.

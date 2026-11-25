@@ -51,7 +51,7 @@ function achbotAdminIntentEntityDigest(mysqli $db,string $kind,int $id,bool $loc
         $q=$db->prepare('SELECT * FROM server_info WHERE id=?'.$suffix);
         $q->bind_param('i',$id);$q->execute();$info=$q->get_result()->fetch_assoc();$q->close();
         if (!$config || !$info || (int)$info['active']!==1 ||
-            !in_array($config['type'],['marzban','pasarguard'],true))return null;
+            $config['type']!=='pasarguard')return null;
         $target=['config'=>$config,'info'=>$info];
     } else {
         $q=$db->prepare('SELECT * FROM server_plans WHERE id=?'.$suffix);
@@ -59,7 +59,7 @@ function achbotAdminIntentEntityDigest(mysqli $db,string $kind,int $id,bool $loc
         if (!$plan || (int)$plan['inbound_id']!==0 || !in_array((int)$plan['active'],[0,1],true))return null;
         $q=$db->prepare('SELECT type FROM server_config WHERE id=?'.$suffix);
         $sid=(int)$plan['server_id'];$q->bind_param('i',$sid);$q->execute();$server=$q->get_result()->fetch_assoc();$q->close();
-        if (!$server || !in_array($server['type'],['marzban','pasarguard'],true))return null;
+        if (!$server || $server['type']!=='pasarguard')return null;
         $target=['plan'=>$plan,'provider'=>$server['type']];
     }
     return hash('sha256',json_encode($target,JSON_THROW_ON_ERROR));

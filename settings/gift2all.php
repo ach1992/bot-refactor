@@ -26,6 +26,9 @@ $stmt=$connection->prepare('SELECT * FROM gift_list ORDER BY id LIMIT 1');
 if (!$stmt || !$stmt->execute()) return;
 $gift=$stmt->get_result()->fetch_assoc();$stmt->close();
 if (!$gift) return;
+require_once __DIR__.'/../src/Finance/OperationalReports.php';
+try {achbotOperationalReportRequireReady($connection);}
+catch (Throwable $e) {error_log('achbot_gift_report_schema_unavailable');return;}
 
 $rowId=(int)$gift['id'];
 $serverId=(int)$gift['server_id'];
@@ -366,6 +369,8 @@ $finish=static function(
             if (!$ok || $count!==1)
                 throw new RuntimeException('gift_finish_hold_unconfirmed');
         }
+        if ($result!==null) achbotGiftStageReportLocked($connection,'batch:'.$rowId.':'.$index,
+            $referenceProof['username'],$day,$volume,$orders,achbotGiftReportActor($connection,$receipt));
         if ($connection->commit()!==true)
             throw new RuntimeException('gift_finish_commit_unconfirmed');
     } catch (Throwable $e) {
@@ -589,14 +594,10 @@ foreach ($rosterNames as $index=>$remark) {
 
     try {
         $orders=achbotGiftReferences($connection,$serverId,$remark);
-        $dispatchOrderId=null;
-        if (($target['provider']??'marzban')==='pasarguard') {
-            // Global cohort order does not identify the selected logical server.
-            // Preserve its initial roster and missing-member hold semantics.
-            $local=array_values(array_filter($orders,static fn($order)=>$order['server_id']===$serverId));
-            if (!$local) throw new RuntimeException('gift_dispatch_reference_missing');
-            $dispatchOrderId=$local[0]['id'];
-        }
+        // The selected logical server must still own an active reference.
+        $local=array_values(array_filter($orders,static fn($order)=>$order['server_id']===$serverId));
+        if (!$local) throw new RuntimeException('gift_dispatch_reference_missing');
+        $dispatchOrderId=$local[0]['id'];
         $referenceProof=achbotGiftReferenceProof($orders);
         $referenceProof['dispatch_server_id']=$serverId;
         $referenceProof['dispatch_order_id']=$dispatchOrderId;
@@ -627,8 +628,7 @@ foreach ($rosterNames as $index=>$remark) {
         achbotGiftValidateReferences($connection,$orders);
         if (achbotGiftIdentityHash($connection,$orders)!==$referenceProof['native_identity_sha256'])
             throw new RuntimeException('gift_native_identity_changed_before_effect');
-        $effectTarget=achbotGiftPinNativeIdentity($connection,$orders,$target);
-        $result=achbotApplyServiceEdit($connection,$serverId,$change,$effectTarget);
+        $result=achbotApplyServiceEdit($connection,$serverId,$change,$target);
         $verified=is_object($result) &&
             ($result->success??false)===true &&
             ($result->verified??false)===true &&
@@ -660,18 +660,9 @@ foreach ($rosterNames as $index=>$remark) {
         $notifyHold($remark,$index,'gift_requires_operator_reconciliation');
         return;
     }
-    // Notification composition/transport is outside native-effect failure handling.
-    $notices=achbotGiftDeliverNotices($connection,(int)$holdId,'batch:'.$rowId.':'.$index,
-        $orders,$remark,$volume,$day);
-    if ($notices['unconfirmed']) {
-        try {
-            $noticeFailure=$notices['send_exceptions']
-                ? \achbotMessage('jobs.gift2all.message.4ba0cee07a')
-                : \achbotMessage('jobs.gift2all.message.07c38a54a9');
-            $notifyAdmin($noticeFailure.
-                \achbotMessage('jobs.gift2all.message.9b87258e16',['rowId'=>$rowId,'remark'=>$remark]));
-        } catch (Throwable $ignored) {}
-    }
+    // The committed outbox owns both original staff reports and customer
+    // notice attempts, including recovery after interruption.
+    achbotOperationalReportDispatch($connection,'batch:'.$rowId.':'.$index);
 }
 if (!$processedThisTick && $offset===count($rosterNames)) {
     if ($closeRoster($rosterId,$rosterMeta,count($rosterNames))) {

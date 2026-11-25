@@ -9,7 +9,7 @@ import argparse
 import json
 import subprocess
 from pathlib import Path
-import test_post_v9_scoped_api_pg as api
+import database_fixture as owned
 
 ROOT=Path(__file__).resolve().parents[1]
 PHP=r'''<?php
@@ -21,7 +21,7 @@ $db=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $db->set_charset('utf8mb4');
 try {
     if (!$db->begin_transaction())throw new RuntimeException('fixture_begin');
-    $rows=achbotServicePaymentRowsLocked($db,[777]);
+    $rows=achbotServiceDraftRowsLocked($db,[777]);
     $ids=array_column($rows,'id');
     if($argv[4]==='hold'){
         echo "LOCKED\n";flush();sleep(4);
@@ -40,16 +40,27 @@ def main():
     ap.add_argument('--report',type=Path)
     opts=ap.parse_args()
     checks=[]
-    with api.sandbox() as (sql, runner, _provider, _bank, _epoch):
-        # DDL is only against the owned DB; production rollout remains gated.
-        sql((ROOT/'migrations/post-v9/023_scoped_payment_lock_indexes.sql').read_text())
-        # Exact original late add-on shapes, including historical order_id=0.
-        sql("INSERT INTO pays(hash_id,user_id,type,server_id,order_id,price,request_date,state)"
-            " VALUES ('lock-renew',1001,'RENEW_ACCOUNT',2,777,100,UNIX_TIMESTAMP(),'processing_wallet'),"
-            "('lock-addon-zero',1001,'INCREASE_DAY_777_10',2,0,100,UNIX_TIMESTAMP(),'pending'),"
-            "('lock-addon-volume',1001,'INCREASE_VOLUME_777_5',2,777,100,UNIX_TIMESTAMP(),'processing'),"
-            "('lock-neighbor',1001,'INCREASE_DAY_7770_2',2,7770,100,UNIX_TIMESTAMP(),'processing'),"
-            "('lock-unrelated',1001,'BUY_SUB',2,888,100,UNIX_TIMESTAMP(),'processing')")
+    with owned.owned_database() as (work,env):
+        db='lock_scope_current'
+        socket=str(work/'mysql.sock')
+        cli=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+socket,
+            '-uroot','--batch','--skip-column-names']
+        def sql(statement, database=db):
+            proc=subprocess.run(cli+([database] if database else []),input=statement,text=True,
+                env=env,capture_output=True,timeout=20)
+            if proc.returncode:raise RuntimeError(proc.stderr)
+            return proc.stdout.strip()
+        sql('CREATE DATABASE '+db,None)
+        sql((ROOT/'database/current-schema.sql').read_text())
+        # Current sealed drafts only. Historical bound/unbound rows and paid
+        # records remain evidence, not executable ownership.
+        sql("""INSERT INTO pays(hash_id,user_id,type,server_id,order_id,price,request_date,state,checkout_draft_context)
+            VALUES ('lock-renew',1001,'RENEW_ACCOUNT',2,777,100,UNIX_TIMESTAMP(),'pending','{"version":1}'),
+            ('lock-addon-zero',1001,'INCREASE_DAY_777_10',2,0,100,UNIX_TIMESTAMP(),'pending',NULL),
+            ('lock-addon-volume',1001,'INCREASE_VOLUME_777_5',2,777,100,UNIX_TIMESTAMP(),'have_sent','{"version":1}'),
+            ('lock-historical-bound',1001,'RENEW_ACCOUNT',2,777,100,UNIX_TIMESTAMP(),'processing',NULL),
+            ('lock-neighbor',1001,'INCREASE_DAY_7770_2',2,7770,100,UNIX_TIMESTAMP(),'pending','{"version":1}'),
+            ('lock-unrelated',1001,'BUY_SUB',2,888,100,UNIX_TIMESTAMP(),'pending','{"version":1}')""")
         # More rows make a global PRIMARY FOR UPDATE scan objectively costly.
         # No secrets, Native effects or wallets in these synthetic inserts.
         values=[f"('locked-bulk-{i}',1001,'BUY_SUB',2,{9000+i},100,UNIX_TIMESTAMP(),'paid')"
@@ -58,41 +69,40 @@ def main():
             sql("INSERT INTO pays(hash_id,user_id,type,server_id,order_id,price,request_date,state) VALUES "
                 +','.join(values[i:i+200]))
         def id_of(hash_:str)->int:
-            return int(sql("SELECT id FROM pays WHERE hash_id="+api.quote_sql(hash_)))
-        expected={id_of('lock-renew'),id_of('lock-addon-zero'),id_of('lock-addon-volume')}
+            return int(sql("SELECT id FROM pays WHERE hash_id="+"'"+hash_+"'"))
+        expected={id_of('lock-renew'),id_of('lock-addon-volume')}
         unrelated=id_of('lock-unrelated')
         neighbor=id_of('lock-neighbor')
         expl=sql("EXPLAIN SELECT id,state FROM pays FORCE INDEX (idx_pays_order_ref_v1)"
-                 " WHERE order_id IN (777) ORDER BY order_id,id FOR UPDATE; "
-                 "EXPLAIN SELECT id,state FROM pays FORCE INDEX (idx_pays_type_ref_v1)"
-                 " WHERE type LIKE 'INCREASE=_DAY=_777=_%' ESCAPE '='"
-                 " ORDER BY type,id FOR UPDATE")
-        assert 'idx_pays_order_ref_v1' in expl and 'idx_pays_type_ref_v1' in expl,expl
+                 " WHERE order_id IN (777) ORDER BY order_id,id FOR UPDATE")
+        assert 'idx_pays_order_ref_v1' in expl,expl
         # EXPLAIN must say range/ref, never PRIMARY or global index access.
         rows=[x.split('\t') for x in expl.splitlines() if '\t' in x]
-        assert len(rows)==2,expl
-        assert rows[0][3] in ('range','ref') and rows[1][3] in ('range','ref'),expl
-        checks.append('mariadb_forced_indexed_order_and_literal_addon_prefix_ranges')
-        driver=runner.fixture_work/'scoped-locked-invoices.php'
+        assert len(rows)==1,expl
+        assert rows[0][3] in ('range','ref'),expl
+        checks.append('mariadb_forced_canonical_order_index')
+        driver=work/'scoped-locked-invoices.php'
         driver.write_text(PHP)
         command=['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
-            str(driver),str(ROOT),str(runner.fixture_socket),api.DB]
-        normal=subprocess.run(command+['once'],cwd=runner.fixture_work,
-            env=runner.fixture_env,capture_output=True,text=True,timeout=10)
+            str(driver),str(ROOT),socket,db]
+        normal=subprocess.run(command+['once'],cwd=work,
+            env=env,capture_output=True,text=True,timeout=10)
         assert normal.returncode==0 and normal.stdout.startswith('{'),normal.stderr
         result=json.loads(normal.stdout)
         assert set(map(int,result['ids']))==expected,result
         assert unrelated not in result['ids'] and neighbor not in result['ids']
-        checks.append('exact_original_order_and_null_legacy_addon_only')
-        p=subprocess.Popen(command+['hold'],cwd=runner.fixture_work,
-                           env=runner.fixture_env,stdout=subprocess.PIPE,
+        assert id_of('lock-historical-bound') not in result['ids']
+        checks.append('canonical_order_only_unbound_legacy_addon_inert')
+        checks.append('historical_bound_row_not_current_draft')
+        p=subprocess.Popen(command+['hold'],cwd=work,
+                           env=env,stdout=subprocess.PIPE,
                            stderr=subprocess.PIPE,text=True)
         try:
             signal=p.stdout.readline().strip() if p.stdout else None
             assert signal=='LOCKED',signal
             # A different payment row cannot be X-locked by this service guard.
             sql("SET innodb_lock_wait_timeout=1; UPDATE pays SET description='not-blocked' "
-                f"WHERE id={unrelated}; SET innodb_lock_wait_timeout=50")
+                f"WHERE id IN ({unrelated},{id_of('lock-addon-zero')}); SET innodb_lock_wait_timeout=50")
             checks.append('unrelated_existing_payment_write_completes_while_guard_holds')
             # But a relevant row is actually locked, not just a nonlocking
             # snapshot check. The independent UPDATE must time out.
