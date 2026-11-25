@@ -867,7 +867,7 @@ function buildAdminKeyboardWithStats(
             ['text' => \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.c2c33e1499'), 'callback_data' => "noop_bad_{$hashId}"],
         ],
         [
-            ['text' => number_format($approvedSum) . \achbotMessage('manual_payment.automatic_receipts.text.2cc98f7f7c'), 'callback_data' => "noop_sumv_{$hashId}"],
+            ['text' => number_format($approvedSum) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c'), 'callback_data' => "noop_sumv_{$hashId}"],
 			['text' => \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.e892623fb9'), 'callback_data' => "noop_sum_{$hashId}"],
         ],
         [

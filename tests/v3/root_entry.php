@@ -1,7 +1,7 @@
 <?php
 // Loaded only by the frozen child harness in a private directory.
 $ach_spec=json_decode(file_get_contents(__DIR__.'/root-case.json'),true,512,JSON_THROW_ON_ERROR);
-$fixtureState += ['cartToCartAutoAcceptState'=>'off','sharedExistence'=>'off','individualExistence'=>'off'];
+$fixtureState += ['sharedExistence'=>'off','individualExistence'=>'off'];
 $fixtureUser += ['freetrial'=>null,'agent_date'=>0];
 $fixtureUser['userid']=$ach_spec['actor']??1001;
 $fixtureUser['step']=$ach_spec['step']??'none';

@@ -512,11 +512,11 @@ function setSettings($field, $value): bool {
         'requirePhone','requireIranPhone','sellState','botState',
         'searchState',
         'renewConfigLinkState','updateConfigLinkState','qrConfigState',
-        'qrSubState','cartToCartAutoAcceptState','cartToCartAutoAcceptType',
+        'qrSubState',
         'giftCardState','manualUsdtState','cartToCartState',
         'nextpay','zarinpal','nowPaymentWallet','nowPaymentOther',
         'walletState','remark','rewaredTime',
-        'cartToCartAutoAcceptTime','gbPrice','dayPrice',
+        'gbPrice','dayPrice',
         'rewardChannel','lockChannel','supportID','lastRewardMessage',
         'instanceMessages','cooperationUrl','helpChannel','lockChannelJoinUrl',
         'gatewayAudience',
@@ -1305,18 +1305,6 @@ function getBotSettingKeys(){
             ['text'=>$rewaredTime,'callback_data'=>'editRewaredTime'],
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.2d0dc535a6'), 'callback_data'=>'wizwizch']
             ],
-        [
-            ['text'=>($botState['cartToCartAutoAcceptState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off'),'callback_data'=>"changeBotcartToCartAutoAcceptState"],
-            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.f5d3c64f2a'),'callback_data'=>"wizwizch"]
-        ],
-        ...(($botState['cartToCartAutoAcceptState']??'off')=="on"?[[
-            ['text'=>(($botState['cartToCartAutoAcceptType']??'2') == "0"?\achbotMessage('admin_settings.config.get_bot_setting_keys.text.62c92fb90c'):(($botState['cartToCartAutoAcceptType']??'2') == "1"?\achbotMessage('admin_settings.config.get_bot_setting_keys.text.5bf4b36161'):\achbotMessage('admin_settings.config.get_bot_setting_keys.text.15270886ea'))),'callback_data'=>"changeBotcartToCartAutoAcceptType"],
-            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.aaeffd7e20'),'callback_data'=>"wizwizch"]
-        ]]:[]),
-        ...(($botState['cartToCartAutoAcceptState']??'off')=="on"?[[
-            ['text'=>($botState['cartToCartAutoAcceptTime']??"10") . \achbotMessage('admin_settings.config.get_bot_setting_keys.text.5e2c83ade1'),'callback_data'=>"editcartToCartAutoAcceptTime"],
-            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.333513e744'),'callback_data'=>"wizwizch"]
-        ]]:[]),
         [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"managePanel"]]
         ]]);
 }

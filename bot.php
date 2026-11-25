@@ -477,14 +477,13 @@ if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$ma
             'requirePhone','requireIranPhone','sellState','botState',
             'searchState',
             'renewConfigLinkState','updateConfigLinkState','qrConfigState',
-            'qrSubState','cartToCartAutoAcceptState','cartToCartAutoAcceptType'
+            'qrSubState'
         ];
         if (!in_array($match[1],$editableBotToggles,true)) {
             answerCallbackQuery($callbackId,\achbotMessage('bot.bot.webhook_ingress_authenticated.alert.c0889a8ad7'),true);
             return;
         }
-        if($match[1] == "cartToCartAutoAcceptType") $newValue = ($botState[$match[1]]??'2') == "0"?"1":(($botState[$match[1]]??'2') == "1"?"2":0);
-        else $newValue = ($botState[$match[1]] ?? (in_array($match[1],['changePlanState','botState'],true) ? 'on' : 'off')) === "on" ? "off" : "on";
+        $newValue = ($botState[$match[1]] ?? (in_array($match[1],['changePlanState','botState'],true) ? 'on' : 'off')) === "on" ? "off" : "on";
         setSettings($match[1], $newValue);
     }
     editText($message_id,\achbotMessage('legacy_messages.change_bot_settings_message'),getBotSettingKeys());
@@ -824,12 +823,9 @@ if (str_starts_with($paymentKeyStep,'achbotPaymentKey|') ||
     return;
 }
 require __DIR__ . '/src/Agent/Discounts.php';
-if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
+if(preg_match('/^edit(RewaredTime)$/D', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    if($match[1] == "RewaredTime") $txt = \achbotMessage('bot.bot.change_config_remark_type.txt.d867040876');
-    else $txt = \achbotMessage('bot.bot.change_config_remark_type.txt.fcd2e548b6');
-
-    sendMessage($txt,$cancelKey, 'HTML');
+    sendMessage(\achbotMessage('bot.bot.change_config_remark_type.txt.d867040876'),$cancelKey, 'HTML');
     setUser($data);
 }
 if ($data == "userReports" && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
@@ -993,7 +989,7 @@ if($userInfo['step'] == "editInviteAmount" && ($from_id == $admin || $userInfo['
         setUser();
     }else sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
 }
-if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
+if(preg_match('/^edit(RewaredTime)$/D', $userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     if(!is_numeric($text)){
         sendMessage(\achbotMessage('bot.bot.edit_invite_amount.message.d86a0557a7'), null, 'HTML');
         exit();

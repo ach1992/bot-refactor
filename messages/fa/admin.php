@@ -20,7 +20,6 @@ return [
         'actor' => ['text' => '👮 شناسهٔ ادمین: <code>{actor}</code>', 'parameters' => ['actor']],
         'basis_manual' => 'تأیید دستی ادمین',
         'basis_api' => 'تأیید خودکار API',
-        'basis_timer' => 'تأیید خودکار زمان‌دار',
         'basis_hosted' => 'تأیید خودکار درگاه',
         'funded' => 'مبلغ برای عملیات اصلی از کیف پول کسر شد؛ اجرای سرویس جداگانه پیگیری می‌شود.',
         'wallet_only' => 'وجه در کیف پول کاربر ثبت شد.',
@@ -295,7 +294,6 @@ return [
         'bot.change_config_remark_type.message.1bc265a941' => '⛔️ ویرایش قبلی معتبر نیست؛ از منوی درگاه‌ها دوباره شروع کنید.',
         'bot.change_config_remark_type.message.28b20d4ea7' => '⛔️ تنظیم ذخیره نشد؛ ممکن است دسترسی یا مقدار قبلی تغییر کرده باشد.',
         'bot.change_config_remark_type.txt.d867040876' => '🙃 لطفا زمان تأخیر در ارسال گزارش رو به ساعت وارد کن' . "\n" . '' . "\n" . 'نکته: هر n ساعت گزارش به ربات ارسال میشه! ',
-        'bot.change_config_remark_type.txt.fcd2e548b6' => '📅 لطفا زمان مورد نظر را به دقیقه وارد کنید.',
         // bot.user_reports
         'bot.user_reports.message.b1c793c917' => '🔢 لطفا شناسه عددی کاربر رو وارد کنید.',
         'bot.user_reports.message.e55e5591d2' => ['text' => '📊 اطلاعات کاربر' . "\n" . '' . "\n" . '<code>🎫 {text}</code>', 'parameters' => ['text']],
@@ -802,7 +800,6 @@ return [
         'api_payment.status_evidence_only' => "پیامک دیررس ثبت شد؛ پرداخت قبلاً نهایی بود و عملیات مالی تکرار نشد",
         'api_payment.view_code' => "مشاهده کد گیفت‌کارت",
         // Existing API-assisted payments.
-        'automatic_receipts.text.2898f8f112' => '✅ خودکار تأیید و اعمال شد',
         'receipt_helpers.manual_caption.header.cc6f426145' => '💎 مقدار رمزارز: <code>',
         'receipt_helpers.manual_caption.text.1c777cb98d' => '</code> | شبکه: <b>',
         'receipt_helpers.manual_caption.header.12c0babe12' => '💵 مبلغ دقیق حواله: <code>',
@@ -1212,13 +1209,6 @@ return [
         'config.get_bot_setting_keys.button.ae54bb8cbe' => '🔳 کیوآرکد اشتراک',
         'config.get_bot_setting_keys.button.8855cd3ee5' => 'نوع ریمارک',
         'config.get_bot_setting_keys.button.2d0dc535a6' => '💰 ارسال گزارش درآمد',
-        'config.get_bot_setting_keys.button.f5d3c64f2a' => '💳 تایید خودکار کارت به کارت',
-        'config.get_bot_setting_keys.text.62c92fb90c' => 'همکار',
-        'config.get_bot_setting_keys.text.5bf4b36161' => 'کاربر',
-        'config.get_bot_setting_keys.text.15270886ea' => 'همه',
-        'config.get_bot_setting_keys.button.aaeffd7e20' => '⚙️ نوع تایید',
-        'config.get_bot_setting_keys.text.5e2c83ade1' => ' دقیقه',
-        'config.get_bot_setting_keys.button.333513e744' => 'زمان تایید خودکار ',
         // config.send_chunked_messages
         'config.send_chunked_messages.text.e2f79e5b60' => 'نامشخص',
         'config.send_chunked_messages.text.833406bb32' => ['text' => '🎫 شناسه عددی: <code>{userId}</code>' . "\n" . '', 'parameters' => ['userId']],

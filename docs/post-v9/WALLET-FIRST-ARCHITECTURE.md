@@ -335,8 +335,8 @@ NOWPayments/NextPay/Zarinpal preserve exact merchant finality and issued quote,
 callback authentication/verification and provider transaction identity.
 All adapters call the same credit command, never CREATE/RENEW.
 API proof may succeed while panel is down; receipt still credits exactly once.
-No timer-only proof for an API-verified invoice; any existing explicit
-timer-based manual acceptance policy change needs Owner decision.
+No time-only payment proof. Every receipt requires authenticated evidence
+or authorized staff confirmation.
 
 Receipt submission and service validity are separate. A receipt already
 reserved as receiving may finish or recover its original evidence and
@@ -345,9 +345,7 @@ superseded financial state is retained: verified funds credit Wallet once
 and never revive the invalidated service. A superseded invoice without
 an original receiving claim cannot start new evidence submission. Typed
 gift-code storage and receiving reservation are one locked transaction;
-failure rolls back both. The configured timer remains applicable to
-eligible already-submitted non-API bank receipts, including superseded
-ones, without overriding the API evidence requirement.
+failure rolls back both.
 
 Configured receipt cooldowns are evaluated on current admitted manual
 receipts and actual manual credit basis. They do not turn historical

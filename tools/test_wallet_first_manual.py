@@ -66,11 +66,6 @@ try {
             $GLOBALS['botState']=array_replace($GLOBALS['botState'],$spec['policy']??[]);
             return duplicateReceiptGuard($db,$pay,(int)($spec['clock']??time()));
         })(),
-        'timer_sweep'=>(static function() use ($db) {
-            $connection=$db;$botState=['cartToCartAutoAcceptState'=>'on'];
-            require dirname($GLOBALS['argv'][1]).'/AutomaticReceipts.php';
-            return true;
-        })(),
         'reject'=>(static function() use ($db,$id,$pay,$spec) {
             $db->begin_transaction();
             $r=achbotCheckoutRejectReceiptLocked($db,$id,(int)$pay['user_id'],(int)($spec['actor']??9001),9001,$pay['hash_id']);
@@ -309,9 +304,10 @@ def main():
                 result(mode,'issue',pid,method='bank_transfer')
                 submit(mode,pid,'bank_transfer','fixture-timer')
                 b=balance()
-                assert result(mode,'approve',pid,basis='bank_timer',actor=0)['funding']=='wallet_only' and balance()==b+1000
+                assert run(mode,'approve',pid,basis='bank_timer',actor=0)['ok'] is False and balance()==b
+                assert result(mode,'approve',pid)['funding']=='wallet_only' and balance()==b+1000
                 assert roles(pid)=='customer,receipt_primary,service_admin,service_channel',roles(pid)
-                case('actual_explicit_timer')
+                case('retired_timer_cannot_credit')
                 # The real bank checker must find and consume exactly the
                 # provider-owned original SMS, then use the common funding
                 # transaction even when the local service is invalidated.
@@ -343,16 +339,13 @@ def main():
                             assert result(mode,'finish',pid,method=method,file='original-inflight-photo',token=token) is True
                         assert sql(f"SELECT state FROM pays WHERE id={pid}")=='service_superseded'
                         assert result(mode,'attention',pid) is True
-                        if method=='bank_transfer' and not lost:
-                            assert result(mode,'timer_sweep',pid)
-                            assert sql(f"SELECT wallet_credit_basis FROM payment_attempts WHERE pay_row_id={pid}")=='bank_timer'
-                        else:
-                            assert result(mode,'approve',pid)['funding']=='request_invalidated'
+                        assert run(mode,'approve',pid,basis='bank_timer',actor=0)['ok'] is False and balance()==b
+                        assert result(mode,'approve',pid)['funding']=='request_invalidated'
                         assert balance()==b+100 and result(mode,'approve',pid)['credit']['replayed']
                         assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
                         assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{oid}'")=='0'
                 case('superseded_receiving_ack_and_recovery_all_photo_methods')
-                case('superseded_receipt_preserves_configured_timer_policy')
+                case('superseded_receipt_requires_verified_or_staff_approval')
                 # Typed gift code and receipt claim must commit atomically.
                 name=mode+'-atomic-typed-gift'
                 oid=result(mode,'quote',reference=name,request=q)
@@ -521,16 +514,12 @@ DELIMITER ;
                 case('current_review_cooldown_does_not_block_original_recovery')
 
                 price+=100
-                old=seed(mode+'-cooldown-timer',price=price)
-                result(mode,'issue',old,method='bank_transfer')
-                submit(mode,old,'bank_transfer','cooldown-timer-photo')
-                result(mode,'approve',old,basis='bank_timer',actor=0)
                 historical=seed(mode+'-cooldown-historical',price=price)
                 sql(f"UPDATE pays SET state='approved',request_date={now-30} WHERE id={historical}")
                 fresh=seed(mode+'-cooldown-automatic-fresh',price=price)
                 result(mode,'issue',fresh,method='bank_transfer')
                 assert result(mode,'duplicate_guard',fresh,clock=now) is None
-                case('historical_and_automatic_payments_do_not_create_manual_cooldown')
+                case('historical_payments_do_not_create_manual_cooldown')
 
                 # A corrupt current profile can fail before obtaining a claim.
                 # It must not permanently occupy the only worker/projection

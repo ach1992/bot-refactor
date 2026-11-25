@@ -34,6 +34,7 @@
     "src/Wallet/Ledger.php"
   ],
   "removed": [
+    "src/Finance/AutomaticReceipts.php",
     "src/Finance/BankPurchase.php",
     "src/Finance/ManualEditRecovery.php",
     "src/Finance/PaidAccountRecovery.php",
@@ -62,8 +63,8 @@
       "before_count": 200,
       "after_count": 168,
       "before_sha256": "cff48d8a700a865d62d8c96389da43e7a2d34431deff1f650f3bd4b107808baa",
-      "after_sha256": "d46178e212edf7bdbb4049b378ded70154df36fe420080fceaf1401206e9aa5e",
-      "reason": "F7 retire unsupported shared availability, F8 dispatch authenticated shortcuts through canonical Home and customer routes; F6 denied content reads do not send values #209: 3 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged."
+      "after_sha256": "e2548363d4c098067f18907605dc72b0d9984581a6d24efb8fe446f2d70a24e1",
+      "reason": "F7 retire unsupported shared availability, F8 dispatch authenticated shortcuts through canonical Home and customer routes; F6 denied content reads do not send values #209: 3 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged. #51: remove retired bank timer prompt branch; preserve reward report editor."
     },
     "src/Finance/ApiPaymentPresentation.php": {
       "before_count": 1,
@@ -71,13 +72,6 @@
       "before_sha256": "938e2d727dfbbad538ec697c2e31463850ddc74dfdc117a8193cda455e9cdd31",
       "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "reason": "Receipt completion notification moves to frozen followup packet."
-    },
-    "src/Finance/AutomaticReceipts.php": {
-      "before_count": 13,
-      "after_count": 0,
-      "before_sha256": "cf6a29c9629beb58f0950adee44d7edd2d7c9ae50b0c18772183877958ae9d37",
-      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "reason": "Common receipt credit and durable service/report dispatch replace inline bank notices."
     },
     "src/Finance/AutomaticRenewal.php": {
       "before_count": 2,

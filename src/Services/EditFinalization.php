@@ -45,16 +45,11 @@ function achbotServiceEditCustomerPacketLocked(mysqli $db,array $op,array $quote
                 'callback_data'=>'mainMenu']]]);
             $mode='plain';
         } elseif ($receipt!==null) {
-            if ($kind==='RENEW' && $receipt['attempt']['wallet_credit_basis']==='bank_timer') {
-                $text=achbotMessage('manual_payment.automatic_receipts.message.cca1075329',['remark'=>$q['remark']]);
-                $mode='plain';
-            } else {
-                $text=match($kind) {
-                    'RENEW'=>achbotMessageHtml('renewal.renewal_checkout.message.47b1149fb0',['remark'=>$q['remark']]),
-                    'ADD_TIME'=>achbotMessageHtml('renewal.extensions.message.24dea9b122',['volume'=>$q['days'],'remark'=>$q['remark']]),
-                    'ADD_VOLUME'=>achbotMessageHtml('renewal.extensions.message.d5b6a4e6e7',['volume'=>$q['volume'],'remark'=>$q['remark']]),
-                };
-            }
+            $text=match($kind) {
+                'RENEW'=>achbotMessageHtml('renewal.renewal_checkout.message.47b1149fb0',['remark'=>$q['remark']]),
+                'ADD_TIME'=>achbotMessageHtml('renewal.extensions.message.24dea9b122',['volume'=>$q['days'],'remark'=>$q['remark']]),
+                'ADD_VOLUME'=>achbotMessageHtml('renewal.extensions.message.d5b6a4e6e7',['volume'=>$q['volume'],'remark'=>$q['remark']]),
+            };
         } else $text=match($kind) {
             'RENEW'=>achbotMessageHtml('renewal.renewal_checkout.message.cca1075329',['remark'=>$q['remark']]),
             'ADD_TIME'=>achbotMessage('renewal.extensions.message.cce260f97e',['volume'=>$q['days']]),

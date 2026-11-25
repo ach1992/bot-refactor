@@ -184,7 +184,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
     }
 
     $uid = $payInfo['user_id'];
-    $price = !empty($payInfo['price']) ? number_format($payInfo['price']) . \achbotMessage('manual_payment.automatic_receipts.text.2cc98f7f7c') : "---";
+    $price = !empty($payInfo['price']) ? number_format($payInfo['price']) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c') : "---";
     $reason = htmlspecialchars((string)$text, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8');
 	$remark = "---";
 

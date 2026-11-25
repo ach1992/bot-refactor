@@ -165,14 +165,10 @@ def main():
                     accept('manual_'+method,pid,mode,basis='manual',actor=9002)
                 pid,_=seed('bank_transfer',mode+'-timer')
                 sql(f'UPDATE pays SET request_date=UNIX_TIMESTAMP() WHERE id={pid}')
-                rejected('timer_not_due',pid,mode,'payment_credit_timer_policy',basis='bank_timer')
+                rejected('retired_timer_not_due',pid,mode,'payment_credit_basis_invalid',basis='bank_timer')
                 sql(f'UPDATE pays SET request_date=UNIX_TIMESTAMP()-600 WHERE id={pid}')
-                sql("UPDATE setting SET value=JSON_SET(value,'$.cartToCartAutoAcceptState','off') WHERE type='BOT_STATES'")
-                rejected('timer_disabled',pid,mode,'payment_credit_timer_policy',basis='bank_timer')
-                sql("UPDATE setting SET value=JSON_SET(value,'$.cartToCartAutoAcceptState','on','$.cartToCartAutoAcceptType',0) WHERE type='BOT_STATES'")
-                rejected('timer_wrong_audience',pid,mode,'payment_credit_timer_policy',basis='bank_timer')
-                sql("UPDATE setting SET value=JSON_SET(value,'$.cartToCartAutoAcceptType',2) WHERE type='BOT_STATES'")
-                accept('bank_timer',pid,mode,basis='bank_timer')
+                rejected('retired_timer_due',pid,mode,'payment_credit_basis_invalid',basis='bank_timer')
+                accept('retired_timer_requires_staff',pid,mode,basis='manual',actor=9002)
                 pid,_=seed('bank_transfer',mode+'-missing',receipt=False)
                 rejected('missing_receipt',pid,mode,'payment_credit_manual_receipt',basis='manual',actor=9001)
                 pid,_=seed('bank_transfer',mode+'-history',admit=False)
@@ -237,7 +233,7 @@ def main():
                 # The actual protected API evidence path, including HTTP
                 # consumption, rather than directly fabricating proven rows.
                 pid,_=seed('bank_transfer',mode+'-sms',api=True)
-                rejected('api_timer_fallback',pid,mode,'payment_credit_timer_policy',basis='bank_timer')
+                rejected('api_timer_fallback',pid,mode,'payment_credit_basis_invalid',basis='bank_timer')
                 rejected('no_api_proof',pid,mode,'payment_credit_api_proof',basis='api')
                 now=datetime.now(timezone.utc).replace(microsecond=0)
                 ident=100 if mode=='strict' else 200

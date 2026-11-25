@@ -51,13 +51,11 @@ if (($argv[4]??'')==='settings_menu') {
                     }
                 }
             }
-            foreach (['changeBotchangeProtocolState','changeUpdateConfigLinkState'] as $old)
+            foreach (['changeBotchangeProtocolState','changeUpdateConfigLinkState','changeBotcartToCartAutoAcceptState','changeBotcartToCartAutoAcceptType','editcartToCartAutoAcceptTime'] as $old)
                 if (isset($buttons[$old])) throw new RuntimeException('retired_settings_button');
             if ($name==='getBotSettingKeys') {
                 if ($buttons['changeBotbotState']!==achbotMessage($configured?'legacy_buttons.off':'legacy_buttons.on') ||
-                    $buttons['changeBotchangePlanState']!==achbotMessage('legacy_buttons.on') ||
-                    isset($buttons['changeBotcartToCartAutoAcceptType'])!==$configured ||
-                    isset($buttons['editcartToCartAutoAcceptTime'])!==$configured)
+                    $buttons['changeBotchangePlanState']!==achbotMessage('legacy_buttons.on'))
                     throw new RuntimeException('bot_settings_current_defaults');
             } else {
                 foreach (['walletState','nextpay','zarinpal','giftCardState','cartToCartState','smsApiVerifyState','giftApiVerifyState'] as $field)
@@ -82,7 +80,7 @@ if (($argv[4]??'')==='settings_menu') {
     function editText(...$args) {$GLOBALS['settings_events'][]='edited';}
     $data='changeBotchangeProtocolState';eval($route);
     if ($GLOBALS['settings_events']!==['denied'] || setSettings('updateConnectionState','site') ||
-        setSettings('switchLocationState','on') || (int)achbotProviderRow($db,'SELECT COUNT(*) AS n FROM setting')['n']!==$before)
+        setSettings('switchLocationState','on') || setSettings('cartToCartAutoAcceptState','on') || (int)achbotProviderRow($db,'SELECT COUNT(*) AS n FROM setting')['n']!==$before)
         throw new RuntimeException('retired_settings_writer');
     $data='changeBotbotState';eval($route);
     if ($botState!==['botState'=>'off'] || $GLOBALS['settings_events']!==['denied','edited'])

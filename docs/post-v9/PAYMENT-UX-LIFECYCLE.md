@@ -29,7 +29,7 @@ checkout/message projection and the merchant configuration workflow.
 - Current manual receipt cooldowns use admitted receipts and actual
   manual approval basis; automatic settlements and historical states do
   not create new restrictions. See [API evidence](API-PAYMENT-EVIDENCE.md)
-  for API/timer and original-receipt recovery. Keep user-facing changes
+  for API evidence and original-receipt recovery. Keep user-facing changes
   within the approved product contract.
 
 ## Merchant credential and destination editor

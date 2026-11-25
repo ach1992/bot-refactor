@@ -655,12 +655,6 @@ return [
 
     // ── رسیدهای پرداخت دستی ──
     'manual_payment' => [
-        // automatic_receipts.text
-        'automatic_receipts.text.2cc98f7f7c' => ' تومان',
-        // automatic_receipts.message
-        'automatic_receipts.message.38dd599e83' => 'افزایش حساب شما با موفقیت تایید شد.' . "\n" . '✅ مبلغ ',
-        'automatic_receipts.message.6f42cf1050' => ' تومان به حساب شما اضافه شد.',
-        'automatic_receipts.message.cca1075329' => ['text' => '✅ اشتراک {remark} با موفقیت تمدید شد.', 'parameters' => ['remark']],
         'receipt_helpers.manual_label.text.3904ef0f3d' => 'گیفت‌کارت',
         'receipt_helpers.manual_label.text.2f1fd66193' => 'تتر دستی (USDT)',
         'receipt_helpers.manual_label.text.ea9faa7b63' => 'ترون دستی (TRX)',
