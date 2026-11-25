@@ -1,14 +1,14 @@
 # API-assisted manual payments
 
-This is the current Stable source contract for optional authenticated bank-SMS and gift-card evidence, manual review and original-payment recovery. The [operator exception inbox](AUTOMATIC-GATEWAY-REVIEW.md), [finance Issue #26](https://github.com/ach1992/bot-refactor/issues/26) and [payment UX Issue #51](https://github.com/ach1992/bot-refactor/issues/51) own their related live acceptance. Historical RC upgrade notes are not instructions for an already-migrated Stable installation. Source code and published ZIPs alone do not establish installed API capability or payment finality.
+This is the current optional authenticated bank-SMS and gift-card receipt contract. [Wallet-first architecture](WALLET-FIRST-ARCHITECTURE.md) owns credit, funding and service recovery; the [operator inbox](AUTOMATIC-GATEWAY-REVIEW.md) owns manual decisions. Verify installed API scope and configuration separately.
 
 ## Scope and existing contracts
 
-Current Stable retains optional verification within the existing manual bank-transfer and gift-card methods. Each has separate private API settings and an adjacent independent switch, absent/default OFF. OFF retains the original manual IMAGE journey. Bank transfers use the same receipt submission in either mode. API ON gift cards use a typed code within the same subject-specific review path; API OFF gift cards still require an image. The separate legacy automatic bank timer retains its original behavior for unpinned bank receipts. It cannot claim an API-pinned invoice, including when SMS is unavailable or mismatched: only matching API evidence or a human decision can settle that invoice. This ownership check is repeated under the settlement lock.
+The runtime retains optional verification within the existing manual bank-transfer and gift-card methods. Each has separate private API settings and an adjacent independent switch, absent/default OFF. OFF retains the original manual IMAGE journey. Bank transfers use the same receipt submission in either mode. API ON gift cards use a typed code within the same subject-specific review path; API OFF gift cards still require an image. The configured manual bank timer remains applicable to eligible unpinned bank receipts. It cannot claim an API-pinned invoice, including when SMS is unavailable or mismatched: only matching API evidence or a human decision can settle that invoice. This ownership check is repeated under the settlement lock.
 
 Use the existing authenticated ACh Pay Manager v1 and ACh Gift Cards for Woo v2 APIs. Their ready/active-to-used/redeemed persistence is the selected consumption contract. No plugin change, new external invoice registry, exclusivity declaration, or mandatory filter wizard is a prerequisite. The bot remains the invoice authority. AChBot does not install or upgrade those WordPress plugins; verify their actual deployed APIs, credentials, scopes and live behavior separately.
 
-Reuse shared `payment_attempts`, child `payment_transactions`, the real subject-specific local settlement claim and existing service-effect journals. An HTTP response, verified code, or payment confirmation is not proof of completed native delivery.
+Receipt evidence uses `payment_attempts` and child `payment_transactions`; authenticated proof enters the common Wallet credit transaction. An HTTP response, verified code, or payment confirmation is not proof of completed native delivery.
 
 ## Current operational diagnostics (no payment-policy change)
 
@@ -72,7 +72,7 @@ Use the actual trusted HTTPS WordPress API base on its default port or 443, incl
 
 Before either API switch is enabled, an authorized operator must verify the exact installed runtime against the trusted manifest and the mandatory consolidated current schema, working OpenSSL AES-256-GCM and the correct per-bot webhook secret. Use [fresh installation](FRESH-INSTALL.md) and the [current read-only preflight](PAYMENT-READINESS-PREFLIGHT.md). The preflight does not decrypt or test the live API profile. Never apply historical 014 or earlier migrations to make this runtime ready.
 
-The SMS monitoring horizon is a policy choice in hours measured from original invoice issuance; it is not a receipt-submission delay. Reliable timestamp interpretation and an exact source/amount match are still required without optional filters. Gift funding always uses redeem_amount; choose its actual unit rather than inferring it from a face-value/display label. Enable and live-test each API only under the separately approved rollout/acceptance plan. Old unpinned invoices stay manual; already pinned invoices retain their original profile even if the new-issuance switch is later turned OFF.
+The SMS monitoring horizon is a policy choice in hours measured from original invoice issuance; it is not a receipt-submission delay. Reliable timestamp interpretation and an exact source/amount match are still required without optional filters. Gift funding always uses redeem_amount; choose its actual unit rather than inferring it from a face-value/display label. Enable and live-test each API only under the separately approved rollout/acceptance plan. Current unpinned manual receipts retain their configured policy; current pinned invoices retain their original profile when the new-issuance switch is turned OFF. Historical unsealed rows are not executable.
 
 ## Current operator exceptions
 
@@ -135,7 +135,7 @@ Pay Manager saves action-idempotency responses for 24 hours; the bot conservativ
 
 Protect credentials, policy snapshots and codes with purpose-separated authenticated encryption using the existing webhook secret. Credential edits affect new invoices; old invoices retain their pinned recovery configuration. Webhook-secret rotation requires a deliberate recovery plan: failed decryption does not silently turn a pinned invoice into a legacy one or discard its evidence. Validate trusted HTTPS endpoints, disable redirects, bound transport/response size, authenticate the exact signed request and use integer arithmetic.
 
-A real authenticated stored API proof supports the automatic local actor; actor0 alone never grants financial authority. Restarted processing must reuse the existing native journals. An uncertain dispatched native effect cannot be replayed as a new operation.
+A real authenticated stored API proof supports the automatic local actor; actor0 alone never grants financial authority. Restarted receipt processing reuses the original receipt and proof. Service recovery is independently owned by the original funded operation.
 
 Capture authenticated provider and native add-on eligibility outside SQL transactions, then compare the relevant local quote, connection and incarnation before and after the observation and under the financial claim. A stale local expiry cannot authorize an expired native volume add-on. Unknown/ineligible observations retain truthful review without a new native dispatch. A sealed, verified effect recovers locally without requiring a new native read or repeating its mutation.
 
@@ -168,26 +168,15 @@ A temporarily unreadable staff authority record leaves its projection unacknowle
 
 Use the two existing Persian catalogs. Separate payment verified/effect pending from completed service or wallet delivery. Show precise customer actions and avoid asking for another payment when the outcome is unknown. Projection maintenance must make bounded fair progress across invoices and survive Telegram failures/restarts.
 
-## Native gift correction and Owner policy
+## Related administrator gifts
 
-The companion source slice fixes direct gifts by retaining transient transport credentials without persisting them, preserving local expiry/notification metadata for quota-only changes and comparing time increases with the adapter's verified native baseline. This does not identify the cause, provider, installed version or actual outcome of the Owner's screenshots/request69. Never replay that uncertain gift or erase its evidence.
-
-Verified numeric-zero Marzban expiry is supported for a pinned, finite-quota, volume-only gift; local expiry/notif are preserved and replay performs no second mutation. Duration edits and non-gift result validation retain their existing guards. PasarGuard zero-to-NULL semantics are unchanged. Existing held records are not cleared or replayed by this source correction.
-
-The Owner resolved the remaining gift choices on2026-10-30 ([Issue57 revision5](https://github.com/ach1992/bot-refactor/issues/57#issuecomment-6521175942)). Administrator gifts do not depend on the purchase plan, including genuine planless imports. Apply the gift ONCE to the physical native account and send one notice to each current linked customer; multiple customer references must not multiply the native change. Expiry/quota displayed to customers come from the panel. Preserve purchase history and financial records, validated current account identity, replay/uncertainty controls and only necessary internal lifecycle state. Local expiry remains unchanged for gifts; a verified positive-day gift re-arms the warning marker for admitted current references, while quota-only gifts preserve that marker. Native result and recipient identity evidence belong to the gift operation journal, separate from purchase history. The current [CI contract](CI-VALIDATION.md) owns automated source acceptance; historical PR test results apply only to their own commits.
-
-The direct wizard uses one deterministic current reference as its anchor and freezes the admitted cohort for the operation. Existing explicit same-provider/panel-group authority may identify aliases; URL/credential resemblance is not shared-panel proof. Distinct current customer IDs receive distinct notices, with canonical IDs and exact persisted recipient lookup. Cached Marzban proxy UUID differences do not establish different native accounts. Genuine planless imports require their existing nonfinancial origin/incarnation proof, not a zero price or missing plan alone.
-
-Imported Marzban gifts pin the saved username/creation identity through every existing authenticated current/pre-effect/readback GET, without an extra native request. PasarGuard keeps its established account/incarnation anchor. An observed identity change remains held without replay. Marzban provides no atomic conditional PUT, so an external recreation in the final GET-to-PUT interval remains a provider limitation; source validation does not establish transactional native guarantees.
-
-Gift SQL phases lock admitted order primary keys in ascending order before anchor/journal/provider fences, so shared aliases do not invert direct-versus-bulk completion order. Mutable PasarGuard order/effect/connection identity is checked against CURRENT primary-key fences; the existing immutable import-origin validation remains, without an unindexed locking scan of unrelated settings. Warning/history timestamps are not native identity. Transactions finish before native requests. This changes no financial policy or schema.
-
-Successful bulk holds become compact completed-result records in the existing setting table, retaining safe native applied values, units and admitted reference/customer identities. Existing uncertain holds remain evidence and are never cleared by this change. Customer delivery and administrator/channel reports run after native/local finalization. Their acknowledgement or exception evidence is separate from the completed gift; a message failure cannot trigger another native increment or change completed entitlement into a provider-review claim. General result reports use the configured channel plus Owner/receiving-on Manager; private batch progress stays private.
+Native administrator gifts are non-financial service edits, not gift-card
+receipt verification. See [direct/scheduled gift recovery](DIRECT-GIFT-RECOVERY.md).
 
 ## Acceptance and activation
 
-Validate actual PHP/socket-MariaDB/loopback behavior: exact quotes and units, mismatch exclusion, cross-invoice/actor collisions, human/API races, delayed SMS, configuration changes, uncertain consume responses, old replay windows, restarts/partial commits, all supported subjects, native-effect identity, immediate receipt submission, no HTTP before delivered evidence, failed/queued Telegram delivery, original subject captions with copyable escaped codes, code review and role/receiving routing. Preserve original customer evidence, the supported unpinned automatic bank path, backup safeguards and current financial negative controls; archived V0–V9 suites are not current acceptance gates.
-
-Current source acceptance uses the exact candidate's required [PHP 8.5 CI](CI-VALIDATION.md), relevant source-real regression checks, release-matched package verification and author-separated independent review where required. None of these proves installed financial or Telegram acceptance.
-
-API activation requires the actual SMS client/horizon/time interpretation or gift client/value unit, verified current schema capability and a separately authorized per-target rollout/live-acceptance context. A source merge, CI result or published ZIP performs no private configuration, live API verify/redeem, provider/Telegram, database/migration, Cron/PHP/OPcache or installation action. Preserve original Cron leases and every uncertain financial or Native effect; never blindly reapply completed migrations or replay previous customer operations.
+Use the [current CI contract](CI-VALIDATION.md) for source-real receipt
+verification, local rollback/recovery, manual/API races, uncertainty and
+current projection tests. Use [readiness preflight](PAYMENT-READINESS-PREFLIGHT.md)
+before separately authorized live activation. No source test proves live
+merchant or Telegram acceptance.

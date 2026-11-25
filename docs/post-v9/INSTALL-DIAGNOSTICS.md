@@ -1,6 +1,6 @@
 # AChBot — verify installed runtime before any change
 
-Find the [current Stable release](https://github.com/ach1992/bot-refactor/releases/latest); [v0.10.0](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0) remains the first Stable baseline. Use the **actual selected release's** Manifest/SHA256SUMS and source-bound installed-runtime verifier. This is a **read-only disk source identity check**, not a database migration, live webhook test or deployment.
+Identify the actual installed release using its source evidence, not the latest published tag. Use its exact Manifest/SHA256SUMS and matching installed-runtime verifier from [Releases](https://github.com/ach1992/bot-refactor/releases). This is a **read-only disk source identity check**, not a database migration, live webhook test or deployment.
 
 ## Verify exact installed source
 
@@ -43,6 +43,12 @@ Before any authorized installation, capture the real currently served source ide
 
 Use a target-specific maintenance window for a source replacement when required. Deploy **only** the exact verified release runtime members; do not extract the whole Git checkout or replay historical migrations. Manage retired paths by exact inventory, never wildcard deletion. Coordinate active PHP-FPM/OPcache and the existing service/financial Cron lease. After changing the installed source, repeat the manifest disk check, confirm actual web-SAPI source resolution, read-only DB readiness, subscription-link views and the normal scheduled job logs. Do not create a second active Cron task. Real customer/financial/Native operation tests require separately authorized controlled test subjects and effects.
 
-A failed release installation may justify restoring **source only** while preserving all successful payments, newly issued invoices and Native writes. Never restore stale financial SQL or retry uncertain external effects merely to roll back PHP code. Examine the actual journal and route-specific original evidence first.
+Wallet-first is not a source-only upgrade of the previous schema. Follow the
+[controlled manual cutover](WALLET-FIRST-ARCHITECTURE.md#cutover-decision--controlled-manual-database-transfer-owner-2026-11-24).
+Restore the matching old source/database/config only while the verified
+pre-activation rollback boundary remains valid. After new live financial
+or Native effects, a blind file downgrade or stale SQL restore can discard
+authentic new state; reconcile exact journals and use an approved
+roll-forward or proven recovery plan.
 
 For a *new* empty database use [Fresh installation](FRESH-INSTALL.md); the [current Wallet-first payment-readiness procedure](PAYMENT-READINESS-PREFLIGHT.md) binds the exact source and schema and separates structural readiness from local payment configuration. Use the actual selected release documentation for an earlier installation. Historical RC-specific diagnosis and upgrade examples remain in [Git history](https://github.com/ach1992/bot-refactor/commits/main/) and [GitHub Releases](https://github.com/ach1992/bot-refactor/releases), not in this current operator guide.

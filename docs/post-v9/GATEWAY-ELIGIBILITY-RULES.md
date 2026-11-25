@@ -1,14 +1,12 @@
 # Dynamic gateway and customer-category eligibility (Issue #51, PR #82)
 
-**Status:** source integrated through PR #82 and subsequent PR #83
-merchant-editor hardening; actual installed/operator readiness, SQL migration,
-release and real paid/provider smoke tests remain separate gates. See the
-[read-only operator preflight](PAYMENT-READINESS-PREFLIGHT.md) before requesting
-any such acceptance.
+Current Wallet-first contract for configuring and evaluating payment-method
+access. See [readiness preflight](PAYMENT-READINESS-PREFLIGHT.md) before
+authorizing installed tests.
 
 ## Scope and data model
 
-The existing eight payment methods share the **same protected authorization
+Registered payment methods share the **same protected authorization
 entrypoint** `achbotPayUxAudienceAllowed()` in
 `src/Finance/PaymentLifecycle.php`. The feature uses existing
 `setting.type=BOT_STATES`, `users`, `pays` and `orders_list` rows and
@@ -108,8 +106,8 @@ count/days to zero, and a category rule can be enabled/paused. Removing a
 rule requires a separate signed, nonce-bound confirmation; stale/replayed
 confirmations and revoked/non-admin/wrong-chat actions fail closed.
 
-The eligibility menu now appears in the main administrator menu immediately
-below «پرداخت‌های نیازمند بررسی», for Owner, Manager and Operator (not
+The eligibility menu appears in the main administrator menu below the
+operations-attention entry, for Owner, Manager and Operator (not
 Support), independently of the Manager-only general gateway/settings menu.
 Each payment method has a single «معاف کاربر از قوانین» button immediately
 before Back. It opens a signed private input for one or more positive decimal
@@ -154,50 +152,9 @@ issuance. Prior verified or uncertain paid claims, manual receipts, wallet
 effects and external service states remain evidence for recovery, never
 retroactively cancelled or refunded.
 
-## Source acceptance and rollout (historical evidence; retired driver names refer to the corresponding Git revision)
+## Verification
 
-From a clean exact candidate run:
-
-```sh
-python3 tools/test_post_v9_gateway_rules.py --run-disposable
-python3 tools/test_post_v9_gateway_rules_financial_routes.py --run-disposable
-python3 tools/test_post_v9_gateway_admin_source.py --run-disposable
-python3 tools/test_post_v9_manual_crypto_guards.py --run-disposable
-python3 tools/test_post_v9_cohort_lock_scope.py --run-disposable
-python3 tools/check_post_v9.py --report /tmp/achbot-post-v9-report.json
-```
-
-The first test uses real PHP on an **owned socket-only original-schema MariaDB**
-and extracts the real bot callback and config writer code. It verifies all
-methods, categories, history counters, legacy fallback, time boundaries,
-overflow, private numeric confirmation, privileged callbacks, replay, and
-absence of provider/payment effects. The master post-V9 acceptance requires
-its exact named scenarios. The second test runs **actual wallet-debit and
-NextPay hosted-checkout source** under two independent PHP/MySQLi connections,
-pausing after a permitted preview while a separate session commits a changed
-rule. It proves no debit, provider-attempt creation or remote fulfillment after
-revocation, and once-only authorized effects/replay refusal when allowed, under
-both READ COMMITTED and REPEATABLE READ. All outbound providers are synthetic
-local spies and never receive a real request. Source regression is not proof
-of installed Telegram/merchant/provider operation.
-
-On an owner-approved **isolated installed test bot**, the operator should
-verify the matrix below separately for each *purchase, renewal, time extension,
-volume extension and wallet recharge* type; use synthetic/zero-risk data, not
-real money or customer accounts.
-
-| Actor / setting | Menu | New issuance | Expected |
-|---|---|---|---|
-| Eligible non-agent satisfying age+history | offered if method flag ON | permitted | no duplicate debit |
-| Young/unqualified non-agent | hidden | denied even with old callback/URL | no claim created |
-| Eligible agent with its own distinct rule | offered | permitted | independent policy |
-| Method disabled, rule would otherwise match | hidden | denied | switch overrides rule |
-| Invalid/empty explicit rule | hidden | denied | fails closed |
-| Previously issued verified/manual evidence; rule then revoked | historic claim remains visible for review | **no new** issuance | no automatic refund/cancellation |
-
-Before installing, verify the exact PR SHA and runtime ZIP member count and
-file hashes against the independently verified manifest, then perform an
-owned isolated test, verify secrets remain private, and obtain independent
-review, Owner merge approval and separately scoped operator/deployment approval.
-No SQL migration is part of this eligibility feature. See also
-`PAYMENT-UX-LIFECYCLE.md`, `ISSUES-51-26-ACCEPTANCE.md`, and Issue #26.
+The current gate covers real audience-rule evaluation, live-setting admission
+boundaries, permission and stale/replay rejection. See [CI validation](CI-VALIDATION.md).
+New methods register their own configuration/proof in the shared adapter
+boundary; there is no second eligibility engine.

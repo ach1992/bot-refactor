@@ -1,224 +1,92 @@
-# PasarGuard native runtime contract
+# PasarGuard Native API contract
 
-Issue #81, NEXT-PG-CLIENT-2 / #26 revision2. Original native API fixture:
-PasarGuard 5.5.1 at eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43. Runtime connection is **not** version-gated; the API response and actual permissions determine whether operations can proceed. Original source/version verification:
-https://github.com/ach1992/bot-refactor/issues/81#issuecomment-6427352542 .
-Stable runtime support is built from this source, but a new target's installed/live provider acceptance must be verified separately.
+PasarGuard is the shipped Native adapter. API behavior and actual account/
+credential capabilities, not a pinned version string, govern admission.
+Source owners: `src/Panel/PasarGuard.php`, the PasarGuard service adapter
+modules, `ProviderRuntime.php` and `ProviderStorage.php`. The shared
+[architecture](WALLET-FIRST-ARCHITECTURE.md) owns execution/funding.
 
-## API
+## API and identity
 
-Global functions in `src/Panel/PasarGuard.php`; current source acceptance uses PHP 8.5:
+- The client exposes create/read/modify/reset/revoke/delete/links/check/
+  groups operations. Panel connection fields are id, instance_key, api_url
+  and api_key; version is informational. Use authenticated by-ID/username
+  lookup as appropriate, actual remote id, creation time and original
+  creation marker. A foreign incarnation is never proof of success.
+- Create persists the original username and `achbot:v1:<32hex>` marker before
+  dispatch. Native data_limit uses integer bytes (zero means unlimited);
+  expiry is a UTC timestamp or NULL (unlimited); groups are canonical
+  unique positive IDs. Mutations use absolute field values, not repeated
+  relative additions. Readbacks normalize actual quota, traffic, expiry,
+  status, groups, subscription URL and proxy identity; don't manufacture
+  success from an HTTP response alone.
+- CREATE requires verified original account/entitlement. DELETE requires
+  verified original identity and HTTP204/by-ID not-found confirmation;
+  revoke must prove actual proxy credential rotation, not merely a changed
+  URL. Links come from native subscription API endpoints; preserve bytes.
+  Existing API delayed/uncertain write limits and local serialization are
+  specified in the architecture, not a claim of remote exactly-once.
+- Diagnostics preserve useful reason, HTTP code, operation and safe
+  correlation; do not expose API credentials, raw provider bodies,
+  private subscription tokens or untrusted response text.
 
-- achbotPgCreate(array $panel,array $request):array
-- achbotPgRead(array $panel,array $identity):array
-- achbotPgModify(array $panel,array $identity,array $absoluteChanges):array
-- achbotPgReset(array $panel,array $identity):array
-- achbotPgRevoke(array $panel,array $identity):array
-- achbotPgDelete(array $panel,array $identity):array
-- achbotPgLinks(array $panel,array $identity,string $format='links'):array
-- achbotPgCheck(array $panel):array
-- achbotPgGroups(array $panel):array
+## Configure the actual panel
 
-Panel keys: id,instance_key,api_url,api_key; optional version metadata is informational and never a compatibility gate.
-Identity keys: remote_user_id,remote_created_at,operation_marker.
-Create request: username,data_limit(int bytes),expire(?int UTC epoch),
-group_ids(sorted unique positive ints),operation_marker(achbot:v1:<32hex>).
-Modify accepts only absolute data_limit,expire,status(active|disabled),group_ids.
+Use the authorized existing API (no modifications to provider internals).
+Configure its absolute HTTP(S) subscription URL origin/prefix before
+admitting new accounts. A relative/token-only URL on CREATE is not proof
+of a valid customer subscription and may leave the original effect held.
+Do not fabricate a URL or create another account to repair it.
 
-Result keys: success(bool),uncertain(bool),reason(string),http(int),user?(array),
-links?(list<string>),subscription_url?(string). Never return raw provider bodies,
-keys, cURL texts or URLs/tokens in diagnostics.
-Normalized user: id,username,created_at(UTC RFC3339 microseconds),note,data_limit
-(int bytes;0 unlimited),expire(?int UTC epoch),status,group_ids,used_traffic,
-subscription_url(native absolute),proxy_settings.
-Native limited/expired/disabled/active statuses remain distinct.
+Scoped credentials need the actual user create/read/update/delete/reset_usage/
+revoke_sub and Groups read/read_simple capabilities, the allowed Groups and
+no required template. OWN scope can suffice for accounts created by the
+same administrator; do not demand a global Owner API key. Native on-hold,
+auto-delete, next-plan or periodic reset schedules incompatible with managed
+mutations are not silently overwritten. Read-only preflight is not proof
+of every write or subscription URL configuration.
 
-By-ID reads and writes fence created_at + original creation marker.
-CREATE is HTTP201, DELETE is HTTP204 followed by by-ID404.
-No blind or unattended retry of failed/malformed writes, no compensation from uncertain results.
-The integration owns durable claims/reservations and operator reconciliation.
-Revoke requires changed proxy identity; URL inequality alone is insufficient.
-Links use native GET /api/user/{id}/subscription/links or links_base64;
-presentation never constructs protocol/SNI/transports.
+Group IDs are per-plan (`server_plans.provider_group_ids`), not inherited
+server defaults, and are separate from administrator physical Panel Groups.
+CREATE requires a valid nonempty group set. A genuine existing imported
+account can retain an authenticated empty set for appropriate server/global
+offers. [Scoped offers](ADDON-SCOPES.md) and [plan changes](SHARED-SERVICE-TRANSFER.md)
+define actual eligibility and final readback.
 
-## Persistence
+## Durable persistence, deletion and import
 
-The current source requires shared-storage consolidation012 for PasarGuard;
-missing/incomplete012 leaves original-schema Marzban usable but fails closed for
-PasarGuard setup/dispatch. Historical011 is the migration input, not the current
-storage model. See [shared storage and recovery](SHARED-PROVIDER-STORAGE.md).
+Use the consolidated current schema and [shared storage](SHARED-PROVIDER-STORAGE.md).
+The operation/effect and Native mutation journals own immutable target,
+identity and dispatch evidence; there is no bounded consumed-key replay
+history as an admission policy. Commit the original intent before HTTP;
+no network request inside its money transaction.
 
-- server_config: actual endpoint/API key in panel_url/password, stable connection
-  identity/version/enabled fields; logical aliases retain their same instance.
-- server_info.provider_group_ids: server's native access selection.
-- server_plans.provider_group_ids: NULL inherits, explicit existing list replaces.
-- pays.provider_snapshot and service_effects.provider_snapshot: immutable quote
-  target/entitlement evidence, preserved byte-for-byte during consolidation.
-- orders_list: originating provider effect plus native ID/creation time.
-- service_effects: pre-order reservation, verified identity and nullable durable
-  provider mutation/replay evidence on the actual create/adopt effect. No separate
-  account/connection table or deletion cascade. Unknown CREATE/payment/edit outcomes cannot reissue.
+Scheduled expiry and explicit user/staff DELETE share the physical-account
+lease and the original identity fence. A known remote deletion can finish
+local state without a new DELETE. Explicit reconfirmation can recover only
+the original held DELETE after authorized readback; unknown/foreign identity,
+conflicting work or other unresolved reference authority do not authorize
+blind replay. Capacity restoration is pinned to the original intent and
+verified reservation provenance, not the recovering actor. Imported/adopted
+accounts have no reserved capacity. Unknown provenance is held, not guessed.
+See [service management](UNIFIED-SERVICE-MANAGEMENT.md) for lifecycle policy.
 
-Global storage functions in src/Panel/ProviderStorage.php:
+The customer-supplied subscription URL is an untrusted lookup hint. Verify
+the actual supplied bearer at the trusted Native subscription info endpoint,
+derived from authenticated Native evidence, without forwarding panel API
+credentials or following arbitrary user-supplied origins. Match native id,
+username and creation time; fresh token equality is not possession proof.
+Created accounts retain original marker proof, adopted accounts retain
+validated origin and incarnation. Separate customer references are supported
+under the shared physical identity rules.
 
-- achbotProviderPanel(mysqli $db,int $panelId):array
-- achbotProviderSnapshot(mysqli $db,int $serverId,?int $planId=null):array
-- achbotProviderPanelForSnapshot(mysqli $db,array $snapshot):array
-- achbotProviderAccountByOrder(mysqli $db,int $orderId):?array
-- achbotProviderAccountByEffect(mysqli $db,int $effectId):?array
-- achbotProviderReserveAccount(mysqli $db,int $effectId,array $snapshot,string $username,string $marker,array $entitlement):array
-- achbotProviderVerifyAccount(mysqli $db,int $effectId,array $user):void
-- achbotProviderLinkAccount(mysqli $db,int $effectId,int $orderId):void
+Whole-unit duration/quota validation, original paid quote, immutable target,
+renewal reset and edit recovery are defined in the architecture. There is no
+Marzban runtime, no legacy schema fallback and no new historical migration.
 
-Storage errors throw private reason-only RuntimeException. Reservation uses the
-caller's SQL transaction; caller MUST commit it before HTTP. It is idempotent
-only for the exact same existing reservation; returned state never authorizes a
-second dispatch. The returned row includes newly_reserved=true only on the first guarded reservation;
-exact existing reservations return newly_reserved=false. Reserve requires an
-open caller transaction and validates the shared effect operation/username,
-endpoint and pinned snapshot. Trials use genuine nonpaid shared effect rows. Shared service_effects owns financial/replay state. Pure
-existing Marzban does not require shared native storage. Nullable existing-effect
-provider_mutation_key (VARCHAR100) and provider_mutation_snapshot (LONGTEXT) retain
-durable action/absolute-intent fencing.
-The runtime commits linked -> mutating with intent before HTTP; unconfirmed
-writes remain mutating/review and cannot authorize blind replay. For an
-**explicitly reconfirmed user/staff DELETE only**, the local status=0/autoRenew=off
-fence and the exact Native `delete:<account-id>` claim commit together. The
-existing physical-account lease serializes repeated confirmations. The retry
-checks the same immutable provider/instance/account incarnation by ID: verified
-404 completes local cleanup without another DELETE; verified original-account
-presence can resume the original pinned DELETE and require HTTP204 + by-ID404.
-An unknown GET, foreign incarnation, changed endpoint, missing original claim,
-other local reference or unrelated active mutation never authorizes DELETE.
-The original local finalizer can also resume from a verified `deleted` Native
-state if its prior SQL commit failed. The expiry Cron owns the **same
-physical-account advisory lease** through its original Native DELETE dispatch
-and local finality. This prevents the original Cron sender and a repeated
-user/staff confirmation from issuing simultaneous DELETEs for the same
-physical ID. A timeout during scheduled dispatch remains fenced and cannot
-cause an unattended Cron replay; a later explicit confirmation may recover
-the held original Native key when its identity and transport can be verified.
-The initial Native DELETE claim also pins the original local finalizer's
-`delete_restore_capacity` boolean inside its existing mutation snapshot,
-atomically with the order status fence. Explicit user/staff recovery consumes
-that original decision: scheduled deletions retain `false`, user/staff initiated
-deletions retain `true`, and actual restoration with `true` still requires
-verified purchase/reservation provenance. The pin is preserved through
-`dispatching` and `deleted` states without new schema or monetary effects.
-Older unpinned deletion claims can finalize with **no slot restoration** only
-when existing order provenance independently proves there was no reserved
-slot. Historical `legacy_migration` Native adoption has `order_id=NULL` in
-`service_effects`; its immutable `provider_effect_id` link proves zero
-reservation even if an imported order later gains a positive plan. For an unpinned order with a reservable slot, operator review is required
-rather than guessing the originating workflow from the recovering actor.
-Only recoverable PasarGuard outcomes present retry instructions. Even a
-post-DELETE HTTP200 is NOT retry evidence unless its normalized response
-matches the pinned original Native incarnation. Auth or identity changes,
-malformed readback and shared references require review; Marzban's guarded
-unknown-outcome policy remains unchanged. No blind Cron replay or manual use
-of a new operation key is allowed. The purchased entitlement_snapshot remains intact.
-No production migration is implied.
-Account extension preserves existing purchased Groups. Explicit service switch
-updates remote Groups and verifies before local routing/snapshot completion.
-Native Group contents are mutable upstream; IDs do not freeze Hosts/inbounds.
-No User Template, on_hold, next_plan or periodic reset scheduling integration.
+## Evidence
 
-## Primary source facts
-
-Pinned upstream app/models/user.py blob84d559893cce9b6ebe8f102c58f4ae15841291dc,
-app/routers/user.py d46b0382acac5c612dbdffca90d48c7a33a3ad57,
-app/models/admin_role.py ba143e83b1b228f0bd71f5ee8154e462e07d559f,
-app/routers/authentication.py 7659f8363ff408943dfc7692747a387e85fb8c23,
-app/models/group.py efcdf4f1ca5b056f39ee9e075f27fffb2de2d9e5.
-The installed OpenAPI is deliberately disabled; exact tagged/actual model and
-route matches establish this contract, not an invented OpenAPI fixture.
-
-Scoped API key needs users create/read/update/delete/reset_usage/revoke_sub,
-Groups read/read_simple, require_template=false and permitted native Groups.
-OWN scope suffices for same-admin-created accounts. Do not require owner key.
-
-## Native panel configuration prerequisite
-
-Configure the native subscription URL prefix/origin before admission. PasarGuard
-5.5.1 may return a relative/token-only subscription_url when its subscription
-url_prefix is unset; this adapter deliberately requires a native absolute HTTP(S)
-URL and holds a CREATE with invalid link readback as uncertain. Never manufacture
-a subscription URL or repeat that CREATE. Reconcile the exact owned marker and
-incarnation. Read-only system/admin/Groups preflight does not certify subscription
-configuration; it intentionally does not require wider settings permissions.
-Native auto-delete, on-hold timing, next-plan and periodic reset settings must be
-absent for AChBot-managed accounts; externally configured scheduling fails closed.
-
-Reservation reads lock the current account row after serializing on its effect.
-MariaDB strict snapshot isolation may instead reject a competing transaction
-whose earlier read view predates the reservation; that SQL rejection is private,
-rolls back local work and never grants remote dispatch. Runtime does not alter
-SQL isolation settings or automatically retry an uncertain external write.
-
-
-## Mutation replay-history integrity
-
-A linked account may start with empty history only when both
-`mutation_key` and `mutation_snapshot` are SQL NULL. After the first
-mutation, the snapshot must be valid JSON version 1, its key must equal
-`mutation_key`, and `consumed_keys` must be a nonempty JSON list of unique,
-valid 1–100-character operation keys containing the last key. Partial NULL,
-malformed JSON, wrong types, missing fields, duplicate keys or inconsistent
-last-key evidence refuse the next mutation before provider GET or write;
-the runtime never substitutes an empty history.
-
-The retained list is bounded at **4096 consumed sources**. An account at that
-bound fails closed for new mutations and requires operator review. History
-is never automatically pruned, reset or reconstructed to authorize a retry.
-This does not claim protection against a fully privileged operator manually
-rewriting the database. Existing-account operations preserve current remote
-Groups; initial CREATE still uses its pinned quote Groups.
-
-
-## Whole-unit service edits
-
-The existing accounting contract supports whole days and whole GiB only.
-`increase_plan.volume` is FLOAT, but `pays.volume` and
-`increase_order.volume` are INT; the current Marzban adapter explicitly
-refuses fractional units rather than silently truncating them. The same
-contract applies to native service edits. No new fractional rounding,
-precision migration or accounting policy is introduced here.
-
-Pure unit/type/finiteness/bounds validation happens before a native account
-claim or provider GET. Current quota and expiry are observed and calculated
-only under the durable account claim. Explicit zero quota replacement remains
-unlimited; adding volume to current unlimited service refuses before any
-write and retains the review fence. Addition uses checked integer arithmetic.
-
-Unsupported fractional add-on rows are hidden from new selections and refused
-before new quote/payment/wallet claims. Manual and scheduled preflight recheck
-raw units before casts; existing invoice, money and service evidence is not
-rewritten or automatically refunded. Existing addon invoices retain their
-historical ID-based unit reference; this change does not invent original-unit
-evidence or perform a compatibility backfill when a mutable plan later changes.
-
-
-### Immutable add-on quantity and RC11 pending-invoice boundary
-
-New volume add-on drafts pin their original whole GiB in `pays.volume`
-with `day=0`; new day add-on drafts pin whole days in `pays.day` with
-`volume=0`. These existing INT fields require no DDL. All manual, wallet,
-hosted and scheduled effects use the original pinned quantity and invoice
-price, not the mutable catalogue row. Later SKU quantity/price changes or
-deletion cannot replace the entitlement of an issued quote.
-
-Legacy RC11 and earlier add-on rows with zero, NULL, missing or inconsistent
-quantity do not prove an original entitlement. They fail closed before a new
-claim, wallet debit or provider effect; already paid/claimed rows remain under
-review. There is no automatic backfill, invoice rewrite, refund or replay.
-Operators must reconcile original evidence separately rather than reviving a
-legacy invoice by changing its SKU. New supported quotes can be issued only
-through the guarded current quote path.
-
-
-## Existing-subscription owner extension (2026-10-28)
-Existing accounts may be imported through the common URL/preview/confirmation path. GET /api/user/by-id/{id} or exact by-username is only an authenticated lookup. Version3 subscription tokens contain an untrusted id hint; native GET creates a fresh token, so old-versus-new token equality cannot establish possession. Verify the supplied token at the trusted native subscription /info route, with no API credentials, no redirect, and match id, username and created_at. Do not fetch an arbitrary supplied origin or overwrite the native note.
-
-A genuine adopt/external_import effect has no pay row and reserves zero capacity. Existing011 provider_accounts stores the exact native incarnation and complete normalized initial entitlement. Its adopted identity mode is constructed only from validated persisted adoption provenance; native created identities continue to require the exact achbot:v1 marker. Every later read, action, quote and deletion carries the explicit mode. Native NULL expiry remains NULL in snapshots and maps to the original order column zero sentinel. Adoption preserves schedules and status, with existing mutation eligibility restrictions unchanged.
-
-A service view reuses one request-local native packet for current usage, expiry, status and presentation. PasarGuard links still require before/after incarnation and proxy proof; the final read supplies the displayed observation. No cross-request cache authorizes an action or payment.
+Reviewed upstream reference: [PasarGuard source](https://github.com/PasarGuard/panel/tree/eba70d68eaa5a89e34ffebb47c8fd5ce054d0e43).
+It is not an enforced version gate. Use [CI validation](CI-VALIDATION.md)
+for the actual loopback/native contract tests and [readiness preflight](PAYMENT-READINESS-PREFLIGHT.md)
+before separately authorized installed acceptance.

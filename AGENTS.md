@@ -1,27 +1,57 @@
 # AChBot contributor and agent rules
 
-## Current authority and product boundary
+Read [the product contract](docs/PROJECT-SPEC.md) and the relevant current
+guide from [README](README.md). The [Wallet-first architecture](docs/post-v9/WALLET-FIRST-ARCHITECTURE.md)
+owns the shared engines and controlled data-transfer boundary. Source,
+Issues, CI, published tags and installed state are different authorities.
 
-- The first forward **Stable** baseline (v0.10.0) shipped unified native Marzban and PasarGuard. The current Wallet-first source ships PasarGuard only; earlier releases remain separate historical artifacts. No compatibility obligation exists for obsolete deployed bot versions, historical UI callbacks or retired X-UI payment/provider integrations. Do not invent adapters or synthetic migrations for installations that did not exist.
-- **Current customer contracts ARE binding:** preserve already-issued subscription/config URLs and proxy credentials, verified Native account identity, active service entitlements, wallet balances, original order/payment evidence, idempotency, unfinished effects, authorization and recovery. PasarGuard is the only Native adapter shipped in the current Wallet-first runtime, not a permanent architecture restriction. Remove Marzban runtime entirely; unfinished genuinely Marzban-targeted Native operations may be retired without replay, preserving their financial/historical evidence. Keep migrated PasarGuard account identity and provenance even if their historical origin is Marzban. The fresh runtime recovers its own current operations only; do not import or replay old pending workflows. Use existing provider APIs and connection information only; no provider-side development or direct internal writes. PasarGuard plan access is `provider_group_ids`, not legacy `custom_sni`; historical migration evidence may retain that shared column.
-- Do not rerun one-time Hell/Vivan historical Marzban→PasarGuard conversion. Keep data recovery and financial provenance separate from bot-version compatibility.
-- The canonical scope/policies live in [docs/PROJECT-SPEC.md](docs/PROJECT-SPEC.md); the historical first Stable baseline is [docs/post-v9/STABLE-BASELINE.md](docs/post-v9/STABLE-BASELINE.md). Source, Issues, CI, tags and actual installed state are distinct authorities. Never record status archaeology in these instructions.
+## Implementation
 
-## Engineering
+- Work only in the authorized repository and isolated workspace. Preserve
+  unrelated changes, real customer identity/entitlement, balances,
+  credentials, original financial/Native evidence and authorization.
+- Prefer one cohesive maintainable implementation, existing modules and
+  actual provider API capabilities. Keep Wallet/service/settlement/
+  recovery/delivery independent of concrete provider/method names through
+  source-owned registration. PasarGuard is the only shipped Native
+  adapter, not a permanent restriction. No speculative framework, invented
+  version gate, arbitrary operational limit, obsolete compatibility
+  executor or historical pending-workflow replay.
+- Never use production customer SQL, private baseInfo.php, tokens or logs
+  as fixtures. No provider-side development or direct internal writes.
+  Keep historical evidence separate from executable current work.
+- Preserve approved user/admin-visible wording, navigation, naming, reports
+  and business policies unless explicitly approved first. The two
+  [message catalogs](messages/README.md) own static copy; preserve incoming
+  administrator messages and literal native config bytes. Permissions are
+  enforced independently of notification receiving.
+- Require current actor/owner/instance, immutable original amount/target
+  and durable once-only evidence before financial or Native effects.
+  Serialize conflicting local writes and use authenticated readback with
+  the original operation; no blind replay or remote exactly-once claim.
+  Log useful stage, reason, correlation and safe IDs, without credentials
+  or raw sensitive payloads. Do not conceal material failures.
 
-- Reuse existing modules/DB structures and actual provider API capabilities. Keep shared Wallet/service/settlement/recovery/delivery engines independent of concrete Native/payment method names; use source-owned registered adapters for identity, provider capabilities, proof and transport. Adding a provider or payment method must not require duplicating the core workflow. Avoid a generic plugin framework or speculative adapters. **Do not hardcode** unsupported provider versions, arbitrary operational ceilings, user policy or unnecessary compatibility layers. Retain real protocol correctness and verified financial/permission invariants.
-- Prefer one coherent, maintainable change with minimal dependencies and tests that exercise its actual failure path. Avoid unrelated refactors, excess scaffolding, disposable-only abstractions and duplicate specs.
-- Work only in the authorized repository and isolated worktree. Preserve unrelated changes and secrets. Never use customer SQL, `baseInfo.php`, live API keys or production logs as test fixtures. Historical source and source-real tests are frozen evidence, not a requirement to support an old deployed bot.
-- Owner approval is needed before introducing **new user-/admin-visible copy or behavior**, including account-name formats, menus and reports. Maintain the Persian text catalogs, explicit configured instance text, RTL-aware UI and literal-copyable provider config bytes. Technical correctness alone is not approval for UX changes.
-- Four staff levels have distinct permissions, but all genuinely authorized staff retain approved manual receipt review; receiving notifications never grants access. Preserve administrator-authored Telegram messages, including wizard input; protect sensitive values through access controls and narrow diagnostics, not destructive conversation cleanup.
-- No unauthenticated or replayed payment, Native mutation or webhook effect. Confirm owner/provider/instance, original issued amount, actor permission, and durable once-only evidence. Never blindly retry an uncertain external write or infer financial finality from a failed Telegram message. For the Wallet-first target, follow the approved existing-API recovery contract: original identity and immutable targets, serialized conflicting local writes, authenticated readback and operation-specific retry; do not demand unavailable provider-side fencing or claim remote exactly-once execution.
-- Log useful stage, reason, correlation and safe identifiers without credentials or untrusted payloads. Keep operator-diagnosable failures; do not silently swallow material errors or discard functional records.
+## Verification and delivery
 
-## Build, verification and delivery
-
-- Current PHP validation target is **PHP 8.5**. The required `php85-validation` status runs current source/Cron and representative source-real functional regressions (payments, subscriptions, Native, wallet, authorization and delivery) from the exact candidate. Additional current-source integration tests may be run individually for high-risk changes; neither path proves live financial or Telegram acceptance. See [CI contract](docs/post-v9/CI-VALIDATION.md).
-- Independent author-separated review, exact candidate identity, current base, Owner integration approval, release creation, installed deployment and live acceptance are **separate gates**. A verified merge or release does not imply production deployment.
-- The runtime comes only from the manifest-bound current-source `tools/package_current.py` package at clean, committed release HEAD; it contains no private config or SQL. Keep runtime membership limited to tracked current application files, preserving exact source bytes and package verification.
-- Per-installation Cron runs the existing top-level `settings/cronRunner.php` coordinator, four isolated sequential child jobs and private per-bot lock. Never manually launch real Cron as a harmless test, change operational schedules without authority, or remove active lock files. A trusted external lock directory is created only by the admitted coordinator when its OS user has permission.
-- For schemas, payments, provider effects, deployment, migration, backups or cleanup: establish the exact target, affected state, concurrency, backup/rollback and verification first. Production changes need explicit authorization. The one-time migration scripts and historical source tests must never be casually executed on existing customers.
-- Keep README short, current and practical. Preserve useful current contracts/runbooks; put release chronology in GitHub Releases and completion evidence in PRs/Issues. Close only genuinely resolved/superseded Issues, retaining unresolved Owner-gated work. Delete task-owned temporary branches/worktrees only after all unique work and review evidence are safe.
+- Current source validation is PHP 8.5 and required `php85-validation`.
+  Use the [CI contract](docs/post-v9/CI-VALIDATION.md) and relevant isolated
+  current-source cases; do not revive retired version tests as acceptance.
+- Independent author-separated review, exact candidate/base, Owner
+  integration approval, release publication, deployment and live acceptance
+  are separate gates. No self-approval or unauthorized production effect.
+- Build/verify the runtime from a clean committed release HEAD using
+  `tools/package_current.py`. No private config, SQL or customer data in
+  release assets. Never assume source merge/publication proves installation.
+- Keep the single per-installation Cron coordinator and its four ordered
+  isolated jobs/private lock. Never launch live Cron as a harmless test,
+  remove an active lock or change schedules/webhooks without authority.
+- Before authorized schema/financial/Native/deployment changes, establish
+  exact target, current state, concurrency, verified recovery and evidence.
+  Fresh installs use the consolidated schema only; existing installs use
+  separately approved manual transfer. Never rerun historical construction
+  SQL or the completed Hell/Vivan PasarGuard cutover.
+- Keep durable product/engineering rules in docs, actual unresolved work
+  in Issues, reviewed source in PR/Git, results in CI and chronology in
+  Releases. Close only genuinely resolved/superseded work. Remove
+  task-owned temporary resources only when unique work/evidence is safe.

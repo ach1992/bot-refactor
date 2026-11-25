@@ -1,60 +1,159 @@
-# AChBot — product and engineering contract
+# AChBot product contract
 
-## Product and supported environments
+AChBot is a Persian-language Telegram bot for VPN subscriptions, Native
+account management, wallets, payments, staff operations, scheduled maintenance
+and support. The current Wallet-first runtime uses the consolidated empty
+schema and the PasarGuard adapter. Adding a future provider or method must
+reuse the shared engines; no obsolete runtime or legacy workflow replay is
+a compatibility target. Earlier releases have their own tag-matched
+contracts.
 
-AChBot is one Persian-language Telegram bot implementation for VPN subscription management, Native account operations, purchases, renewals, support, wallets, administrator management and scheduled maintenance. The published **v0.10.0 forward Stable baseline** supported Marzban and PasarGuard; the current Wallet-first source supports PasarGuard. Superseded deployed bot implementations and unused legacy X-UI/Sanaei/Alireza integrations are not a supported compatibility target. For the approved Wallet-first implementation, PasarGuard is the sole Native implementation shipped in this refactor, while future Native providers and payment methods remain first-class extension points. The Owner confirms current subscriptions are on PasarGuard and authorizes complete removal of Marzban runtime support, including abandoning unfinished operations actually targeting Marzban. Preserve historical/financial evidence and migrated live PasarGuard accounts; never classify a migrated account as retired merely from its old Marzban origin. AChBot integrates through existing provider APIs and connection information only, without developing, forking, patching or directly modifying provider internals. Publication alone does not install the bot.
+Preserve actual customers: existing subscription/config URLs and credentials,
+verified account incarnations, active entitlements, identity, signed Wallet
+balances, original invoices and financial/Native evidence. Use existing
+authorized provider APIs only, without modifying provider internals. The
+[architecture](post-v9/WALLET-FIRST-ARCHITECTURE.md) owns shared technical
+invariants and controlled manual transfer. Historical Marzban-targeted
+unfinished work may be retired without replay, never by discarding
+authentic funds/evidence or treating a migrated PasarGuard account as retired.
 
-Use PHP **8.5** for current source acceptance; require the corresponding functional PHP/web, CLI, MariaDB, Telegram and panel API prerequisites in the [fresh-install guide](post-v9/FRESH-INSTALL.md). Existing production PHP/DB acceptance must be independently observed. Real customer subscription URLs, proxy credentials, provider-native identity and persisted financial records take precedence over eliminating old source versions.
+## Service and Native behavior
 
-## Native account and plan behavior
+- Each local order is a customer's reference to a physical subscription.
+  Several customers may register the same verified physical account; local
+  permissions/notices remain distinct. Import does not create an account,
+  charge money, reserve capacity or rewrite entitlement. Native current
+  observations determine display and allowed mutations.
+- PasarGuard access uses plan-specific Native Group IDs, not inherited
+  server defaults or retired transport metadata. An administrator-declared
+  physical Panel Group can span logical servers with different credentials;
+  it does not waive actual identity/authority. Transfer and plan selection
+  synchronize the affected active references after appropriate verified
+  readback. An already-matching access set does not require a PUT.
+- Preserve approved five-digit generated names. Choose an unused suffix
+  only before the first durable CREATE, under shared physical occupancy
+  (including imported accounts and aliases). Explicit names and committed
+  effect identity never change to work around an uncertain effect.
+- Current scoped offers, renewal, import, gifts and lifecycle follow
+  [service management](post-v9/UNIFIED-SERVICE-MANAGEMENT.md),
+  [plan/transfer](post-v9/SHARED-SERVICE-TRANSFER.md) and
+  [scoped add-ons](post-v9/ADDON-SCOPES.md). Gifts are independent of
+  original plan and apply once to the verified physical account, with a
+  notice for each eligible linked customer.
+- Keep the actual ten-day expiry/deletion grace independent of the
+  approved customer warning wording (three days). Change neither timing
+  nor copy without approval. Unknown Native evidence never authorizes
+  deletion. Native subscription/config output is literal and unchanged.
 
-- Provider-specific adapters own actual authentication, Native identities, API operations and access controls. Keep shared purchase, service-management, payment, presentation and support code wherever semantics match.
-- A local `orders_list` row represents one customer's reference to a physical subscription; several customers may legitimately register the same Native subscription. Native changes happen **once per physical identity**, but per-customer notification and authorization remain separate.
-- PasarGuard plan access is stored in `server_plans.provider_group_ids`; the current consolidated schema has no `custom_sni` compatibility column; no Marzban inbound/proxy metadata is required by the target runtime. Plan availability must be provider-validated, not inferred from serialized legacy text or panel version strings.
-- Explicit administrator **Panel Groups** declare shared physical panels independently of differing URLs/credentials and existing orders. The Group does not waive per-operation Native, payment, identity, replay or unfinished-journal protections. PasarGuard Native plan Groups are separate from administrator Panel Groups.
-- Existing-subscription import confirms the Native identity through authenticated API access; never fetch an arbitrary host merely because it appears in a submitted subscription URL. A genuine import must not recreate a Native account, charge a wallet or rewrite its entitlement. A planless import remains distinct from a free trial.
-- Current PasarGuard subscription URLs and individual configs are fetched from authenticated Native GET; `orders_list.link` is historical/shared purchase storage (a fallback only in the old Marzban runtime), not the authority for PasarGuard display. Display choices cannot rewrite Native proxy bytes.
-- A successful physical plan change requires durable intent, matching Native readback and linked-order synchronization without duplicate effects. A read-only preparation failure cannot consume the Native dispatch or permanently hold a subscription; uncertain Native writes remain held for reconciliation. Current credential rotation remains available during recovery. Submitted receipt evidence survives a successful plan change; confirmed money credits the Wallet without executing the retired quote. See [provider storage](post-v9/SHARED-PROVIDER-STORAGE.md), [plan changes](post-v9/SHARED-SERVICE-TRANSFER.md) and [service management](post-v9/UNIFIED-SERVICE-MANAGEMENT.md).
+## Sales, pricing and customer eligibility
 
-## Customer and administrator experience
+- Positive base-price plans are commercial offerings; zero-base-price
+  plans are dedicated to trials. Ordinary, custom, bulk and representative
+  commercial offerings use the actual eligible current catalogue.
+  Admin noncommercial provisioning has its own permission/entitlement.
+  The service-availability view shows remaining server capacity, saleable
+  plan and server, not retired inbound availability.
+- Sales, trial and automatic-renewal switches are independent. Closing
+  sales denies new ordinary commercial purchases, manual renewal and
+  time/volume add-ons at draft and first method/confirmation admission,
+  including legitimate zero-effective prices and stale unissued drafts.
+  Main menu, welcome, direct entry and catalogue share the existing
+  primary-owner-only ordinary-purchase exception. Trial and automatic
+  renewal retain their own switches; authorized administrative provisioning
+  is separate. Issued evidence and funded work retain their original
+  recovery contract.
+- During open sales, payment-method availability cannot hide eligible
+  standard/custom/representative catalogues or the existing discount
+  route. A valid redeemed discount producing zero, or another legitimately
+  authorized zero-effective commercial command, offers the existing free
+  confirmation/navigation without Wallet debit, external invoice or
+  monetary-method audience gate. It is not a free trial.
+- A positive residual needs a current enabled, configured, audience-
+  eligible monetary option at the locked discount-redemption boundary.
+  Without one, retain the exact original draft and usage counters and
+  show the approved discount-only explanation. Shared current method
+  eligibility and one payment keyboard govern checkout, add-ons, renewal,
+  manual crypto and recharge; Wallet cannot fund its own recharge.
+  First invoice issuance revalidates actual persisted configuration and
+  local quote rules, without a merchant probe. Issued quotes retain their
+  original terms. Eligibility is not a guarantee of funds or external
+  merchant acceptance.
+- Agency pricing requires `agencyState=on` and `users.is_agent=1`.
+  Apply one configured percentage policy, with the accepted plan/server
+  overrides, to ordinary/single/bulk/custom purchase, manual/automatic
+  renewal and time/volume. Stored `agent_bought` is a classification, not
+  current discount entitlement. Categories referenced by any plan,
+  including inactive plans, cannot be deleted.
 
-- Owner, Manager, Operator and Support have the established tiered administrative permissions. Only the primary Owner ID belongs in private configuration; other staff membership/levels and optional notification receiving are managed in the bot. Receiving a report does not grant authority. Legitimate staff can review manual receipts according to the shared receipt policy.
-- Static interface copy lives in the **two** editable audience catalogs (user/admin); instance welcome, purchase notes, destinations, channels, branding and gateway settings use persisted per-instance configuration. Messages are concise Persian and safe HTML; configuration URLs/UUIDs are literal/copyable and unchanged.
-- Existing account, purchased-plan, renewal, wallet, agent, referral, gift and support workflows retain their financial and Native semantics. Administrator gifts are independent of original purchase plan and happen once per Native physical subscription, with one notice to every current linked customer.
-- Customer purchase (standard or custom) requires a positive base-price plan; zero-base-price plans are dedicated to the trial catalogue and cannot be purchased. Legitimately authorized zero effective prices on paid-base plans remain distinct from trial entitlement. Separately authorized noncommercial administrator provisioning retains its own policy. The optional service availability screen (📊 موجودی سرویس‌ها) shows remaining server capacity, saleable plan and server; the retired shared-inbound availability is not offered.
-- Sales, trial and automatic-renewal switches are independent. The current sales switch gates every new ordinary customer commercial purchase, manual renewal and time/volume add-on at both draft creation and first method/confirmation admission, including zero-effective orders and previously displayed unissued drafts. Existing primary-administrator purchase and authorized administrative provisioning exceptions remain; issued payment evidence and funded operations retain their original recovery semantics. Legitimately zero-effective commercial commands (including a valid consumed discount code) offer only the approved free confirmation and existing navigation; no monetary method enablement, audience permission, external invoice or Wallet debit is required.
-- Eligible commercial standard/custom/representative catalogues and the existing discount route remain accessible during open sales even without an eligible monetary method. The purchase menu, welcome and direct entry share the primary-owner-only closed-sales exception. A valid code reducing the final amount to zero needs no monetary method. A positive residual requires an enabled, locally configured, audience-eligible monetary method at the locked redemption boundary; otherwise the original draft and discount usage remain unchanged, and the customer sees the approved discount-only explanation and can retry. The same locked current monetary-method eligibility serves every checkout, positive time/volume add-ons, Wallet recharge (with its independent top-up gateway flag and no Wallet self-payment), manual crypto network selection and new renewal gateway navigation. All six checkout modes share a payment keyboard builder while retaining their approved wording, order and callbacks. First customer invoice issuance reads current persisted configuration under the admission transaction and reuses the same method configuration/quote validators, including NOWPayments' optional configured settlement policy; no merchant probe is used. Already issued invoices retain their pinned configuration and settlement/recovery path. The admin editor and runtime share the existing payment-policy definitions; top-up input and admission share one amount validator. This is not a guarantee of merchant acceptance or sufficient Wallet balance. No new discount route, configuration switch or provider call is added.
-- Agency pricing uses the current enabled representative entitlement (`agencyState=on`, `users.is_agent=1`) and one configured percentage policy for ordinary/single/bulk/custom purchases, manual and automatic renewal, and time/volume add-ons. Plan/server overrides follow the configured scope; otherwise use the default. Original subscription classification (`agent_bought`) remains a management/presentation field, not a discount entitlement. Existing issued invoices are never repriced. Categories referenced by any plan, including inactive plans, cannot be deleted.
-- Purchase delivery and order details have independent per-server subscription/config/auxiliary link visibility and explicit QR behavior. Default inline config presentation is a small subset; native configs are not changed or lost due to a Telegram message-size limit. See [presentation](post-v9/SUBSCRIPTION-PRESENTATION.md).
-- Generated account names retain the approved five-digit shapes. Before the first durable CREATE effect, the shared allocator may select an unused suffix on the same physical panel. Allocation and Native import share the physical occupancy rule across logical aliases, including originating imported accounts and deleted incarnations with active local references; attachments do not independently occupy names. The existing CREATE journal fence is preserved. An explicit single name and any committed effect identity are immutable. A locally occupied explicit name is ineligible for new admission or funding; a conflict arising after funding retains the original operation for resolution. No new name is selected to bypass an uncertain Native result.
-- New user/admin-facing message wording, account naming, workflow and report changes require separate explicit Owner approval. Code cleanup alone is not authorization for altering a working customer's visible experience.
+## Payments and Wallet
 
-## Payment and financial invariants
+- Receipt proof and Wallet credit are separate from funded service
+  completion and message delivery. All methods enter the same original
+  settlement transaction and shared service engine. Recover original
+  current work automatically where safe; no blind replay of uncertain
+  external writes and no assertion of universal remote exactly-once.
+- NOWPayments `finished` uses authenticated original invoice/order,
+  exact USD invoice quote/local Toman amount and collision/merchant proof,
+  not an extra estimated received/payout threshold. Nonfinal or partial
+  settlement never auto-fulfills. Browser/Telegram status is not proof.
+- Bank and gift-card receipt methods retain optional authenticated
+  SMS/gift evidence and legitimate staff review. Manual USDT
+  BEP20/TRC20/ERC20 and TRX TRON remain supported. One shared USDT/
+  NOWPayments rate and independent TRX rate govern new quotes;
+  invalid settings disable the affected option, not other methods.
+  See [payment configuration](post-v9/PAYMENT-UX-LIFECYCLE.md) and
+  [gateway rules](post-v9/GATEWAY-ELIGIBILITY-RULES.md).
+- Only an authorized administrator may deliberately create/deepen
+  signed Wallet debt through the explicit audited confirmation. Ordinary
+  debit cannot deepen debt. Protect original balance/amount/actor and
+  never fabricate historical money, refund or settlement.
+- Unrelated stale drafts do not block new eligible work. Verified
+  subject change retires only affected unfunded current commands;
+  authenticated later funds credit the original Wallet without reviving
+  the retired service. Conflicting funded/uncertain work keeps its actual
+  ownership boundary. The single [operations inbox](post-v9/AUTOMATIC-GATEWAY-REVIEW.md)
+  exposes actionable receipt, service and delivery work; no Archive
+  action/state. Failed Telegram edits/sends do not change financial or
+  Native finality.
 
-- Preserve authentic customer balances, original order amounts, issued invoice identities, provider claims, financial history and source-specific service evidence. Durable owner/target/amount/effect claims and replay protection apply to every payment and Native mutation.
-- Hosted NOWPayments uses authenticated merchant finality on the exact original payment/invoice/order identity; a merchant `finished` is not rejected again by an estimated crypto received/payout amount threshold. Exact original USD invoice price/quote equality, local Toman order amount, source authenticity, provider/payment collisions, and one-shot financial/Native claims remain binding. `partially_paid`/non-final states never auto-fulfill. Browser return or Telegram status alone cannot prove finality, and unknown external effects cannot be blindly replayed.
-- Bank transfer and gift-card payments are independent manual methods. Optional authenticated bank SMS/gift API verification supplements, not silently replaces, the legitimate manual administrator receipt journey. Explicitly failed or uncertain verification retains proper human review. The one operations-attention inbox includes genuine unresolved financial, service and delivery effects; completed cases exit automatically. Unverified receipts use financial approval/rejection; funded services use resume, close without refund (edits only), or cancel/refund unfulfilled value. No archive action or state. See [operator attention](post-v9/AUTOMATIC-GATEWAY-REVIEW.md).
-- A single manual crypto selection supports configured USDT BEP20/TRC20/ERC20 and native TRX TRON destinations. New hosted/USDT quotes use configured `manualUsdtRateToman`; TRX uses its own `manualTrxRateToman`. Invalid/unset individual method settings disable that *option*, not unrelated methods. Retired automatic TRON/WeSwap operations do not return as compatibility shims.
-- Pending unrelated drafts do not block new eligible orders or renewal; genuine issued claims and uncertain effects remain guarded. Messages failing Telegram edits do not change payment/Native state and are retried without claiming completed text synchronization.
-- See the [current Wallet-first architecture](post-v9/WALLET-FIRST-ARCHITECTURE.md), [operator attention](post-v9/AUTOMATIC-GATEWAY-REVIEW.md), [API evidence](post-v9/API-PAYMENT-EVIDENCE.md) and [gateway rules](post-v9/GATEWAY-ELIGIBILITY-RULES.md). Earlier financial and payment-delivery designs remain historical evidence in the release-matched documentation.
+## Staff, text and reporting
 
+- Owner, Manager, Operator and Support have distinct established
+  capabilities. Only primary Owner ID belongs in private configuration;
+  manage other staff in the bot. Report receiving does not grant authority.
+  All genuinely authorized staff retain approved manual receipt review.
+  Preserve incoming administrator-authored Telegram messages.
+- Two [audience catalogs](../messages/README.md) own static Persian copy;
+  per-instance branding, welcome, purchase text, channels and settings
+  remain persisted. Preserve literal/copyable subscription URLs, IDs
+  and credentials. Per-server purchase and order display/QR policies are
+  independent; see [subscription presentation](post-v9/SUBSCRIPTION-PRESENTATION.md).
+- Every actual Wallet movement and completed service report identifies
+  the original effect/entry. Primary Owner, configured report channel
+  and actual human actor receive the applicable auditable report without
+  duplicate destinations; optional notification preferences do not suppress
+  the acting operator. Automatic confirmation has no invented actor.
+  Delivery recovery reuses original packets and never repeats money or
+  Native changes. See the architecture for durable reporting and sales
+  metric ownership.
+- New user-/admin-visible text, menu, interaction, naming, timing and
+  reporting changes require explicit prior Owner approval.
 
-### Current Wallet-first financial architecture
+## Installation, engineering and acceptance
 
-The Owner accepted Wallet-first settlement, an independent Wallet ledger, one funded service-operation engine and independent delivery. All methods verify/credit money exactly once; Native execution cannot depend on the funding method. Automatic continuation is the normal result for recoverable failures. The [Wallet-first architecture and execution contract](post-v9/WALLET-FIRST-ARCHITECTURE.md) defines the implemented source contract, controlled manual transfer gates and acceptance. The replacement removes old financial/service execution paths, uses a fresh consolidated schema and has no legacy execution fallback. Existing installations require a separately authorized manual data transfer and reconciliation; preserve actual customer records and entitlements without replaying old pending workflows. Keep common Wallet, service, recovery and delivery engines independent of concrete Native/payment provider names; add future providers through source-owned adapters, registration, actual capabilities and their own proof/identity rules without duplicating shared engines. Use existing provider API capabilities and practical bot-side recovery; document their actual limitations rather than require provider-side development or claim unsupported remote exactly-once guarantees. Source integration, published release and installed acceptance remain distinct. An earlier installed release retains its own tag-matched operational contract until a separately approved cutover; no partial parallel runtime or unauthorized UI/policy change is authorized.
+Use the [fresh installation](post-v9/FRESH-INSTALL.md) requirements and
+[CI contract](post-v9/CI-VALIDATION.md). One per-bot Cron coordinator owns
+its four ordered child jobs and private lock. No live-effect smoke by
+accident. The first-install schema is not an automatic upgrade. Existing
+instances need separately approved manual transfer and reconciliation;
+never rerun the old Hell/Vivan PasarGuard cutover.
 
-## Operations, safety and source acceptance
-
-- Keep the already-issued customer proxy/subscription links working through appropriate Native/server configuration. Source release, Git merge, database migration, file transfer, Cron/webhook setup and live acceptance are distinct operational actions.
-- The actual expiry/deletion lifecycle and customer-warning wording are independently defined; current accepted deletion grace is **10 actual days** while customer warning says **3 days**. Do not silently change business timing or expiration/auto-renewal policy through cleanup.
-- One top-level Cron coordinator per bot, one-minute schedule, four ordered isolated jobs, independent per-installation external lease. Overlapping ticks may skip; incomplete/uncertain financial or Native effects must not be auto-replayed. See [fresh install](post-v9/FRESH-INSTALL.md) and [automatic renewal](post-v9/AUTOMATIC-RENEWAL-SAFETY.md).
-- The exact committed source, release-specific manifest-bound runtime ZIP, required current-functional **PHP 8.5** CI, independent review and Owner approval are required before source integration/publication. Use targeted additional current Stable integration tests for high-consequence or major schema/financial changes. Pre-Stable version execution is not part of CI. Production rollout, backup/restore, and Native/customer acceptance require separate verified authority. Historical V0–V9 source/tests remain preserved for reproducibility, not for supporting old deployed runtimes.
-- No private `baseInfo.php`, tokens, keys, customer SQL, dumps or logs may enter repository/release assets. Keep diagnostics meaningful but narrowly redact sensitive data; retain protected logs/financial evidence in authorized channels. Avoid unnecessary hardcoded operational controls, obsolete adapters, duplicated project-management status, or unsafe destructive cleanup.
-- Use [stable baseline](post-v9/STABLE-BASELINE.md), [CI validation](post-v9/CI-VALIDATION.md), [security](SECURITY.md), [GitHub Issues](https://github.com/ach1992/bot-refactor/issues) and [GitHub Releases](https://github.com/ach1992/bot-refactor/releases) as their respective authoritative sources.
-
-Older phase-by-phase contracts and release guidance live in Git history and the corresponding immutable GitHub releases. They are **not** instructions to rerun a historic cutover or downgrade current source.
-
-
-### Searchable operational reports (Issue #204)
-
-Every original positive Wallet movement has an auditable report to the primary administrator and configured report channel. The actual human approving/adjusting/refunding operator receives the same standalone report independently of general notification preference; overlapping targets are deduplicated. Automatic confirmations have no fictitious human actor. A financial receipt report identifies the original payment, Wallet entry, user, amount, before/after ledger balance, method, approval basis and funding outcome (including retained credits after supersession). A confirmed service report identifies the actual completed service independently of receipt confirmation and customer delivery. Standalone Wallet movements (adjustment, transfer, onboarding referral) use the same persisted followup worker with the original Wallet entry as source. Purchase referral and service refund keep their existing source-bound reports. Existing role and channel revalidation remains mandatory; unknown Telegram results require explicit redrive, never repeat money or Native effects.
+Source, review, integration, publication, file transfer, database
+preparation, installation, Cron/webhook activation and real acceptance
+are distinct gates. Preserve actual financial/Native state, verify
+backup/restore and source identity before any authorized change. Historical
+version tests and documentation remain evidence, not current requirements.
+The [contributor rules](../AGENTS.md), [security](SECURITY.md),
+[Issues](https://github.com/ach1992/bot-refactor/issues) and
+[Releases](https://github.com/ach1992/bot-refactor/releases) own engineering,
+unresolved work and publication respectively.
