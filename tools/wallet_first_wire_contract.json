@@ -249,10 +249,10 @@
     },
     "src/Purchase/EntryAndBulk.php": {
       "before_count": 16,
-      "after_count": 20,
+      "after_count": 19,
       "before_sha256": "fb1144f3c00f379edcd82d9fcb14c9db57098d66d633ac88cd2745c1e764db59",
-      "after_sha256": "a4ba3da0d0d34208f645622af9630788748ed42d3ae4cdcf2cbee2562d2d5c03",
-      "reason": "F7 shared admin and customer purpose-appropriate catalogue"
+      "after_sha256": "cffdbbab877bbdd2eaac9baef12a9cb80333946c9a46643b4293537cd88d6b59",
+      "reason": "F7 shared admin and customer purpose-appropriate catalogue; retire unreachable shared-inbound capacity notice"
     },
     "config.php": {
       "before_count": 23,

@@ -69,9 +69,9 @@ def main():
                 (2,'Fixture PG','100','pgfixture','',1,1),(3,'Retired M','100','fixture','',1,1);
             UPDATE server_config SET provider_connection_id=2,provider_instance_key=REPEAT('a',32),
                 provider_version='5.5.1',provider_enabled=1 WHERE id=2;
-            INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids)
-            VALUES (7,'7',1,2,0,6,'Fixture PG','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]'),
-                   (8,'8',1,3,0,6,'Retired M','vless',30,2,'normal',100,'description','',1,0,'fixture',NULL);
+            INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)
+            VALUES (7,1,2,0,'Fixture PG',30,2,100,'description',1,'fixture','[1,2]'),
+                   (8,1,3,0,'Retired M',30,2,100,'description',1,'fixture',NULL);
             INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date,
                 provider_effect_id,provider_remote_user_id,provider_remote_created_at)
             VALUES (91,1001,REPEAT('a',30),'fixture',7,2,0,'fixture-user','fixture-uuid',1800000100,'["vless://fixture"]',100,1,'fixture',

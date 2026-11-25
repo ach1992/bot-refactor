@@ -25,7 +25,7 @@ if(preg_match('/\AselectServer(?<serverId>[1-9][0-9]*)_(?<buyType>none|one|much)
         while ($file = $respd->fetch_assoc()){
             $id = $file['id'];
             $name = $file['title'];
-            $rowcount=count(achbotSaleablePlans($connection,(int)$sid,(int)$id));
+            $rowcount=count(achbotCustomerPurchasePlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,(int)$sid,(int)$id));
             if($rowcount>0) $keyboard[] = ['text' => "$name", 'callback_data' => "selectCategory{$id}_{$sid}_{$match['buyType']}"];
         }
         if(empty($keyboard)){
@@ -44,9 +44,9 @@ if(preg_match('/\AselectCategory(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0-9
     if ($match['buyType']!=='none' && (int)$userInfo['is_agent']!==1) return;
     $call_id = $match['categoryId'];
     $sid = $match['serverId'];
-    $respd=achbotSaleablePlans($connection,(int)$sid,(int)$call_id);
+    $respd=achbotCustomerPurchasePlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,(int)$sid,(int)$call_id);
     $custom=achbotCustomPurchaseEnabled($botState,$match['buyType']) &&
-        $respd!==[];
+        achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState) && $respd!==[];
     if(!$respd && !$custom){
         alert(\achbotMessage('legacy_messages.no_plan_available'));
     }else{
@@ -55,14 +55,8 @@ if(preg_match('/\AselectCategory(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0-9
         foreach($respd as $file){
             $id = $file['id'];
             $name = $file['title'];
-            $price = $file['price'];
-            if($userInfo['is_agent'] == true && ($match['buyType'] == "one" || $match['buyType'] == "much")){
-                $discounts = json_decode($userInfo['discount_percent'],true);
-                if(($botState['agencyPlanDiscount']??'off')=="on") $discount = $discounts['plans'][$id]?? $discounts['normal'];
-                else $discount = $discounts['servers'][$sid]?? $discounts['normal'];
-                
-                $price -= floor($price * $discount / 100);
-            }
+            [$price]=calculateAgentPrice($userInfo,$botState,(int)$id,(int)$sid,$match['buyType'],(int)$file['price']);
+            if ((int)$from_id===(int)$admin) $price=0;
             $price = ($price == 0) ? \achbotMessage('purchase.catalogue.text.dda7ff2974') : number_format($price).\achbotMessage('purchase.catalogue.text.bfb7221456');
             $keyboard[] = ['text' => "$name - $price", 'callback_data' => "selectPlan{$id}_{$call_id}_{$match['buyType']}"];
         }
@@ -79,7 +73,7 @@ if(preg_match('/\AselectCustomPlan(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0
     if ($match['buyType']!=='none' && (int)$userInfo['is_agent']!==1) return;
     $call_id = $match['categoryId'];
     $sid = $match['serverId'];
-    if (!achbotCustomPurchaseEnabled($botState,$match['buyType'])) return;
+    if (!achbotCustomPurchaseEnabled($botState,$match['buyType']) || !achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState)) return;
     $respd=achbotSaleablePlans($connection,(int)$sid,(int)$call_id);
     if (!$respd) {alert(achbotMessage('legacy_messages.no_plan_available'));return;}
     alert(\achbotMessage('legacy_messages.receive_plans'));
@@ -96,30 +90,28 @@ if(preg_match('/\AselectCustomPlan(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0
 }
 if(preg_match('/\AselectCustomePlan(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$data, $match) && ($botState['sellState']=="on" ||$from_id == $admin)){
     if (!achbotCustomPurchaseEnabled($botState,$match['buyType']) ||
+        !achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState) ||
         ($match['buyType']==='one' && (int)$userInfo['is_agent']!==1)) return;
-    $eligible=array_column(achbotSaleablePlans($connection,null,(int)$match['categoryId']),'id');
-    if (!in_array((int)$match['planId'],array_map('intval',$eligible),true)) {
-        alert(\achbotMessage('purchase.catalogue.alert.67fda139df'), true);
+    $plan=null;
+    foreach (achbotSaleablePlans($connection,null,(int)$match['categoryId']) as $candidate)
+        if ((int)$candidate['id']===(int)$match['planId']) {$plan=$candidate;break;}
+    if (!$plan) {
+        alert(achbotMessage('purchase.catalogue.alert.67fda139df'), true);
         return;
     }
-	delMessage();
-	$price = $botState['gbPrice'];
-	if($match['buyType'] == "one" && $userInfo['is_agent'] == true){ 
-        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
-        $stmt->bind_param("i", $match[1]);
-        $stmt->execute();
-        $serverId = $stmt->get_result()->fetch_assoc()['server_id'];
-        $stmt->close();
-
-        $discounts = json_decode($userInfo['discount_percent'],true);
-        if(($botState['agencyPlanDiscount']??'off')=="on") $discount = $discounts['plans'][$match[1]]?? $discounts['normal'];
-        else $discount = $discounts['servers'][$serverId]?? $discounts['normal'];
-        $price -= floor($price * $discount / 100);
-	}
+    delMessage();
+    [$price]=calculateAgentPrice($userInfo,$botState,(int)$plan['id'],(int)$plan['server_id'],$match['buyType'],(int)$botState['gbPrice']);
 	sendMessage(str_replace("VOLUME-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_volume')),$cancelKey);
 	setUser("selectCustomPlanGB" . $match[1] . "_" . $match[2] . "_" . $match['buyType']);
 }
-if(preg_match('/selectCustomPlanGB(?<planId>\d+)_(?<categoryId>\d+)_(?<buyType>\w+)/',$userInfo['step'], $match) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != \achbotMessage('legacy_buttons.cancel')){
+if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AselectCustomPlanGB(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'], $match) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != \achbotMessage('legacy_buttons.cancel')){
+    if (!achbotCustomPurchaseEnabled($botState,$match['buyType']) ||
+        !achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState) ||
+        ($match['buyType']==='one' && (int)$userInfo['is_agent']!==1)) return;
+    $plan=null;
+    foreach (achbotSaleablePlans($connection,null,(int)$match['categoryId']) as $candidate)
+        if ((int)$candidate['id']===(int)$match['planId']) {$plan=$candidate;break;}
+    if (!$plan) return;
     if(!is_numeric($text)){
         sendMessage(\achbotMessage('purchase.catalogue.message.ef774be0a5'), null, 'HTML');
         exit();
@@ -136,26 +128,23 @@ if(preg_match('/selectCustomPlanGB(?<planId>\d+)_(?<categoryId>\d+)_(?<buyType>\
         sendMessage(\achbotMessage('purchase.catalogue.message.b989e71b4f'), null, 'HTML');
         exit();
     }
-    
-    $id = $match['planId'];
-    $price = $botState['dayPrice'];
-	if($match['buyType'] == "one" && $userInfo['is_agent'] == true){
-        $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?");
-        $stmt->bind_param("i", $id);
-        $stmt->execute();
-        $serverId = $stmt->get_result()->fetch_assoc()['server_id'];
-        $stmt->close();
+    $units=achbotWholeServiceUnits($text,achbotServiceVolumeMax());
+    if ($units===null || !preg_match('/^[1-9][0-9]*$/D',(string)$text)) return;
 
-        $discounts = json_decode($userInfo['discount_percent'],true);
-        if(($botState['agencyPlanDiscount']??'off')=="on") $discount = $discounts['plans'][$id]?? $discounts['normal'];
-        else $discount = $discounts['servers'][$serverId]?? $discounts['normal'];
-        $price -= floor($price * $discount / 100);
-	}
     
+    $id=(int)$plan['id'];
+    [$price]=calculateAgentPrice($userInfo,$botState,$id,(int)$plan['server_id'],$match['buyType'],(int)$botState['dayPrice']);
 	sendMessage(str_replace("DAY-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_day')));
-	setUser("selectCustomPlanDay" . $id . "_" . $match['categoryId'] . "_" . $text . "_" . $match['buyType']);
+	setUser("selectCustomPlanDay" . $id . "_" . $match['categoryId'] . "_" . $units . "_" . $match['buyType']);
 }
-if((preg_match('/selectCustomPlanDay(?<planId>\d+)_(?<categoryId>\d+)_(?<accountCount>\d+)_(?<buyType>\w+)/',$userInfo['step'], $match)) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != \achbotMessage('legacy_buttons.cancel')){
+if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AselectCustomPlanDay(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<accountCount>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'], $match) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != \achbotMessage('legacy_buttons.cancel')){
+    if (!achbotCustomPurchaseEnabled($botState,$match['buyType']) ||
+        !achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState) ||
+        ($match['buyType']==='one' && (int)$userInfo['is_agent']!==1)) return;
+    $plan=null;
+    foreach (achbotSaleablePlans($connection,null,(int)$match['categoryId']) as $candidate)
+        if ((int)$candidate['id']===(int)$match['planId']) {$plan=$candidate;break;}
+    if (!$plan) return;
     if(!is_numeric($text)){
         sendMessage(\achbotMessage('purchase.catalogue.message.ef774be0a5'), null, 'HTML');
         exit();
@@ -172,12 +161,15 @@ if((preg_match('/selectCustomPlanDay(?<planId>\d+)_(?<categoryId>\d+)_(?<account
         sendMessage(\achbotMessage('purchase.catalogue.message.b989e71b4f'), null, 'HTML');
         exit();
     }
+    $units=achbotWholeServiceUnits($text,achbotServiceDaysMax());
+    if ($units===null || !preg_match('/^[1-9][0-9]*$/D',(string)$text)) return;
+
 
 	sendMessage(\achbotMessage('legacy_messages.customer_custome_plan_name'), null, 'HTML');
-	setUser("enterCustomPlanName" . $match['planId'] . "_" . $match['categoryId'] . "_" . $match['accountCount'] . "_" . $text . "_" . $match['buyType']);
+	setUser("enterCustomPlanName" . $match['planId'] . "_" . $match['categoryId'] . "_" . $match['accountCount'] . "_" . $units . "_" . $match['buyType']);
 }
 
-if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AenterCustomPlanName(\d+)_(\d+)_(\d+)_(\d+)_(?<buyType>\w+)\z/D',$userInfo['step'],$match) &&
+if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AenterCustomPlanName([1-9][0-9]*)_([1-9][0-9]*)_([1-9][0-9]*)_([1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'],$match) &&
     ($botState['sellState']=="on" ||$from_id==$admin) && $text!=achbotMessage('legacy_buttons.cancel')){
     if (!achbotSupportsPlan($connection,(int)$match[1])) {
         alert(achbotMessage('purchase.catalogue.alert.10fd7f4fa9'),true);return;
@@ -186,17 +178,16 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     	$call_id = $match[2]; 
     	$volume = $match[3]; 
         $days = $match[4]; 
-        // Both regular and agent "much" custom names become durable
-        // remote usernames. Reject invalid names before draft creation;
-        // the wallet debit boundary independently rechecks persisted data.
+        // Single custom names become durable remote usernames; the
+        // final admission independently checks persisted data.
         require_once __DIR__.'/../Finance/ServiceEffects.php';
         if (!achbotEffectValidUsername((string)$text) ||
-            ($match['buyType'] !== 'much' &&
-             preg_match('/^[a-z]+[0-9]+$/D',(string)$text)!==1)) {
+            preg_match('/^[a-z]+[0-9]+$/D',(string)$text)!==1) {
             sendMessage(\achbotMessage('legacy_messages.incorrect_config_name'), null, 'HTML');
             exit();
         }
     if (!achbotCustomPurchaseEnabled($botState,$match['buyType']) ||
+        !achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState) ||
         ($match['buyType']==='one' && (int)$userInfo['is_agent']!==1)) return;
     $respd=null;
     foreach (achbotSaleablePlans($connection,null,(int)$call_id) as $candidate)
@@ -205,33 +196,17 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
         alert(achbotMessage('purchase.catalogue.alert.10fd7f4fa9'),true);return;
     }
     $sid=$respd['server_id'];
-        if (!isset($botState['gbPrice'],$botState['dayPrice'])) {
-            alert(achbotMessage('purchase.catalogue.alert.201380d8bf'),true);return;
-        }
-        $gbPrice = $botState['gbPrice']; 
-        $dayPrice = $botState['dayPrice']; 
-         
-        if($userInfo['is_agent'] == true && $match['buyType'] == "one") { 
-            $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id` = ?"); 
-            $stmt->bind_param("i", $match[1]); 
-            $stmt->execute(); 
-            $serverId = $stmt->get_result()->fetch_assoc()['server_id']; 
-            $stmt->close(); 
-             
-            $discounts = json_decode($userInfo['discount_percent'],true); 
-            if(($botState['agencyPlanDiscount']??'off')=="on") $discount = $discounts['plans'][$id]?? $discounts['normal'];
-            else $discount = $discounts['servers'][$sid]?? $discounts['normal']; 
-             
-            $gbPrice -= floor($gbPrice * $discount /100); 
-            $dayPrice -= floor($dayPrice * $discount / 100); 
-        } 
-         
-        $agentBought = false; 
-        if($userInfo['is_agent'] == 1 && ($match['buyType'] == "one" || $match['buyType'] == "much")) { 
-            $agentBought = true; 
-        } 
-         
-        $price =  ($volume * $gbPrice) + ($days * $dayPrice); 
+    $volume=achbotWholeServiceUnits($volume,achbotServiceVolumeMax());
+    $days=achbotWholeServiceUnits($days,achbotServiceDaysMax());
+    [$gbPrice,$agentBought]=calculateAgentPrice($userInfo,$botState,(int)$id,(int)$sid,$match['buyType'],(int)$botState['gbPrice']);
+    [$dayPrice]=calculateAgentPrice($userInfo,$botState,(int)$id,(int)$sid,$match['buyType'],(int)$botState['dayPrice']);
+    $gbPrice=(int)$gbPrice;$dayPrice=(int)$dayPrice;
+    if ($volume===null || $days===null || $gbPrice<0 || $dayPrice<0 ||
+        $gbPrice>intdiv(2147483647,$volume) ||
+        $dayPrice>intdiv(2147483647-$volume*$gbPrice,$days)) {
+        alert(achbotMessage('purchase.catalogue.alert.201380d8bf'),true);return;
+    }
+    $price=$volume*$gbPrice+$days*$dayPrice;
         $hash_id = RandomString(); 
 
          

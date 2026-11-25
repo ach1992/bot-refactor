@@ -120,8 +120,8 @@ function achbotPlanWizardAdvance(mysqli $db,array &$d,string $action,string $inp
     if (!$selected || array_diff($selected,$allowed))
         throw new RuntimeException('management_targets');
     $groups=json_encode(achbotPgGroupsCanonical($selected),JSON_THROW_ON_ERROR);
-    $sql="INSERT INTO server_plans(fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids)
-        VALUES('',?,?,0,0,?,'',?,?,'ws',?,?,'',1,10,?,?)";
+    $sql="INSERT INTO server_plans(catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)
+        VALUES(?,?,0,?,?,?,?,?,1,?,?)";
     $args=[$v['category'],$v['server'],$v['title'],$v['days'],$v['volume'],$v['price'],$v['description'],(string)time(),$groups];
     $types='iisiiisss';
     $s=achbotManagementSql($db,$sql,$types,$args);$id=(int)$s->insert_id;$s->close();

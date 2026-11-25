@@ -578,21 +578,15 @@ CREATE TABLE `server_info` (
 /*!40101 SET character_set_client = utf8mb4 */;
 CREATE TABLE `server_plans` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
-  `fileid` varchar(250) NOT NULL,
   `catid` int(11) NOT NULL,
   `server_id` int(11) NOT NULL,
   `inbound_id` int(11) NOT NULL DEFAULT 0,
-  `acount` bigint(20) NOT NULL,
   `title` varchar(150) NOT NULL,
-  `protocol` varchar(100) NOT NULL,
   `days` float NOT NULL,
   `volume` float NOT NULL,
-  `type` varchar(50) NOT NULL,
   `price` int(11) NOT NULL,
   `descr` text NOT NULL,
-  `pic` varchar(100) NOT NULL,
   `active` int(11) NOT NULL DEFAULT 0,
-  `step` int(11) NOT NULL,
   `date` varchar(50) NOT NULL,
   `provider_group_ids` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   PRIMARY KEY (`id`)

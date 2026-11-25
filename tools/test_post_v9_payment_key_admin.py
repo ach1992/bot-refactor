@@ -13,7 +13,7 @@ from pathlib import Path
 import subprocess
 
 import test_access_state as owned
-import test_post_v9_checkout_serialization as database
+from test_v5_native import sql_command
 import test_v8_native as fixture
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -142,7 +142,7 @@ def extract(bot:bytes,cfg:bytes):
     return webhook,menu,route,gateway_menu_route
 
 def sql(w,e,q):
-    return database.sql(w,e,q)
+    return sql_command(w,e,q,DB).strip()
 
 def setup(w,e):
     fixture.init(w,e,'http://127.0.0.1:9')

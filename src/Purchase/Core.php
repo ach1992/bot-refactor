@@ -39,28 +39,13 @@ if (!function_exists('getPlanDetails')) {
 }
 
 if (!function_exists('ensureServerCapacity')) {
-    function ensureServerCapacity($connection, $server_id, $inbound_id, $acount)
+    function ensureServerCapacity(mysqli $connection, int $server_id): void
     {
-        if ((int)$acount === 0 && (int)$inbound_id !== 0) {
-            alert(\achbotMessage('legacy_messages.out_of_connection_capacity'));
+        $server = achbotProviderRow($connection, 'SELECT ucount FROM server_info WHERE id=?', 'i', [$server_id]);
+        if (!$server || (int)$server['ucount'] <= 0) {
+            alert(\achbotMessage('legacy_messages.out_of_server_capacity'));
             exit;
         }
-
-        $server_info = null;
-
-        if ((int)$inbound_id === 0) {
-            $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `id`=?");
-            $stmt->bind_param("i", $server_id);
-            $stmt->execute();
-            $server_info = $stmt->get_result()->fetch_assoc();
-            $stmt->close();
-
-            if (!$server_info || (int)$server_info['ucount'] <= 0) {
-                alert(\achbotMessage('legacy_messages.out_of_server_capacity'));
-                exit;
-            }
-        }
-        return $server_info;
     }
 }
 
@@ -424,4 +409,34 @@ function achbotCustomPurchaseEnabled(array $states,string $mode): bool {
 }
 function achbotSaleablePlans(mysqli $db,?int $server=null,?int $category=null): array {
     return achbotAvailablePlans($db,$server,$category,'standard');
+}
+
+/** Read-only menu admission; use the same configured methods as checkout. */
+function achbotCustomerHasPaymentMethod(mysqli $db,int $userId,array $state): bool {
+    foreach (['bank_transfer','gift_card'] as $method)
+        if (achbotManualEnabled($method) && achbotPayUxAudienceAllowed($db,$method,$userId)) return true;
+    if (achbotManualCryptoEnabled($userId)) {
+        foreach (['manual_usdt','manual_trx'] as $method)
+            if (achbotManualEnabled($method) && achbotPayUxAudienceAllowed($db,$method,$userId)) return true;
+    }
+    foreach (['wallet'=>'walletState','nowpayments'=>'nowPaymentOther','zarinpal'=>'zarinpal','nextpay'=>'nextpay'] as $method=>$flag) {
+        if (($state[$flag]??'off')!=='on' || !achbotPayUxAudienceAllowed($db,$method,$userId)) continue;
+        if ($method!=='nowpayments' || achbotUsdtRateForUser($db,$userId)!==null) return true;
+    }
+    return false;
+}
+
+/** Offer only purchasable plans. An authorized standard zero-price
+ * command does not require a monetary method. Final authorization is locked
+ * in CheckoutAdmission; this is read-only catalogue filtering. */
+function achbotCustomerPurchasePlans(mysqli $db,array $user,array $states,string $mode,int $actor,int $primary,?int $server=null,?int $category=null): array {
+    if (!in_array($mode,['none','one','much'],true) ||
+        ($mode!=='none' && (int)($user['is_agent']??0)!==1)) return [];
+    $plans=achbotSaleablePlans($db,$server,$category);
+    if (achbotCustomerHasPaymentMethod($db,$actor,$states) || ($primary>0 && $actor===$primary)) return $plans;
+    if ($mode==='none' || ($states['agencyState']??'off')!=='on' || ($states['sellState']??'off')!=='on') return [];
+    return array_values(array_filter($plans,static function($p) use ($user,$states,$mode) {
+        [,,$percent]=calculateAgentPrice($user,$states,(int)$p['id'],(int)$p['server_id'],$mode,(int)$p['price']);
+        return $percent===100;
+    }));
 }

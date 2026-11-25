@@ -453,8 +453,8 @@ A genuinely historical 23-table operator-delivered receipt remains
 eligible for human financial review when **both** 003 tables are proven
 absent. Permission failure, incomplete migration and missing operator
 delivery evidence cannot be treated as a valid historical exception.
-Native source-only R1–R6 regression evidence lives in
-`tools/test_post_v9_standard_integrity.py`; no migration is auto-applied.
+Historical source-only R1–R6 regression evidence is preserved in the
+[pinned former driver](https://github.com/ach1992/bot-refactor/blob/3201af015dfd4208e9de5e532cc371541353ae52/tools/test_post_v9_standard_integrity.py). Current financial acceptance uses the Wallet-first suites in [CI-VALIDATION.md](CI-VALIDATION.md); no migration is auto-applied.
 
 
 #### Shared capacity and per-payment referral recovery decisions pending

@@ -157,7 +157,7 @@ def main():
         for table,columns in {
             'gift_list':['server_offset'],
             'server_config':['port_type','reality','ip','sni','header_type','request_header','response_header','security','tlsSettings'],
-            'server_plans':['dest','serverNames','spiderX','limitip','rahgozar','flow','custom_path','custom_port','custom_sni'],
+            'server_plans':['dest','serverNames','spiderX','limitip','rahgozar','flow','custom_path','custom_port','custom_sni','fileid','acount','protocol','type','pic','step'],
         }.items():
             for column in columns:
                 assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='"+table+"' AND COLUMN_NAME='"+column+"'")=='0',(table,column)

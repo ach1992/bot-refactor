@@ -299,7 +299,7 @@ def setup(work: Path, env: dict) -> Path:
            'Global CANCEL must not delete another administrator\'s inactive plans')
     config=(ROOT/'config.php').read_text()
     set_start=config.index("function setUser($value = 'none', $field = 'step'){")
-    set_end=config.index('function generateRandomString(',set_start)
+    set_end=config.index('function addBorderImage(',set_start)
     (stage/'legacy-set-user.php').write_text('<?php\n'+config[set_start:set_end])
     guard_start=bot.index('// ACHBOT_WEBHOOK_INGRESS_BEGIN')
     guard_end=bot.index('if (!achbotWebhookIngressAuthenticated())',guard_start)

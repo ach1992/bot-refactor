@@ -10,31 +10,19 @@ require_once __DIR__ . '/../Admin/Access.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
-/** Read-only menu admission; use the same configured methods as checkout. */
-function achbotCustomerHasPaymentMethod(mysqli $db,int $userId,array $state): bool {
-    foreach (['bank_transfer','gift_card'] as $method)
-        if (achbotManualEnabled($method) && achbotPayUxAudienceAllowed($db,$method,$userId)) return true;
-    if (achbotManualCryptoEnabled($userId)) {
-        foreach (['manual_usdt','manual_trx'] as $method)
-            if (achbotManualEnabled($method) && achbotPayUxAudienceAllowed($db,$method,$userId)) return true;
-    }
-    foreach (['wallet'=>'walletState','nowpayments'=>'nowPaymentOther','zarinpal'=>'zarinpal','nextpay'=>'nextpay'] as $method=>$flag) {
-        if (($state[$flag]??'off')!=='on' || !achbotPayUxAudienceAllowed($db,$method,$userId)) continue;
-        if ($method!=='nowpayments' || achbotUsdtRateForUser($db,$userId)!==null) return true;
-    }
-    return false;
-}
-
 if(in_array($data,['agentOneBuy','buySubscription','agentMuchBuy'],true)){
     $shortcut=($customerShortcut??null)==='buy';
     $isAdmin=$from_id==$admin || !empty($userInfo['isAdmin']);
+    $buyType=match($data){'agentOneBuy'=>'one','agentMuchBuy'=>'much',default=>'none'};
+    $agentShortcut=$shortcut && ($botState['agencyState']??'off')==='on' && (int)$userInfo['is_agent']===1;
+    $plans=achbotCustomerPurchasePlans($connection,$userInfo,$botState,$agentShortcut?'one':$buyType,(int)$from_id,(int)$admin);
     if ((($botState['sellState']??'off')!=='on' && !$isAdmin) ||
-        !achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState)){
+        (!achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState) && !$plans)){
         if ($shortcut) sendMessage(\achbotMessage('legacy_messages.selling_is_off'),null,'HTML');
         else alert(\achbotMessage('legacy_messages.selling_is_off'));
         return;
     }
-    if ($shortcut && ($botState['agencyState']??'off')==='on' && (int)$userInfo['is_agent']===1) {
+    if ($agentShortcut) {
         $keyboard=[[
             ['text'=>\achbotMessage('legacy_buttons.agent_one_buy'),'callback_data'=>'agentOneBuy'],
             ['text'=>\achbotMessage('legacy_buttons.agent_much_buy'),'callback_data'=>'agentMuchBuy']
@@ -42,10 +30,9 @@ if(in_array($data,['agentOneBuy','buySubscription','agentMuchBuy'],true)){
         sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.ce7759512b'),json_encode(['inline_keyboard'=>$keyboard]),'HTML');
         return;
     }
-    $buyType=match($data){'agentOneBuy'=>'one','agentMuchBuy'=>'much',default=>'none'};
     if ($buyType!=='none' && (int)$userInfo['is_agent']!==1) return;
     $servers=[];
-    foreach (achbotSaleablePlans($connection) as $p) $servers[(int)$p['server_id']]=$p;
+    foreach ($plans as $p) $servers[(int)$p['server_id']]=$p;
     ksort($servers);
     if(!$servers){
         if ($shortcut) sendMessage(\achbotMessage('legacy_messages.no_server_available'),null,'HTML');
@@ -207,16 +194,10 @@ if (
     $price      = isset($plan['price']) ? (int)$plan['price'] : 0;
     $server_id  = (int)$plan['server_id'];
     $inbound_id = (int)$plan['inbound_id'];
-    $acount     = (int)$plan['acount'];
 
-    $protocol   = $plan['protocol'];
 
-    ensureServerCapacity($connection, $server_id, $inbound_id, $acount);
+    ensureServerCapacity($connection, $server_id);
 
-    if ($inbound_id != 0 && $acount < $count) {
-        sendMessage(str_replace("AMOUNT", $acount, \achbotMessage('legacy_messages.can_create_specific_account')));
-        exit();
-    }
 
     [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
 
@@ -253,7 +234,7 @@ if (
     try {
     for ($i = 1; $i <= $count; $i++) {
 
-        $uniqid = generateRandomString(42, $protocol);
+        $uniqid = generateUID();
 
 
         $remark = buildRemark(

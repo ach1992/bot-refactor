@@ -55,8 +55,8 @@ def run() -> list[str]:
                "INSERT INTO server_info(id,title,ucount,remark,flag,active,state)"
                " VALUES(2,'Fixture purchase server',10,'buyfixture','',1,1);"
                "INSERT INTO server_categories(id,server_id,title,parent,step,active) VALUES(1,'2','Fixture category',0,4,1);"
-               "INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids)"
-               " VALUES(7,'7',1,2,0,6,'Fixture','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]');")
+               "INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)"
+               " VALUES(7,1,2,0,'Fixture',30,2,100,'description',1,'fixture','[1,2]');")
             db("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,step)"
                " VALUES (1002,'B','b','0',50000,'1700000000',0,'sent','none'),"
                "(1003,'C','c','0',50000,'1700000000',0,'sent','none'),"

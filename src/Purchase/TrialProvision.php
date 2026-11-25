@@ -37,14 +37,12 @@ if (preg_match('/\AfreeTrial([1-9][0-9]*)_normal\z/D',(string)$data,$match)) {
     $volume           = $planDetails['volume'];
     $date             = $planDetails['date'];
 
-    $protocol   = $plan['protocol'];
     $price      = 0;
     $server_id  = (int)$plan['server_id'];
-    $acount     = (int)$plan['acount'];
     $inbound_id = (int)$plan['inbound_id'];
 
-    ensureServerCapacity($connection, $server_id, $inbound_id, $acount);
-    $uniqid = generateRandomString(42, $protocol);
+    ensureServerCapacity($connection, $server_id);
+    $uniqid = generateUID();
 
     [$serverInfo, $serverConfig] = getServerInfoAndConfig($connection, $server_id);
     $srv_remark = $serverInfo['remark'];

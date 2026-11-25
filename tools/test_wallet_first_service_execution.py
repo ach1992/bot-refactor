@@ -243,9 +243,9 @@ try {
     }
     elseif ($x['op']==='checkout_insert') {
         require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
-        $h=$x['hash'];$uid=1001;$type=$x['type'];$price=$x['price'];$sid=2;$plan=7;
+        $h=$x['hash'];$uid=(int)($x['actor']??1001);$type=$x['type'];$price=$x['price'];$sid=2;$plan=7;
         $order=(int)($x['order']??0);$days=(int)($x['days']??0);$volume=(int)($x['volume']??0);
-        $count=(int)($x['quantity']??1);$description=(string)($x['description']??'fixture');
+        $count=(int)($x['quantity']??1);$description=(string)($x['description']??'fixture');$agent=(int)($x['agent_bought']??0);
         $snapshot=null;$scoped=false;
         if (isset($x['addon_kind'])) {
             $o=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=?','i',[$order]);
@@ -255,11 +255,11 @@ try {
             $snapshot=achbotAddonQuote($o,$context,$x['addon_kind'],$offer,$price);
             $scoped=true;
         }
-        $stmt=$db->prepare("INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id,order_id,day,volume,agent_count,description,addon_scope_snapshot)
-            VALUES (?,?,?,?,UNIX_TIMESTAMP(),'pending',?,?,?,?,?,?,?,?)");
-        $stmt->bind_param('sisiiiiiiiss',$h,$uid,$type,$price,$sid,$plan,$order,$days,$volume,$count,$description,$snapshot);
+        $stmt=$db->prepare("INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id,order_id,day,volume,agent_count,description,addon_scope_snapshot,agent_bought)
+            VALUES (?,?,?,?,UNIX_TIMESTAMP(),'pending',?,?,?,?,?,?,?,?,?)");
+        $stmt->bind_param('sisiiiiiiissi',$h,$uid,$type,$price,$sid,$plan,$order,$days,$volume,$count,$description,$snapshot,$agent);
         $display=achbotProviderRow($db,'SELECT days,volume FROM server_plans WHERE id=?','i',[$plan]);
-        $r=achbotPayUxInsertDraft($db,$uid,$stmt,$scoped,$display,['remark'=>'digits']);
+        $r=achbotPayUxInsertDraft($db,$uid,$stmt,$scoped,$display,['remark'=>$x['naming_mode']??'digits']);
         $stmt->close();
     }
     elseif ($x['op']==='attention_receipt') {
@@ -410,6 +410,7 @@ def main():
     focus.add_argument('--resolution-only',action='store_true',help='Run focused current-schema resolution cases during development')
     focus.add_argument('--referral-agent-only',action='store_true',help='Run focused agent purchase referral cases')
     focus.add_argument('--bulk-report-only',action='store_true',help='Run real large purchase report continuation proof')
+    focus.add_argument('--zero-commercial-only',action='store_true',help='Run zero-price commercial execution proof')
     args=ap.parse_args()
     cases=[]
     with owned.owned_database(ROOT/'database/current-schema.sql') as (work,env):
@@ -593,17 +594,17 @@ def main():
                 INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (2,'Fixture PG','100','pgfixture','',1,1);
                 UPDATE server_config SET provider_connection_id=2,provider_instance_key=REPEAT('a',32),
                     provider_version='5.5.1',provider_enabled=1 WHERE id=2;
-                INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids)
-                VALUES (7,'7',1,2,0,6,'Fixture PG','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]');""")
+                INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)
+                VALUES (7,1,2,0,'Fixture PG',30,2,100,'description',1,'fixture','[1,2]');""")
             sql(f"""INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled)
                 VALUES (3,'{base}','pasarguard','fixture','fixture',2,REPEAT('a',32),'5.5.1',1);
                 INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (3,'Fixture alias','200','pgalias','',1,1);
                 INSERT INTO setting(type,value) VALUES ('ACHBOT_MARZBAN_PANEL_GROUP','fixture group');
                 UPDATE server_info SET panel_group_id=LAST_INSERT_ID() WHERE id IN (2,3);
-                INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids)
-                VALUES (8,'8',1,2,0,6,'Fixture PG next','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]'),
-                       (9,'9',1,3,0,6,'Fixture PG alias','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]'),
-                       (10,'10',1,2,0,6,'Fixture PG group change','vless',30,2,'normal',100,'description','',1,0,'fixture','[1]');""")
+                INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)
+                VALUES (8,1,2,0,'Fixture PG next',30,2,100,'description',1,'fixture','[1,2]'),
+                       (9,1,3,0,'Fixture PG alias',30,2,100,'description',1,'fixture','[1,2]'),
+                       (10,1,2,0,'Fixture PG group change',30,2,100,'description',1,'fixture','[1]');""")
             sql('UPDATE users SET wallet=50000 WHERE userid=9002')
             driver=work/'execution.php';driver.write_text(PHP)
             def php(mysqli_mode,op,**kw):
@@ -788,8 +789,8 @@ def main():
                 sql(f"""INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled)
                     SELECT {sid},panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled FROM server_config WHERE id=2;
                     INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES ({sid},'Fixture removed','10','removed','',1,1);
-                    INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids)
-                    VALUES ({sid},'{sid}',1,{sid},0,6,'Fixture removed','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]');""")
+                    INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)
+                    VALUES ({sid},1,{sid},0,'Fixture removed',30,2,100,'description',1,'fixture','[1,2]');""")
                 op=issue(mode,'resolution-removed-server',server=sid,plan=sid);fund(mode,op)
                 sql(f"START TRANSACTION; DELETE FROM server_config WHERE id={sid}; DELETE FROM server_info WHERE id={sid}; COMMIT")
                 before=finance();bal=int(sql('SELECT wallet FROM users WHERE userid=1001'));wire=len(requests)
@@ -1037,7 +1038,7 @@ def main():
                 assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={pid}")=='reserved'
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_historical_prepaid_claim_no_adoption_or_new_effect')
-            for mode in (() if args.resolution_only or args.referral_agent_only or args.plan_recovery_only or args.bulk_report_only else ('strict','off')):
+            for mode in (() if args.resolution_only or args.referral_agent_only or args.plan_recovery_only or args.bulk_report_only or args.zero_commercial_only else ('strict','off')):
                 # Isolate each test mode's scheduler from previously deferred
                 # conflict fixtures; no terminal evidence is changed.
                 sql("UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE stage IN ('funded','prepared','dispatching','applied')")
@@ -2392,7 +2393,50 @@ DELIMITER ;
                 agent_referral_cases(mode)
 
                 assert not faults and not errors,(faults,errors)
-            if not (args.plan_recovery_only or args.referral_agent_only or args.resolution_only):
+            if not (args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.bulk_report_only):
+                # Original zero-price commercial checkout, through actual
+                # reservation, Native execution, order, delivery and reports.
+                for mode in ('strict','off'):
+                    sql("""DELETE FROM setting WHERE type='BOT_STATES'; INSERT INTO setting(type,value) VALUES ('BOT_STATES','{"sellState":"on","agencyState":"on","walletState":"off"}')""")
+                    sql("""UPDATE users SET is_agent=1,discount_percent='{"normal":100}',step='none' WHERE userid=9002; UPDATE users SET step='none' WHERE userid=9001; UPDATE server_info SET ucount=100,state=1,active=1 WHERE id=2; UPDATE server_plans SET price=100,active=1 WHERE id=7""")
+                    for label,uid,qty,agent in [('agent-single',9002,1,1),('agent-bulk',9002,3,1),('primary',9001,1,0)]:
+                        h=mode+'-zero-commercial-'+label
+                        name='zerocommercial'+str(uid)+(('1' if mode=='strict' else '2'))
+                        manual=qty==1
+                        if label=='primary':name+='9'
+                        before=sql(f"SELECT wallet,freetrial FROM users WHERE userid={uid}")
+                        ledger=sql("SELECT COUNT(*) FROM wallet_entries")
+                        capacity=int(sql("SELECT ucount FROM server_info WHERE id=2"))
+                        pid=php(mode,'checkout_insert',hash=h,type='BUY_SUB',price=0,actor=uid,quantity=qty,agent_bought=agent,description=name if manual else '',naming_mode='manual' if manual else 'digits')
+                        assert pid>0,(mode,label,pid)
+                        r=php(mode,'checkout_wallet',hash=h,actor=uid);assert r['status']=='funded',r
+                        op=r['operation'];n=posts()
+                        for i in range(qty):
+                            step(mode,op,'applied')
+                            step(mode,op,'completed' if i==qty-1 else 'progressed')
+                        assert posts()==n+qty
+                        assert sql(f"SELECT COUNT(*) FROM service_effects e JOIN orders_list o ON o.id=e.order_id WHERE e.source_kind='service_operation' AND e.source_ref='{op}' AND e.state='local_recorded' AND o.userid={uid} AND o.amount=0")==str(qty)
+                        if manual:
+                            assert sql(f"SELECT remote_username FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}'")==name
+                        assert sql(f"SELECT debit_entry_id IS NULL FROM service_operations WHERE id={op}")=='1'
+                        assert sql(f"SELECT wallet,freetrial FROM users WHERE userid={uid}")==before
+                        assert sql("SELECT COUNT(*) FROM wallet_entries")==ledger
+                        assert int(sql("SELECT ucount FROM server_info WHERE id=2"))==capacity-qty
+                        assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
+                        deliveries=sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={op} ORDER BY id").splitlines()
+                        assert len(deliveries)==qty
+                        for did in deliveries:
+                            assert php(mode,'deliver',id=int(did))=='acknowledged'
+                        for role in ('service_admin','service_channel'):
+                            ids=sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={op} AND stage='service_completed' AND role='{role}'").splitlines()
+                            assert len(ids)==1,(role,ids)
+                            assert php(mode,'followup',id=int(ids[0]))=='acknowledged'
+                        assert php(mode,'checkout_wallet',hash=h,actor=uid)['status']=='already_funded'
+                        assert posts()==n+qty and sql("SELECT COUNT(*) FROM wallet_entries")==ledger
+                    cases.append(mode+'_zero_commercial_actual_checkout_native_delivery_reports')
+                    assert not faults and not errors,(faults,errors)
+                sql("UPDATE users SET is_agent=0,discount_percent=NULL WHERE userid=9002")
+            if not (args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.zero_commercial_only):
                 # Actual large BUY: every Native name and original order ID
                 # is present in exactly one bounded report per recipient.
                 mode='strict'

@@ -5,6 +5,7 @@ All actual route source is used against disposable MariaDB. The Telegram
 transport is an in-process recording double; no external network or secrets.
 """
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import subprocess
@@ -109,6 +110,14 @@ case 'discount':
 case 'wallet':
     try {$events[]=['wallet',achbotCheckoutWallet($connection,$spec['hash'],$from_id,$spec['mode'], $botState)];}
     catch (DomainException $e) {if (empty($spec['expect_denied'])) throw $e; $events[]=['denied',$e->getMessage()];}
+    catch (mysqli_sql_exception $e) {
+        // MariaDB snapshot isolation may refuse a locking CURRENT read of
+        // a concurrently modified row (ER_CHECKREAD). Only that precise
+        // refusal is accepted in the synchronized test, followed by a
+        // fresh transaction that must observe the revoked policy.
+        if (empty($spec['expect_conflict']) || (int)$e->getCode()!==1020) throw $e;
+        $events[]=['snapshot_conflict',(int)$e->getCode()];
+    }
     break;
 case 'shortcut':
     // Actual current ban and membership/registration/phone/home source.
@@ -174,7 +183,7 @@ def main():
         for sid,active,server_state,capacity in [(2,1,1,100),(3,0,1,10),(4,1,2,10),(5,1,1,0),(6,1,1,10)]:
             sql(f"INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES ({sid},'Server {sid}','{capacity}','fixture','',{active},{server_state}); INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled) VALUES ({sid},'https://fixture.invalid','pasarguard','fixture','fixture',{sid},REPEAT('a',32),'5.5.1',1)")
         for pid,sid,cat,active,inbound,groups in [(7,2,1,1,0,'[1]'),(8,2,1,0,0,'[1]'),(9,3,1,1,0,'[1]'),(10,4,1,1,0,'[1]'),(11,5,1,1,0,'[1]'),(12,6,1,1,9,'[1]'),(13,6,2,1,0,'[1]')]:
-            sql(f"INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids) VALUES ({pid},'{pid}',{cat},{sid},{inbound},0,'Plan {pid}','vless',30,2,'normal',100,'description','',{active},0,'fixture','{groups}')")
+            sql(f"INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES ({pid},{cat},{sid},{inbound},'Plan {pid}',30,2,100,'description',{active},'fixture','{groups}')")
         r=run('capacity',callback='availableServers2')
         body=json.dumps(r,ensure_ascii=False)
         assert 'Plan 7' in body and all(f'Plan {i}' not in body for i in range(8,14)),r
@@ -268,7 +277,7 @@ def main():
         # Trial-only category and server, with an explicit custom purpose.
         sql("INSERT INTO server_categories(id,server_id,title,parent,step,active) VALUES (3,'0','Trial category',0,0,1)")
         sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (8,'Trial server','10','fixture','',1,1); INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled) VALUES (8,'https://fixture.invalid','pasarguard','fixture','fixture',8,REPEAT('b',32),'5.5.1',1)")
-        sql("INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids) VALUES (80,'80',3,8,0,0,'Trial only','vless',1,1,'normal',0,'description','',1,0,'fixture','[1]'),(81,'81',1,2,0,0,'Mixed trial','vless',1,1,'normal',0,'description','',1,0,'fixture','[1]'),(82,'82',3,2,0,0,'Only trial category','vless',1,1,'normal',0,'description','',1,0,'fixture','[1]')")
+        sql("INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES (80,3,8,0,'Trial only',1,1,0,'description',1,'fixture','[1]'),(81,1,2,0,'Mixed trial',1,1,0,'description',1,'fixture','[1]'),(82,3,2,0,'Only trial category',1,1,0,'description',1,'fixture','[1]')")
         state(plandelkhahState='off',testAccount='on')
         assert 'selectServer8_none' not in callbacks(run('entry',callback='buySubscription'))
         assert 'selectCategory3_2_none' not in callbacks(run('catalogue',callback='selectServer2_none'))
@@ -332,8 +341,19 @@ def main():
 
         # Configured zero-price agent and primary owner use exact service
         # command, not trial entitlement or a fabricated monetary debit.
-        state(walletState='off',zarinpal='on')
+        state(walletState='off')
         sql("UPDATE users SET discount_percent='{\"normal\":100}' WHERE userid=2002")
+        # No monetary method is enabled. Only already-authorized standard
+        # zero commercial offers remain selectable throughout the catalogue.
+        assert 'selectServer2_none' not in callbacks(run('entry',callback='buySubscription'))
+        assert 'selectServer2_one' in callbacks(run('entry',actor=2002,callback='agentOneBuy'))
+        assert 'selectServer2_much' in callbacks(run('entry',actor=2002,callback='agentMuchBuy'))
+        assert 'selectServer2_none' in callbacks(run('entry',actor=9001,callback='buySubscription'))
+        assert 'selectCategory1_2_one' in callbacks(run('catalogue',actor=2002,callback='selectServer2_one'))
+        cb=callbacks(run('catalogue',actor=2002,callback='selectCategory1_2_one'))
+        assert 'selectPlan7_1_one' in cb and 'selectCustomPlan1_2_one' not in cb,cb
+        assert 'selectPlan7_1_none' not in callbacks(run('catalogue',callback='selectCategory1_2_none'))
+        cases.append('zero_commercial_catalogue_without_any_monetary_method')
         def free_checkout(uid,r,count):
             pid,h,price,qty=latest(uid)
             assert int(price)==0 and max(1,int(qty))==count,r
@@ -366,6 +386,95 @@ def main():
             assert denied['events'][0]==['denied','checkout_zero_commercial_changed'],denied
             assert before==tuple(sql(q) for q in ['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM service_effects','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet,freetrial FROM users WHERE userid=2002'])
         cases.append('zero_commercial_current_agency_authorization_rechecked_before_reservation')
+        # A committed revocation wins before the actual reservation even
+        # when the original draft is valid and the callback is already waiting.
+        # Hold the real affected row, prove lock contention, then COMMIT.
+        changes=[
+            ("UPDATE users SET is_agent=0 WHERE userid=2002",
+             "UPDATE users SET is_agent=1 WHERE userid=2002"),
+            ("UPDATE server_plans SET price=0 WHERE id=7",
+             "UPDATE server_plans SET price=100 WHERE id=7"),
+            ("UPDATE setting SET value=JSON_SET(value,'$.agencyState','off') WHERE type='BOT_STATES'",
+             "UPDATE setting SET value=JSON_SET(value,'$.agencyState','on') WHERE type='BOT_STATES'"),
+        ]
+        sql("""UPDATE users SET discount_percent='{"normal":100}' WHERE userid=2002""")
+        client=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+str(w/'mysql.sock'),'-uroot','--batch','--skip-column-names','--unbuffered',DB]
+        for index,(revoke,restore) in enumerate(changes):
+            holder=subprocess.Popen(client,env=env,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            try:
+                holder.stdin.write("START TRANSACTION; "+revoke+"; SELECT 'locked';\n");holder.stdin.flush()
+                assert holder.stdout.readline().strip()=='locked'
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    waiting=pool.submit(run,'wallet',actor=2002,hash=h,mode='standard',expect_denied=True,expect_conflict=True)
+                    try:
+                        end=time.monotonic()+5
+                        while time.monotonic()<end:
+                            processes=sql("SHOW FULL PROCESSLIST")
+                            expected=('idx_users_userid_v1','category_active','LOCK IN SHARE MODE')[index]
+                            if any(expected in line and ('FOR UPDATE' in line or 'LOCK IN SHARE MODE' in line)
+                                   for line in processes.splitlines()):break
+                            assert not waiting.done(),waiting.result()
+                            time.sleep(.05)
+                        else:raise AssertionError(('reservation_did_not_reach_locked_query',index,processes))
+                    finally:
+                        holder.stdin.write("COMMIT;\n");holder.stdin.flush()
+                    denied=waiting.result(timeout=15)
+                    assert denied['events'][0] in (['denied','checkout_zero_commercial_changed'],['snapshot_conflict',1020]),denied
+                    assert before==tuple(sql(q) for q in ['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM service_effects','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet,freetrial FROM users WHERE userid=2002'])
+                    fresh=run('wallet',actor=2002,hash=h,mode='standard',expect_denied=True)
+                    assert fresh['events'][0]==['denied','checkout_zero_commercial_changed'],fresh
+                assert before==tuple(sql(q) for q in ['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM service_effects','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet,freetrial FROM users WHERE userid=2002'])
+            finally:
+                holder.stdin.close()
+                holder.wait(timeout=5)
+                sql(restore)
+        cases.append('zero_commercial_synchronized_role_plan_policy_revocation_before_reservation')
+        # The custom wizard shares the price calculator and the original
+        # monetary method gate. Raw zero must be proven from configured
+        # rates or the current agency entitlement; redeemed discounts are
+        # separately authorized before consumption.
+        state()
+        sql("""UPDATE users SET discount_percent='{"normal":100}' WHERE userid=2002""")
+        sql("UPDATE users SET step='enterCustomPlanName7_1_2_3_one' WHERE userid=2002")
+        r=run('catalogue',actor=2002,text='agencyzero12345')
+        pid,h,price,_=latest(2002)
+        assert int(price)==0 and 'payCustomWithWallet'+h in callbacks(r),r
+        assert json.loads(sql(f"SELECT checkout_draft_context FROM pays WHERE id={pid}"))['zero_custom']=='agency'
+        state(agencyState='off')
+        denied=run('wallet',actor=2002,hash=h,mode='custom',expect_denied=True)
+        assert denied['events'][0]==['denied','checkout_zero_custom_changed'],denied
+        state()
+        sql("""UPDATE users SET discount_percent='{"normal":50}' WHERE userid=2002""")
+        denied=run('wallet',actor=2002,hash=h,mode='custom',expect_denied=True)
+        assert denied['events'][0]==['denied','checkout_zero_custom_changed'],denied
+        sql("""UPDATE users SET discount_percent='{"normal":100}' WHERE userid=2002""")
+        before=sql("SELECT wallet,freetrial FROM users WHERE userid=2002")
+        ledger=sql("SELECT COUNT(*) FROM wallet_entries")
+        funded=run('wallet',actor=2002,hash=h,mode='custom')['events'][0][1]
+        assert funded['status']=='funded',funded
+        assert sql(f"SELECT debit_entry_id IS NULL FROM service_operations WHERE id={funded['operation']}")=='1'
+        assert sql("SELECT wallet,freetrial FROM users WHERE userid=2002")==before
+        assert sql("SELECT COUNT(*) FROM wallet_entries")==ledger
+        state(gbPrice=0,dayPrice=0)
+        sql("UPDATE users SET step='enterCustomPlanName7_1_2_3_none' WHERE userid=2001")
+        r=run('catalogue',text='configzero12345')
+        pid,h,price,_=latest(2001)
+        assert int(price)==0 and 'payCustomWithWallet'+h in callbacks(r),r
+        assert json.loads(sql(f"SELECT checkout_draft_context FROM pays WHERE id={pid}"))['zero_custom']=='configured_rates'
+        state(gbPrice=1,dayPrice=0)
+        denied=run('wallet',hash=h,mode='custom',expect_denied=True)
+        assert denied['events'][0]==['denied','checkout_zero_custom_changed'],denied
+        state(gbPrice=0,dayPrice=0,walletState='off')
+        denied=run('wallet',hash=h,mode='custom',expect_denied=True)
+        assert denied['events'][0]==['denied','checkout_draft_unavailable'],denied
+        state()
+        sql("UPDATE users SET step='selectCustomPlanGB7_1_none' WHERE userid=2001")
+        assert run('catalogue',text='1e2')['user']['step']=='selectCustomPlanGB7_1_none'
+        assert run('catalogue',text='2')['user']['step']=='selectCustomPlanDay7_1_2_none'
+        assert run('catalogue',text='3')['user']['step']=='enterCustomPlanName7_1_2_3_none'
+        cases.append('zero_custom_configured_rates_and_agency_rechecked_without_policy_expansion')
+
+
 
 
     result={'status':'PASS','complete':True,'cases':len(cases),'scenarios':cases,'external_requests':0,'production_mutations':0}

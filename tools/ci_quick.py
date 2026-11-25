@@ -102,6 +102,7 @@ REQUIRED_CURRENT_CASES = {
         "invalid_native_names_never_debit_or_allocate",
         "retired_external_renewal_and_provider_denied",
         "actual_bulk_checkout_draft",
+        "zero_commercial_actual_checkout_native_delivery_reports",
         "actual_custom_draft_and_review_completion_truth",
         "receipt_projection_original_funding_service_and_delivery",
         "service_report_original_receipt_and_wallet_debit",
@@ -237,7 +238,10 @@ REQUIRED_SCENARIOS = {
         "actual_trial_only_and_mixed_catalogue_purpose_and_custom_gate",
         "actual_trial_conversion_refuses_existing_unfunded_standard_and_custom_drafts",
         "actual_zero_agent_single_bulk_and_primary_commercial_no_money_or_trial",
+        "zero_commercial_catalogue_without_any_monetary_method",
         "zero_commercial_current_agency_authorization_rechecked_before_reservation",
+        "zero_commercial_synchronized_role_plan_policy_revocation_before_reservation",
+        "zero_custom_configured_rates_and_agency_rechecked_without_policy_expansion",
     ),
     "current_sales_discount": (
         "actual_sales_keyboard_net_completed_value_wallet_origin_and_original_windows",

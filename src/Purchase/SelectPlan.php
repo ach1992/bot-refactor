@@ -22,7 +22,7 @@ if(($planSelectionCallback ||
         return;
     }
     $respd=null;
-    foreach (achbotSaleablePlans($connection,null,(int)$match[2]) as $candidate)
+    foreach (achbotCustomerPurchasePlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,null,(int)$match[2]) as $candidate)
         if ((int)$candidate['id']===(int)$match[1]) {$respd=$candidate;break;}
     if (!$respd) {
         alert(\achbotMessage('purchase.select_plan.alert.789af84a82'),true);return;

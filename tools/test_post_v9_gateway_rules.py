@@ -11,7 +11,7 @@ import subprocess
 import time
 from pathlib import Path
 import test_access_state as owned
-import test_post_v9_checkout_serialization as dbops
+from test_v5_native import sql_command
 import test_post_v9_gateway_admin_source as gateway_source
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -109,7 +109,7 @@ require $argv[6]; // extracted real bot.php callbacks, including wizard
 echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
 
-def sql(w,e,q):return dbops.sql(w,e,q)
+def sql(w,e,q):return sql_command(w,e,q,DB).strip()
 def quoted(s):return "'" + s.replace("'", "''") + "'"
 
 def main():

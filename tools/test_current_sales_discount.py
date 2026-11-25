@@ -108,7 +108,7 @@ def main():
         for uid in range(2001,2012):
             sql(f"INSERT INTO users(userid,name,username,refcode,wallet,date,is_agent) VALUES({uid},'Fixture','fixture{uid}','0',1000000,'1700000000',{int(uid==2003)})")
         sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (2,'Fixture A','100','a','',1,1),(3,'Fixture B','100','b','',1,1),(4,'Fixture Empty','100','c','',1,1)")
-        sql("INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids) VALUES (7,'7',1,2,0,6,'Plan A','vless',30,2,'normal',100,'','',1,0,'fixture','[1]'),(8,'8',1,3,0,6,'Plan B','vless',30,2,'normal',100,'','',1,0,'fixture','[1]')")
+        sql("INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES (7,1,2,0,'Plan A',30,2,100,'',1,'fixture','[1]'),(8,1,3,0,'Plan B',30,2,100,'',1,'fixture','[1]')")
         sql("INSERT INTO server_categories(id,server_id,title,parent,step,active) VALUES (1,'2','Fixture category',0,0,1)")
         sql("INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled) VALUES(2,'https://fixture.invalid','pasarguard','fixture','fixture',2,REPEAT('a',32),'5.5.1',1)")
         def pay(uid,tag,price,state,typ='BUY_SUB',server=2,plan=7,stamp=None,context=None):

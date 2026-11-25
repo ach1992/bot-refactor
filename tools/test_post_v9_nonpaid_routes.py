@@ -110,7 +110,7 @@ function getServerInfoAndConfig($connection,$sid) {
     $row=$stmt->get_result()->fetch_assoc();$stmt->close();
     return [['remark'=>$row['remark'],'title'=>'Test server'], $row];
 }
-function generateRandomString(){return 'fixtureuuid';}
+function generateUID(){return 'fixtureuuid';}
 function getNextPortAndIncrease(...$args){throw new RuntimeException('unexpected_native_port_allocation');}
 function ensureAccountCreationSucceeded($response,$serverInfo,$inbound,$admin,$throw=false) {
     if (!is_object($response) || ($response->success??false)!==true)
@@ -292,9 +292,9 @@ def check():
                 storage.text(url)+",'pasarguard','','fixture-private-key');"
                 "INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES(2,'Fixture purchase server',10,'buyfixture','',1,1);"
                 "INSERT INTO server_categories(id,server_id,title,parent,step,active) VALUES(1,'2','Fixture category',0,4,1);"
-                "INSERT INTO server_plans(id,fileid,catid,server_id,inbound_id,acount,title,protocol,days,volume,type,price,descr,pic,active,step,date,provider_group_ids) VALUES "
-                "(7,'7',1,2,0,6,'Fixture','vless',30,2,'normal',100,'description','',1,0,'fixture','[1,2]'),"
-                "(8,'8',1,2,0,6,'Free fixture','vless',30,2,'normal',0,'fixture-free','',1,0,'fixture','[1,2]');")
+                "INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES "
+                "(7,1,2,0,'Fixture',30,2,100,'description',1,'fixture','[1,2]'),"
+                "(8,1,2,0,'Free fixture',30,2,0,'fixture-free',1,'fixture','[1,2]');")
             sql(work,env,storage.connection(2,2,url))
             sql(work,env,"UPDATE users SET step='none',freetrial=NULL,temp=NULL,wallet=50000,is_agent=0,discount_percent=NULL; "
                 "UPDATE users SET is_agent=1,discount_percent='{\"normal\":10,\"plans\":{},\"servers\":{}}' WHERE userid=9002")

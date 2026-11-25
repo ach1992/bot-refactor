@@ -92,6 +92,34 @@ function achbotCheckoutZeroCommercialLocked(mysqli $db,array $pay): ?string {
     return $percent===100?'agency':null;
 }
 
+/** Raw zero-price custom quotes must be authorized by the current
+ * configured rates and, for an agency quote, the current agency entitlement.
+ * This does not grant the standard-commercial monetary-method exemption.
+ * Discount-code zero is distinct: the original positive quote was sealed
+ * before authorized discount consumption. */
+function achbotCheckoutZeroCustomLocked(mysqli $db,array $pay): ?string {
+    if ($pay['type']!=='BUY_SUB' || (int)$pay['price']!==0 ||
+        (float)$pay['day']<=0 || (float)$pay['volume']<=0 ||
+        (int)$pay['agent_count']>1) return null;
+    $actor=(int)$pay['user_id'];$primary=(int)($GLOBALS['admin']??0);
+    $owner=achbotProviderRow($db,'SELECT is_agent,discount_percent,step FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? FOR UPDATE','i',[$actor]);
+    $plan=achbotProviderRow($db,'SELECT p.*,cat.active AS category_active,cat.parent AS category_parent FROM server_plans p JOIN server_categories cat ON cat.id=p.catid WHERE p.id=? FOR UPDATE','i',[(int)$pay['plan_id']]);
+    $state=achbotPayUxCurrentStatesLocked($db);
+    $agent=(int)$pay['agent_bought']===1;$mode=$agent?'one':'none';
+    if (!$owner || $owner['step']==='banned' || !$plan || !$state ||
+        (int)$plan['price']<=0 || (int)$plan['active']!==1 ||
+        (int)$plan['category_active']!==1 || (int)$plan['category_parent']!==0 ||
+        (int)$plan['server_id']!==(int)$pay['server_id'] ||
+        (($state['sellState']??'off')!=='on' && ($primary<=0 || $actor!==$primary)) ||
+        !achbotCustomPurchaseEnabled($state,$mode) ||
+        ($agent && ((int)$owner['is_agent']!==1 || ($state['agencyState']??'off')!=='on'))) return null;
+    foreach (['gbPrice','dayPrice'] as $rate) {
+        [$effective]=calculateAgentPrice($owner,$state,(int)$plan['id'],(int)$plan['server_id'],$mode,(int)$state[$rate]);
+        if ($effective!=0) return null;
+    }
+    return $agent?'agency':'configured_rates';
+}
+
 /** Seal the entitlement and naming policy before the customer sees a standard
  * purchase/renewal quote. NULL is never permission to rebuild a stale quote. */
 function achbotCheckoutSealDraftLocked(mysqli $db,int $id,array $pay,array $display,array $states): void {
@@ -107,6 +135,10 @@ function achbotCheckoutSealDraftLocked(mysqli $db,int $id,array $pay,array $disp
             $authorization=achbotCheckoutZeroCommercialLocked($db,$pay);
             if ($authorization===null) throw new DomainException('checkout_zero_commercial_denied');
             $context['zero_commercial']=$authorization;
+        } elseif (!$standard && (int)$pay['price']===0) {
+            $authorization=achbotCheckoutZeroCustomLocked($db,$pay);
+            if ($authorization===null) throw new DomainException('checkout_zero_custom_denied');
+            $context['zero_custom']=$authorization;
         }
     }
 
@@ -226,6 +258,9 @@ function achbotCheckoutDraftViewLocked(mysqli $db,array $pay,int $actor,array $s
     if (isset($context['zero_commercial']) &&
         achbotCheckoutZeroCommercialLocked($db,$pay)!==$context['zero_commercial'])
         throw new DomainException('checkout_zero_commercial_changed');
+    if (isset($context['zero_custom']) &&
+        achbotCheckoutZeroCustomLocked($db,$pay)!==$context['zero_custom'])
+        throw new DomainException('checkout_zero_custom_changed');
     $category=null;
     if ($mode!=='renew') {
         if (($context['category_id']??null)!==(int)$plan['catid'])
@@ -278,6 +313,9 @@ function achbotCheckoutAdmitDraftLocked(mysqli $db,array $pay,?array $attempt,
     if ($freeCommercial && ($method!=='wallet' ||
         achbotCheckoutZeroCommercialLocked($db,$pay)!==$context['zero_commercial']))
         throw new DomainException('checkout_zero_commercial_changed');
+    if (isset($context['zero_custom']) &&
+        achbotCheckoutZeroCustomLocked($db,$pay)!==$context['zero_custom'])
+        throw new DomainException('checkout_zero_custom_changed');
     if (!achbotPayUxUnclaimedDraftUsable($db,$pay,true) ||
         (!$freeCommercial && !achbotPayUxAudienceAllowed($db,$method,$uid,true,$pay['type'])) ||
         ((int)$pay['price']<0 || ($method!=='wallet' && (int)$pay['price']===0)) || !preg_match('/\A[A-Za-z0-9_-]{1,50}\z/D',$pay['hash_id']))

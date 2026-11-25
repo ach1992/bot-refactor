@@ -3112,16 +3112,13 @@ function generateUID(){
 
     return sprintf('%08s-%04s-%04x-%04x-%012s', $time_low, $time_mid, $time_hi_and_version, $clock_seq_hi_and_reserved, $node);
 }
-function checkStep($table){
+function checkCategoryStep(){
     global $connection;
-    
-    if($table == "server_plans") $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `active` = 0");
-    if($table == "server_categories") $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `active` = 0");
-    
+    $stmt = $connection->prepare("SELECT step FROM server_categories WHERE active=0");
     $stmt->execute();
     $res = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    return $res['step']; 
+    return $res['step'];
 }
 function setUser($value = 'none', $field = 'step'){
     global $connection, $from_id, $username, $first_name;
@@ -3164,9 +3161,6 @@ function setUser($value = 'none', $field = 'step'){
     $stmt->bind_param("si", $value, $from_id);
     $stmt->execute();
     $stmt->close();
-}
-function generateRandomString($length, $protocol) {
-    return ($protocol == 'trojan') ? substr(md5(time()),5,15) : generateUID();
 }
 function addBorderImage($add){
     $border = 30;

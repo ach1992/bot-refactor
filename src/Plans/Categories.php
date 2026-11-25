@@ -35,7 +35,7 @@ if($data=='addNewCategory' and (achbotAdminCanFor($connection,(int)$from_id,(int
     exit;
 }
 if(preg_match('/^addNewCategory/',$userInfo['step']) and $text!=\achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
-    $step = checkStep('server_categories');
+    $step = checkCategoryStep();
     if($step==2 and $text!=\achbotMessage('legacy_buttons.cancel') ){
         
         $stmt = $connection->prepare("UPDATE `server_categories` SET `title`=?,`step`=4,`active`=1 WHERE `active`=0");

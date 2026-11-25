@@ -355,12 +355,11 @@ another merchant payment inquiry.
   under `processing`; no second remote PUT is allowed. The bank/API
   `auto` BUY_SUB completion and its 018 delivery records are distinct.
 
-Real PHP 8.5 regression candidates live in `test_post_v9_manual_payments.py`
-(original receipt, one-shot capacity, single/multiple account ordering,
-Telegram ambiguity and duplicate Owner callback) and
-`test_post_v9_recovery_transport.py` (actual credential-bound localhost
-login/GET, no remote re-POST, local verification of precisely one original
-native `service_effects` row). Neither proves installed Chili acceptance.
+Historical PHP 8.5 manual-payment and recovery proof used the
+[former manual driver](https://github.com/ach1992/bot-refactor/blob/3201af015dfd4208e9de5e532cc371541353ae52/tools/test_post_v9_manual_payments.py) and the
+[former recovery driver](https://github.com/ach1992/bot-refactor/blob/c2184498192004e1e1f1dc045b7ab2036e3691ba/tools/test_post_v9_recovery_transport.py).
+Neither proves installed acceptance. The current maintained financial,
+Native delivery and recovery tests are defined by [CI-VALIDATION.md](CI-VALIDATION.md).
 
 ### Direct manual receipt rejection
 
