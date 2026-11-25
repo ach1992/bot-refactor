@@ -1,6 +1,8 @@
 # AChBot
 
-**Current stable release:** [Latest stable](https://github.com/ach1992/bot-refactor/releases/latest) · [First Stable baseline v0.10.0](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0) · [All releases](https://github.com/ach1992/bot-refactor/releases)
+**Published Stable:** [Latest release](https://github.com/ach1992/bot-refactor/releases/latest) · [All releases](https://github.com/ach1992/bot-refactor/releases) · [First Stable baseline v0.10.0](https://github.com/ach1992/bot-refactor/releases/tag/v0.10.0)
+
+This checkout describes the Wallet-first source. The published release may be older than this checkout; for any installation, use the exact selected release tag and its matching documentation, schema and verified runtime assets.
 
 AChBot is a Persian-language PHP Telegram bot for VPN subscriptions, Native account management, wallets and payments, support, administrator operations and scheduled service maintenance. This Wallet-first source supports **PasarGuard**; earlier published Stable releases also supported Marzban. The v0.10.0 release is the **first supported stable source baseline**; compatibility with superseded bot implementation versions is no longer a development requirement. Existing customer subscription URLs, Native credentials, active accounts, financial records and recovery safeguards **must remain valid**.
 
@@ -12,19 +14,19 @@ AChBot is a Persian-language PHP Telegram bot for VPN subscriptions, Native acco
 - Explicit administrator-defined physical Panel Groups, per-server presentation policies and configurable subscription/QR/auxiliary-link display.
 - One per-bot Cron coordinator for notifications, rewards, service maintenance and recoverable financial follow-ups.
 
-Unused legacy X-UI, WeSwap and automatic TRON checker integrations are **not** supported. The current Stable baseline includes Marzban; the approved [Wallet-first target](docs/post-v9/WALLET-FIRST-ARCHITECTURE.md) ships only the PasarGuard adapter and retires Marzban runtime support; the shared engines remain extensible for future Native providers and payment methods. Historical and financial evidence remains preserved. No provider-side development is required or authorized.
+Unused legacy X-UI, WeSwap and automatic TRON checker integrations are **not** supported. Earlier Stable releases included Marzban; the [Wallet-first implementation](docs/post-v9/WALLET-FIRST-ARCHITECTURE.md) ships only the PasarGuard adapter and retires Marzban runtime support; the shared engines remain extensible for future Native providers and payment methods. Historical and financial evidence remains preserved. No provider-side development is required or authorized.
 
 ## Requirements
 
 - Linux with HTTPS, PHP web/CLI and the PHP extensions `mysqli`/mysqlnd, `curl`, `zip`, `gd`; current source acceptance uses **PHP 8.5**.
 - MariaDB, with a **separate database/account per bot** and the full matching current schema. The original `database/legacy-schema.sql` by itself is not the current schema.
 - Telegram bot token, numeric Owner ID and a unique `$telegramWebhookSecret` per bot.
-- For the Wallet-first candidate, a native PasarGuard panel with the required API permissions; the published pre-Wallet-first Stable release also supported Marzban. [PasarGuard contract](docs/post-v9/PASARGUARD-CONTRACT.md).
+- For Wallet-first, a native PasarGuard panel with the required API permissions; earlier Stable releases also supported Marzban. [PasarGuard contract](docs/post-v9/PASARGUARD-CONTRACT.md).
 - For Cron: Linux `/proc`, PHP CLI `posix_geteuid`, `flock`, `proc_open`, and a trusted external lock directory.
 
 ## Installation and upgrade
 
-For the Wallet-first release, initialize a new empty database with
+For Wallet-first, initialize a new empty database with
 `database/current-schema.sql`. No historical migration sequence or old
 workflow continuation is part of first installation. Existing installations
 require separate, approved manual data transfer/reconciliation. See
@@ -34,7 +36,7 @@ Use the **official runtime ZIP**, its manifest and SHA256SUMS from the selected 
 
 1. **New empty database:** follow [Fresh installation](docs/post-v9/FRESH-INSTALL.md) for the release-matched schema, private configuration, webhook, and safe Cron setup. For Wallet-first, import only the matching consolidated schema.
 2. **Existing bot:** Wallet-first is not an in-place upgrade. Prepare a separate fresh database and perform the separately authorized [manual transfer and reconciliation](docs/post-v9/WALLET-FIRST-ARCHITECTURE.md#cutover-decision--controlled-manual-database-transfer-owner-2026-11-24). Use [Installed-runtime diagnostics](docs/post-v9/INSTALL-DIAGNOSTICS.md) and the exact installed release documentation to inspect the old runtime. Do not run the fresh-construction migration sequence on the existing database or resume its old pending workflows. **Never replay completed migrations or the one-time Hell/Vivan PasarGuard cutover**.
-3. Populate the private `baseInfo.php` from the matching example only for a new installation. Preserve the existing real private file and encryption-dependent secrets during upgrades.
+3. Populate private `baseInfo.php` from the matching example only for a new installation. For a controlled existing-instance cutover, preserve and validate the real per-bot configuration and encryption-dependent secrets; do not substitute an example file.
 4. Configure the HTTPS `bot.php` Telegram webhook with the matching secret token. Opening the webhook in a browser does not prove Telegram delivery.
 5. Configure one `settings/cronRunner.php` task per minute using the intended PHP CLI and bot working directory. The coordinator owns four sequential jobs and skips an overlapping tick. Never run the live coordinator as a harmless smoke test: workers can perform real service and financial effects.
 
@@ -44,12 +46,13 @@ Each bot has its own database, webhook, private configuration and Cron job. The 
 
 ## Documentation
 
-- [Wallet-first architecture (current source candidate; not yet released or installed)](docs/post-v9/WALLET-FIRST-ARCHITECTURE.md)
+- [Wallet-first architecture and controlled cutover contract](docs/post-v9/WALLET-FIRST-ARCHITECTURE.md)
 - [Product contract](docs/PROJECT-SPEC.md) · [Stable-baseline and release boundary](docs/post-v9/STABLE-BASELINE.md)
 - [Fresh installation](docs/post-v9/FRESH-INSTALL.md) · [Installed-runtime diagnostics](docs/post-v9/INSTALL-DIAGNOSTICS.md)
 - [Provider storage and account identity](docs/post-v9/SHARED-PROVIDER-STORAGE.md) · [Service/plan changes](docs/post-v9/SHARED-SERVICE-TRANSFER.md)
 - [PasarGuard API and groups](docs/post-v9/PASARGUARD-CONTRACT.md) · [Unified service management](docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md)
-- [Financial safeguards](docs/post-v9/FINANCIAL-CONSOLIDATION.md) · [Wallet finality and recovery](docs/post-v9/WALLET-FINALITY-RECOVERY.md) · [Payment recovery](docs/post-v9/PAYMENT-DELIVERY-RECOVERY.md) · [Operator exception inbox](docs/post-v9/AUTOMATIC-GATEWAY-REVIEW.md) · [API evidence](docs/post-v9/API-PAYMENT-EVIDENCE.md) · [Payment message recovery](docs/post-v9/PAYMENT-UX-LIFECYCLE.md)
+- [Operator exception inbox](docs/post-v9/AUTOMATIC-GATEWAY-REVIEW.md) · [API evidence](docs/post-v9/API-PAYMENT-EVIDENCE.md) · [Payment readiness preflight](docs/post-v9/PAYMENT-READINESS-PREFLIGHT.md)
+- Earlier Stable financial and delivery evidence: [Financial safeguards](docs/post-v9/FINANCIAL-CONSOLIDATION.md) · [Wallet finality](docs/post-v9/WALLET-FINALITY-RECOVERY.md) · [Payment recovery](docs/post-v9/PAYMENT-DELIVERY-RECOVERY.md) · [Payment message lifecycle](docs/post-v9/PAYMENT-UX-LIFECYCLE.md). These references are not Wallet-first execution or upgrade runbooks.
 - [Subscription presentation](docs/post-v9/SUBSCRIPTION-PRESENTATION.md) · [Scheduled renewals](docs/post-v9/AUTOMATIC-RENEWAL-SAFETY.md)
 - [Telegram transport diagnostics](docs/post-v9/TELEGRAM-DIAGNOSTICS.md) · [Telegram presentation and optional Premium Emoji](docs/post-v9/TELEGRAM-PRESENTATION.md) · [Current CI contract](docs/post-v9/CI-VALIDATION.md) · [Security](docs/SECURITY.md)
 

@@ -1,8 +1,8 @@
 # Wallet finality, Native uncertainty, and original-operation recovery
 
-**Wallet-first candidate boundary:** For the current PR #234, [Wallet-first architecture](WALLET-FIRST-ARCHITECTURE.md), [the shared exception inbox](AUTOMATIC-GATEWAY-REVIEW.md) and [fresh installation](FRESH-INSTALL.md) take precedence. The following pre-Wallet-first material describes the earlier Stable/RC implementation and historical evidence; it is not an active runtime contract, migration procedure or authorization to replay old effects in the replacement. Use the exact installed release documentation for an older deployment.
+**Wallet-first source boundary:** For the replacement integrated through PR #234, [Wallet-first architecture](WALLET-FIRST-ARCHITECTURE.md), [the shared exception inbox](AUTOMATIC-GATEWAY-REVIEW.md) and [fresh installation](FRESH-INSTALL.md) take precedence. The following pre-Wallet-first material describes the earlier Stable/RC implementation and historical evidence; it is not an active runtime contract, migration procedure or authorization to replay old effects in the replacement. Use the exact installed release documentation for an older deployment.
 
-Owner: Finance (Issue [#26](https://github.com/ach1992/bot-refactor/issues/26)). This describes the **current supported source contract**, not proof of installed Production behavior, recovery authorization or deployment instructions.
+Owner: Finance (Issue [#26](https://github.com/ach1992/bot-refactor/issues/26)). The sections below describe the **earlier Stable source contract**, not proof of installed Production behavior, recovery authorization or deployment instructions.
 
 ## Contract and transaction boundaries
 

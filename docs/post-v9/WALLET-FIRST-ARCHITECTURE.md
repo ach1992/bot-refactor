@@ -1,8 +1,8 @@
 # Wallet-first payment and service architecture
 
 **Decision:** Owner accepted the Wallet-first separation and a cohesive root-cause
-refactor on 2026-11-24. This is the target architecture, not a claim about the
-installed Stable runtime. The owning work item is
+refactor on 2026-11-24. This is the architecture of the replacement source,
+not a claim about the published or installed runtime. The owning work item is
 [#204](https://github.com/ach1992/bot-refactor/issues/204); current execution and
 acceptance evidence belong there and in the implementing PR. Baseline source:
 `484c80e6ee030e8656da96edc3000311d10327b5` (Stable v0.10.14).
