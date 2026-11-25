@@ -30,7 +30,7 @@ if(in_array($data,['agentOneBuy','buySubscription','agentMuchBuy'],true)){
         sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.ce7759512b'),json_encode(['inline_keyboard'=>$keyboard]),'HTML');
         return;
     }
-    if ($buyType!=='none' && (int)$userInfo['is_agent']!==1) return;
+    if (!achbotPurchaseModeAllowed($userInfo,$botState,$buyType)) return;
     $servers=[];
     foreach ($plans as $p) $servers[(int)$p['server_id']]=$p;
     ksort($servers);

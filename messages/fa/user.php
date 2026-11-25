@@ -533,8 +533,6 @@ return [
         'renewal_checkout.button.05c3a1e3f4' => ' 🎟 افزودن کد تخفیف ',
         // renewal_checkout.message
         'renewal_checkout.message.24ae8c4399' => '🧾 روش پرداخت این تمدید را انتخاب کنید. فقط یک روش فعال را ادامه دهید.',
-        'renewal_checkout.message.2c9a5e948c' => '⏳ مهلت این خرید به پایان رسیده است.' . "\n" . '♻️ لطفاً مجدداً روی دکمه تمدید اشتراک کلیک کرده و خرید جدیدی ثبت کنید.',
-        'renewal_checkout.message.aaa858e3e6' => '❗️پلن شما از زمان شروع پرداخت تا ارسال رسید تغییر کرده است.' . "\n" . '♻️ لطفاً دوباره روی دکمه تمدید اشتراک کلیک کرده و پرداخت جدید انجام دهید.',
         // renewal_checkout.alert
         'renewal_checkout.message.47b1149fb0' => ['text' => '✅ اشتراک <code>{remark}</code> با موفقیت تمدید شد.', 'parameters' => ['remark']],
         // renewal_checkout.alert

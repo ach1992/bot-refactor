@@ -5,6 +5,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+require_once __DIR__.'/../Purchase/AgentPricing.php';
 
 
 /** Preview and definitive redemption share the same audience predicate.
@@ -231,7 +232,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
             throw new DomainException('discount_target_changed');
         $usedBy[] = $from_id;
         $encodeUsedBy = json_encode($usedBy, JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-        $discountValue=$type==='percent'?(int)floor($price*$amount/100):$amount;
+        $discountValue=$type==='percent'?achbotPercentageAmount(max(0,$price),max(0,min(100,$amount))):$amount;
         if ($maxDiscount>0) $discountValue=min($maxDiscount,$discountValue);
         $discountValue=max(0,min($price,$discountValue));
         $newPrice=$price-$discountValue;

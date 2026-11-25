@@ -108,7 +108,7 @@ if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbo
     exit;
 }
 
-if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\Asend(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
@@ -118,7 +118,7 @@ if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/',
 
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
-    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id,'custom')) {
         alert(\achbotMessage('payment.checkout.alert.d06bc731eb'), true);
         return;
     }
@@ -129,7 +129,7 @@ if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/',
     // Serialize with the six-hour unstarted-invoice expiry sweep.
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
-                                      $method,(int)$from_id)) {
+                                      $method,(int)$from_id,'custom')) {
         alert(\achbotMessage('payment.checkout.alert.560f05f822'),true);
         return;
     }
@@ -144,16 +144,16 @@ if (preg_match('/send(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>.*)/',
     exit;
 }
 
-if (preg_match('/cancelCustomCartReceipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\AcancelCustomCartReceipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
     handleCancelFlow( $removeKeyboard);
 }
 
-if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
+if (preg_match('/\Await(?:CustomCart|CustomGift|CustomUsdt)Receipt([A-Za-z0-9_-]{1,50})\z/D', $userInfo['step'], $match)) {
 
     $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match[1]) :
         (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
-    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
+    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id,'custom')) {
         setUser();
         alert(\achbotMessage('payment.checkout.alert.882596d0f1'), true);
         return;
@@ -166,38 +166,11 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
     }
 
 
-    $payInfo = dbFetchPayByHash($connection, $match[1]);
-    if (!$payInfo) {
-        prepareStartFallback();
-        return '__ACHBOT_V8_GOTO_START__';
-    }
-
-    $fid    = (int)$payInfo['plan_id'];
-    $volume = $payInfo['volume'];
-    $days   = $payInfo['day'];
-
-
-    $uid = $userInfo['userid'];
-    $name = $userInfo['name'];
-    $username = $userInfo['username'];
-
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=?");
-    $stmt->bind_param("i", $fid);
-    $stmt->execute();
-    $res = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id`=?");
-    $stmt->bind_param("i", $res['catid']);
-    $stmt->execute();
-    $catname = $stmt->get_result()->fetch_assoc()['title'];
-    $stmt->close();
-
-    $filename = $catname . " " . $res['title'];
-    $fileprice = $payInfo['price'];
-    $remark = $payInfo['description'];
-
-
+    $payInfo=$receiptPay;
+    $original=achbotManualOriginalServiceQuote($connection,$receiptPay,(int)$from_id,'custom');
+    if (!$original) {alert(achbotMessage('payment.checkout.alert.882596d0f1'),true);return;}
+    $volume=$original['volume'];$days=$original['days'];
+    $username=$userInfo['username'];$fileprice=$original['price'];$remark=$original['remark'];
 
     $msg = str_replace(
         ['TYPE', 'USER-ID', 'USERNAME', 'NAME', 'PRICE', 'REMARK', 'VOLUME', 'DAYS'],
@@ -217,7 +190,7 @@ if (preg_match('/wait(?:CustomCart|CustomGift|CustomUsdt)Receipt(.*)/', $userInf
         !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid,'custom');
     if ($deliveryToken === null) {
         alert(\achbotMessage('payment.checkout.alert.795c4bddb8'), true);
         return;
@@ -296,7 +269,7 @@ if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbo
     exit;
 }
 
-if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\Asend(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
@@ -306,7 +279,7 @@ if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $
 
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
-    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id,'standard')) {
         alert(\achbotMessage('payment.checkout.alert.d06bc731eb'), true);
         return;
     }
@@ -317,7 +290,7 @@ if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $
     // Serialize with the six-hour unstarted-invoice expiry sweep.
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
-                                      $method,(int)$from_id)) {
+                                      $method,(int)$from_id,'standard')) {
         alert(\achbotMessage('payment.checkout.alert.560f05f822'),true);
         return;
     }
@@ -332,16 +305,16 @@ if (preg_match('/send(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>.*)/', $data, $
     exit;
 }
 
-if (preg_match('/cancelBuyCartReceipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\AcancelBuyCartReceipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
     handleCancelFlow( $removeKeyboard);
 }
 
-if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
+if (preg_match('/\Await(?:BuyCart|BuyGift|BuyUsdt)Receipt([A-Za-z0-9_-]{1,50})\z/D', $userInfo['step'], $match)) {
 
     $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match[1]) :
         (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
-    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
+    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id,'standard')) {
         setUser();
         alert(\achbotMessage('payment.checkout.alert.882596d0f1'), true);
         return;
@@ -354,48 +327,13 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
     }
 
 
-    $payInfo = dbFetchPayByHash($connection, $match[1]);
-    if (!$payInfo) {
-        prepareStartFallback();
-        return '__ACHBOT_V8_GOTO_START__';
-    }
-
-    $fid = (int)$payInfo['plan_id'];
-
-
-    $uid = $userInfo['userid'];
-    $name = $userInfo['name'];
-    $username = $userInfo['username'];
-
-    $stmt = $connection->prepare("SELECT * FROM `server_plans` WHERE `id`=?");
-    $stmt->bind_param("i", $fid);
-    $stmt->execute();
-    $res = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $days = $res['days'];
-    $volume = $res['volume'];
-
-    $stmt = $connection->prepare("SELECT * FROM `server_info` WHERE `id`=?");
-    $stmt->bind_param("i", $res['server_id']);
-    $stmt->execute();
-    $serverInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $serverTitle = $serverInfo['title'];
-
-    {
-        $stmt = $connection->prepare("SELECT * FROM `server_categories` WHERE `id`=?");
-        $stmt->bind_param("i", $res['catid']);
-        $stmt->execute();
-        $catname = $stmt->get_result()->fetch_assoc()['title'];
-        $stmt->close();
-        $filename = $catname . " " . $res['title'];
-    }
-
-    $fileprice = $payInfo['price'];
-
-
+    $payInfo=$receiptPay;
+    $original=achbotManualOriginalServiceQuote($connection,$receiptPay,(int)$from_id,'standard');
+    if (!$original) {alert(achbotMessage('payment.checkout.alert.882596d0f1'),true);return;}
+    $days=$original['days'];$volume=$original['volume'];$fileprice=$original['price'];
+    $name=$userInfo['name'];$username=$userInfo['username'];
+    $serverTitle=$original['labels']['server'];
+    $filename=$original['labels']['category'].' '.$original['labels']['plan'];
 
     if ((int)$payInfo['agent_count'] != 0) {
         $msg = str_replace(
@@ -423,7 +361,7 @@ if (preg_match('/wait(?:BuyCart|BuyGift|BuyUsdt)Receipt(.*)/', $userInfo['step']
         !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid,'standard');
     if ($deliveryToken === null) {
         alert(\achbotMessage('payment.checkout.alert.795c4bddb8'), true);
         return;

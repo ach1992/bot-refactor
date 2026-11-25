@@ -85,7 +85,8 @@ try {
             return ['status'=>$status,'sends'=>$GLOBALS['review_sends']];
         })(),
         'issue'=>achbotManualReceiptIssue($db,$id,(int)($spec['owner']??1001),$method,$spec['service']??null,$spec['network']??null),
-        'begin'=>achbotManualBeginEvidence($db,$pay,$method,(int)($spec['owner']??1001),$spec['file']),
+        'start'=>achbotPayUxStartManualReceipt($db,$id,$method,(int)($spec['owner']??1001),$spec['expected_mode']??null),
+        'begin'=>achbotManualBeginEvidence($db,$pay,$method,(int)($spec['owner']??1001),$spec['file'],$spec['expected_mode']??null),
         'finish'=>achbotManualFinishEvidence($db,$pay['hash_id'],$spec['file'],$spec['token'],222,9001),
         'approve'=>achbotCheckoutSettleReceipt($db,$id,(int)($spec['owner']??1001),$spec['basis']??'manual',[],(int)($spec['actor']??9001),9001),
         'check'=>achbotManualReceiptCheckApi($db,$id),
@@ -391,6 +392,24 @@ DELIMITER ;
                 assert result(mode,'begin',pid,file='new-photo') is None
                 assert result(mode,'attention',pid) is False
                 case('superseded_unstarted_receipt_not_reopened')
+                for method in ('bank_transfer','gift_card'):
+                    name=mode+'-started-superseded-'+method
+                    oid=result(mode,'quote',reference=name,request=q)
+                    pid=seed(name,price=100,kind='BUY_SUB')
+                    api=method=='gift_card'
+                    result(mode,'issue',pid,method=method,service=oid,api=api)
+                    assert result(mode,'start',pid,method=method,expected_mode='topup',api=api) is False
+                    assert result(mode,'start',pid,method=method,expected_mode='standard',api=api) is True
+                    sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}; UPDATE service_operations SET stage='cancelled' WHERE id={oid}")
+                    file=evidence.fixture_gift_code(name) if api else 'original-photo'
+                    assert result(mode,'begin',pid,method=method,file=file,expected_mode='topup',api=api) is None
+                    token=result(mode,'begin',pid,method=method,file=file,expected_mode='standard',api=api)
+                    assert isinstance(token,str) and len(token)==32,token
+                    assert result(mode,'finish',pid,method=method,file=file,token=token,api=api) is True
+                    b=balance()
+                    assert result(mode,'approve',pid)['funding']=='request_invalidated' and balance()==b+100
+                    assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+100
+                case('superseded_started_receipt_preserves_original_family_and_money')
                 oid=result(mode,'quote',reference=mode+'-buy',request=q)
                 pid=seed(mode+'-sms',price=100,kind='BUY_SUB')
                 r=result(mode,'issue',pid,method='bank_transfer',api=True,service=oid)

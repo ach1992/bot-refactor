@@ -587,7 +587,8 @@ CREATE TABLE `server_plans` (
   `active` int(11) NOT NULL DEFAULT 0,
   `date` varchar(50) NOT NULL,
   `provider_group_ids` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_server_plans_category` (`catid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

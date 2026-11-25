@@ -158,10 +158,10 @@
     },
     "src/Finance/Routes/RenewalCheckout.php": {
       "before_count": 24,
-      "after_count": 14,
+      "after_count": 9,
       "before_sha256": "9ed2ba8682b3d73714fdb16169453d6e192042357453cba395fa3733c4398809",
-      "after_sha256": "0eab38bb2d62e5e7ca8eafc453e1a2c2c7e1a4fedf874e6a8ce9674d993b2d9a",
-      "reason": "F5 use shared original renewal draft presentation"
+      "after_sha256": "49738582bc69f7bacb8c1b5b69fb3716f91979e32920351a1daa00801fb34047",
+      "reason": "F5 use shared original renewal draft presentation; remove obsolete receipt age/current-plan rejection and return-to-menu sends; genuine original receipt remains wallet-creditable."
     },
     "src/Finance/Routes/RenewalPlan.php": {
       "before_count": 1,

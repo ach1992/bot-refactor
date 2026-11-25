@@ -405,17 +405,21 @@ function achbotCustomerHasPaymentMethod(mysqli $db,int $userId,array $state): bo
     return false;
 }
 
+function achbotPurchaseModeAllowed(array $user,array $states,string $mode): bool {
+    return $mode==='none' || (in_array($mode,['one','much'],true) &&
+        achbotAgencyActive($user,$states));
+}
+
 /** Offer only purchasable plans. An authorized standard zero-price
  * command does not require a monetary method. Final authorization is locked
  * in CheckoutAdmission; this is read-only catalogue filtering. */
 function achbotCustomerPurchasePlans(mysqli $db,array $user,array $states,string $mode,int $actor,int $primary,?int $server=null,?int $category=null): array {
-    if (!in_array($mode,['none','one','much'],true) ||
-        ($mode!=='none' && (int)($user['is_agent']??0)!==1)) return [];
+    if (!achbotPurchaseModeAllowed($user,$states,$mode)) return [];
     $plans=achbotSaleablePlans($db,$server,$category);
     if (achbotCustomerHasPaymentMethod($db,$actor,$states) || ($primary>0 && $actor===$primary)) return $plans;
-    if ($mode==='none' || ($states['agencyState']??'off')!=='on' || ($states['sellState']??'off')!=='on') return [];
-    return array_values(array_filter($plans,static function($p) use ($user,$states,$mode) {
-        [,,$percent]=calculateAgentPrice($user,$states,(int)$p['id'],(int)$p['server_id'],$mode,(int)$p['price']);
+    if (!achbotAgencyActive($user,$states) || ($states['sellState']??'off')!=='on') return [];
+    return array_values(array_filter($plans,static function($p) use ($user,$states) {
+        [,,$percent]=achbotAgencyPrice($user,$states,(int)$p['id'],(int)$p['server_id'],(int)$p['price']);
         return $percent===100;
     }));
 }

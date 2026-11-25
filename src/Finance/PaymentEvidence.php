@@ -753,7 +753,8 @@ function achbotPaymentEvidenceSaveGiftCodeLocked(mysqli $db,array $pay,array $a,
         (int)$pay['user_id']!==$actor || (int)$a['pay_row_id']!==$payId ||
         !in_array($a['stage'],['pending','receiving'],true) ||
         !in_array($pay['state'],['pending','service_superseded'],true) ||
-        ($pay['state']==='service_superseded' && $a['stage']!=='receiving') ||
+        ($pay['state']==='service_superseded' && $a['stage']!=='receiving' &&
+            (string)($a['provider_status']??'')!=='receipt_started') ||
         !hash_equals($profile['pay_sha256'],achbotPaymentEvidencePayFingerprint($pay)))
         return $bad;
     $digest=achbotPaymentEvidenceCodeDigest($code);

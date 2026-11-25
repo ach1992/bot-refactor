@@ -25,6 +25,13 @@ function achbotCategoryMutation(mysqli $db,int $actor,int $primary,$update,strin
                 throw new RuntimeException('management_stale');
             $next=$expectedStep;
         } elseif ($action==='delete') {
+            // PlanWizard takes this same category lock before inserting a plan.
+            // Current reads see references committed while this request waited.
+            if (!achbotManagementRow($db,
+                'SELECT id FROM server_categories WHERE id=? AND parent=0 AND active=1 FOR UPDATE','i',[$categoryId]))
+                throw new RuntimeException('management_stale');
+            if (achbotManagementRow($db,'SELECT id FROM server_plans FORCE INDEX (idx_server_plans_category) WHERE catid=? LIMIT 1 FOR UPDATE','i',[$categoryId]))
+                throw new DomainException('category_referenced');
             $s=achbotManagementSql($db,'DELETE FROM server_categories WHERE id=? AND parent=0 AND active=1','i',[$categoryId]);
             $changed=$s->affected_rows;$s->close();
             if ($changed!==1) throw new RuntimeException('management_stale');
@@ -59,7 +66,7 @@ function achbotCategoryMutation(mysqli $db,int $actor,int $primary,$update,strin
         if ($begun) try {$db->rollback();} catch (Throwable $ignored) {}
         $reason=$e->getMessage();
         if (!in_array($reason,['management_input','management_stale','management_other_flow','management_admin_required',
-            'management_private_required','management_frame','management_storage','management_commit_unknown'],true)) $reason='management_storage';
+            'management_private_required','management_frame','management_storage','management_commit_unknown','category_referenced'],true)) $reason='management_storage';
         if ($reason==='management_storage') error_log('category_mutation_unconfirmed actor='.$actor.' action='.$action.' type='.get_class($e));
         if (!in_array($reason,['management_frame','management_private_required'],true)) {
             $public=match($reason) {'management_storage'=>'management_unavailable','management_commit_unknown'=>'review_required',default=>$reason};

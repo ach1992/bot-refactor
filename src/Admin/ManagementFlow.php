@@ -93,6 +93,7 @@ function achbotManagementText(string $key,array $params=[]): string {
         'shared_key'=>achbotMessage('admin_settings.management.shared_key',$params),
         'shared_key_notice'=>achbotMessage('admin_settings.management.shared_key_notice',$params),
         'server_referenced'=>achbotMessage('admin_settings.management.server_referenced',$params),
+        'category_referenced'=>achbotMessage('admin_settings.management.category_referenced',$params),
         'server_removed'=>achbotMessage('admin_settings.management.server_removed',$params),
         'server_retired'=>achbotMessage('admin_settings.management.server_retired',$params),
         'settings_saved'=>achbotMessage('admin_settings.management.settings_saved',$params),

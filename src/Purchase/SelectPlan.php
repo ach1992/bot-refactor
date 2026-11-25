@@ -15,8 +15,7 @@ if(($planSelectionCallback ||
     ($typedPlanInput && preg_match('/\A(?:selectPlan|enterAccountName)([1-9][0-9]*)_([1-9][0-9]*)_(?<buyType>none|one|much)\z/D',$userInfo['step'],$match))) &&
     (($botState['sellState']??'off')==="on" || $from_id==$admin) &&
     $text != \achbotMessage('legacy_buttons.cancel')){
-    if (!in_array($match['buyType'],['none','one','much'],true) ||
-        ($match['buyType']!=='none' && (int)$userInfo['is_agent']!==1)) return;
+    if (!achbotPurchaseModeAllowed($userInfo,$botState,$match['buyType'])) return;
     if (!achbotSupportsPlan($connection, (int)($match[1] ?? 0))) {
         alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.d3fb64c4d9'), true);
         return;
@@ -79,7 +78,8 @@ if(($planSelectionCallback ||
         $price*=$accountCount;
     }
      
-    [$price,$agentBought]=calculateAgentPrice($userInfo,$botState,(int)$id,$sid,$match['buyType'],$price);
+    [$price]=achbotAgencyPrice($userInfo,$botState,(int)$id,$sid,$price);
+    $agentBought=$match['buyType']!=='none';
     $price=(int)$price;
     if ((int)$from_id===(int)$admin) $price=0;
     if ($price<0 || $price>2147483647) return;
@@ -93,7 +93,7 @@ if(($planSelectionCallback ||
             VALUES (?,?,?,'BUY_SUB',?,?,'0','0',?,?,'pending',?)");
         $stmt->bind_param("ssiiiiii",$hash_id,$remark,$from_id,$id,$sid,$price,$time,$agentBought);
     }
-    $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,false,$respd,$botState);
+    $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,achbotAgencyQuotePolicy($userInfo,$botState,(int)$id,$sid),false,$respd,$botState);
     $stmt->close();
     if ($rowId<=0) {
         alert(achbotMessage('purchase.catalogue.alert.201380d8bf'),true);return;

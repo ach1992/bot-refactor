@@ -1,53 +1,52 @@
 <?php
-/** AChBot V7: immutable V6.1 purchase helper definitions. */
+/** Shared monetary arithmetic and agency discount policy. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
 }
 
-if (!function_exists('calculateAgentPrice')) {
-    function calculateAgentPrice($userInfo, $botState, $planId, $serverId, $buyType, $basePrice)
-    {
-        $price           = (int)$basePrice;
-        $agentBought     = false;
-        $discountPercent = 0;
-
-        if ($buyType === 'one' || $buyType === 'much') {
-            $agentBought = true;
-            $discountsRaw = $userInfo['discount_percent'] ?? '{}';
-            $discounts    = json_decode($discountsRaw, true);
-            if (!is_array($discounts)) {
-                $discounts = [];
-            }
-
-            $normal = $discounts['normal'] ?? 0;
-
-            if (($botState['agencyPlanDiscount'] ?? '') === "on") {
-                if (isset($discounts['plans'][$planId])) {
-                    $discountPercent = $discounts['plans'][$planId];
-                } else {
-                    $discountPercent = $normal;
-                }
-            } else {
-                if (isset($discounts['servers'][$serverId])) {
-                    $discountPercent = $discounts['servers'][$serverId];
-                } else {
-                    $discountPercent = $normal;
-                }
-            }
-
-            // Only configured integer percentages authorize commercial discounts.
-            if (!(is_int($discountPercent) || (is_string($discountPercent) && preg_match('/^[0-9]{1,3}$/D',$discountPercent))) ||
-                (int)$discountPercent<0 || (int)$discountPercent>100) $discountPercent=0;
-            $discountPercent=(int)$discountPercent;
-
-            if ($discountPercent > 0) {
-                // Exact integer arithmetic, including aggregated bulk prices.
-                $price -= intdiv($price,100)*$discountPercent + intdiv(($price%100)*$discountPercent,100);
-            }
-        }
-
-        return [$price, $agentBought, $discountPercent];
-    }
+/** Exact floor(amount * percent / 100), without an overflowing product. */
+function achbotPercentageAmount(int $amount,int $percent): int {
+    if ($amount<0 || $percent<0 || $percent>100)
+        throw new InvalidArgumentException('price_percentage_invalid');
+    return intdiv($amount,100)*$percent+intdiv(($amount%100)*$percent,100);
 }
 
+/** Resolve the configured plan/server override, then the default.
+ * NULL means malformed, not permission for a free purchase. */
+function achbotAgencyDiscountPercent(array $user,array $state,int $planId,int $serverId): ?int {
+    $raw=$user['discount_percent']??'';
+    if (!is_string($raw)) return null;
+    $raw=trim($raw);
+    $discounts=$raw===''?[]:json_decode($raw,true);
+    if (!is_array($discounts)) return null;
+    $scope=($state['agencyPlanDiscount']??'off')==='on'?'plans':'servers';
+    $id=$scope==='plans'?$planId:$serverId;
+    $overrides=$discounts[$scope]??[];
+    if (!is_array($overrides)) return null;
+    $percent=$overrides[$id]??$discounts['normal']??0;
+    if (!(is_int($percent) || (is_string($percent) && preg_match('/^[0-9]{1,3}$/D',$percent))) ||
+        (int)$percent<0 || (int)$percent>100) return null;
+    return (int)$percent;
+}
+
+function achbotAgencyActive(array $user,array $state): bool {
+    return (int)($user['is_agent']??0)===1 && ($state['agencyState']??'off')==='on';
+}
+
+function achbotAgencyQuotePolicy(array $user,array $state,int $planId,int $serverId): array {
+    $active=achbotAgencyActive($user,$state);
+    return ['active'=>$active,'percent'=>$active?achbotAgencyDiscountPercent($user,$state,$planId,$serverId):0];
+}
+
+/** Agency pricing follows current entitlement, not the purchase route
+ * or the original subscription's administrative classification. */
+function achbotAgencyPrice(array $user,array $state,int $planId,int $serverId,int $basePrice): array {
+    $policy=achbotAgencyQuotePolicy($user,$state,$planId,$serverId);
+    return [$basePrice<0?$basePrice:$basePrice-achbotPercentageAmount($basePrice,$policy['percent']??0),
+        $policy['active'],$policy['percent']];
+}
+
+function achbotExistingServicePrice(array $user,array $state,array $order,int $basePrice): int {
+    return achbotAgencyPrice($user,$state,(int)$order['fileid'],(int)$order['server_id'],$basePrice)[0];
+}

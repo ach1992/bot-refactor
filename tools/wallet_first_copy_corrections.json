@@ -580,5 +580,9 @@
   "legacy_buttons.individual_existence": {
     "after": "📊 موجودی سرویس‌ها",
     "before": "❗️موجودی اختصاصی"
+  },
+  "admin_settings.management.category_referenced": {
+    "before": null,
+    "after": "⚠️ این دسته‌بندی دارای پلن است و حذف نمی‌شود. ابتدا پلن‌های وابسته را تعیین تکلیف کنید."
   }
 }

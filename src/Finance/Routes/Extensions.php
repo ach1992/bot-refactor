@@ -11,6 +11,7 @@ if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text
 
 
 require_once __DIR__ . '/../PaymentLifecycle.php';
+require_once __DIR__ . '/../../Purchase/AgentPricing.php';
 require_once __DIR__ . '/../../Plans/Addons.php';
 
 if(preg_match('/increaseADay(.*)/', $data, $match)){
@@ -36,7 +37,6 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
-    $agentBought = $orderInfo['agent_bought'];
     if(!$catalog){
         alert(\achbotMessage('renewal.extensions.alert.6732b29e55'));
         exit;
@@ -47,12 +47,7 @@ if(preg_match('/increaseADay(.*)/', $data, $match)){
         $id = $cat['id'];
         $title = $cat['volume'];
         $price = $cat['price'];
-        if($agentBought == true){
-            $discounts = json_decode($userInfo['discount_percent'],true);
-            if($botState['agencyPlanDiscount']=="on") $discount = $discounts['plans'][$orderInfo['fileid']]?? $discounts['normal'];
-            else $discount = $discounts['servers'][$orderInfo['server_id']]?? $discounts['normal'];
-            $price -= floor($price * $discount / 100);
-        }
+        $price=achbotExistingServicePrice($userInfo,$botState,$orderInfo,(int)$price);
         if($price == 0) $price = \achbotMessage('renewal.extensions.price.dda7ff2974');
         else $price = (string)$price . \achbotMessage('renewal.extensions.text.2cc98f7f7c');
         $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.fbb9f61105', ['title' => $title, 'price' => $price]), 'callback_data' => "selectPlanDayIncrease{$match[1]}_$id"]];
@@ -98,15 +93,8 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
-    $agentBought = $orderInfo['agent_bought'];
 
-    if($agentBought == true){
-        $discounts = json_decode($userInfo['discount_percent'],true);
-        if($botState['agencyPlanDiscount']=="on") $discount = $discounts['plans'][$orderInfo['fileid']]?? $discounts['normal'];
-        else $discount = $discounts['servers'][$orderInfo['server_id']]?? $discounts['normal'];
-
-        $planprice -= floor($planprice * $discount / 100);
-    }
+    $planprice=achbotExistingServicePrice($userInfo,$botState,$orderInfo,(int)$planprice);
 
     
     $hash_id = RandomString();
@@ -122,7 +110,7 @@ if(preg_match('/selectPlanDayIncrease(?<orderId>.+)_(?<dayId>.+)/',$data,$match)
     $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state,addon_scope_snapshot)
         VALUES (?,?,?,?,?,?,'0',?,?,?,'pending',?)");
     $stmt->bind_param("sisiiiiiis",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$quotedUnits,$planprice,$time,$addonQuote);
-    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,true);
+    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,achbotAgencyQuotePolicy($userInfo,$botState,(int)$plan_id,(int)$server_id),true);
     $stmt->close();
     if ($newDraftId<=0) {
         alert(\achbotMessage('renewal.extensions.alert.ae271a2d1d'),true);
@@ -184,7 +172,7 @@ if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbo
     exit;
 }
 
-if (preg_match('/send(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\Asend(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
@@ -194,7 +182,7 @@ if (preg_match('/send(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<ha
 
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
-    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id,'day')) {
         alert(\achbotMessage('renewal.extensions.alert.d06bc731eb'), true);
         return;
     }
@@ -205,7 +193,7 @@ if (preg_match('/send(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<ha
     // Serialize with the six-hour unstarted-invoice expiry sweep.
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
-                                      $method,(int)$from_id)) {
+                                      $method,(int)$from_id,'day')) {
         alert(\achbotMessage('renewal.extensions.alert.560f05f822'),true);
         return;
     }
@@ -220,16 +208,16 @@ if (preg_match('/send(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<ha
     exit;
 }
 
-if (preg_match('/cancelIncreaseDayReceipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\AcancelIncreaseDayReceipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
     handleCancelFlow( $removeKeyboard);
 }
 
-if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
+if (preg_match('/\Await(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt([A-Za-z0-9_-]{1,50})\z/D', $userInfo['step'], $match)) {
 
     $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match[1]) :
         (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
-    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
+    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id,'day')) {
         setUser();
         alert(\achbotMessage('renewal.extensions.alert.882596d0f1'), true);
         return;
@@ -242,41 +230,10 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
     }
 
 
-    $payInfoRes = dbFetchPayByHash($connection, $match[1]);
-    if (!$payInfoRes) {
-        prepareStartFallback();
-        return '__ACHBOT_V8_GOTO_START__';
-    }
-
-    $payType = $payInfoRes['type'];
-
-    preg_match('/^INCREASE_DAY_(\d+)_(\d+)/', $payType, $increaseInfo);
-    $orderId = (int)$increaseInfo[1];
-    $planid  = (int)$increaseInfo[2];
-
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $orderId);
-    $stmt->execute();
-    $orderInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
-        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
-        return;
-    }
-
-
-    $remark = $orderInfo['remark'];
-
-    $stmt = $connection->prepare("SELECT * FROM `increase_day` WHERE `id` = ?");
-    $stmt->bind_param("i", $planid);
-    $stmt->execute();
-    $res = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $price  = $payInfoRes['price'];
-    $volume = achbotPinnedAddonUnits($payInfoRes);
-
-
+    $payInfoRes=$receiptPay;
+    $original=achbotManualOriginalServiceQuote($connection,$receiptPay,(int)$from_id,'day');
+    if (!$original) {alert(achbotMessage('renewal.extensions.alert.882596d0f1'),true);return;}
+    $remark=$original['remark'];$price=$original['price'];$volume=$original['days'];
 
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
@@ -296,7 +253,7 @@ if (preg_match('/wait(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(.*)/
         !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid,'day');
     if ($deliveryToken === null) {
         alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
         return;
@@ -420,7 +377,6 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
     }
 
 
-    $agentBought = (bool)$orderInfo['agent_bought'];
     try {
         achbotAddonSchema($connection);
         $addonContext=achbotAddonContext($connection,$orderInfo);
@@ -445,14 +401,7 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
         $id = $cat['id'];
         $title = $cat['volume'];
         $price = $cat['price'];
-        if ($agentBought == true) {
-            $discounts = json_decode($userInfo['discount_percent'], true);
-            if ($botState['agencyPlanDiscount'] == "on") 
-                $discount = $discounts['plans'][$orderInfo['fileid']] ?? $discounts['normal'];
-            else 
-                $discount = $discounts['servers'][$orderInfo['server_id']] ?? $discounts['normal'];
-            $price -= floor($price * $discount / 100);
-        }
+        $price=achbotExistingServicePrice($userInfo,$botState,$orderInfo,(int)$price);
         if ($price == 0)
             $price = \achbotMessage('renewal.extensions.price.dda7ff2974');
         else
@@ -507,15 +456,8 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
-    $agentBought = $orderInfo['agent_bought'];
  
-    if($agentBought == true){
-        $discounts = json_decode($userInfo['discount_percent'],true);
-        if($botState['agencyPlanDiscount']=="on") $discount = $discounts['plans'][$orderInfo['fileid']]?? $discounts['normal'];
-        else $discount = $discounts['servers'][$orderInfo['server_id']]?? $discounts['normal'];
-        
-        $planprice -= floor($planprice * $discount / 100);
-    }
+    $planprice=achbotExistingServicePrice($userInfo,$botState,$orderInfo,(int)$planprice);
 
     $hash_id = RandomString();
 
@@ -530,7 +472,7 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
     $stmt=$connection->prepare("INSERT INTO pays (hash_id,user_id,type,plan_id,server_id,order_id,volume,day,price,request_date,state,addon_scope_snapshot)
         VALUES (?,?,?,?,?,?,?,'0',?,?,'pending',?)");
     $stmt->bind_param("sisiiiiiis",$hash_id,$from_id,$type,$plan_id,$server_id,$order_id,$plangb,$planprice,$time,$addonQuote);
-    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,true);
+    $newDraftId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,achbotAgencyQuotePolicy($userInfo,$botState,(int)$plan_id,(int)$server_id),true);
 	$stmt->close();
 	if ($newDraftId<=0) {
 	    alert(\achbotMessage('renewal.extensions.alert.ae271a2d1d'),true);
@@ -596,7 +538,7 @@ if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbo
     exit;
 }
 
-if (preg_match('/send(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Receipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\Asend(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Receipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
@@ -606,7 +548,7 @@ if (preg_match('/send(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
 
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
-    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id,'volume')) {
         alert(\achbotMessage('renewal.extensions.alert.d06bc731eb'), true);
         return;
     }
@@ -617,7 +559,7 @@ if (preg_match('/send(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     // Serialize with the six-hour unstarted-invoice expiry sweep.
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
-                                      $method,(int)$from_id)) {
+                                      $method,(int)$from_id,'volume')) {
         alert(\achbotMessage('renewal.extensions.alert.560f05f822'),true);
         return;
     }
@@ -632,16 +574,16 @@ if (preg_match('/send(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     exit;
 }
 
-if (preg_match('/cancelIncreaseVolumeReceipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\AcancelIncreaseVolumeReceipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
     handleCancelFlow( $removeKeyboard);
 }
 
-if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
+if (preg_match('/\Await(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Receipt([A-Za-z0-9_-]{1,50})\z/D', $userInfo['step'], $match)) {
 
     $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match[1]) :
         (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
-    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
+    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id,'volume')) {
         setUser();
         alert(\achbotMessage('renewal.extensions.alert.882596d0f1'), true);
         return;
@@ -654,41 +596,10 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
     }
 
 
-    $payParam = dbFetchPayByHash($connection, $match[1]);
-    if (!$payParam) {
-        prepareStartFallback();
-        return '__ACHBOT_V8_GOTO_START__';
-    }
-
-    $payType = $payParam['type'];
-
-    preg_match('/^INCREASE_VOLUME_(\d+)_(\d+)/', $payType, $increaseInfo);
-    $orderId = (int)$increaseInfo[1];
-    $planid  = (int)$increaseInfo[2];
-
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $orderId);
-    $stmt->execute();
-    $orderInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    if (!$orderInfo || !achbotSupportsOrder($connection, (int)$orderInfo['id'])) {
-        alert(\achbotMessage('renewal.extensions.alert.d0779ad27d'), true);
-        return;
-    }
-
-
-    $remark = $orderInfo['remark'];
-
-    $stmt = $connection->prepare("SELECT * FROM `increase_plan` WHERE `id` = ?");
-    $stmt->bind_param("i", $planid);
-    $stmt->execute();
-    $res = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    $price  = $payParam['price'];
-    $volume = achbotPinnedAddonUnits($payParam);
-
-
+    $payParam=$receiptPay;
+    $original=achbotManualOriginalServiceQuote($connection,$receiptPay,(int)$from_id,'volume');
+    if (!$original) {alert(achbotMessage('renewal.extensions.alert.882596d0f1'),true);return;}
+    $remark=$original['remark'];$price=$original['price'];$volume=$original['volume'];
 
     $msg = str_replace(
         ['INCREASE', 'TYPE', "USER-ID", "USERNAME", "NAME", "PRICE", "REMARK"],
@@ -708,7 +619,7 @@ if (preg_match('/wait(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)Rec
         !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid,'volume');
     if ($deliveryToken === null) {
         alert(\achbotMessage('renewal.extensions.alert.795c4bddb8'), true);
         return;

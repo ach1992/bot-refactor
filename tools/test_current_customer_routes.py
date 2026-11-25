@@ -233,6 +233,19 @@ def main():
         assert [c for c in callbacks(run('catalogue',callback='selectCategory1_2_none')) if c.startswith('selectPlan')]==['selectPlan7_1_none']
         assert 'availableServers' not in callbacks(run('menu'))
         cases.append('actual_capacity_entry_catalogue_share_current_native_saleability')
+        # All references, even inactive plans, prevent category deletion.
+        sql("INSERT INTO server_categories(id,title,parent,active) VALUES (90,'Referenced',0,1),(91,'Empty',0,1)")
+        sql("UPDATE server_plans SET catid=90 WHERE id=8")
+        r=run('plan_category',actor=9001,callback='wizwizcategorydelete90_0')
+        assert r['events'][0][0]=='send' and 'دارای پلن' in r['events'][0][1],r
+        assert sql("SELECT COUNT(*) FROM server_categories WHERE id=90")=='1'
+        run('plan_category',actor=9001,callback='wizwizcategorydelete91_0')
+        assert sql("SELECT COUNT(*) FROM server_categories WHERE id=91")=='0'
+        sql("UPDATE server_plans SET catid=1 WHERE id=8")
+        run('plan_category',actor=9001,callback='wizwizcategorydelete90_0')
+        assert sql("SELECT COUNT(*) FROM server_categories WHERE id=90")=='0'
+        cases.append('actual_category_delete_preserves_inactive_plan_references')
+
         # The original card is created by the actual SelectPlan/custom routes;
         # the emitted discount button is then consumed by the real route.
         def latest(uid):
@@ -420,6 +433,7 @@ def main():
             assert sql(f'SELECT wallet,freetrial FROM users WHERE userid={uid}')==before
             assert run('wallet',actor=uid,hash=h,mode='standard')['events'][0][1]['status']=='already_funded'
         free_checkout(2002,run('standard',actor=2002,callback='selectPlan7_1_one'),1)
+        free_checkout(2002,run('standard',actor=2002,callback='selectPlan7_1_none'),1)
         run('standard',actor=2002,callback='selectPlan7_1_much')
         free_checkout(2002,run('standard',actor=2002,text='3'),3)
         free_checkout(9001,run('standard',actor=9001,callback='selectPlan7_1_none'),1)
@@ -523,6 +537,37 @@ def main():
         assert run('catalogue',text='2')['user']['step']=='selectCustomPlanDay7_1_2_none'
         assert run('catalogue',text='3')['user']['step']=='enterCustomPlanName7_1_2_3_none'
         cases.append('zero_custom_configured_rates_and_agency_rechecked_without_policy_expansion')
+        # Active representative pricing must not depend on route or historical
+        # classification. Assert the actual persisted user checkout drafts.
+        sql("UPDATE users SET step='none',discount_percent='{\"normal\":25,\"plans\":{\"7\":40},\"servers\":{\"2\":30}}' WHERE userid=2002")
+        for plan_scope,percent in [('off',30),('on',40)]:
+            state(agencyPlanDiscount=plan_scope)
+            for route in ('none','one'):
+                r=run('standard',actor=2002,callback=f'selectPlan7_1_{route}')
+                assert int(latest(2002)[2])==100-percent,(route,r,latest(2002))
+                sql(f"UPDATE users SET step='enterCustomPlanName7_1_2_3_{route}' WHERE userid=2002")
+                r=run('catalogue',actor=2002,text='uniform12345')
+                assert int(latest(2002)[2])==2*(10-10*percent//100)+3*(20-20*percent//100),(route,r)
+            run('standard',actor=2002,callback='selectPlan7_1_much')
+            run('standard',actor=2002,text='3')
+            assert int(latest(2002)[2])==300-3*percent
+        state(agencyState='off')
+        run('standard',actor=2002,callback='selectPlan7_1_none')
+        assert int(latest(2002)[2])==100
+        before=sql("SELECT COUNT(*) FROM pays")
+        run('standard',actor=2002,callback='selectPlan7_1_one')
+        assert sql("SELECT COUNT(*) FROM pays")==before
+        state()
+        sql("UPDATE users SET is_agent=1,discount_percent='{\"normal\":25}' WHERE userid=2001")
+        for old_flag in (0,1):
+            sql(f"UPDATE orders_list SET agent_bought={old_flag} WHERE id={oid}")
+            r=run('renew',callback=f'renewAccount{oid}')
+            assert int(latest(2001)[2])==75,r
+        sql("UPDATE users SET is_agent=0 WHERE userid=2001")
+        r=run('renew',callback=f'renewAccount{oid}')
+        assert int(latest(2001)[2])==100,r
+        cases.append('actual_current_agency_discount_standard_bulk_custom_and_renewal')
+
 
 
 

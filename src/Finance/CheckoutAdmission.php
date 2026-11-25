@@ -85,10 +85,9 @@ function achbotCheckoutZeroCommercialLocked(mysqli $db,array $pay): ?string {
     if ($primary>0 && $actor===$primary) return 'primary_admin';
     $state=achbotPayUxCurrentStatesLocked($db);
     if (!$state || ($state['sellState']??'off')!=='on' ||
-        ($state['agencyState']??'off')!=='on' || (int)$owner['is_agent']!==1 ||
-        (int)$pay['agent_bought']!==1) return null;
+        !achbotAgencyActive($owner,$state)) return null;
     require_once __DIR__.'/../Purchase/AgentPricing.php';
-    [,,$percent]=calculateAgentPrice($owner,$state,(int)$plan['id'],(int)$plan['server_id'],'one',(int)$plan['price']);
+    [,,$percent]=achbotAgencyPrice($owner,$state,(int)$plan['id'],(int)$plan['server_id'],(int)$plan['price']);
     return $percent===100?'agency':null;
 }
 
@@ -112,12 +111,12 @@ function achbotCheckoutZeroCustomLocked(mysqli $db,array $pay): ?string {
         (int)$plan['server_id']!==(int)$pay['server_id'] ||
         (($state['sellState']??'off')!=='on' && ($primary<=0 || $actor!==$primary)) ||
         !achbotCustomPurchaseEnabled($state,$mode) ||
-        ($agent && ((int)$owner['is_agent']!==1 || ($state['agencyState']??'off')!=='on'))) return null;
+        ($agent && !achbotAgencyActive($owner,$state))) return null;
     foreach (['gbPrice','dayPrice'] as $rate) {
-        [$effective]=calculateAgentPrice($owner,$state,(int)$plan['id'],(int)$plan['server_id'],$mode,(int)$state[$rate]);
+        [$effective]=achbotAgencyPrice($owner,$state,(int)$plan['id'],(int)$plan['server_id'],(int)$state[$rate]);
         if ($effective!=0) return null;
     }
-    return $agent?'agency':'configured_rates';
+    return achbotAgencyActive($owner,$state)?'agency':'configured_rates';
 }
 
 /** Seal the entitlement and naming policy before the customer sees a standard
@@ -127,10 +126,23 @@ function achbotCheckoutSealDraftLocked(mysqli $db,int $id,array $pay,array $disp
     // NULL is an inactive historical draft, never a current command.
     $context=['version'=>1];
     if ($pay['type']==='BUY_SUB') {
-        $plan=achbotProviderRow($db,'SELECT catid,price FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$pay['plan_id']]);
+        $plan=achbotProviderRow($db,'SELECT catid,price,title FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$pay['plan_id']]);
         if (!$plan) throw new DomainException('checkout_plan_changed');
         $context['category_id']=(int)$plan['catid'];
+        $owner=achbotProviderRow($db,'SELECT is_agent FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? FOR UPDATE','i',[(int)$pay['user_id']]);
+        if (!$owner) throw new DomainException('checkout_owner_unavailable');
+        $context['buyer_was_agent']=(int)$owner['is_agent']===1;
+        if ((int)$pay['agent_bought']===1) {
+            $current=achbotPayUxCurrentStatesLocked($db);
+            if (!$current || !achbotAgencyActive($owner,$current))
+                throw new DomainException('checkout_agency_unavailable');
+        }
         if ((int)$plan['price']<=0) throw new DomainException('checkout_purchase_offering_invalid');
+        $category=achbotProviderRow($db,'SELECT title FROM server_categories WHERE id=? AND parent=0 AND active=1 FOR UPDATE','i',[(int)$plan['catid']]);
+        if (!$category) throw new DomainException('checkout_view_category_unavailable');
+        $serverLabel=achbotProviderRow($db,'SELECT title FROM server_info WHERE id=? FOR UPDATE','i',[(int)$pay['server_id']]);
+        if (!$serverLabel) throw new DomainException('checkout_plan_changed');
+        $context['labels']=['category'=>(string)$category['title'],'plan'=>(string)$plan['title'],'server'=>(string)$serverLabel['title']];
         if ($standard && (int)$pay['price']===0) {
             $authorization=achbotCheckoutZeroCommercialLocked($db,$pay);
             if ($authorization===null) throw new DomainException('checkout_zero_commercial_denied');
@@ -198,6 +210,10 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
         }
         $q['naming_mode']=$mode;
         $q['policy']['agent_bought']=(int)$pay['agent_bought']===1;
+        $originalContext=json_decode((string)$pay['checkout_draft_context'],true,32,JSON_THROW_ON_ERROR);
+        if (!is_bool($originalContext['buyer_was_agent']??null))
+            throw new DomainException('checkout_buyer_context_missing');
+        $q['policy']['buyer_was_agent']=$originalContext['buyer_was_agent'];
     } else {
         $add=preg_match('/\AINCREASE_(DAY|VOLUME)_([1-9][0-9]*)_([1-9][0-9]*)\z/D',$type,$parts)===1;
         if ($type!=='RENEW_ACCOUNT' && !$add)

@@ -135,7 +135,7 @@ AUDITED = {
     'src/Finance/Routes/Extensions.php': (8, '713c4811836cb404d815545d4fe715765884c6f724c499bd4fb5d29c1698a89a'),
     'src/Finance/Routes/ManualReceipts.php': (2, '786805fadd4e8234e6475dfd718160b80ce5ec70fb7881ed95b30fd88d4ecf3e'),
     'src/Finance/Routes/PrePayment.php': (0, '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'),
-    'src/Finance/Routes/RenewalCheckout.php': (8, '2dd7e5b96dd86a8cb7ccebe74c0adfe99fb231d15ba4d732a96e267a42634671'),
+    'src/Finance/Routes/RenewalCheckout.php': (5, '285dc4c7445ed5064489f6dba189527bf46e1c7e3512f113494cea026e36a166'),
     'src/Finance/Routes/WalletRecharge.php': (8, 'ff6675f06f2b3bf0d32110d1ee084b895f405bf795466fc3394749c73e174be7'),
     'src/Finance/Routes/WalletTransfer.php': (13, '08b78de4a9ec758301b184ff78384095064c18d2f284557753fce60af6de63e3'),
     'src/Panel/ProviderAdmin.php': (8, '83172b94fa08ca51589c44a38ffcaf4fe458f549a2dde5a9e01f5b26d807102a'),

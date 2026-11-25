@@ -33,7 +33,8 @@ function achbotServiceReferralReserveLocked(mysqli $db,array $op,array $quote): 
     // The immutable completion decision is never re-evaluated by the
     // reward credit/report workers.
     if ((int)$u['is_agent']===1 ||
-        ($quote['request']['policy']['agent_bought']??false)===true) return;
+        ($quote['request']['policy']['agent_bought']??false)===true ||
+        ($quote['request']['policy']['buyer_was_agent']??false)===true) return;
     $inviter=(int)$u['refered_by'];
     if ($inviter<=0 || $inviter===$buyer) return;
     $amount=achbotPurchaseReferralPolicyAmount($db,'service_referral_policy');

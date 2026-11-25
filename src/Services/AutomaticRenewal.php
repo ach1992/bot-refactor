@@ -4,6 +4,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(40
 require_once __DIR__.'/Funding.php';
 require_once __DIR__.'/Ownership.php';
 require_once __DIR__.'/../Panel/ServiceLifecycle.php';
+require_once __DIR__.'/../Purchase/AgentPricing.php';
 
 /** Same existing cycle and discount policy; no payment invoice or second
  * renewal executor. The scheduler receives a durable service operation ID. */
@@ -73,17 +74,14 @@ function achbotServiceAutoRenewAdmit(mysqli $db,int $orderId,int $userId,array $
             $days===null || $volume===null) {
             $db->rollback();return ['status'=>'invalid_plan'];
         }
-        $u=achbotProviderRow($db,'SELECT is_agent,discount_percent FROM users WHERE id=?','i',[$owner['id']]);
-        if ((int)$u['is_agent']===1) {
-            $raw=trim((string)$u['discount_percent']);
-            $discounts=$raw===''?[]:json_decode($raw,true);
-            if (!is_array($discounts)) {$db->rollback();return ['status'=>'invalid_discount'];}
-            $normal=$discounts['normal']??0;
-            $discount=achbotServiceNonnegative(($botState['agencyPlanDiscount']??'off')==='on'
-                ?($discounts['plans'][$planId]??$normal):($discounts['servers'][$sid]??$normal));
-            if ($discount===null || $discount>100) {$db->rollback();return ['status'=>'invalid_discount'];}
-            $amount-=intdiv($amount*$discount,100);
+        require_once __DIR__.'/../Finance/PaymentLifecycle.php';
+        $current=achbotPayUxCurrentStatesLocked($db);
+        if ($current===null || ($current['renewAutoState']??'off')!=='on') {
+            $db->rollback();return ['status'=>'ineligible'];
         }
+        $u=achbotProviderRow($db,'SELECT is_agent,discount_percent FROM users WHERE id=? FOR UPDATE','i',[$owner['id']]);
+        [$amount,$agent,$percent]=achbotAgencyPrice($u,$current,$planId,$sid,$amount);
+        if ($agent && $percent===null) {$db->rollback();return ['status'=>'invalid_discount'];}
         $q=achbotServiceQuoteRequest(['kind'=>'RENEW','variant'=>'managed','price'=>$amount,
             'server_id'=>$sid,'plan_id'=>$planId,'order_id'=>$orderId,'quantity'=>1,
             'days'=>$days,'volume'=>$volume,'remark'=>$o['remark'],'uuid'=>(string)$o['uuid'],

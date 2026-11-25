@@ -313,7 +313,7 @@ if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbo
     exit;
 }
 
-if (preg_match('/send(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Receipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\Asend(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Receipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
 
     $payInfo = dbFetchPayByHash($connection, $match['hashId']);
     if (!$payInfo) {
@@ -323,7 +323,7 @@ if (preg_match('/send(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
 
     $method = strpos($data, 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match['hashId']) :
         (strpos($data, 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
-    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id)) {
+    if (!achbotManualReceiptAllowed($connection, $payInfo, $method, (int)$from_id,'topup')) {
         alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.d06bc731eb'), true);
         return;
     }
@@ -334,7 +334,7 @@ if (preg_match('/send(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
     // Serialize with the six-hour unstarted-invoice expiry sweep.
     require_once __DIR__ . '/../PaymentLifecycle.php';
     if (!achbotPayUxStartManualReceipt($connection,(int)$payInfo['id'],
-                                      $method,(int)$from_id)) {
+                                      $method,(int)$from_id,'topup')) {
         alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.560f05f822'),true);
         return;
     }
@@ -349,16 +349,16 @@ if (preg_match('/send(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
     exit;
 }
 
-if (preg_match('/cancelIncreaseWalletReceipt(?<hashId>.*)/', $data, $match)) {
+if (preg_match('/\AcancelIncreaseWalletReceipt(?<hashId>[A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
     handleCancelFlow( $removeKeyboard);
 }
 
-if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Receipt(.*)/', $userInfo['step'], $match)) {
+if (preg_match('/\Await(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Receipt([A-Za-z0-9_-]{1,50})\z/D', $userInfo['step'], $match)) {
 
     $method = strpos($userInfo['step'], 'UsdtReceipt') !== false ? achbotManualCryptoReceiptProviderByHash($connection, (string)$match[1]) :
         (strpos($userInfo['step'], 'GiftReceipt') !== false ? 'gift_card' : 'bank_transfer');
     $receiptPay = dbFetchPayByHash($connection, $match[1]);
-    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id)) {
+    if (!$receiptPay || !achbotManualReceiptAllowed($connection, $receiptPay, $method, (int)$from_id,'topup')) {
         setUser();
         alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.882596d0f1'), true);
         return;
@@ -406,7 +406,7 @@ if (preg_match('/wait(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)Rec
         !achbotManualGiftReviewFits($msg,$fileid,$giftScreen)){
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML');return;
     }
-    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);
+    $deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid,'topup');
     if ($deliveryToken === null) {
         alert(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.alert.795c4bddb8'), true);
         return;

@@ -36,6 +36,7 @@ $data='';
 require_once $argv[1].'/src/Subscription/AccountDeletion.php';
 $GLOBALS['telegramWebhookSecret']='SyntheticServiceDeliveryKey_2026';
 function setUser(...$args) {}
+function RandomString(...$args) {return bin2hex(random_bytes(10));}
 function getServerListKeys() {return '{}';}
 function alert(...$args) {$GLOBALS['fixtureAlerts'][]=$args;}
 function answerCallbackQuery(...$args) {$GLOBALS['fixtureAlerts'][]=$args;}
@@ -104,6 +105,10 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
             'issss',[$d['id'],(string)$uid,$text,$mode,$keys]);$s->close();
         if (isset($x['response'])) return json_decode(json_encode($x['response'],JSON_THROW_ON_ERROR),false,64,JSON_THROW_ON_ERROR);
         return (object)['ok'=>!($x['unknown_ack']??false)];
+    }
+    if ($x['op']==='telegram_addon_quote') {
+        $GLOBALS['fixtureQuoteMessages'][]=['text'=>$text,'keys'=>json_decode($keys??'null',true)];
+        return (object)['ok'=>true,'result'=>(object)['message_id'=>722]];
     }
     if (in_array($x['op'],['checkout_discount','rotate_key'],true)) return (object)['ok'=>true];
     return fixtureDeliverySend('text',$uid,$text,$keys,$mode);
@@ -228,6 +233,23 @@ try {
         require $argv[1].'/src/Finance/Routes/'.$route.'.php';
         $r=$GLOBALS['fixtureAlerts'];
     }
+    elseif ($x['op']==='telegram_addon_quote') {
+        $from_id=(int)$x['actor'];$chat_id=$from_id;$callbackId='fixture-addon';$message_id=721;
+        $userInfo=achbotProviderRow($db,'SELECT * FROM users WHERE userid=?','i',[$from_id]);
+        $text='';$botUrl='https://bot.fixture.invalid/';$botUsername='fixture_bot';
+        $botState=json_decode(achbotProviderRow($db,"SELECT value FROM setting WHERE type='BOT_STATES'")['value'],true)
+            +['nowPaymentOther'=>'off','zarinpal'=>'off','nextpay'=>'off','walletState'=>'on'];
+        $data=$x['callback'];$GLOBALS['fixtureAlerts']=[];$GLOBALS['fixtureQuoteMessages']=[];
+        $update=(object)['update_id'=>123456,'callback_query'=>(object)['id'=>$callbackId,'from'=>(object)['id'=>$from_id],
+            'data'=>$data,'message'=>(object)['message_id'=>$message_id,'chat'=>(object)['id'=>$chat_id,'type'=>'private']]]];
+        require $argv[1].'/src/Finance/Routes/Extensions.php';
+        $r=['alerts'=>$GLOBALS['fixtureAlerts'],'messages'=>$GLOBALS['fixtureQuoteMessages']];
+    }
+    elseif ($x['op']==='original_receipt_quote') {
+        require_once $argv[1].'/src/Finance/ManualReceipt.php';
+        $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[$x['pay']]);
+        $r=achbotManualOriginalServiceQuote($db,$pay,(int)$pay['user_id'],$x['mode']);
+    }
     elseif ($x['op']==='telegram_review') {
         $from_id=(int)$x['actor'];$chat_id=(int)($x['chat']??$from_id);
         $callbackId='fixture-review';$message_id=889;$data=$x['callback'];
@@ -259,7 +281,10 @@ try {
             VALUES (?,?,?,?,UNIX_TIMESTAMP(),'pending',?,?,?,?,?,?,?,?,?)");
         $stmt->bind_param('sisiiiiiiissi',$h,$uid,$type,$price,$sid,$plan,$order,$days,$volume,$count,$description,$snapshot,$agent);
         $display=achbotProviderRow($db,'SELECT days,volume FROM server_plans WHERE id=?','i',[$plan]);
-        $r=achbotPayUxInsertDraft($db,$uid,$stmt,$scoped,$display,['remark'=>$x['naming_mode']??'digits']);
+        $pricingUser=achbotProviderRow($db,'SELECT is_agent,discount_percent FROM users WHERE userid=?','i',[$uid]);
+        $pricingStates=json_decode(achbotProviderRow($db,"SELECT value FROM setting WHERE type='BOT_STATES'")['value'],true);
+        $pricing=$x['pricing_policy']??achbotAgencyQuotePolicy($pricingUser,$pricingStates,$plan,$sid);
+        $r=achbotPayUxInsertDraft($db,$uid,$stmt,$pricing,$scoped,$display,['remark'=>$x['naming_mode']??'digits']);
         $stmt->close();
     }
     elseif ($x['op']==='attention_receipt') {
@@ -589,6 +614,7 @@ def main():
                 user_id BIGINT NOT NULL, part_no INT NOT NULL,kind VARCHAR(12), qr TEXT, caption TEXT, keys_json TEXT, mode VARCHAR(12)) ENGINE=InnoDB""")
 
             sql("INSERT INTO server_categories(id,title,parent,active) VALUES (1,'Fixture category',0,1)")
+            sql("INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"renewAutoState\":\"on\"}')")
             sql(f"""INSERT INTO server_config(id,panel_url,type,username,password)
                 VALUES (2,'{base}','pasarguard','fixture','fixture');
                 INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (2,'Fixture PG','100','pgfixture','',1,1);
@@ -1511,7 +1537,10 @@ DELIMITER ;
                 sql("UPDATE users SET wallet=-10,is_agent=1,discount_percent='"+json.dumps({'normal':100})+"' WHERE userid=1001")
                 native(od)['used_traffic']=native(od)['data_limit'];native(od)['expire']=1800000000
                 before=finance();n=len(writes())
-                r=php(mode,'auto',order=od);assert r['status']=='funded',r
+                saved_states=sql("SELECT value FROM setting WHERE type='BOT_STATES'")
+                sql("UPDATE setting SET value='"+json.dumps({'renewAutoState':'on','agencyState':'on'})+"' WHERE type='BOT_STATES'")
+                r=php(mode,'auto',order=od,bot_state={'renewAutoState':'on'});assert r['status']=='funded',r
+                sql("UPDATE setting SET value='"+saved_states+"' WHERE type='BOT_STATES'")
                 aid=r['id'];step(mode,aid,'progressed');step(mode,aid,'applied');step(mode,aid,'completed')
                 assert finance()==before and len(writes())==n+2
                 assert sql(f"SELECT price_toman,debit_entry_id FROM service_operations WHERE id={aid}")=='0\tNULL'
@@ -2026,7 +2055,7 @@ DELIMITER ;
                 sql("UPDATE users SET isAdmin=0,is_agent=0,freetrial=NULL WHERE userid=9002; DELETE FROM setting WHERE type='ADMIN_ROLE_9002'")
                 # Actual persisted purchase draft -> Wallet command and manual
                 # receipt entry points. Old synthetic commands remain isolated.
-                sql("""DELETE FROM setting WHERE type='BOT_STATES'; INSERT INTO setting(type,value) VALUES ('BOT_STATES','{"walletState":"on","cartToCartState":"on"}')""")
+                sql("""DELETE FROM setting WHERE type='BOT_STATES'; INSERT INTO setting(type,value) VALUES ('BOT_STATES','{"walletState":"on","cartToCartState":"on","renewAutoState":"on"}')""")
                 sql("UPDATE users SET wallet=50000 WHERE userid=1001; UPDATE server_info SET ucount=100 WHERE id=2")
                 def draft(suffix,price=100,typ='BUY_SUB'):
                     h=mode+'-checkout-'+suffix
@@ -2434,6 +2463,51 @@ DELIMITER ;
                         assert php(mode,'checkout_wallet',hash=h,actor=uid)['status']=='already_funded'
                         assert posts()==n+qty and sql("SELECT COUNT(*) FROM wallet_entries")==ledger
                     cases.append(mode+'_zero_commercial_actual_checkout_native_delivery_reports')
+                    # Real add-on checkout route uses the active representative
+                    # entitlement regardless of the original order flag.
+                    oid=int(sql("SELECT MAX(id) FROM orders_list WHERE userid=9002"))
+                    sql("""UPDATE setting SET value='{"agencyState":"on","walletState":"on","cartToCartState":"on"}' WHERE type='BOT_STATES'""")
+                    sql("""UPDATE users SET is_agent=1,discount_percent='{"normal":25}',step='none' WHERE userid=9002""")
+                    for flag in (0,1):
+                        sql(f"UPDATE orders_list SET agent_bought={flag} WHERE id={oid}")
+                        for table,prefix in [('increase_day','selectPlanDayIncrease'),('increase_plan','increaseVolumePlan')]:
+                            sql(f"INSERT INTO {table}(volume,price) VALUES (97,100) ON DUPLICATE KEY UPDATE price=100")
+                            offer=int(sql(f"SELECT id FROM {table} WHERE volume=97 AND server_id IS NULL"))
+                            before=int(sql("SELECT COUNT(*) FROM pays"))
+                            r=php(mode,'telegram_addon_quote',actor=9002,callback=f'{prefix}{oid}_{offer}')
+                            assert r['messages'] and int(sql("SELECT COUNT(*) FROM pays"))==before+1,r
+                            assert sql("SELECT price FROM pays WHERE user_id=9002 ORDER BY id DESC LIMIT 1")=='75',r
+                    sql("UPDATE users SET is_agent=0 WHERE userid=9002")
+                    before=sql("SELECT COUNT(*) FROM pays")
+                    assert php(mode,'checkout_insert',hash=mode+'-stale-agency-price',type='BUY_SUB',price=75,actor=9002,
+                               pricing_policy={'active':True,'percent':25})==0
+                    assert sql("SELECT COUNT(*) FROM pays")==before
+                    for table,prefix in [('increase_day','selectPlanDayIncrease'),('increase_plan','increaseVolumePlan')]:
+                        offer=int(sql(f"SELECT id FROM {table} WHERE volume=97 AND server_id IS NULL"))
+                        r=php(mode,'telegram_addon_quote',actor=9002,callback=f'{prefix}{oid}_{offer}')
+                        assert r['messages'] and sql("SELECT price FROM pays WHERE user_id=9002 ORDER BY id DESC LIMIT 1")=='100',r
+                    cases.append(mode+'_actual_addon_current_agency_pricing_and_draft_guard')
+                    sql("UPDATE setting SET value='"+json.dumps({'renewAutoState':'on','agencyState':'on','walletState':'on','cartToCartState':'on'})+"' WHERE type='BOT_STATES'")
+                    sql("UPDATE users SET is_agent=1 WHERE userid=9002")
+                    sql(f"UPDATE orders_list SET notif=1,autoRenew='on',agent_bought=0 WHERE id={oid}")
+                    native(oid)['used_traffic']=native(oid)['data_limit']
+                    r=php(mode,'auto',order=oid,owner=9002,bot_state={'renewAutoState':'on','agencyState':'off'})
+                    assert r['status']=='funded',r
+                    aid=r['id']
+                    assert sql(f"SELECT price_toman FROM service_operations WHERE id={aid}")=='75',r
+                    for stage in ('progressed','applied','completed'):step(mode,aid,stage)
+                    cases.append(mode+'_actual_auto_renew_current_agency_policy')
+                    sql("UPDATE users SET is_agent=0 WHERE userid=9002")
+                    pid=php(mode,'checkout_insert',hash=mode+'-receipt-labels',type='BUY_SUB',price=100)
+                    assert pid>0 and php(mode,'checkout_manual',pay=pid,submit=False)
+                    quote=php(mode,'original_receipt_quote',pay=pid,mode='standard')
+                    assert quote and quote['days']==30 and quote['price']==100,quote
+                    original=sql("SELECT title FROM server_plans WHERE id=7")
+                    sql("UPDATE server_plans SET title='Changed after issue',days=31,price=200 WHERE id=7")
+                    assert php(mode,'original_receipt_quote',pay=pid,mode='standard')==quote
+                    sql("UPDATE server_plans SET title='"+original.replace("'","''")+"',days=30,price=100 WHERE id=7")
+                    cases.append(mode+'_manual_receipt_original_frozen_quote')
+
                     assert not faults and not errors,(faults,errors)
                 sql("UPDATE users SET is_agent=0,discount_percent=NULL WHERE userid=9002")
             if not (args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.zero_commercial_only):

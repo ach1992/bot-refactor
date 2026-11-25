@@ -161,7 +161,7 @@ function achbotPayUxLockDraftOwner(mysqli $db, int $userId): void {
 }
 
 /** Execute a NEW customer draft under the same lock held by all issuers. */
-function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, bool $scopedAddon = false, array $display = [], array $states = []): int {
+function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, array $pricingPolicy, bool $scopedAddon = false, array $display = [], array $states = []): int {
     $started=false;
     try {
         if (!$db->begin_transaction()) throw new RuntimeException('draft_begin_failed');
@@ -209,6 +209,15 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, boo
             if (!achbotAddonDraftCurrent($db,$draftId))
                 throw new RuntimeException('addon_draft_scope_or_price_changed');
         }
+        // The route calculated its amount from server-owned state. Reject
+        // a changed representative entitlement/percentage before publishing
+        // that amount, under the same owner and settings locks.
+        require_once __DIR__.'/../Purchase/AgentPricing.php';
+        $pricingOwner=achbotProviderRow($db,'SELECT is_agent,discount_percent FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? FOR UPDATE','i',[$actor]);
+        $pricingState=achbotPayUxCurrentStatesLocked($db);
+        if ($pricingOwner===null || $pricingState===null ||
+            achbotAgencyQuotePolicy($pricingOwner,$pricingState,(int)$pay['plan_id'],(int)$pay['server_id'])!==$pricingPolicy)
+            throw new DomainException('draft_agency_pricing_changed');
         require_once __DIR__.'/CheckoutAdmission.php';
         achbotCheckoutRequireSchema($db);
         achbotCheckoutSealDraftLocked($db,$draftId,$pay,$display,$states);
@@ -372,7 +381,7 @@ function achbotPayUxExpireUnstartedManual(mysqli $db, int $payId): bool {
  * lease/review steps remain separately guarded and require real evidence.
  */
 function achbotPayUxStartManualReceipt(mysqli $db, int $payId,
-                                       string $method, int $actor): bool {
+                                       string $method, int $actor,?string $expectedMode=null): bool {
     if ($payId<=0 || $actor<=0 || !achbotPayUxManualProvider($method) ||
         !achbotPayUxTable($db,'payment_attempts') ||
         !achbotPayUxTable($db,'payment_transactions')) return false;
@@ -380,12 +389,14 @@ function achbotPayUxStartManualReceipt(mysqli $db, int $payId,
     try {
         if (!$db->begin_transaction()) return false;
         $started=true;
-        $stmt=$db->prepare('SELECT user_id,state,payid FROM pays WHERE id=? FOR UPDATE');
+        require_once __DIR__.'/CheckoutAdmission.php';
+        $stmt=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
         $stmt->bind_param('i',$payId);
         if (!$stmt->execute()) throw new RuntimeException('manual_click_pay_lock');
         $pay=$stmt->get_result()->fetch_assoc();$stmt->close();
         if (!$pay || (int)$pay['user_id']!==$actor ||
-            $pay['state']!=='pending' || (string)($pay['payid']??'')!=='') {
+            ($expectedMode!==null && !achbotCheckoutModeMatchesRequest($pay,$expectedMode)) ||
+            !in_array($pay['state'],['pending','service_superseded'],true) || (string)($pay['payid']??'')!=='') {
             $db->rollback();return false;
         }
         $stmt=$db->prepare('SELECT id,provider,stage,provider_status,checkout_url,wallet_invoice_sha256,
@@ -404,7 +415,7 @@ function achbotPayUxStartManualReceipt(mysqli $db, int $payId,
         if ((string)($a['provider_status']??'')==='receipt_started') {
             $db->commit();return true;
         }
-        if ((string)($a['provider_status']??'')!=='' ||
+        if ($pay['state']!=='pending' || (string)($a['provider_status']??'')!=='' ||
             ($api===null && (int)$a['age_seconds']>=achbotPayUxManualDeadlineSeconds())) {
             $db->rollback();return false;
         }

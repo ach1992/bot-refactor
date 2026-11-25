@@ -250,13 +250,15 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
     }
 }
 
-function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $method, int $userId): bool {
+function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $method, int $userId,?string $expectedMode=null): bool {
     if ((int)$payInfo['user_id'] !== $userId ||
         !in_array((string)$payInfo['state'],['pending','service_superseded'],true) ||
         (string)($payInfo['payid'] ?? '') !== '' ||
         !achbotCreditMethodHas($method,'manual_quote')) return false;
     try {
         require_once __DIR__ . '/PaymentLifecycle.php';
+        require_once __DIR__.'/CheckoutAdmission.php';
+        if ($expectedMode!==null && !achbotCheckoutModeMatchesRequest($payInfo,$expectedMode)) return false;
         $api=function_exists('achbotApiPaymentContext') ? achbotApiPaymentContext($connection,(string)$payInfo['hash_id'],$userId) : null;
         if (function_exists('achbotApiPaymentPinned') && achbotApiPaymentPinned($connection,(int)$payInfo['id']) && !$api) return false;
 
@@ -275,7 +277,8 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
              (int)$attempt['age_seconds']<achbotPayUxManualDeadlineSeconds())
         );
         return $validWindow &&
-            ($payInfo['state']==='pending' || $attempt['stage']==='receiving') &&
+            ($payInfo['state']==='pending' || $attempt['stage']==='receiving' ||
+                (string)($attempt['provider_status']??'')==='receipt_started') &&
             (string)$attempt['provider'] === $method &&
             in_array((string)$attempt['stage'], ['pending','receiving'], true) &&
             achbotManualIntentDecode((string)$attempt['checkout_url'], $method) !== null;
@@ -290,8 +293,8 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
  * using the SAME evidence, not replaced by a different image.
  */
 function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $method,
-                                   int $userId, string $fileId): ?string {
-    if (!achbotManualReceiptAllowed($connection,$payInfo,$method,$userId)) return null;
+                                   int $userId, string $fileId,?string $expectedMode=null): ?string {
+    if (!achbotManualReceiptAllowed($connection,$payInfo,$method,$userId,$expectedMode)) return null;
     $typed=achbotManualTypedGift($connection,$payInfo,$method);
     if ($userId <= 0 || $fileId === '' || strlen($fileId) > ($typed?4096:1200) ||
         !achbotCreditMethodHas($method,'manual_quote')) return null;
@@ -304,7 +307,8 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         $stmt->execute();
         $pay = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if (!$pay || (int)$pay['user_id'] !== $userId || !in_array($pay['state'],['pending','service_superseded'],true) ||
+        if (!$pay || (int)$pay['user_id'] !== $userId ||
+            ($expectedMode!==null && !achbotCheckoutModeMatchesRequest($pay,$expectedMode)) || !in_array($pay['state'],['pending','service_superseded'],true) ||
             (string)($pay['payid'] ?? '') !== '') { $connection->rollback(); return null; }
         $stmt = $connection->prepare('SELECT *,
             TIMESTAMPDIFF(SECOND,created_at,NOW()) AS age_seconds
@@ -315,7 +319,8 @@ function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $m
         $stmt->close();
         if (!$attempt || !achbotCurrentReceiptPin($attempt) || (string)$attempt['provider'] !== $method ||
             !in_array((string)$attempt['stage'], ['pending','receiving'], true) ||
-            ($pay['state']==='service_superseded' && $attempt['stage']!=='receiving')) {
+            ($pay['state']==='service_superseded' && $attempt['stage']!=='receiving' &&
+                (string)($attempt['provider_status']??'')!=='receipt_started')) {
             $connection->rollback(); return null;
         }
         require_once __DIR__ . '/PaymentLifecycle.php';
@@ -438,6 +443,37 @@ function achbotManualFinishEvidence(mysqli $connection, string $hashId, string $
     }
 }
 
+
+function achbotManualOriginalServiceQuote(mysqli $db,array $pay,int $actor,string $mode): ?array {
+    require_once __DIR__.'/CheckoutAdmission.php';
+    $begun=false;
+    try {
+        if (!$db->begin_transaction()) throw new RuntimeException('manual_original_quote_begin');
+        $begun=true;
+        [$current,$attempt]=achbotCreditInvoiceLocked($db,(int)$pay['id'],$actor);
+        if (!achbotCheckoutModeMatchesRequest($current,$mode) ||
+            !is_string($attempt['wallet_invoice_sha256']??null) ||
+            !hash_equals($attempt['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($current,$attempt)) ||
+            (int)$attempt['service_operation_id']!==(int)$current['checkout_operation_id'])
+            throw new RuntimeException('manual_original_quote_identity');
+        [, $quote]=achbotCheckoutOriginalCommandLocked($db,$current);
+        $context=json_decode((string)$current['checkout_draft_context'],true,32,JSON_THROW_ON_ERROR);
+        $q=$quote['request'];
+        if ($mode==='standard') {
+            $labels=$context['labels']??null;
+            if (!is_array($labels) || !is_string($labels['category']??null) ||
+                !is_string($labels['plan']??null) || !is_string($labels['server']??null))
+                throw new RuntimeException('manual_original_quote_labels');
+            $q['labels']=$labels;
+        }
+        $db->rollback();$begun=false;
+        return $q;
+    } catch (Throwable $e) {
+        if ($begun) try {$db->rollback();}catch(Throwable $ignored){}
+        error_log('achbot_manual_original_quote_deferred pay_id='.(int)$pay['id'].' actor='.$actor.' class='.get_class($e));
+        return null;
+    }
+}
 
 function achbotManualCaption(mysqli $connection, array $payInfo, string $caption): string {
     // Compose the trusted template before substituting customer values.
