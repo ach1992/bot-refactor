@@ -214,6 +214,29 @@ foreach($objects as $response) {
     });
     requireSame(2,$calls,'known formatting rejection original retry');
 }
+// Generic message and media helpers share the same explicit rejection proof.
+require_once dirname(__DIR__).'/src/Telegram/Messages.php';
+foreach ([null,(object)['ok'=>false,'description'=>"can't parse entities"],
+    (object)['ok'=>false,'error_code'=>'400','description'=>"can't parse entities"],
+    (object)['ok'=>false,'error_code'=>500,'description'=>"can't parse entities"]] as $unknown) {
+    foreach (['sendMessage','sendPhoto'] as $method) {
+        $calls=0;$send=static function ($name,$payload) use (&$calls,$unknown) {$calls++;return $unknown;};
+        $fn='\\AchBot\\Telegram\\Messages\\'.$method;
+        $result=$method==='sendMessage'?$fn($send,1001,'<b>hello</b>'):$fn($send,1001,'photo','<b>hello</b>');
+        requireSame($unknown,$result,'unknown response preserved');
+        requireSame(1,$calls,'unknown text/media response never retried');
+    }
+    requireSame(false,\AchBot\Telegram\Presentation\rejectedDecoration($unknown),'unknown presentation rejection not certified');
+}
+foreach (['sendMessage','sendPhoto'] as $method) {
+    $wire=[];$send=static function ($name,$payload) use (&$wire,$ok) {
+        $wire[]=$payload;return count($wire)===1?(object)['ok'=>false,'error_code'=>400,'description'=>"can't parse entities"]:$ok;
+    };
+    $fn='\\AchBot\\Telegram\\Messages\\'.$method;
+    requireSame($ok,$method==='sendMessage'?$fn($send,1001,'<b>hello</b>'):$fn($send,1001,'photo','<b>hello</b>'),'known rejection permits one original fallback');
+    requireSame(2,count($wire),'one fallback only');
+    requireSame(false,isset($wire[1]['parse_mode']),'known rejection fallback literal');
+}
 // The two migrated fixed Markdown-code prompts have identical visible text,
 // line breaks, and literal copyable code contents in HTML. Message catalog
 // keys remain stable; no dynamic input or callback text is involved.

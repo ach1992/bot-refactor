@@ -26,8 +26,8 @@ function sendMessage(callable $request, $from_id, $txt, $key = null, $parse ="HT
 
     $res = $request('sendMessage', $payload);
 
-    if ($res && isset($res->ok) && $res->ok === false && isset($res->description)) {
-        if (strpos($res->description, "can't parse entities") !== false) {
+    if ($parse !== null && \AchBot\Telegram\Response\deliveryOutcome($res)['code'] === 400) {
+        if (str_contains(((array)$res)['description'], "can't parse entities")) {
             unset($payload['parse_mode']);
             $res = $request('sendMessage', $payload);
         }
@@ -157,8 +157,8 @@ function sendPhoto(callable $request, $from_id, $photo, $caption = null, $keyboa
 
     $res = $request('sendPhoto', $data);
 
-    if ($res && isset($res->ok) && $res->ok === false && isset($res->description)) {
-        if (strpos($res->description, "can't parse entities") !== false) {
+    if ($parse !== null && \AchBot\Telegram\Response\deliveryOutcome($res)['code'] === 400) {
+        if (str_contains(((array)$res)['description'], "can't parse entities")) {
             unset($data['parse_mode']);
             $res = $request('sendPhoto', $data);
         }

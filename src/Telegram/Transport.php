@@ -150,7 +150,8 @@ function requestOnce($botToken,$runtimeDir,$method,$datas=[]) {
     // Preserve old calling contract. Never mask an unknown send as ACK.
     if ($errno!==0) return null;
     $context=diagnosticContext();
-    if (isset($context['delivery_part']) || isset($context['followup_id']))
+    if (isset($context['delivery_part']) || isset($context['followup_id']) ||
+        \AchBot\Telegram\Response\deliveryOutcome($decoded)['result'] !== 'unknown')
         return \AchBot\Telegram\Response\deliveryTransportResponse($decoded,$http,$errno);
     return $decoded;
 }
@@ -188,6 +189,8 @@ function sendFileOnce($botToken,$runtimeDir,$method,$datas=[]) {
     $decoded=is_string($res)&&$res!==''?json_decode($res,true):null;
     logResult($runtimeDir,$method,$timing,$http,$errno,$elapsed,$decoded,true);
     if ($errno!==0) return false;
+    if (\AchBot\Telegram\Response\deliveryOutcome($decoded)['result'] !== 'unknown')
+        return \AchBot\Telegram\Response\deliveryTransportResponse($decoded,$http,$errno) ?? false;
     // Legacy sendFile callers receive json_decode(..., true) as-is when
     // truthy, including unusual scalar JSON. Do not narrow its contract.
     return $decoded ?: false;

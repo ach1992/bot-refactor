@@ -26,7 +26,7 @@ function hbUpdate(mysqli $connection, string $table, int $id, int $offsetVal): v
 }
 
 function markPaused(mysqli $connection, string $table, int $id, int $offsetVal): void {
-    $sql = "UPDATE `$table` SET `offset`=?, `state`=1, `updated_at`=NOW() WHERE `id`=? AND `state`=2";
+    $sql = "UPDATE `$table` SET `offset`=GREATEST(`offset`,?), `state`=1, `updated_at`=NOW() WHERE `id`=? AND `state`=2";
     $st = $connection->prepare($sql);
     if ($st) {
         $st->bind_param("ii", $offsetVal, $id);

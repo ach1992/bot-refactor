@@ -194,10 +194,10 @@
     },
     "src/Finance/Routes/PrePayment.php": {
       "before_count": 26,
-      "after_count": 5,
+      "after_count": 7,
       "before_sha256": "d147120088ad0375ab9888055dda0239edbfc9a10b383ec9ab02a239fc20463c",
-      "after_sha256": "1cd099df4a9a87ec26044e7cf299c3a7082355ba244cf2aa56805d1936872a5d",
-      "reason": "Replace obsolete method-selection workflow with current pinned renewal hosted-link action; old draft routes removed."
+      "after_sha256": "0bb9ee7bdae34d801dadfb2c5b4202e1981da1652ea872043a22053c1311f1d0",
+      "reason": "Replace obsolete method-selection workflow with current pinned renewal hosted-link action; old draft routes removed. An expired or blocked original link acknowledges the click and edits the existing card through shared status text and keyboard; the valid original link notification includes its pinned deadline."
     },
     "src/Plans/AddonAdmin.php": {
       "before_count": 8,
@@ -394,6 +394,13 @@
       "before_sha256": "6989d9ab8eb0b22b163c86c7f019b05ea2d0391377fd7418147947a75247e5d6",
       "after_sha256": "5c56b7b0ab00291d8bf30e48e5f5dd6b953c7f67d2e3256a720b6e0cfae1fc1d",
       "reason": "Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts."
+    },
+    "pay/checkout.php": {
+      "reason": "The original NOWPayments notification preserves its recipient and keyboard and appends the actual pinned invoice deadline through the shared lifecycle renderer.",
+      "before_count": 1,
+      "after_count": 1,
+      "before_sha256": "a8c3ce5cacfba9f5bc7357c0bdf5fd58dec702d057b1a034d23ab94dea1bbc13",
+      "after_sha256": "087cf93e55a1604396c5236f3243f34c3f450ff57d8eacc9e73be2f303971b70"
     }
   },
   "added_with_direct_send": [

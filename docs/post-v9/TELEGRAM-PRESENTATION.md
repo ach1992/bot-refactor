@@ -86,6 +86,13 @@ literal data; the renderer escapes them exactly once and replaces template
 tokens in one pass without interpreting tokens inside dynamic values.
 Broadcast jobs store raw text for history and rendered HTML
 for execution; edit jobs do the same. Historical pending jobs are not replayed.
+The broadcast worker reserves each recipient in the existing durable cursor
+before dispatch. On a lost acknowledgement or process interruption, the
+recipient is not replayed; only an acknowledged message ID is recorded as
+delivered. This deliberately favors no duplicate message over claiming or
+retrying an uncertain delivery. A pause cannot rewind the claimed cursor.
+A contradictory HTTP/Bot API acknowledgement or rejection cannot authorize
+a formatting retry in ordinary or multipart sends.
 Support history stores original literal content, and live sends render
 Telegram entities without modifying the incoming text.
 

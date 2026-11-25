@@ -58,6 +58,7 @@ NATIVE_TESTS = (
     ("agency_current", "test_post_v9_agency.py"),
     ("api_staff_permissions", "test_post_v9_api_staff_digest.py"),
     ("browser_feedback", "test_post_v9_browser_feedback.py"),
+    ("broadcast_delivery", "test_post_v9_broadcast_delivery.py"),
 )
 
 OTHER_TESTS = (
@@ -182,6 +183,7 @@ REQUIRED_CURRENT_CASES = {
         "current_review_cooldown_does_not_block_original_recovery",
         "historical_payments_do_not_create_manual_cooldown",
         "api_maintenance_rotates_broken_pin_and_skips_historical_projection",
+        "same_exact_sms_amount_with_competing_or_corrupt_original_never_auto_credits",
         "bank_filtered_search_resumes_after_page_budget",
         "superseded_unfunded_receipt_reject_without_archive",
         "actual_gift_proven_local_rollback_recovery_reject_denied",
@@ -223,6 +225,13 @@ REQUIRED_CURRENT_CASES = {
 
 # These suites expose single-scenario evidence rather than strict/off pairs.
 REQUIRED_SCENARIOS = {
+    "broadcast_delivery": (
+        "killed_after_outbound_before_ack_never_replays_recipient",
+        "actual_html_text_and_raw_history_unchanged",
+        "actual_media_caption_unknown_ack_not_retried_and_logged",
+        "cancelled_job_cannot_claim_or_dispatch",
+        "pause_cannot_rewind_durable_cursor",
+    ),
     "nonpaid_trial_bulk": (
         "commercial_positive_price_denied_at_nonpaid_reservation",
         "trial_current_policy_and_entitlement_rechecked_before_reservation",

@@ -9,6 +9,7 @@
 namespace AchBot\Telegram\Presentation;
 
 require_once __DIR__.'/../Presentation/Text.php';
+require_once __DIR__.'/Response.php';
 
 /** Telegram entities use UTF-16 offsets; literal input is always escaped. */
 function inputHtml(string $text,array $entities=[]): ?string {
@@ -250,8 +251,7 @@ function prepare(string $method, array $payload): array {
 /** Retry only when Telegram explicitly rejected our presentation extension. */
 function rejectedDecoration($result): bool {
     $data = is_object($result) ? (array)$result : $result;
-    if (!is_array($data) || ($data['ok'] ?? null) !== false ||
-        (int)($data['error_code'] ?? 0) !== 400) return false;
+    if (\AchBot\Telegram\Response\deliveryOutcome($data)['code'] !== 400) return false;
     $description = strtolower((string)($data['description'] ?? ''));
     return str_contains($description, 'custom emoji') ||
         str_contains($description, 'custom_emoji') ||

@@ -60,6 +60,7 @@ if (array_key_exists('report_channel',$spec)) $GLOBALS['botState']['rewardChanne
 if (!($spec['api']??false)) {$GLOBALS['botState']['smsApiVerifyState']='off';$GLOBALS['botState']['giftApiVerifyState']='off';}
 try {
     if (isset($spec['issued_time'])) $db->query('SET timestamp='.(int)$spec['issued_time']);
+    if (isset($spec['random_seed'])) mt_srand((int)$spec['random_seed']);
     $result=match ($spec['op']) {
         'attention'=>achbotGatewayAttentionCaseOpen($db,$id),
         'expire'=>achbotPayUxExpireInvoice($db,$id,(int)$spec['clock']),
@@ -588,11 +589,41 @@ DELIMITER ;
                 assert balance()==b
                 assert sql(f"SELECT evidence_next_check_at>NOW() AND evidence_projection_checked_at IS NOT NULL FROM payment_attempts WHERE pay_row_id={bad}")=='1'
                 assert sql(f"SELECT evidence_projection_checked_at IS NULL FROM payment_attempts WHERE pay_row_id={historic}")=='1'
-                assert result(mode,'maintain',good)['checked']==1
-                assert balance()==b+good_price and server.consumes[ident]==1
+                queue_result=result(mode,'maintain',good)
+                assert queue_result['checked']==1,queue_result
+                actual_balance=balance()
+                assert actual_balance==b+good_price and server.consumes.get(ident,0)==1,(
+                    mode,queue_result,actual_balance,b+good_price,server.consumes.get(ident,0),
+                    sql(f"SELECT CONCAT_WS(':',stage,evidence_state,COALESCE(wallet_credit_entry_id,0)) FROM payment_attempts WHERE pay_row_id={good}"))
                 assert sql(f"SELECT evidence_projection_checked_at IS NOT NULL FROM payment_attempts WHERE pay_row_id={good}")=='1'
                 assert sql(f"SELECT wallet_credit_entry_id IS NULL AND evidence_profile='fixture-corrupt-profile' FROM payment_attempts WHERE pay_row_id={bad}")=='1'
                 case('api_maintenance_rotates_broken_pin_and_skips_historical_projection')
+
+                # Isolate the scheduler test above from random quote overlap,
+                # but explicitly preserve the independent collision guard. A
+                # matching SMS must not settle two original invoices, including
+                # when the competing original pin is no longer readable.
+                shared_price=queue_base+10000
+                competing=seed(mode+'-exact-sms-competing',price=shared_price)
+                candidate=seed(mode+'-exact-sms-candidate',price=shared_price)
+                collision_quotes=[result(mode,'issue',p,method='bank_transfer',api=True,random_seed=1729)
+                                  for p in (competing,candidate)]
+                assert collision_quotes[0]['amount']==collision_quotes[1]['amount'],collision_quotes
+                for p in (competing,candidate): submit(mode,p,'bank_transfer','collision-photo',api=True)
+                ident='32000' if mode=='strict' else '33000'
+                nowdt=datetime.now(timezone.utc)
+                server.messages[ident]=dict(id=int(ident),public_uid='UID'+ident,provider='BANK_FIXTURE',provider_sms_id='sms'+ident,
+                    sender='BANK',mobile_source='phone',bank_key='fixture',rule_id=7,amount=int(float(collision_quotes[1]['amount'])),display_unit='toman',
+                    sms_date=nowdt.strftime('%Y-%m-%d'),sms_time=nowdt.strftime('%H:%M:%S'),created_at=nowdt.strftime('%Y-%m-%d %H:%M:%S'),status='ready')
+                b=balance()
+                assert result(mode,'check',candidate)=='review'
+                assert balance()==b and server.consumes.get(ident,0)==0
+                sql(f"UPDATE payment_attempts SET evidence_profile='fixture-corrupt-overlapping-profile' WHERE pay_row_id={competing}")
+                sql(f"UPDATE payment_attempts SET evidence_next_check_at=NOW() WHERE pay_row_id={candidate}")
+                assert result(mode,'check',candidate)=='review'
+                assert balance()==b and server.consumes.get(ident,0)==0
+                del server.messages[ident]
+                case('same_exact_sms_amount_with_competing_or_corrupt_original_never_auto_credits')
 
                 # Source-issued old invoices: transfer may be timely even
                 # when first submitted after closure. The SMS search duration

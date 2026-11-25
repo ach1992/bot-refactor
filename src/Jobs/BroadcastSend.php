@@ -5,36 +5,17 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+require_once __DIR__ . '/../Telegram/Response.php';
 
 
 // BEGIN send to all
 $staleMinutes = 15;
 $batchLimit   = 400;
-$heartbeatN   = 10;
-$hbSeconds    = 10;
 $sleepUs      = 80000;
 
 $sendId   = 0;
 $offset   = 0;
 $finished = false;
-
-register_shutdown_function(function () use (&$connection, &$sendId, &$offset, &$finished) {
-    if ($finished || $sendId <= 0) return;
-
-    $stmt = $connection->prepare("SELECT `state` FROM `send_list` WHERE `id`=? LIMIT 1");
-    if (!$stmt) return;
-    $stmt->bind_param("i", $sendId);
-    $stmt->execute();
-    $r = $stmt->get_result();
-    safeClose($stmt);
-
-    if ($r && $r->num_rows > 0) {
-        $st = (int)$r->fetch_assoc()['state'];
-        if ($st === 2) {
-            markPaused($connection, "send_list", $sendId, $offset);
-        }
-    }
-});
 
 $stmt = $connection->prepare("
     SELECT `id`
@@ -82,7 +63,7 @@ $list = $stmt->get_result();
 safeClose($stmt);
 
 if (!$list || $list->num_rows == 0) {
-    markPaused($connection, "send_list", $sendId, $offset);
+    // No trustworthy cursor was loaded; allow ordinary stale-job recovery.
     return;
 }
 
@@ -95,6 +76,25 @@ $chat_id    = $info['chat_id'];
 $text       = $info['text_html'];
 $message_id = $info['message_id'];
 $group      = $info['target_group'] ?? 'all';
+
+register_shutdown_function(function () use (&$connection, &$sendId, &$offset, &$finished) {
+    if ($finished || $sendId <= 0) return;
+
+    $stmt = $connection->prepare("SELECT `state` FROM `send_list` WHERE `id`=? LIMIT 1");
+    if (!$stmt) return;
+    $stmt->bind_param("i", $sendId);
+    $stmt->execute();
+    $r = $stmt->get_result();
+    safeClose($stmt);
+
+    if ($r && $r->num_rows > 0) {
+        $st = (int)$r->fetch_assoc()['state'];
+        if ($st === 2) {
+            markPaused($connection, "send_list", $sendId, $offset);
+        }
+    }
+});
+
 
 if ($offset == 0) {
     $msg = ($type == "forwardall") ? \achbotMessage('jobs.broadcast_send.text.5168e99d1c') : \achbotMessage('jobs.broadcast_send.text.afcd1bb579');
@@ -216,12 +216,30 @@ if (!$usersList || $usersList->num_rows == 0) {
     return;
 }
 
-$sentInThisBatch = 0;
-$lastHbTs = nowTs();
+// The cursor is a durable dispatch claim, not an acknowledgement. Telegram
+// cannot prove non-delivery after a lost response or a killed worker. Reserve
+// each recipient before the first possible send and never replay that claim.
+// The canonical Cron lease already serializes this worker; the comparison
+// additionally prevents dispatch after cancellation or cursor movement.
+$claim = $connection->prepare("UPDATE `send_list` SET `offset`=?, `updated_at`=NOW()
+    WHERE `id`=? AND `state`=2 AND `offset`=?");
+if (!$claim) return;
 
 while ($user = $usersList->fetch_assoc()) {
-
-    $offset = (int)$user['id'];
+    $next = (int)$user['id'];
+    $claim->bind_param("iii", $next, $sendId, $offset);
+    if (!$claim->execute() || $claim->affected_rows !== 1) {
+        safeClose($claim);
+        $finished = true;
+        if (isCancelled($connection, "send_list", $sendId)) {
+            markCancelled($connection, "send_list", $sendId, $offset);
+            achbotNotifyAdmins('sendMessage', ['text' => \achbotMessage('jobs.broadcast_send.button.488a04a1e0', ['offset' => $offset])], ['report_channel'=>null]);
+        } else {
+            error_log('achbot_broadcast_claim_not_acquired broadcast_id='.$sendId.' user_id='.(int)$user['userid']);
+        }
+        return;
+    }
+    $offset = $next;
 
     $sendRes = null;
 
@@ -289,7 +307,6 @@ while ($user = $usersList->fetch_assoc()) {
     if (isset($sendRes->ok) && $sendRes->ok === false) {
         $code = (int)($sendRes->error_code ?? 0);
         if ($code === 429) {
-            hbUpdate($connection, "send_list", $sendId, $offset);
             $retry = 1;
             if (isset($sendRes->parameters) && isset($sendRes->parameters->retry_after)) {
                 $retry = (int)$sendRes->parameters->retry_after;
@@ -341,25 +358,12 @@ while ($user = $usersList->fetch_assoc()) {
         }
     }
 
-    $sentInThisBatch++;
-    usleep($sleepUs);
-
-    // heartbeat بر اساس تعداد یا زمان
-    if (($sentInThisBatch % $heartbeatN == 0) || (nowTs() - $lastHbTs >= $hbSeconds)) {
-        hbUpdate($connection, "send_list", $sendId, $offset);
-        $lastHbTs = nowTs();
-
-        if (isCancelled($connection, "send_list", $sendId)) {
-            markCancelled($connection, "send_list", $sendId, $offset);
-
-            achbotNotifyAdmins('sendMessage', ['text'    => \achbotMessage('jobs.broadcast_send.button.488a04a1e0', ['offset' => $offset])
-            ], ['report_channel'=>null]);
-
-            $finished = true;
-            return;
-        }
+    if (!apiOk($sendRes) && \AchBot\Telegram\Response\deliveryOutcome($sendRes)['result'] === 'unknown') {
+        error_log('achbot_broadcast_delivery_unknown broadcast_id='.$sendId.' user_id='.(int)$user['userid']);
     }
+    usleep($sleepUs);
 }
+safeClose($claim);
 
 markPaused($connection, "send_list", $sendId, $offset);
 
