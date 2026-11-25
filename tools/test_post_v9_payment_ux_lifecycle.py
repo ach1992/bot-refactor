@@ -132,7 +132,7 @@ def sql(w,e,q):
 def cmd(w,e,root,s,database=DB):
     src=w/'owned-payment-ux.php'
     if not src.exists():src.write_text(DRIVER)
-    return ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli',
+    return ['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=mbstring',
             '-d','allow_url_fopen=0',
             '-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
             str(src),str(root),str(w/'mysql.sock'),database,json.dumps(s,ensure_ascii=False)]
