@@ -10,11 +10,8 @@ With both presentation switches disabled, the shared **transport** is
 an identity transform: payloads, JSON keyboards, callback data, ReplyKeyboard
 press text, outgoing method, recipient, timeout and return contracts remain
 unchanged. This guarantee is about the optional transport decoration layer;
-it does not negate individually reviewed, source-level Markdown-to-HTML
-conversions of static prompts. Those conversions intentionally change the
-wire-level parse mode while preserving the rendered text and formatting.
-An older installation without the new settings stays in transport identity
-mode. No runtime database schema or migration is required.
+it does not change the canonical HTML message format. The optional decoration
+requires no additional runtime database fields.
 
 The optional configuration belongs in the instance's private `baseInfo.php`,
 not in catalog entries or a shared public file. The documented sample in
@@ -57,11 +54,9 @@ availability and the intended Unicode fallback before enabling.
 - Plain text containing a mapped emoji is escaped and sent with HTML parse
   mode **only when Premium is enabled**. Literal text, identifiers, and
   copyable strings remain visually identical.
-- Markdown/MarkdownV2 content is never silently fed to an HTML parser.
-  A few historic call sites and legacy default parameters still use legacy
-  Markdown. These require a verified, output-equivalent producer migration
-  before premium decoration can cover them. Do not replace a parse-mode
-  string without checking escaped dynamic inputs and stored content.
+- Telegram text and captions use HTML or explicitly literal text. Incoming
+  formatting entities are interpreted at their UTF-16 offsets by one shared
+  renderer; user data is escaped rather than treated as markup.
 - Inline buttons can replace an exact *leading* mapped emoji with
   `icon_custom_emoji_id` and can receive a mapped `style`. Existing
   callback values and actions remain unchanged. ReplyKeyboard labels are
@@ -79,38 +74,22 @@ HTTP 429, 5xx) is **never retried by this layer**: a previous send may have
 been accepted, and the existing financial delivery journal remains authoritative.
 Fallback does not mutate saved content, nor retroactively edit messages.
 
-## Legacy HTML migration boundary
+## Canonical HTML ownership
 
-An unconditional conversion of the old `sendMessage()`/`sendPhoto()`
-Markdown defaults to HTML would change the appearance of messages already
-constructed with legacy Markdown or mixed literal HTML. It can also alter
-customer-authored support text, escaped placeholder values and historical
-broadcast jobs, potentially changing copy/paste semantics.
-
-For future source changes prefer **HTML as the template/format source** and
-use `achbotMessageHtml()` or `htmlspecialchars(..., ENT_QUOTES |
-ENT_SUBSTITUTE, 'UTF-8')` at the correct dynamic-text boundary. Do not
-escape trusted HTML tags a second time. Avoid HTML for plain button labels,
-callback data, callback alerts and raw machine-consumed configuration bytes.
-
-Before migrating remaining legacy calls, test the exact old rendered text,
-entities and URLs against the candidate HTML, including: Persian RTL text,
-underscores, backticks, brackets, quotes, ampersands, user content, captions,
-zero/long text, optional per-instance templates, scheduled broadcasts and
-retries. Preserve existing Golden/Stable test evidence and extend it rather
-than rewriting it as if no behavior changed.
-
-Static or composed call sites already migrated to HTML remain subject to
-the exact approved wire/content contracts. Dynamic/instance-owned and
-persisted producers may still use Markdown; inspect actual producer/sink
-behavior before converting them. Do not infer format safety from a catalog
-key or markup embedded in a prior Markdown send.
+Use HTML templates and escape untrusted dynamic text exactly once with
+`achbotMessageHtml()` or `htmlspecialchars(..., ENT_QUOTES |
+ENT_SUBSTITUTE, 'UTF-8')`. Do not escape trusted tags a second time.
+Plain button labels, callback data, callback alerts and raw configuration
+bytes are not HTML. Intentionally authored instance templates retain their
+HTML contract. Broadcast jobs store raw text for history and rendered HTML
+for execution; edit jobs do the same. Historical pending jobs are not replayed.
+Support history stores original literal content, and live sends render
+Telegram entities without modifying the incoming text.
 
 ## Validation
 
-`php -n tools/test_post_v9_telegram_presentation.php` exercises the
+`php tools/test_post_v9_telegram_presentation.php` exercises the
 transport identity, formatting, keyboard and known-rejection fallback
 without a real Telegram request. Current catalog and wire/HTML parity
-fixtures are part of [CI validation](CI-VALIDATION.md). Future output-equivalent
-HTML work is tracked in [#209](https://github.com/ach1992/bot-refactor/issues/209).
+fixtures are part of [CI validation](CI-VALIDATION.md). HTML conversion and acceptance are tracked in [#209](https://github.com/ach1992/bot-refactor/issues/209).
 Any visible change or real transport activation needs separate approval.

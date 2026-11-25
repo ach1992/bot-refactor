@@ -266,6 +266,31 @@ foreach ([$rate,(object)['ok'=>true],(object)['ok'=>false,'error_code'=>400,'des
     requireSame(null,\AchBot\Telegram\Response\deliveryTransportResponse($response,500,0),'5xx is always uncertain');
     requireSame(null,\AchBot\Telegram\Response\deliveryTransportResponse($response,429,28),'transport error is uncertain');
 }
+
+// Canonical HTML admission from actual Telegram UTF-16 entities; raw values
+// remain copyable and invalid entity metadata falls back to literal input.
+use function AchBot\Telegram\Presentation\inputHtml;
+use function AchBot\Telegram\Presentation\incomingHtml;
+requireSame('🔥 <b>سلام</b> &amp; &lt;tag&gt;', inputHtml('🔥 سلام & <tag>',
+    [['type'=>'bold','offset'=>3,'length'=>4]]),'UTF16 RTL entity and raw escape');
+requireSame('<b><i>سلام</i></b>',inputHtml('سلام',[
+    ['type'=>'bold','offset'=>0,'length'=>4],['type'=>'italic','offset'=>0,'length'=>4]]),'nested entities');
+requireSame(null,inputHtml('🔥x',[['type'=>'bold','offset'=>1,'length'=>1]]),'invalid surrogate offset');
+requireSame(null,inputHtml('abc',[['type'=>'text_link','offset'=>0,'length'=>3,'url'=>'javascript:alert(1)']]),'unsafe link');
+requireSame('abc',incomingHtml('abc',[['type'=>'text_link','offset'=>0,'length'=>3,'url'=>'javascript:alert(1)']]),'literal fallback');
+requireSame('<a href="https://example.invalid/?x=1&amp;y=2">link</a>',inputHtml('link',[
+    ['type'=>'text_link','offset'=>0,'length'=>4,'url'=>'https://example.invalid/?x=1&y=2']]),'link attributes');
+requireSame('<pre><code class="language-php">a &lt; b</code></pre>',inputHtml('a < b',[
+    ['type'=>'pre','offset'=>0,'length'=>5,'language'=>'php']]),'code language');
+requireSame('<blockquote expandable>abc</blockquote>',inputHtml('abc',[
+    ['type'=>'expandable_blockquote','offset'=>0,'length'=>3]]),'expandable quote');
+requireSame('<a href="tg://user?id=123">name</a>',inputHtml('name',[
+    ['type'=>'text_mention','offset'=>0,'length'=>4,'user'=>(object)['id'=>123]]]),'mention');
+requireSame('<tg-emoji emoji-id="123456789">🔥</tg-emoji>',inputHtml('🔥',[
+    ['type'=>'custom_emoji','offset'=>0,'length'=>2,'custom_emoji_id'=>'123456789']]),'custom emoji');
+requireSame(str_repeat('&lt;',4096),inputHtml(str_repeat('<',4096)),'no arbitrary template limit in shared renderer');
+requireSame('',inputHtml(''),'empty media caption');
+requireSame('&lt;b&gt;raw&lt;/b&gt; _ * &#039;',incomingHtml("<b>raw</b> _ * '"),'free text is not markup');
 echo json_encode(['status'=>'PASS','cases'=>$cases,'pass'=>true,
     'scope'=>'isolated-presentation-no-network','default_unchanged'=>true],
     JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),"\n";

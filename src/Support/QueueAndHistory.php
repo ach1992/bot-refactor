@@ -70,7 +70,7 @@ if(($data=="openTickets" || $data=="newTickets" || $data == "allTickets") && ach
                 $rate = \achbotMessage('support.queue_and_history.all_tickets.rate.c5509cf4dc'). $row['rate'];
             }
             
-            sendMessage(\achbotMessage('support.queue_and_history.all_tickets.message.abf3f55cac', ['admin' => $ticketUserId, 'username' => $username, 'category' => $category, 'rate' => $rate, 'title' => $title, 'sentType' => $sentType, 'lastmsg' => $lastmsg]),
+            sendMessage(\achbotMessageHtml('support.queue_and_history.all_tickets.message.abf3f55cac', ['admin' => $ticketUserId, 'username' => $username, 'category' => $category, 'rate' => $rate, 'title' => $title, 'sentType' => $sentType, 'lastmsg' => $lastmsg]),
                 json_encode(['inline_keyboard'=>$keys]),"html");
 
 			if($current>=$cont){
@@ -139,7 +139,7 @@ if(preg_match('/^moreTicket_(2|0|all)_([0-9]+)$/D',$data, $match)){
                     $rate = \achbotMessage('support.queue_and_history.all_tickets.rate.c5509cf4dc'). $row['rate'];
                 }
                 
-                sendMessage(\achbotMessage('support.queue_and_history.all_tickets.message.abf3f55cac', ['admin' => $ticketUserId, 'username' => $username, 'category' => $category, 'rate' => $rate, 'title' => $title, 'sentType' => $sentType, 'lastmsg' => $lastmsg]),
+                sendMessage(\achbotMessageHtml('support.queue_and_history.all_tickets.message.abf3f55cac', ['admin' => $ticketUserId, 'username' => $username, 'category' => $category, 'rate' => $rate, 'title' => $title, 'sentType' => $sentType, 'lastmsg' => $lastmsg]),
                     json_encode(['inline_keyboard'=>$keys]),"html");
 
 
@@ -177,7 +177,7 @@ if(preg_match('/^closeTicket_([1-9][0-9]*)$/D',$data,$match) and  achbotAdminCan
     $stmt->execute();
     $stmt->close();
     
-    $ticketClosed = "[$title] <i>$category</i> \n\n" . \achbotMessage('support.customer_conversation.user_all_tickets.text.54487cb6cb');;
+    $ticketClosed = "[".htmlspecialchars((string)$title,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')."] <i>".htmlspecialchars((string)$category,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')."</i> \n\n" . \achbotMessage('support.customer_conversation.user_all_tickets.text.54487cb6cb');;
     
     $keys = json_encode(['inline_keyboard'=>[
         [['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.67c753a13d'),'callback_data'=>"rate_{$chatRowId}_1"]],
@@ -205,7 +205,7 @@ if(preg_match('/^latestMsg_([1-9][0-9]*)$/D',$data,$match)){
         $text = $row['text'];
         if(isset(json_decode($text,true)['file_id'])) $text = \achbotMessage('support.queue_and_history.all_tickets.text.61cf036058') . $rowId;
 
-        $output .= "<i>[$type]</i>\n$text\n\n";
+        $output .= "<i>[$type]</i>\n".htmlspecialchars((string)$text,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')."\n\n";
     }
     sendMessage($output, null, "html");
 }
@@ -229,6 +229,6 @@ if(preg_match('/^\/dlPic(\d+)/',$text,$match)){
         
         $userid = $info['user_id'];
         
-        if(achbotAdminTicketAllowed($connection,(int)$from_id,(int)$admin,(int)$chatInfoId)) sendPhoto($fileid, $caption);
+        if(achbotAdminTicketAllowed($connection,(int)$from_id,(int)$admin,(int)$chatInfoId)) sendPhoto($fileid, htmlspecialchars((string)$caption,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),null,'HTML');
     }
 }

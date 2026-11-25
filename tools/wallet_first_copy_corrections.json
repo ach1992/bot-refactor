@@ -7,6 +7,18 @@
     "after": "🚫 شناسهٔ عددی کاربری را که می‌خواهید مسدود کنید ارسال کنید:",
     "before": "😡 کی باز شلوغی کرده شناسه عددی شو بفرس تا برم ...... آرهههه:"
   },
+  "admin_settings.config.get_bot_setting_keys.button.546c2c8acc": {
+    "after": "📊 موجودی سرویس‌ها",
+    "before": "💰 موجودی اختصاصی"
+  },
+  "admin_settings.config.get_user_info_keys.button.agent_label": {
+    "after": "همکار",
+    "before": null
+  },
+  "admin_settings.management.category_referenced": {
+    "after": "⚠️ این دسته‌بندی دارای پلن است و حذف نمی‌شود. ابتدا پلن‌های وابسته را تعیین تکلیف کنید.",
+    "before": null
+  },
   "automatic_gateway_review.empty": {
     "after": "✅ عملیاتی نیازمند رسیدگی نیست.",
     "before": "✅ پرداخت ناتمامی برای بررسی وجود ندارد."
@@ -222,6 +234,10 @@
     "after": "🗂 گروه‌های مشترک پنل: فقط سرورهای متصل به یک پنل واقعی پاسارگارد را هم‌گروه کنید. مشابه بودن آدرس یا نام، دلیل یکسان بودن پنل فیزیکی نیست. تشخیص پنل واقعی بر عهدهٔ ادمین است.",
     "before": "🗂 گروه‌های مشترک پنل: فقط سرورهای متصل به یک پنل واقعی و از یک نوع (مرزبان یا پاسارگارد) را هم‌گروه کنید. صرفاً مشابه بودن آدرس، نام یا نوع پنل به‌تنهایی دلیل یکسان بودن پنل فیزیکی نیست. تشخیص پنل واقعی برعهده ادمین است."
   },
+  "bot.bot.process_callback_query.message.e8f25aae49": {
+    "after": "📊 موجودی سرویس‌ها:",
+    "before": "🟢 موجودی پلن اختصاصی:"
+  },
   "bot.bot.user_reports.message.a5e5f6a89b": {
     "after": "⚠️ لطفاً فقط شناسهٔ عددی را ارسال کنید.",
     "before": "😡 لطفا فقط عدد ارسال کنید."
@@ -245,6 +261,35 @@
       "text": "✅ پروندهٔ خرید گروهی تعیین تکلیف شد؛ اشتراک‌های ساخته‌شده و حفظ‌شده: {confirmed} از {requested}"
     },
     "before": null
+  },
+  "gifts.completed_report": {
+    "after": {
+      "parameters": [
+        "reference",
+        "remark",
+        "days",
+        "volume_mb",
+        "reference_count",
+        "recipient_count"
+      ],
+      "text": "🎁 هدیهٔ اشتراک اعمال شد\n🔖 شناسه عملیات: <code>{reference}</code>\n👤 اشتراک: <code>{remark}</code>\n📅 زمان هدیه: {days} روز\n📦 حجم هدیه: {volume_mb} مگابایت\n👥 ثبت‌های مرتبط: {reference_count}\n✉️ کاربران مرتبط: {recipient_count}"
+    },
+    "before": {
+      "parameters": [
+        "reference",
+        "remark",
+        "days",
+        "volume_mb",
+        "reference_count",
+        "recipient_count",
+        "notice_unconfirmed_count"
+      ],
+      "text": "🎁 هدیهٔ اشتراک اعمال شد\n🔖 شناسه عملیات: <code>{reference}</code>\n👤 اشتراک: <code>{remark}</code>\n📅 زمان هدیه: {days} روز\n📦 حجم هدیه: {volume_mb} مگابایت\n👥 ثبت‌های مرتبط: {reference_count}\n✉️ کاربران مرتبط: {recipient_count}\n⚠️ پیام‌های بدون تأیید ارسال: {notice_unconfirmed_count}"
+    }
+  },
+  "legacy_buttons.individual_existence": {
+    "after": "📊 موجودی سرویس‌ها",
+    "before": "❗️موجودی اختصاصی"
   },
   "manual_receipt_final.status_delivery_unconfirmed": {
     "after": "سرویس ثبت شد، اما تحویل همهٔ پیام‌های مشتری تأیید نشده است.",
@@ -281,10 +326,6 @@
   },
   "operational_reports.basis_manual": {
     "after": "تأیید دستی ادمین",
-    "before": null
-  },
-  "operational_reports.basis_timer": {
-    "after": "تأیید خودکار زمان‌دار",
     "before": null
   },
   "operational_reports.capacity_unavailable": {
@@ -512,6 +553,10 @@
     "after": "گزارش کیف پول",
     "before": null
   },
+  "payment.discounts.no_monetary_method": {
+    "after": "⚠️ هیچ روش پرداختی برای این سفارش در دسترس نیست. در این شرایط فقط کد تخفیفی که مبلغ نهایی را صفر کند قابل استفاده است.",
+    "before": null
+  },
   "purchase.catalogue.message.ef774be0a5": {
     "after": "⚠️ لطفاً فقط عدد وارد کنید.",
     "before": "😡 لطفا فقط عدد ارسال کن"
@@ -536,6 +581,22 @@
     "after": "⚠️ عددی بزرگ‌تر از صفر وارد کنید.",
     "before": "مقداری بزرگتر از 0 وارد کن"
   },
+  "renewal.free_confirmation.day": {
+    "after": "✅ افزایش زمان رایگان",
+    "before": null
+  },
+  "renewal.free_confirmation.prompt": {
+    "after": "🧾 مبلغ نهایی این سفارش صفر تومان است. برای انجام عملیات، تأیید کنید.",
+    "before": null
+  },
+  "renewal.free_confirmation.renew": {
+    "after": "✅ تمدید رایگان",
+    "before": null
+  },
+  "renewal.free_confirmation.volume": {
+    "after": "✅ افزایش حجم رایگان",
+    "before": null
+  },
   "subscription.order_management.show_order_management_panel.alert.3e801d365f": {
     "after": "⛔️ سفارش یا اتصال پاسارگارد معتبر نیست.",
     "before": "⛔️ سفارش مرزبان معتبر نیست."
@@ -543,66 +604,5 @@
   "subscription.order_management.show_order_management_panel.alert.7a6ebab798": {
     "after": "⚠️ هیچ سرور دیگری متصل به همین پنل پاسارگارد وجود ندارد.",
     "before": "⚠️ هیچ سرور دیگری با همان پنل مرزبان وجود ندارد."
-  },
-  "gifts.completed_report": {
-    "before": {
-      "text": "🎁 هدیهٔ اشتراک اعمال شد\n🔖 شناسه عملیات: <code>{reference}</code>\n👤 اشتراک: <code>{remark}</code>\n📅 زمان هدیه: {days} روز\n📦 حجم هدیه: {volume_mb} مگابایت\n👥 ثبت‌های مرتبط: {reference_count}\n✉️ کاربران مرتبط: {recipient_count}\n⚠️ پیام‌های بدون تأیید ارسال: {notice_unconfirmed_count}",
-      "parameters": [
-        "reference",
-        "remark",
-        "days",
-        "volume_mb",
-        "reference_count",
-        "recipient_count",
-        "notice_unconfirmed_count"
-      ]
-    },
-    "after": {
-      "text": "🎁 هدیهٔ اشتراک اعمال شد\n🔖 شناسه عملیات: <code>{reference}</code>\n👤 اشتراک: <code>{remark}</code>\n📅 زمان هدیه: {days} روز\n📦 حجم هدیه: {volume_mb} مگابایت\n👥 ثبت‌های مرتبط: {reference_count}\n✉️ کاربران مرتبط: {recipient_count}",
-      "parameters": [
-        "reference",
-        "remark",
-        "days",
-        "volume_mb",
-        "reference_count",
-        "recipient_count"
-      ]
-    }
-  },
-  "admin_settings.config.get_bot_setting_keys.button.546c2c8acc": {
-    "after": "📊 موجودی سرویس‌ها",
-    "before": "💰 موجودی اختصاصی"
-  },
-  "bot.bot.process_callback_query.message.e8f25aae49": {
-    "after": "📊 موجودی سرویس‌ها:",
-    "before": "🟢 موجودی پلن اختصاصی:"
-  },
-  "legacy_buttons.individual_existence": {
-    "after": "📊 موجودی سرویس‌ها",
-    "before": "❗️موجودی اختصاصی"
-  },
-  "admin_settings.management.category_referenced": {
-    "before": null,
-    "after": "⚠️ این دسته‌بندی دارای پلن است و حذف نمی‌شود. ابتدا پلن‌های وابسته را تعیین تکلیف کنید."
-  },
-  "renewal.free_confirmation.volume": {
-    "after": "✅ افزایش حجم رایگان",
-    "before": null
-  },
-  "renewal.free_confirmation.renew": {
-    "after": "✅ تمدید رایگان",
-    "before": null
-  },
-  "renewal.free_confirmation.prompt": {
-    "after": "🧾 مبلغ نهایی این سفارش صفر تومان است. برای انجام عملیات، تأیید کنید.",
-    "before": null
-  },
-  "renewal.free_confirmation.day": {
-    "after": "✅ افزایش زمان رایگان",
-    "before": null
-  },
-  "payment.discounts.no_monetary_method": {
-    "before": null,
-    "after": "⚠️ هیچ روش پرداختی برای این سفارش در دسترس نیست. در این شرایط فقط کد تخفیفی که مبلغ نهایی را صفر کند قابل استفاده است."
   }
 }

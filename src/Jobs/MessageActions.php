@@ -42,7 +42,7 @@ $fix = $connection->prepare("
 if ($fix) { $fix->execute(); safeClose($fix); }
 
 /* fetch next job */
-$stmt = $connection->prepare("SELECT * FROM `bc_jobs` WHERE `state`=1 ORDER BY `id` ASC LIMIT 1");
+$stmt = $connection->prepare("SELECT * FROM `bc_jobs` WHERE `state`=1 AND (`action`<>'edit' OR `new_html` IS NOT NULL) ORDER BY `id` ASC LIMIT 1");
 $stmt->execute();
 $jr = $stmt->get_result();
 safeClose($stmt);
@@ -56,8 +56,7 @@ $bc_jobId    = (int)$job['id'];
 $broadcastId = (int)$job['broadcast_id'];
 $action      = (string)$job['action']; // pin | unpin | delete | edit
 $bc_offsetJ  = (int)$job['offset'];
-$newText     = isset($job['new_text']) ? (string)$job['new_text'] : '';
-$parseMode   = isset($job['parse_mode']) ? (string)$job['parse_mode'] : null;
+$newText     = (string)($job['new_html']??'');
 
 /* lock -> running */
 $stmt = $connection->prepare("UPDATE `bc_jobs` SET `state`=2, `updated_at`=NOW() WHERE `id`=? AND `state`=1");
@@ -172,33 +171,21 @@ if ($rows && $rows->num_rows > 0) {
 					'text'         => $newText,
 					'reply_markup' => $inlineStartKey
 				];
-				if ($parseMode) $payload['parse_mode'] = $parseMode;
+				$payload['parse_mode'] = 'HTML';
 
 				$res = bot('editMessageText', $payload);
 
-				if ($res && isset($res->description) && strpos($res->description, "can't parse entities") !== false) {
-					unset($payload['parse_mode']);
-					$res = bot('editMessageText', $payload);
-				}
-
 			} else {
-
-				$cap = mb_substr($newText, 0, 1024, 'UTF-8');
 
 				$payload = [
 					'chat_id'      => $uid,
 					'message_id'   => $mid,
-					'caption'      => $cap,
+					'caption'      => $newText,
 					'reply_markup' => $inlineStartKey
 				];
-				if ($parseMode) $payload['parse_mode'] = $parseMode;
+				$payload['parse_mode'] = 'HTML';
 
 				$res = bot('editMessageCaption', $payload);
-
-				if ($res && isset($res->description) && strpos($res->description, "can't parse entities") !== false) {
-					unset($payload['parse_mode']);
-					$res = bot('editMessageCaption', $payload);
-				}
 			}
 		} else { // delete
             unpinOne($uid, $mid);

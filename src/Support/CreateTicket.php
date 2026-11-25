@@ -10,11 +10,12 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+require_once __DIR__.'/../Telegram/Presentation.php';
 
 
 if(preg_match('/^supportCat(.*)/',$data,$match)){
     delMessage();
-    sendMessage(\achbotMessage('legacy_messages.enter_ticket_title'), $cancelKey);
+    sendMessage(\achbotMessage('legacy_messages.enter_ticket_title'), $cancelKey,'HTML');
     setUser("newTicket_" . $match[1]);
 }
 if(preg_match('/^newTicket_(.*)/',$userInfo['step'],$match)  and $text!=\achbotMessage('legacy_buttons.cancel')){
@@ -28,8 +29,7 @@ if(preg_match('/^sendTicket_(.*)/',$userInfo['step'],$match)  and $text!=\achbot
         
         $ticketTitle = $userInfo['temp'];
         $time = time();
-    
-        $ticketTitle = str_replace(["/","'","#"],['\/',"\'","\#"],$ticketTitle);
+
         $stmt = $connection->prepare("INSERT INTO `chats` (`user_id`,`create_date`, `title`,`category`,`state`,`rate`) VALUES 
                             (?,?,?,?,'0','0')");
         $stmt->bind_param("iiss", $from_id, $time, $ticketTitle, $ticketCat);
@@ -42,15 +42,15 @@ if(preg_match('/^sendTicket_(.*)/',$userInfo['step'],$match)  and $text!=\achbot
             [['text'=>\achbotMessage('support.create_ticket.button.3b90dccc67'),'callback_data'=>"reply_{$chatRowId}"]]
             ]]);
         if(isset($text)){
-            $txt = \achbotMessage('support.create_ticket.txt.e819afcdf4', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'from_id_2' => $from_id, 'ticketCat' => $ticketCat]) .$ticketTitle . \achbotMessage('support.create_ticket.text.fe45cc8381', ['text' => $text]);
-            $text = str_replace(["/","'","#"],['\/',"\'","\#"],$text);
+            $txt = \achbotMessageHtml('support.create_ticket.txt.e819afcdf4', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'from_id_2' => $from_id, 'ticketCat' => $ticketCat]) .htmlspecialchars((string)$ticketTitle,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8') . \achbotMessage('support.create_ticket.text.fe45cc8381', ['text' => \AchBot\Telegram\Presentation\incomingHtml($text,(array)($update->message->entities??[]))]);
+
             $stmt = $connection->prepare("INSERT INTO `chats_info` (`chat_id`,`sent_date`,`msg_type`,`text`) VALUES
                         (?,?,'USER',?)");
             $stmt->bind_param("iis", $chatRowId, $time, $text);
             sendMessage($txt,$keys,"html", $admin);
             sendToAllAdmins('sendMessage', ['text' => $txt, 'reply_markup' => $keys, 'parse_mode' => "html"]);
         }else{
-            $txt = \achbotMessage('support.create_ticket.txt.e819afcdf4', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'from_id_2' => $from_id, 'ticketCat' => $ticketCat]) .$ticketTitle . \achbotMessage('support.create_ticket.text.4479736037', ['caption' => $caption]);
+            $txt = \achbotMessageHtml('support.create_ticket.txt.e819afcdf4', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'from_id_2' => $from_id, 'ticketCat' => $ticketCat]) .htmlspecialchars((string)$ticketTitle,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8') . \achbotMessage('support.create_ticket.text.4479736037', ['caption' => \AchBot\Telegram\Presentation\incomingHtml($caption,(array)($update->message->caption_entities??[]))]);
             $stmt = $connection->prepare("INSERT INTO `chats_info` (`chat_id`,`sent_date`,`msg_type`,`text`) VALUES
                         (?,?,'USER',?)");
             $text = json_encode(['file_id'=>$fileid, 'caption'=>$caption]);

@@ -65,7 +65,7 @@ file_put_contents(__DIR__ . "/full_log.txt", $log_data, FILE_APPEND);
 GOTOSTART:
 if (($userInfo['step'] ?? null) === "banned" &&
     $from_id != $admin && empty($userInfo['isAdmin'])) {
-    sendMessage(\achbotCurrentMessage('banned'));
+    sendMessage(\achbotCurrentMessage('banned'),null,'HTML');
     exit();
 }
 
@@ -807,7 +807,7 @@ if (str_starts_with($paymentKeyStep,'achbotPaymentKey|') ||
             : null;
         sendMessage($hint ??
             \achbotMessage('bot.bot.change_config_remark_type.message.28b20d4ea7'),
-            $cancelKey);
+            $cancelKey,'HTML');
         return;
     }
     if ($kind==='cancel') {
@@ -890,7 +890,7 @@ if($data=="inviteBanner" && ($from_id == $admin || $userInfo['isAdmin'] == true)
         editText($message_id,\achbotMessage('bot.bot.invite_banner.message.379af3c42e') . $inviteText['text'],$keys);
     }else{
         delMessage();
-        $res = sendPhoto($inviteText['file_id'], $inviteText['caption'], $keys,null);
+        $res = sendPhoto($inviteText['file_id'], $inviteText['caption'], $keys,'HTML');
         if(!$res->ok){
             sendMessage(\achbotMessage('bot.bot.invite_banner.message.e5b34cbee4'),$keys, 'HTML');
         }
@@ -903,15 +903,20 @@ if($data=="editInviteBannerText" && ($from_id == $admin || $userInfo['isAdmin'] 
     setUser($data);
 }
 if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
+    require_once __DIR__.'/src/Telegram/Presentation.php';
     $data = array();
     if(isset($update->message->photo)){
         $data['type'] = 'photo';
-        $data['caption'] = $caption;
+        $data['caption'] = !empty($update->message->caption_entities)
+            ? \AchBot\Telegram\Presentation\incomingHtml($caption,(array)$update->message->caption_entities)
+            : (string)$caption;
         $data['file_id'] = $fileid;
     }
     elseif(isset($update->message->text)){
         $data['type'] = 'text';
-        $data['text'] = $text;
+        $data['text'] = !empty($update->message->entities)
+            ? \AchBot\Telegram\Presentation\incomingHtml($text,(array)$update->message->entities)
+            : (string)$text;
     }else{
         sendMessage(\achbotMessage('bot.bot.edit_invite_banner_text.message.155c179a84'), null, 'HTML');
         exit();
@@ -921,6 +926,7 @@ if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo
     $stmt->execute();
     $checkExist = $stmt->get_result();
     $stmt->close();
+    $banner=$data;
     $data = json_encode($data);
     if($checkExist->num_rows > 0){
         $stmt = $connection->prepare("UPDATE `setting` SET `value` = ? WHERE `type` = 'INVITE_BANNER_TEXT'");
@@ -942,9 +948,9 @@ if($userInfo['step']=="editInviteBannerText" && ($from_id == $admin || $userInfo
         [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'inviteSetting']]
         ]]);
     if(isset($update->message->text)){
-        sendMessage(\achbotMessage('bot.bot.invite_banner.message.379af3c42e') . $text,$keys);
+        sendMessage(\achbotMessage('bot.bot.invite_banner.message.379af3c42e') . $banner['text'],$keys,'HTML');
     }else{
-        sendPhoto($fileid, $caption, $keys);
+        sendPhoto($fileid, $banner['caption'], $keys,'HTML');
     }
     setUser();
 }
@@ -1189,7 +1195,7 @@ if (
 
 if($data=="editSupportID" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     delMessage();
-    sendMessage(\achbotMessage('bot.bot.edit_support_i_d.message.2e136a38a2'),$cancelKey);
+    sendMessage(\achbotMessage('bot.bot.edit_support_i_d.message.2e136a38a2'),$cancelKey,'HTML');
     setUser($data);
 }
 
@@ -1341,10 +1347,7 @@ if (preg_match('/\AshowMainButtonAns([1-9][0-9]*)\z/D', $data, $match)) {
     $res = editText($message_id, $decoded, $keys, 'HTML');
     if (!$res || (isset($res->ok) && !$res->ok)) {
         delMessage();
-        $res2 = sendMessage($decoded, $keys, 'HTML');
-        if (!$res2 || (isset($res2->ok) && !$res2->ok)) {
-            sendMessage($decoded, $keys);
-        }
+        sendMessage($decoded, $keys, 'HTML');
     }
 }
 

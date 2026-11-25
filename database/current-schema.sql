@@ -28,7 +28,7 @@ CREATE TABLE `bc_jobs` (
   `broadcast_id` int(11) NOT NULL,
   `action` enum('pin','unpin','delete','edit') NOT NULL,
   `new_text` text DEFAULT NULL,
-  `parse_mode` varchar(20) DEFAULT NULL,
+  `new_html` mediumtext DEFAULT NULL,
   `ok_cnt` int(11) NOT NULL DEFAULT 0,
   `fail_cnt` int(11) NOT NULL DEFAULT 0,
   `offset` int(11) NOT NULL DEFAULT 0,
@@ -79,7 +79,7 @@ CREATE TABLE `chats_info` (
   `chat_id` int(11) NOT NULL,
   `sent_date` int(11) NOT NULL,
   `msg_type` varchar(50) DEFAULT NULL,
-  `text` varchar(2000) NOT NULL,
+  `text` text NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -512,6 +512,7 @@ CREATE TABLE `send_list` (
   `type` varchar(20) NOT NULL,
   `title` varchar(255) DEFAULT NULL,
   `text` text DEFAULT NULL,
+  `text_html` mediumtext DEFAULT NULL,
   `chat_id` bigint(20) DEFAULT NULL,
   `message_id` int(11) DEFAULT NULL,
   `file_id` varchar(500) DEFAULT NULL,

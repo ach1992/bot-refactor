@@ -31,7 +31,7 @@ if (is_string($data) && str_starts_with($data,'sConfigUpdate')) {
     ],$botState,[],'view',$server_id);
     if ($presentation['qr_config_links']===[]) {
         sendMessage($presentation['notice_html']!==''?$presentation['notice_html']:
-            \achbotMessage('subscription.config_refresh.message.1d7cb7b50c'));
+            \achbotMessage('subscription.config_refresh.message.1d7cb7b50c'),null,'HTML');
         return;
     }
     $complete = true;

@@ -53,10 +53,17 @@ foreach($states as $state){
             $old['join_channel_message']=str_replace('CHANNEL-ID','LOCKCHANNEL',
                                                        $old['join_channel_message']);
         $old=\AchBot\Presentation\Text\replacePlaceholders($old,$state,$actor,[
-            'banned'=>'Markdown','send_config_uuid'=>'Markdown',
+            'banned'=>'HTML','send_config_uuid'=>'HTML',
             'join_channel_message'=>'HTML','agency_request_declined'=>null]);
         $old=achbotInstanceContentValues($old,$state,$actor);
         foreach($context as $key){
+            if(in_array($key,['banned','send_config_uuid'],true)){
+                $expected=strtr($source[$key],[
+                  'SUPPORTID'=>htmlspecialchars((string)($state['supportID']??''),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),
+                  'LOCKCHANNEL'=>htmlspecialchars((string)($state['lockChannel']??''),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),
+                  'userid'=>htmlspecialchars((string)$actor,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')]);
+                if($expected!==achbotCurrentMessage($key)) throw new RuntimeException('html_context_escape:'.$key);
+            }
             if($old[$key]!==achbotCurrentMessage($key))
                 throw new RuntimeException('context_parity_changed:'.$key);
             $cases++;
@@ -91,7 +98,8 @@ def main() -> None:
     # accepted implementation, with only the new narrow resolver appended.
     relative = "src/Presentation/Text.php"
     old = subprocess.check_output(["git", "show", BASE + ":" + relative], cwd=ROOT)
-    assert old == (ROOT / relative).read_bytes(), "text_renderer_changed_without_goldens"
+    expected = b"\n".join(line for line in old.split(b"\n") if b"==='markdown'" not in line and not (b"strtr($text" in line and b"'_" in line))
+    assert expected == (ROOT / relative).read_bytes(), "text_renderer_changed_without_goldens"
     relative = "src/Admin/InstanceContent.php"
     old = subprocess.check_output(["git", "show", BASE + ":" + relative], cwd=ROOT)
     current = (ROOT / relative).read_bytes()

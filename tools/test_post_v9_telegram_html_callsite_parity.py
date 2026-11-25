@@ -125,7 +125,7 @@ AUDITED = {
     'src/Admin/Unban.php': (4, 'cb598e3f049d24aa820cb5d587010ebea0a79cb1d7b3f847df1b9764c2cabd91'),
     'src/Agent/Applications.php': (4, '5511af16a2ca617600afd0ef2b3073ca9e9c5fbd154bd0729ff4fb6fe495a2f5'),
     'src/Agent/Discounts.php': (3, 'f65c70afe55e9fb16b12cf878ced107ce6647f63e999354421621a94c0ab2a78'),
-    'src/Broadcast/Routes.php': (23, 'e84dd50ef4f129822a987a5186ed1959138951d1633798ac4312c6732f892688'),
+    'src/Broadcast/Routes.php': (23, '904f1a37f20ff4d4bf3a73eaef6d7fe0458ec6837376d099a33dcd6700d07bdd'),
     'src/Finance/Discounts.php': (11, 'c85401369c00918a99d619226eef481aa9261a14568941ecddad47866aff2e90'),
     'src/Finance/ReceiptHelpers.php': (1, '0231bfa34c85136afce04b2fc1d876c9ac7296e6504a100d5a3ff1e2319b09cb'),
     'src/Finance/Routes/AdminWallet.php': (8, '0658a0ac6b539ad790c23cb504178ad3ca2303a8d2019b5132828ab1b0f7a28b'),

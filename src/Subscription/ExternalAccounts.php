@@ -100,7 +100,7 @@ if ($data==='showUUIDLeft') {
         error_log('achbot_existing_subscription_entry_deferred');return;
     }
     delMessage();
-    sendMessage(\achbotCurrentMessage('send_config_uuid'), $cancelKey);
+    sendMessage(\achbotCurrentMessage('send_config_uuid'), $cancelKey,'HTML');
     return;
 }
 

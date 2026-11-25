@@ -39,9 +39,9 @@ register_shutdown_function(function () use (&$connection, &$sendId, &$offset, &$
 $stmt = $connection->prepare("
     SELECT `id`
     FROM `send_list`
-    WHERE
-        `state` = 1
-        OR (`state` = 2 AND `updated_at` < (NOW() - INTERVAL {$staleMinutes} MINUTE))
+    WHERE (`type`='forwardall' OR `text_html` IS NOT NULL)
+      AND (`state` = 1
+        OR (`state` = 2 AND `updated_at` < (NOW() - INTERVAL {$staleMinutes} MINUTE)))
     ORDER BY `id` ASC
     LIMIT 1
 ");
@@ -92,7 +92,7 @@ $offset     = (int)$info['offset']; // last_user_id
 $type       = $info['type'];
 $file_id    = $info['file_id'];
 $chat_id    = $info['chat_id'];
-$text       = $info['text'];
+$text       = $info['text_html'];
 $message_id = $info['message_id'];
 $group      = $info['target_group'] ?? 'all';
 
@@ -226,13 +226,14 @@ while ($user = $usersList->fetch_assoc()) {
     $sendRes = null;
 
     if ($type == 'text') {
-        $sendRes = sendMessage($text, $keys, null, $user['userid']);
+        $sendRes = sendMessage($text, $keys, 'HTML', $user['userid']);
 
     } elseif ($type == 'music') {
         $sendRes = bot('sendAudio', [
             'chat_id' => $user['userid'],
             'audio' => $file_id,
             'caption' => $text,
+            'parse_mode' => 'HTML',
             'reply_markup' => $keys
         ]);
 
@@ -241,6 +242,7 @@ while ($user = $usersList->fetch_assoc()) {
             'chat_id' => $user['userid'],
             'video' => $file_id,
             'caption' => $text,
+            'parse_mode' => 'HTML',
             'reply_markup' => $keys
         ]);
 
@@ -249,6 +251,7 @@ while ($user = $usersList->fetch_assoc()) {
             'chat_id' => $user['userid'],
             'voice' => $file_id,
             'caption' => $text,
+            'parse_mode' => 'HTML',
             'reply_markup' => $keys
         ]);
 
@@ -257,6 +260,7 @@ while ($user = $usersList->fetch_assoc()) {
             'chat_id' => $user['userid'],
             'document' => $file_id,
             'caption' => $text,
+            'parse_mode' => 'HTML',
             'reply_markup' => $keys
         ]);
 
@@ -265,6 +269,7 @@ while ($user = $usersList->fetch_assoc()) {
             'chat_id' => $user['userid'],
             'photo' => $file_id,
             'caption' => $text,
+            'parse_mode' => 'HTML',
             'reply_markup' => $keys
         ]);
 
@@ -276,6 +281,7 @@ while ($user = $usersList->fetch_assoc()) {
             'chat_id' => $user['userid'],
             'document' => $file_id,
             'caption' => $text,
+            'parse_mode' => 'HTML',
             'reply_markup' => $keys
         ]);
     }

@@ -10,6 +10,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+require_once __DIR__.'/../Telegram/Presentation.php';
 
 
 require_once __DIR__.'/../Admin/Access.php';
@@ -79,10 +80,10 @@ if($data== "usersOpenTickets" || $data == "userAllTickets"){
                 $info = json_decode($lastmsg,true);
                 $fileid = $info['file_id'];
                 $caption = $info['caption'];
-                $txt =\achbotMessage('support.customer_conversation.user_all_tickets.txt.d10f40bde9', ['title' => $title, 'category' => $category, 'sentType' => $sentType, 'caption' => $caption]);
+                $txt =\achbotMessageHtml('support.customer_conversation.user_all_tickets.txt.d10f40bde9', ['title' => $title, 'category' => $category, 'sentType' => $sentType, 'caption' => $caption]);
                 sendPhoto($fileid, $txt,json_encode(['inline_keyboard'=>$keys]), "HTML");
             }else{
-                sendMessage(\achbotMessage('support.customer_conversation.user_all_tickets.message.dfae2b8b30', ['title' => $title, 'category' => $category, 'sentType' => $sentType, 'lastmsg' => $lastmsg]),json_encode(['inline_keyboard'=>$keys]),"HTML");
+                sendMessage(\achbotMessageHtml('support.customer_conversation.user_all_tickets.message.dfae2b8b30', ['title' => $title, 'category' => $category, 'sentType' => $sentType, 'lastmsg' => $lastmsg]),json_encode(['inline_keyboard'=>$keys]),"HTML");
             }
 
 			if($current>=$cont){
@@ -121,7 +122,7 @@ if(preg_match('/^closeTicket_([1-9][0-9]*)$/D',$data,$match) &&
     
     editKeys();
 
-    $ticketClosed = \achbotMessage('support.customer_conversation.user_all_tickets.title_category.f58d7d9818', ['title' => $title, 'category' => $category]) . \achbotMessage('support.customer_conversation.user_all_tickets.text.54487cb6cb');;
+    $ticketClosed = \achbotMessageHtml('support.customer_conversation.user_all_tickets.title_category.f58d7d9818', ['title' => $title, 'category' => $category]) . \achbotMessage('support.customer_conversation.user_all_tickets.text.54487cb6cb');;
     
     $keys = json_encode(['inline_keyboard'=>[
         [['text'=>\achbotMessage('support.customer_conversation.user_all_tickets.button.67c753a13d'),'callback_data'=>"rate_{$chatRowId}_1"]],
@@ -172,9 +173,8 @@ if(preg_match('/^sendMsg_([1-9][0-9]*)$/D',$userInfo['step'],$match)  and $text!
 
     $time = time();
     if(isset($text)){
-        $txt = \achbotMessage('support.customer_conversation.user_all_tickets.txt.54b5fecc08', ['ticketTitle' => $ticketTitle, 'ticketCat' => $ticketCat, 'from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'from_id_2' => $from_id]) . \achbotMessage('support.customer_conversation.user_all_tickets.text.a79a2fa69e', ['text' => $text]);
-    
-        $text = str_replace(["/","'","#"],['\/',"\'","\#"],$text);
+        $txt = \achbotMessageHtml('support.customer_conversation.user_all_tickets.txt.54b5fecc08', ['ticketTitle' => $ticketTitle, 'ticketCat' => $ticketCat, 'from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'from_id_2' => $from_id]) . \achbotMessage('support.customer_conversation.user_all_tickets.text.a79a2fa69e', ['text' => \AchBot\Telegram\Presentation\incomingHtml($text,(array)($update->message->entities??[]))]);
+
         $stmt = $connection->prepare("INSERT INTO `chats_info` (`chat_id`,`sent_date`,`msg_type`,`text`) VALUES (?,?,'USER',?)");
         $stmt->bind_param("iis",$ticketRowId, $time, $text);
 
@@ -193,7 +193,7 @@ if(preg_match('/^sendMsg_([1-9][0-9]*)$/D',$userInfo['step'],$match)  and $text!
         ]);
 
     } else {
-        $txt = \achbotMessage('support.customer_conversation.user_all_tickets.txt.54b5fecc08', ['ticketTitle' => $ticketTitle, 'ticketCat' => $ticketCat, 'from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'from_id_2' => $from_id]) . \achbotMessage('support.customer_conversation.user_all_tickets.text.46d8580795', ['caption' => $caption]);
+        $txt = \achbotMessageHtml('support.customer_conversation.user_all_tickets.txt.54b5fecc08', ['ticketTitle' => $ticketTitle, 'ticketCat' => $ticketCat, 'from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'from_id_2' => $from_id]) . \achbotMessage('support.customer_conversation.user_all_tickets.text.46d8580795', ['caption' => \AchBot\Telegram\Presentation\incomingHtml($caption,(array)($update->message->caption_entities??[]))]);
         
         $stmt = $connection->prepare("INSERT INTO `chats_info` (`chat_id`,`sent_date`,`msg_type`,`text`) VALUES (?,?,'USER',?)");
         $text = json_encode(['file_id'=>$fileid, 'caption'=>$caption]);
@@ -242,7 +242,7 @@ if(preg_match('/^rate_([1-9][0-9]*)_([1-5])$/D',$data,$match)){
             ],
         ]]);
 
-	$text = \achbotMessage('support.customer_conversation.user_all_tickets.text.497743bb13', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'title' => $title, 'category' => $category, 'rate' => $rate]);
+	$text = \achbotMessageHtml('support.customer_conversation.user_all_tickets.text.497743bb13', ['from_id' => $from_id, 'first_name' => $first_name, 'username' => $username, 'title' => $title, 'category' => $category, 'rate' => $rate]);
 	sendMessage($text, $keys, "HTML", $admin);
 	sendToAllAdmins('sendMessage', ['text' => $text, 'reply_markup' => $keys, 'parse_mode' => "HTML"]);
 }

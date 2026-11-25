@@ -46,7 +46,7 @@ function sendFileToTelegram($method, $datas = []) {
     return \AchBot\Telegram\Transport\sendFile($botToken, __DIR__, $method, $datas);
 }
 
-function sendMessage($txt, $key = null, $parse ="MarkDown", $ci= null, $msg = null){
+function sendMessage($txt, $key = null, $parse ="HTML", $ci= null, $msg = null){
     global $from_id;
     require_once __DIR__ . '/src/Telegram/Messages.php';
     return \AchBot\Telegram\Messages\sendMessage('bot', $from_id, $txt, $key, $parse, $ci, $msg);
@@ -206,7 +206,7 @@ function deleteOne($chatId, $messageId){
     return \AchBot\Telegram\Messages\deleteOne('bot', $chatId, $messageId);
 }
 // END send to all
-function sendPhoto($photo, $caption = null, $keyboard = null, $parse = "MarkDown", $ci = null, $replyTo = null){
+function sendPhoto($photo, $caption = null, $keyboard = null, $parse = "HTML", $ci = null, $replyTo = null){
     global $from_id;
     require_once __DIR__ . '/src/Telegram/Messages.php';
     return \AchBot\Telegram\Messages\sendPhoto('bot', $from_id, $photo, $caption, $keyboard, $parse, $ci, $replyTo);

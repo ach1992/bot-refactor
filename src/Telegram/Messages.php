@@ -10,7 +10,7 @@ use CURLFile;
 require_once __DIR__ . '/Response.php';
 require_once __DIR__ . '/Markup.php';
 
-function sendMessage(callable $request, $from_id, $txt, $key = null, $parse ="MarkDown", $ci= null, $msg = null){
+function sendMessage(callable $request, $from_id, $txt, $key = null, $parse ="HTML", $ci= null, $msg = null){
     $ci = $ci ?? $from_id;
 
     $payload = [
@@ -139,7 +139,7 @@ function deleteOne(callable $request, $chatId, $messageId){
     ]);
 }
 
-function sendPhoto(callable $request, $from_id, $photo, $caption = null, $keyboard = null, $parse = "MarkDown", $ci = null, $replyTo = null){
+function sendPhoto(callable $request, $from_id, $photo, $caption = null, $keyboard = null, $parse = "HTML", $ci = null, $replyTo = null){
     $ci = $ci ?? $from_id;
 
     $data = [

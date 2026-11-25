@@ -10,8 +10,6 @@ function destinationText($value,?string $parseMode=null): string {
     $text=(string)$value;
     if (strtolower($parseMode??'')==='html')
         return htmlspecialchars($text,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
-    if (strtolower($parseMode??'')==='markdown')
-        return strtr($text,['_'=>'\\_','*'=>'\\*','`'=>'\\`','['=>'\\[']);
     return $text;
 }
 /** Three-argument legacy callers retain their historical sequential behavior.

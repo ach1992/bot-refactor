@@ -241,7 +241,7 @@ if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$userInfo['st
                 \achbotMessage('bot.bot.user_reports.message.e55e5591d2', ['text'=>$match[2]]),
                 json_encode(['inline_keyboard'=>$details['inline_keyboard']], JSON_UNESCAPED_UNICODE), 'html');
         } else {
-            sendMessage(str_replace("AGENT-NAME", $userName, \achbotMessage('legacy_messages.agent_discount_settings')), getAgentDiscounts($match[2]));
+            sendMessage(str_replace("AGENT-NAME", htmlspecialchars((string)$userName,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'), \achbotMessage('legacy_messages.agent_discount_settings')), getAgentDiscounts($match[2]),'HTML');
         }
     } else sendMessage(\achbotMessage('admin_settings.user_info.agent_percent_invalid'), null, 'HTML');
 }
