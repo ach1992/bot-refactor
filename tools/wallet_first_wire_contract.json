@@ -317,6 +317,13 @@
       "before_sha256": "ab0d258e8aa0b7b23332ab513274ec1de1bbd32fd72c44f9ae36d3c5d0167c95",
       "after_sha256": "d9a9f2133823a4e0a5ad2b36ac04f96d90fa4cafe449b09f5602a24e2ec4b599",
       "reason": "#209: 2 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged."
+    },
+    "src/Finance/AutomaticReceipts.php": {
+      "before_count": 13,
+      "after_count": 0,
+      "before_sha256": "cf6a29c9629beb58f0950adee44d7edd2d7c9ae50b0c18772183877958ae9d37",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Retire the complete time-only receipt execution path and its dedicated messages (#51)."
     }
   },
   "added_with_direct_send": [
