@@ -207,6 +207,7 @@ REQUIRED_CURRENT_CASES = {
         "custom_duration_overflow_refused",
         "trial_base_price_refused_at_issue_and_funding",
         "registered_native_gateway_same_engines_once",
+        "registered_native_nonpaid_opaque_name_namespace",
         "registered_gateway_foreign_evidence_rejected_by_core",
         "registered_new_manual_method_same_credit_once",
     ),

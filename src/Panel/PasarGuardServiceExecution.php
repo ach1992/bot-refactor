@@ -83,7 +83,7 @@ function achbotPasarGuardBuyPrepareLocked(mysqli $db,array $op,array $quote): ?a
         $ordinal=count($rows)+1;
         $remark=achbotStyledAccountRemark($q['remark'],'pasarguard','service:'.$id,
             $ordinal,$count,$q['naming_mode'],$q['explicit_name']);
-        $remark=achbotAvailableAccountRemarkLocked($db,$panel,$remark,
+        $remark=achbotAvailableAccountRemarkLocked($db,$quote['target']['physical'],$panel['id'],$remark,
             $q['explicit_name'] && $count===1,$q['explicit_name'] && $count>1);
         // Exact real orders_list expiry INT contract; not a new provider cap.
         $expiry=time()+$q['days']*86400;

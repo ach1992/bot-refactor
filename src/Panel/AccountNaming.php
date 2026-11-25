@@ -4,16 +4,22 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 
-/**
- * One provider-bound username contract for customer draft admission,
- * pre-debit verification and the final paid/nonpaid effect dispatcher.
- * Byte-length is intentional: Native usernames are ASCII identifiers.
- */
-function achbotEffectValidUsername(string $username,?string $provider=null): bool {
-    return ($provider===null || $provider==='pasarguard') &&
-        strlen($username)>=3 && strlen($username)<=100 &&
+/** Current bot-local account-name shape, also used by PasarGuard.
+ * The 100-byte ASCII boundary fits the current local username columns. */
+function achbotLocalAccountUsernameValid(string $username): bool {
+    return strlen($username)>=3 && strlen($username)<=100 &&
         preg_match('/^[a-zA-Z0-9_-]+$/D',$username)===1 &&
         preg_match('/[-_]{2}/',$username)!==1;
+}
+
+/** Preliminary local validation, or the registered provider's naming rule.
+ * The source-owned callback implements the local shape/storage contract
+ * together with its Native constraints. */
+function achbotEffectValidUsername(string $username,?string $provider=null): bool {
+    if ($provider===null) return achbotLocalAccountUsernameValid($username);
+    require_once __DIR__.'/ProviderRuntime.php';
+    $adapter=achbotProviderDefinition($provider);
+    return $adapter!==null && ($adapter['username'])($username)===true;
 }
 
 /**
@@ -31,8 +37,11 @@ function achbotStyledAccountRemark(string $base,string $provider,string $source,
     bool $adminBulk=false): string {
     if ($source==='' || $ordinal<=0 || $count<=0 || $ordinal>$count)
         throw new InvalidArgumentException('account_name_source_invalid');
+    // Shared visible naming shape and local storage limit. The selected
+    // adapter validates its Native username constraints below.
     $max=100;
-    if ($provider!=='pasarguard')
+    require_once __DIR__.'/ProviderRuntime.php';
+    if (!achbotSupportsProviderType($provider))
         throw new InvalidArgumentException('account_name_provider_invalid');
 
     if ($explicit && $count===1) {
@@ -95,18 +104,18 @@ function achbotAccountNumericToken(string $source,int $ordinal): string {
  * Keep the approved five-digit name shape and exact explicitly chosen single
  * names. A committed effect is never renamed, even after uncertain HTTP.
  * Serialize local adoption and CREATE allocation on the same physical
- * panel rows, locked by the caller before effect-range reads. Preserve
- * the existing target-key unique reservation fence.
+ * panel rows, locked by the adapter before effect-range reads. Consume
+ * its authoritative target key and shared physical connection id; never
+ * reconstruct provider keys or inspect provider-private snapshots.
  */
-function achbotAvailableAccountRemarkLocked(mysqli $db,array $panel,string $preferred,
+function achbotAvailableAccountRemarkLocked(mysqli $db,string $targetKey,int $connectionId,string $preferred,
     bool $explicitSingle=false,bool $manualBulk=false): string {
     require_once __DIR__.'/ProviderStorage.php';
     if ((int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==1)
         throw new LogicException('service_account_name_requires_transaction');
-    $targetKey='pg:'.$panel['instance_key'];
     $used=achbotProviderRow($db,'SELECT id FROM service_effects
         WHERE target_key=? AND active_username=? FOR UPDATE','ss',[$targetKey,$preferred]);
-    if ($used===null && !achbotProviderPhysicalNameClaimsLocked($db,$panel['id'],$preferred,$preferred))
+    if ($used===null && !achbotProviderPhysicalNameClaimsLocked($db,$connectionId,$preferred,$preferred))
         return $preferred;
     if ($explicitSingle) throw new RuntimeException('service_account_name_conflict');
     $pattern=$manualBulk
@@ -126,7 +135,7 @@ function achbotAvailableAccountRemarkLocked(mysqli $db,array $panel,string $pref
         $names=[];$r=$s->get_result();
         while ($row=$r->fetch_assoc()) $names[]=$row['active_username'];
     } finally {$s->close();}
-    $names=array_merge($names,achbotProviderPhysicalNameClaimsLocked($db,$panel['id'],$first,$last));
+    $names=array_merge($names,achbotProviderPhysicalNameClaimsLocked($db,$connectionId,$first,$last));
     $occupied=[];
     foreach ($names as $name) {
         if (strlen($name)===strlen($preferred) && str_starts_with($name,$prefix) &&

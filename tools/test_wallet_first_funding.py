@@ -25,6 +25,18 @@ $GLOBALS['telegramWebhookSecret']='SyntheticFundingReportKey_2026';
 $GLOBALS['admin']=9001;$GLOBALS['botState']=[];
 $c=json_decode($argv[5],true,512,JSON_THROW_ON_ERROR);$out=[];
 try {
+    if (isset($c['nonpaid'])) {
+        require_once $argv[1].'/src/Finance/ServiceEffects.php';
+        $x=$c['nonpaid'];$GLOBALS['fixtureNonpaidSpec']=$x;
+        [$result,$remark,,$id]=achbotCreateNonPaymentAccount($db,'admin_bulk',
+            'bulk:9001:'.$x['ref'],9001,1,1,[
+            'server_type'=>'fixture_native','server_id'=>3,'plan_id'=>8,
+            'inbound_id'=>0,'remark'=>$x['remark'],'naming_mode'=>'digits',
+            'volume'=>2,'days'=>30]);
+        if (($result->success??false)!==true) throw new RuntimeException('fixture_nonpaid_result');
+        echo json_encode(['ok'=>true,'id'=>$id,'remark'=>$remark],JSON_THROW_ON_ERROR);
+        exit;
+    }
     if (!$db->begin_transaction()) throw new RuntimeException('fixture_begin');
     foreach ($c['commands'] as $x) {
         $user=(int)($x['user']??1001);
@@ -146,11 +158,16 @@ def main():
         needle='function achbotProviderRegistry(): array {\n    return ['
         assert raw.count(needle)==1
         path.write_text(raw.replace(needle,needle+'''
-        'fixture_native'=>array_fill_keys(achbotProviderRequiredOperations(),'achbotFixtureUnexpectedLegacyCall')+[
+        'fixture_native'=>[
+            'username'=>'achbotFixtureNonpaidUsername',
+            'target'=>'achbotFixtureNonpaidTarget',
+            'reserve'=>'achbotFixtureNonpaidReserve',
+            'dispatch'=>'achbotFixtureNonpaidDispatch',
+        ]+array_fill_keys(achbotProviderRequiredOperations(),'achbotFixtureUnexpectedLegacyCall')+[
             'label'=>'admin_settings.management.pasarguard',
             'service_target'=>'achbotFixtureServiceTargetLocked',
-            // Only funding is exercised by this fixture; declaration of both
-            // phases is required, and accidentally dispatching fails loudly.
+            // Paid funding only: declaration of both phases is required,
+            // and accidentally dispatching a paid operation fails loudly.
             'service_execution'=>['BUY'=>array_fill_keys(['prepare','perform','apply'],'achbotFixtureUnexpectedLegacyCall')],
             'service_finalization'=>['BUY'=>array_fill_keys(['prepare','perform','apply'],'achbotFixtureUnexpectedLegacyCall')]],
 ''',1)+'''
@@ -161,6 +178,51 @@ function achbotFixtureServiceTargetLocked(mysqli $db,array $q,?array $o,?array $
     if ($q['kind']!=='BUY' || $o!==null || $p===null)
         throw new DomainException('fixture_operation_unavailable');
     return ['physical'=>'fixture:'.$q['server_id'],'fixture_plan'=>(int)$p['id']];
+}
+// Test-only nonpayment adapter, not a simulation of another vendor API.
+// It uses a different key, actual alias locks, a shared connection id,
+// and deliberately has no PasarGuard snapshot or instance_key.
+function achbotFixtureNonpaidUsername(string $name): bool {
+    return achbotLocalAccountUsernameValid($name) && !str_starts_with($name,'forbidden-');
+}
+function achbotFixtureNonpaidTarget(mysqli $db,int $server,?int $plan,array $row): array {
+    if ((int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==1 ||
+        $server!==3 || $plan!==8 || $row['type']!=='fixture_native')
+        throw new RuntimeException('fixture_nonpaid_target_context');
+    $s=achbotProviderStatement($db,"SELECT id FROM server_config
+        WHERE type='fixture_native' AND provider_connection_id=42 ORDER BY id FOR UPDATE");
+    $ids=array_map('intval',array_column($s->get_result()->fetch_all(MYSQLI_ASSOC),'id'));$s->close();
+    if ($ids!==[3,4]) throw new RuntimeException('fixture_nonpaid_aliases');
+    $target=['group'=>null,'endpoint'=>hash('sha256',$row['panel_url']),
+        'credentials'=>hash('sha256','fixture-key'),'key'=>'fixture:shared-42','connection_id'=>42];
+    if ($GLOBALS['fixtureNonpaidSpec']['bad_connection']??false) unset($target['connection_id']);
+    return $target;
+}
+function achbotFixtureNonpaidReserve(mysqli $db,int $id,array $target,string $remark,string $operation,int $expire,int $bytes): void {
+    $r=achbotProviderRow($db,'SELECT target_key,remote_username,operation_id,state FROM service_effects WHERE id=? FOR UPDATE','i',[$id]);
+    if ((int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==1 ||
+        $target['provider']!=='fixture_native' || $target['key']!=='fixture:shared-42' ||
+        $target['connection_id']!==42 || isset($target['snapshot']) ||
+        $r['target_key']!==$target['key'] || $r['remote_username']!==$remark ||
+        $r['operation_id']!==$operation || $r['state']!=='dispatching')
+        throw new RuntimeException('fixture_nonpaid_reservation');
+    $s=achbotProviderStatement($db,"UPDATE service_effects SET provider_reference_id=id,
+        provider_connection_id=?,provider_state='reserved' WHERE id=?",'ii',[$target['connection_id'],$id]);
+    if ($s->affected_rows!==1) throw new RuntimeException('fixture_nonpaid_reservation_missing');
+    $s->close();
+}
+function achbotFixtureNonpaidDispatch(mysqli $db,int $id,int $server,?int $group,string $endpoint,
+    string $remark,int $volume,int $days,int $plan,string $operation,int $expire,int $bytes,array $p,string $credentials): array {
+    $r=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=?','i',[$id]);
+    if ((int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0 ||
+        $r['target_key']!=='fixture:shared-42' || (int)$r['provider_connection_id']!==42 ||
+        $r['provider_snapshot']!==null || $r['remote_username']!==$remark ||
+        $r['operation_id']!==$operation || $r['provider_state']!=='reserved' ||
+        $r['endpoint_sha256']!==$endpoint || $credentials!==hash('sha256','fixture-key'))
+        throw new RuntimeException('fixture_nonpaid_dispatch_without_committed_claim');
+    // Stop at the actual reservation/dispatch boundary. No simulated
+    // Native verification, no financial effect or Telegram.
+    return [(object)['success'=>true,'expire'=>$expire],$remark,null,$id];
 }
 ''')
         path=fixture/'src/Finance/ReceiptMethods.php';raw=path.read_text()
@@ -179,7 +241,8 @@ function achbotFixtureVerifyGatewayLocked(mysqli $db,array $pay,array $attempt,a
 }
 ''')
         for member in ('src/Services/Funding.php','src/Finance/PaymentCredit.php',
-                       'src/Finance/FundingCheckout.php','src/Wallet/Ledger.php'):
+                       'src/Finance/FundingCheckout.php','src/Wallet/Ledger.php',
+                       'src/Finance/ServiceEffects.php','src/Panel/AccountNaming.php'):
             assert (fixture/member).read_bytes()==(ROOT/member).read_bytes(),member
 
         for mode in ('strict','off'):
@@ -369,7 +432,53 @@ function achbotFixtureVerifyGatewayLocked(mysqli $db,array $pay,array $attempt,a
             replay=php(mode,manual,source_root=fixture)
             assert replay['ok'] and replay['out'][0]['credit']['replayed'] and balance()==b+100,replay
             case('registered_new_manual_method_same_credit_once')
-            sql("UPDATE server_config SET type='marzban' WHERE id=3")
+            # F16: the real common nonpayment engine, with only a source-owned
+            # alternate registration and callbacks. Independent key-only and
+            # originating physical claims must BOTH influence allocation.
+            sql("INSERT INTO server_categories(id,title,parent,active) VALUES(1,'Fixture category',0,1); "
+                "UPDATE server_config SET provider_connection_id=42,provider_instance_key=NULL WHERE id=3; "
+                "INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id) "
+                "SELECT 4,panel_url,type,username,password,42 FROM server_config WHERE id=3; "
+                "INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES(4,'Fixture alias',100,'fixture-alias','',1,1)")
+            prefix=mode+'-neutral-'
+            sql(f"""INSERT INTO service_effects(source_kind,source_ref,actor_userid,ordinal,operation_id,effect_kind,
+                target_server_id,target_key,endpoint_sha256,plan_id,remote_username,requested_expire,requested_bytes,
+                request_sha256,state,provider_reference_id,provider_connection_id,provider_state)
+                VALUES ('fixture_anchor','{mode}-key',9001,1,LEFT(SHA2('{mode}-key',256),32),'create',
+                    4,'fixture:shared-42',REPEAT('a',64),8,'{prefix}12345',1800000100,2147483648,REPEAT('b',64),
+                    'dispatching',NULL,NULL,NULL),
+                    ('fixture_anchor','{mode}-origin',9001,1,LEFT(SHA2('{mode}-origin',256),32),'import',
+                    4,'import:{900101 if mode=='strict' else 900102}',REPEAT('a',64),8,'{prefix}12346',1800000100,2147483648,REPEAT('b',64),
+                    'local_recorded',{900101 if mode=='strict' else 900102},42,'linked')""")
+            ref=992100 if mode=='strict' else 992200
+            def nonpaid(offset,remark=None,**extra):
+                return php(mode,source_root=fixture,nonpaid=dict(ref=ref+offset,remark=remark or prefix+'12345',**extra))
+            def nonpaid_state():
+                return snap()+(
+                    sql("SELECT id,target_key,remote_username,provider_connection_id,provider_state FROM service_effects ORDER BY id"),
+                    sql("SELECT COUNT(*) FROM pays"),
+                )
+            before=nonpaid_state()
+            invalid=nonpaid(0,bad_connection=True)
+            assert invalid==dict(ok=False,reason='effect_adapter_identity_invalid'),invalid
+            invalid=nonpaid(0,remark='forbidden-12345')
+            assert invalid==dict(ok=False,reason='nonpaid_effect_invalid_request'),invalid
+            assert nonpaid_state()==before
+            cap=capacity(3);wallets=snap()[:2];invoice_count=sql('SELECT COUNT(*) FROM pays')
+            for offset,chosen in ((1,12347),(2,12348)):
+                actual=nonpaid(offset)
+                assert actual['ok'] and actual['remark']==prefix+str(chosen),actual
+                evidence=sql(f"SELECT target_key,provider_connection_id,remote_username,provider_snapshot IS NULL,reserved_count FROM service_effects WHERE id={actual['id']}")
+                assert evidence==f"fixture:shared-42\t42\t{prefix}{chosen}\t1\t1",evidence
+                before=nonpaid_state()
+                assert nonpaid(offset)==dict(ok=False,reason='nonpaid_effect_already_reserved_or_gap')
+                assert nonpaid_state()==before
+            assert capacity(3)==cap-2 and capacity(4)==100 and snap()[:2]==wallets
+            assert sql('SELECT COUNT(*) FROM pays')==invoice_count
+            case('registered_native_nonpaid_opaque_name_namespace')
+            sql("DELETE FROM server_config WHERE id=4; DELETE FROM server_info WHERE id=4; "
+                "DELETE FROM server_categories WHERE id=1; "
+                "UPDATE server_config SET type='marzban',provider_connection_id=NULL WHERE id=3")
 
     report=dict(complete=True,cases=len(cases),case_names=cases,php_version=subprocess.check_output(['php','-r','echo PHP_VERSION;'],text=True))
     if args.report:args.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')

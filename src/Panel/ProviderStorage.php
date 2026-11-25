@@ -580,14 +580,14 @@ function achbotProviderAccountIdentity(mysqli $db,array $account,bool $lock=fals
  * a live local reference remains an identity/routing conflict.
  * Locking reads include the live-reference check, not an older snapshot.
  */
-function achbotProviderPhysicalNameClaimsLocked(mysqli $db,int $panelId,string $first,
+function achbotProviderPhysicalNameClaimsLocked(mysqli $db,int $connectionId,string $first,
     string $last,?int $exceptNativeId=null): array {
     $sql="SELECT e.remote_username FROM service_effects e
         WHERE e.provider_connection_id=? AND e.remote_username BETWEEN ? AND ?
           AND e.provider_reference_id IS NOT NULL AND e.state<>'cancelled'
           AND (e.provider_state IS NULL OR e.provider_state<>'deleted' OR EXISTS
               (SELECT 1 FROM orders_list o WHERE o.provider_effect_id=e.id AND o.status=1 FOR UPDATE))";
-    $types='iss';$args=[$panelId,$first,$last];
+    $types='iss';$args=[$connectionId,$first,$last];
     if ($exceptNativeId!==null) {
         $sql.=" AND (e.provider_remote_user_id IS NULL OR e.provider_remote_user_id<>?)";
         $types.='i';$args[]=$exceptNativeId;

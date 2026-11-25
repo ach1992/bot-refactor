@@ -161,7 +161,12 @@ fake compatibility adapters or generalized plugin framework.
   adapters must fail before funding or a remote effect. Pin the selected
   provider and target; do not silently switch on retry. The existing registry
   is the natural extension point; replace obsolete payment-coupled callbacks
-  as their callers converge.
+  as their callers converge. Nonpayment reservation resolves and locks the
+  physical connection through the registered target adapter before effect-range
+  reads. Its normalized `key` and `connection_id` feed the shared allocator;
+  provider-private snapshots and key construction remain adapter-owned.
+  The registered username validator preserves the local name/storage contract
+  together with the provider's actual naming constraints.
 - Payment: register source-owned method/gateway definitions and their
   issuer, verification/proof, callback/polling and configuration/UI metadata
   as needed. Manual confirmation, evidence APIs and hosted gateways have
@@ -175,9 +180,11 @@ fake compatibility adapters or generalized plugin framework.
   stable method identifiers and merchant-account-scoped evidence.
 - Acceptance: add a test-only registered Native adapter and payment method
   in isolated source fixtures, using the actual common admission/credit/
-  funding commands. Prove extension by adapter/registration only, including
-  refusal of unregistered methods and no duplicate financial effect. Such
-  fixtures do not claim another production provider is implemented. Later
+  funding commands and nonpayment reservation. Prove extension by
+  adapter/registration only, including refusal of unregistered methods,
+  a distinct physical name namespace without a PasarGuard snapshot, and
+  no duplicate financial effect. Such fixtures do not claim another
+  production provider is implemented. Later
   actual adapters require source-real protocol and failure-path tests.
 
 ## 3. Financial data model and invariants

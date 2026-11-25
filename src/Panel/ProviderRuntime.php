@@ -2,6 +2,7 @@
 /** AChBot current provider dispatch. Native identities never use legacy UUID/inbound fields. */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) { http_response_code(404); exit; }
 require_once __DIR__.'/../Diagnostics/EventLog.php';
+require_once __DIR__.'/AccountNaming.php';
 require_once __DIR__.'/ProviderImport.php';
 require_once __DIR__.'/PasarGuardServiceTarget.php';
 require_once __DIR__.'/PasarGuardServiceExecution.php';
@@ -561,6 +562,9 @@ function achbotPgPinPayment(mysqli $db,int $payId): void {
     $s->bind_param('si',$json,$payId);
     if (!$s->execute() || $s->affected_rows!==1) throw new RuntimeException('pg_quote_pin_unconfirmed');$s->close();
 }
+/** Registered nonpayment target contract. The adapter resolves and locks
+ * its current physical connection in the caller's transaction BEFORE
+ * returning key/connection_id; any private snapshot remains adapter-owned. */
 function achbotEffectTargetIdentity(mysqli $db,int $serverId,?int $planId,array $row): array {
     $type=$row['panel_type']??$row['type']??null;
     $adapter=achbotProviderDefinition($type);
@@ -570,15 +574,18 @@ function achbotEffectTargetIdentity(mysqli $db,int $serverId,?int $planId,array 
         ($target['group']!==null && (!is_int($target['group']) || $target['group']<=0)) ||
         !is_string($target['endpoint']??null) || !preg_match('/^[a-f0-9]{64}$/D',$target['endpoint']) ||
         !is_string($target['credentials']??null) || !preg_match('/^[a-f0-9]{64}$/D',$target['credentials']) ||
-        !is_string($target['key']??null) || $target['key']==='')
+        !is_string($target['key']??null) || $target['key']==='' ||
+        !is_int($target['connection_id']??null) || $target['connection_id']<=0)
         throw new RuntimeException('effect_adapter_identity_invalid');
     $target['provider']=$type;
     return $target;
 }
 function achbotPasarGuardEffectTargetAdapter(mysqli $db,int $serverId,?int $planId,array $row): array {
     $snap=achbotPgPlanSnapshot($db,$serverId,(int)$planId);
-    $panel=achbotProviderPanelForSnapshot($db,$snap);
-    return ['group'=>null,'endpoint'=>$snap['endpoint_sha256'],'credentials'=>hash('sha256',$panel['api_key']),'key'=>'pg:'.$snap['instance_key'],'snapshot'=>$snap];
+    $panel=achbotProviderPanelForSnapshot($db,$snap,true);
+    return ['group'=>null,'endpoint'=>$snap['endpoint_sha256'],
+        'credentials'=>hash('sha256',$panel['api_key']),'key'=>'pg:'.$snap['instance_key'],
+        'connection_id'=>$panel['id'],'snapshot'=>$snap];
 }
 function achbotPgReserveEffect(mysqli $db,int $effectId,array $target,string $remark,string $operation,int $expire,int $bytes): void {
     if (!isset($target['snapshot'])) return;
@@ -1088,13 +1095,14 @@ function achbotOrderPresentation(mysqli $db,array $order,array $server,array $st
  * for a sale, wallet reservation or remote effect. No runtime plugin loading.
  */
 function achbotProviderRequiredOperations(): array {
-    return ['plan','order','same_panel','user','user_info','deletion_target','action_preflight','action',
+    return ['plan','order','same_panel','user','user_info','username','deletion_target','action_preflight','action',
         'edit','pin_payment','target','reserve','dispatch','link'];
 }
 function achbotProviderRegistry(): array {
     return [
         'pasarguard'=>[
             'label'=>'admin_settings.management.pasarguard',
+            'username'=>'achbotLocalAccountUsernameValid',
             'plan'=>'achbotPasarGuardSupportsPlan','order'=>'achbotPasarGuardSupportsOrder',
             'same_panel'=>'achbotPasarGuardSamePanelAdapter','user'=>'achbotPasarGuardUserAdapter',
             'user_info'=>'achbotPasarGuardUserInfoAdapter','deletion_target'=>'achbotPasarGuardDeletionTargetAdapter',

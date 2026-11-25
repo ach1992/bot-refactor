@@ -281,6 +281,7 @@ function achbotCreateNonPaymentAccount(
         if (!$plan->execute()) throw new RuntimeException('nonpaid_effect_plan_read');
         $locked=$plan->get_result()->fetch_assoc();$plan->close();
         if (!$locked || (int)$locked['server_id']!==$serverId ||
+            $locked['type']!==$p['server_type'] ||
             (int)$locked['inbound_id']!==0 || !achbotSupportsAccount($locked['type'],0) ||
             (string)$locked['panel_url']==='')
             throw new RuntimeException('nonpaid_effect_target_changed');
@@ -291,7 +292,6 @@ function achbotCreateNonPaymentAccount(
         $targetIdentity=achbotEffectTargetIdentity($db,$serverId,$planId,$locked);
         $group=$targetIdentity['group'];$endpoint=$targetIdentity['endpoint'];
         $credentials=$targetIdentity['credentials'];$targetKey=$targetIdentity['key'];
-        $panel=achbotProviderPanelForSnapshot($db,$targetIdentity['snapshot'],true);
         $existing=$db->prepare("SELECT ordinal,state,reserved_count,
             plan_id,target_server_id
             FROM service_effects WHERE source_kind=? AND source_ref=?
@@ -303,8 +303,10 @@ function achbotCreateNonPaymentAccount(
         if (count($rows)!==$ordinal-1)
             throw new RuntimeException('nonpaid_effect_already_reserved_or_gap');
         $mode=(string)($p['naming_mode']??'manual');
-        $remark=achbotAvailableAccountRemarkLocked($db,$panel,$remark,
+        $remark=achbotAvailableAccountRemarkLocked($db,$targetKey,$targetIdentity['connection_id'],$remark,
             $kind==='free_trial' && $mode==='manual',$kind==='admin_bulk' && $mode==='manual');
+        if (!achbotEffectValidUsername($remark,$targetIdentity['provider']))
+            throw new RuntimeException('nonpaid_effect_invalid_request');
         $operation=bin2hex(random_bytes(16));
         $now=time();
         if ($days>achbotServiceDaysMax($now)) throw new RuntimeException('nonpaid_effect_invalid_request');
