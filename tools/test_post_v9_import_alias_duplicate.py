@@ -87,7 +87,7 @@ def run() -> list[str]:
                 assert 'fixture_error' not in output,(provider,op,output,result.stderr[-1200:])
                 assert all(line.startswith(('achbot_existing_subscription_import_deferred reason=',
                     'achbot_existing_subscription_lookup_deferred',
-                    'achbot_customer_draft_creation_deferred',
+                    '[AChBot] {"event":"achbot.finance.draft_creation_deferred"',
                     'achbot_shared_transfer_committed','[AChBot] {"event":"achbot.delivery.followup_result"')) for line in (re.sub(r'^\[[^\]]+\] ', '', item) for item in result.stderr.splitlines())), (
                         provider,op,'unexpected_logs',result.stderr[-1400:])
                 return output, result.stderr

@@ -652,8 +652,15 @@ def main():
                     assert p.returncode==19 and not p.stdout,(p.returncode,p.stdout,p.stderr)
                     return None
                 assert p.returncode==0,(p.returncode,p.stdout,p.stderr)
+                diagnostics=[]
                 for line in p.stderr.splitlines():
-                    assert line.startswith(('[AChBot] ','achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_','achbot_plan_correction_')) or (op=='telegram_wallet' and line.startswith(('achbot_checkout_wallet_route_deferred','achbot_admin_'))) or (op=='checkout_insert' and line=='achbot_customer_draft_creation_deferred') or (op=='checkout_manual' and re.fullmatch(r'achbot_checkout_manual_admission_deferred pay_id=[1-9][0-9]* class=DomainException',line)) or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
+                    if line.startswith('[AChBot] '):
+                        diagnostics.append(json.loads(line[len('[AChBot] '):]))
+                    else:
+                        assert line.startswith(('achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_','achbot_plan_correction_')) or (op=='telegram_wallet' and line.startswith('achbot_admin_')) or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
+                if 'expect_diagnostic' in kw:
+                    expected=kw['expect_diagnostic']
+                    assert any(all(item.get(k)==v for k,v in expected.items()) for item in diagnostics),(expected,diagnostics)
                 try:r=json.loads(p.stdout)
                 except ValueError as e:raise AssertionError((op,p.stdout,p.stderr)) from e
                 if 'expect_error' in kw:
@@ -853,6 +860,8 @@ def main():
                 assert posts()==n
                 assert sql(f"SELECT COUNT(*) FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}' AND state='cancelled'")=='1'
                 assert sql(f"SELECT COUNT(*) FROM orders_list o JOIN service_effects e ON o.id=e.order_id WHERE e.source_kind='service_operation' AND e.source_ref='{op}' AND o.amount=34")=='1'
+                retained_order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}' AND state='local_recorded'"))
+                assert php(mode,'commercial_plan',order=retained_order)==dict(origin=True,choose=True,paid=True)
                 did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={op}"))
                 assert php(mode,'deliver',id=did)=='acknowledged'
                 step(mode,op,'completed')
@@ -2492,7 +2501,18 @@ DELIMITER ;
                     sql("UPDATE users SET is_agent=0 WHERE userid=9002")
                     before=sql("SELECT COUNT(*) FROM pays")
                     assert php(mode,'checkout_insert',hash=mode+'-stale-agency-price',type='BUY_SUB',price=75,actor=9002,
-                               pricing_policy={'active':True,'percent':25})==0
+                               pricing_policy={'active':True,'percent':25},
+                               expect_diagnostic={'event':'achbot.finance.draft_creation_deferred','actor_id':9002,
+                                   'server_id':2,'reason':'draft_agency_pricing_changed','class':'DomainException'})==0
+                    assert sql("SELECT COUNT(*) FROM pays")==before
+                    # A real duplicate-key failure keeps the numeric SQL
+                    # cause in strict and non-strict modes without the hash.
+                    existing=mode+'-duplicate-diagnostic-fixture'
+                    assert php(mode,'checkout_insert',hash=existing,type='BUY_SUB',price=100,actor=9002)>0
+                    before=sql("SELECT COUNT(*) FROM pays")
+                    assert php(mode,'checkout_insert',hash=existing,type='BUY_SUB',price=100,actor=9002,
+                               expect_diagnostic={'event':'achbot.finance.draft_creation_deferred','actor_id':9002,
+                                   'sql_errno':1062,'reason':'internal_database_exception' if mode=='strict' else 'draft_insert_failed'})==0
                     assert sql("SELECT COUNT(*) FROM pays")==before
                     for table,prefix in [('increase_day','selectPlanDayIncrease'),('increase_plan','increaseVolumePlan')]:
                         offer=int(sql(f"SELECT id FROM {table} WHERE volume=97 AND server_id IS NULL"))

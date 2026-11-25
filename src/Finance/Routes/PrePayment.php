@@ -98,7 +98,9 @@ if (preg_match('/^renewPay_(nowpayment|zarinpal|nextpay)_([A-Za-z0-9_-]{1,50})$/
             return '__ACHBOT_V8_GOTO_START__';
         }
     } catch (Throwable $e) {
-        error_log('achbot_renewal_checkout_link_deferred class='.get_class($e));
+        achbotDiagnosticEvent('achbot.finance.renewal_checkout_link_deferred',[
+            'actor_id'=>(int)$from_id,'method'=>$method
+        ]+achbotDiagnosticLocalFailure($e),'warning');
         prepareStartFallback();
         return '__ACHBOT_V8_GOTO_START__';
     }

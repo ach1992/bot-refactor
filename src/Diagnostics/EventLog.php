@@ -30,6 +30,19 @@ function achbotDiagnosticUpstreamCodeKnown(string $provider,string $code): bool 
     ];
     return in_array($code,$byProvider[$provider]??[],true);
 }
+/** Preserve source-owned local failure codes and numeric SQL errors without
+ * serializing exception text, raw SQL, customer content or credentials. */
+function achbotDiagnosticLocalFailure(Throwable $error): array {
+    $context=['class'=>get_class($error),'reason'=>'internal_exception'];
+    if ($error instanceof mysqli_sql_exception) {
+        $context['reason']='internal_database_exception';
+        $context['sql_errno']=(int)$error->getCode();
+    } elseif (($error instanceof RuntimeException || $error instanceof DomainException) &&
+        preg_match('/\A(?:checkout|draft|addon|service|provider|wallet|manual|payment|pg)_[a-z0-9_]{2,88}\z/D',$error->getMessage())===1) {
+        $context['reason']=$error->getMessage();
+    }
+    return $context;
+}
 function achbotDiagnosticEvent(string $name,array $context=[],string $level='info'): void {
     try {
         if (!preg_match('/\A[a-z][a-z0-9_.]{1,95}\z/D',$name) ||
@@ -52,7 +65,7 @@ function achbotDiagnosticEvent(string $name,array $context=[],string $level='inf
             'page','checked','selected','projected','deferred','due_unchecked',
             'elapsed_ms','batch_ms','message_count','candidate_count',
             'next_check_seconds','total','success','failure','budget_exhausted',
-            'request_attempt','wallet_entry_id','followup_id','delivery_id','delivery_part','telegram_error_code'];
+            'request_attempt','wallet_entry_id','followup_id','delivery_id','delivery_part','telegram_error_code','sql_errno'];
         $codes=['provider','method','operation','stage','phase','state','reason',
             'result','source','class','worker','evidence_state','fulfillment_state',
             'http_reason','action','mode','upstream_request_id'];
@@ -78,8 +91,9 @@ function achbotDiagnosticEvent(string $name,array $context=[],string $level='inf
                 // reasons can pass; retain class/HTTP/cURL for other failures.
                 if ($key==='reason' &&
                     !in_array($value,['pending','unknown','settled',
-                        'review','unavailable','monitoring'],true) &&
-                    preg_match('/\A(?:achbot|pg|provider|payment|wallet|manual|delivery|followup|addon|native|http|response|claim|check|schema|invoice|original|dispatch|maintenance|worker|batch|source|identity|service|recovery|transport|receipt|upstream|internal|already|operation|remote|awaiting|lease)_[a-z0-9_]{2,88}\z/D',$value)!==1)
+                        'review','unavailable','monitoring','recipient_ineligible',
+                        'projection_deferred','soap_result_unconfirmed','sweep_deferred'],true) &&
+                    preg_match('/\A(?:achbot|pg|provider|payment|wallet|manual|delivery|followup|addon|native|http|response|claim|check|schema|invoice|original|dispatch|maintenance|worker|batch|source|identity|service|recovery|transport|receipt|upstream|internal|already|operation|remote|awaiting|lease|checkout|draft)_[a-z0-9_]{2,88}\z/D',$value)!==1)
                     continue;
                 // The sink must not trust syntactically valid but arbitrary
                 // upstream response content, even from future call sites.

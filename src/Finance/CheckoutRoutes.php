@@ -44,7 +44,9 @@ function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null,bool 
             }
         }
     } catch (Throwable $e) {
-        error_log('achbot_checkout_progress_deferred service_operation_id='.(int)$operation.' pay_id='.(int)$payId.' class='.get_class($e));
+        achbotDiagnosticEvent('achbot.finance.checkout_progress_deferred',[
+            'service_operation_id'=>(int)$operation,'pay_id'=>(int)$payId
+        ]+achbotDiagnosticLocalFailure($e),'warning');
     }
 }
 
@@ -129,7 +131,8 @@ function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,string 
             achbotCheckoutAdvance($db,(int)$r['operation']);
         } else alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
     } catch (Throwable $e) {
-        error_log('achbot_checkout_wallet_route_deferred class='.get_class($e));
+        achbotDiagnosticEvent('achbot.finance.checkout_wallet_deferred',[
+            'actor_id'=>$actor,'mode'=>$mode]+achbotDiagnosticLocalFailure($e),'warning');
         alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
     }
 }
@@ -230,7 +233,8 @@ function achbotCheckoutApprovalCallback(mysqli $db,string $hash,int $actor,int $
         $r=achbotCheckoutApproveReceipt($db,$hash,$actor,$primary,$mode);
         achbotCheckoutAdvance($db,$r['operation'],(int)$r['pay_id']);
     } catch (Throwable $e) {
-        error_log('achbot_checkout_approval_deferred class='.get_class($e));
+        achbotDiagnosticEvent('achbot.finance.checkout_approval_deferred',[
+            'actor_id'=>$actor,'mode'=>$mode]+achbotDiagnosticLocalFailure($e),'warning');
         alert(achbotMessage('manual_payment.manual_receipts.alert.2d252fd96f'),true);
     }
 }

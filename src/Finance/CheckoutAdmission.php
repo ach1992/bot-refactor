@@ -382,7 +382,8 @@ function achbotCheckoutDraftView(mysqli $db,int $id,int $actor,array $states): ?
     } catch (Throwable $e) {
         if ($begun) try {$db->rollback();} catch (Throwable $ignored) {}
         if (!($e instanceof DomainException))
-            error_log('achbot_checkout_view_deferred pay_id='.$id.' actor='.$actor.' class='.get_class($e));
+            achbotDiagnosticEvent('achbot.finance.checkout_view_deferred',[
+                'pay_id'=>$id,'actor_id'=>$actor]+achbotDiagnosticLocalFailure($e),'warning');
         return null;
     }
 }

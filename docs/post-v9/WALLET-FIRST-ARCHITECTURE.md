@@ -443,9 +443,11 @@ before wiring any new user-visible behavior. The current receipt and service dec
 ## 7. Execution sequence and removal
 
 One integration candidate (no partial production cutover). Internal commits
-are reviewable vertical slices, not independent releases. Rebase/reconcile
-open port-counter PR #233 through its own existing review/integration gate;
-do not absorb unapproved work or revive the obsolete counter.
+are reviewable vertical slices, not independent releases. The Wallet-first
+runtime supersedes the legacy Native port-counter fix in PR #233: neither
+commercial commands nor trial/admin provisioning allocate a local port.
+Do not merge #233 separately into this candidate or revive the counter.
+Its independent disposition remains subject to the Owner's integration gate.
 
 1. Foundation: wallet journal, transaction/replay primitive, source-real
    MariaDB tests, inventory every balance writer and source/amount semantics.

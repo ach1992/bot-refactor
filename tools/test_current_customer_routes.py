@@ -625,6 +625,22 @@ def main():
         assert op['status']=='funded' and sql("SELECT COUNT(*) FROM wallet_entries")==before
         assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
         cases.append('full_discount_zero_confirmation_without_wallet_or_gateway')
+        # Unlike purchase discovery, existing service renewal is reachable
+        # before a coupon is entered, even with all monetary methods off.
+        r=run('renew',callback=f'renewAccount{oid}')
+        pid,h,price,_=latest(2001)
+        assert int(price)>0 and 'haveDiscountCheckout_'+pid in callbacks(r),r
+        assert 'payRenewWithWallet'+h not in callbacks(r),r
+        before=sql("SELECT COUNT(*) FROM wallet_entries")
+        before_wallet=sql("SELECT wallet FROM users WHERE userid=2001")
+        r=redeem(2001,r,'nomoneyrenew','renew','mainMenu',0,zero=True)
+        assert any(b.get('text')=='✅ تمدید رایگان' for e in r['events'] if e[0]=='send' and e[2] for row in json.loads(e[2])['inline_keyboard'] for b in row),r
+        assert sql("SELECT COUNT(*) FROM wallet_entries")==before
+        assert sql("SELECT wallet FROM users WHERE userid=2001")==before_wallet
+        assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
+        op=run('wallet',hash=h,mode='renew')['events'][0][1]
+        assert op['status']=='already_funded' and sql(f"SELECT debit_entry_id IS NULL FROM service_operations WHERE id={op['operation']}")=='1'
+        cases.append('fresh_renewal_full_discount_without_monetary_methods')
         state()
 
         # Active representative pricing must not depend on route or historical

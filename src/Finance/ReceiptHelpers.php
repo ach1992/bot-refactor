@@ -245,7 +245,9 @@ function achbotManualClaim(mysqli $connection, array $payInfo, string $method, i
             null,$chosenNetwork,(array)($GLOBALS['botState']??[]),$expectedMode);
         return $result['status']==='issued';
     } catch (Throwable $e) {
-        error_log('achbot_checkout_manual_admission_deferred pay_id='.(int)$payInfo['id'].' class='.get_class($e));
+        achbotDiagnosticEvent('achbot.finance.checkout_manual_admission_deferred',[
+            'pay_id'=>(int)$payInfo['id'],'actor_id'=>$userId,'method'=>$method
+        ]+achbotDiagnosticLocalFailure($e),'warning');
         return false;
     }
 }

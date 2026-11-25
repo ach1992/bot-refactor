@@ -22,6 +22,21 @@ python3 tools/verify_installed_runtime.py \
 
 Verify the exact host, application document root, PHP handler, OPcache state, public `index.php`, scoped `health.php`, and Telegram webhook through the authorized private operational route. Old unexpected scripts can be publicly callable even if all members in the selected release manifest match: reconcile obsolete paths against the exact current ZIP and documented reverse-proxy/webserver behavior; do not delete unidentified private or custom files.
 
+## Checkout failure diagnostics
+
+The current Checkout paths emit private structured `[AChBot]` events for
+draft creation, unexpected draft-view failures, Wallet confirmation, manual
+receipt admission/approval, hosted renewal navigation and progress errors.
+Use `event`, `trace_id`, `time_utc`, `reason`, `class` and the available
+actor/payment/service identifiers together when diagnosing a refusal. SQL
+exceptions retain the numeric `sql_errno`; a local application reason is
+kept where it is a recognized diagnostic code. Unknown exception messages,
+SQL text, invoice hashes, customer payloads and credentials are not logged.
+A draft-creation identifier can describe an attempted insert that rolled
+back; the event is not evidence that a payable invoice committed. A warning
+does not establish provider failure, payment finality or successful service
+delivery. Reconcile actual original journals before retrying.
+
 ## Production installation and safe rollback
 
 Before any authorized installation, capture the real currently served source identity, version/manifest and pending application activity. Preserve actual private `baseInfo.php`, customer DB/schema, Native identities/URLs, original invoice/payment/effect journals, pending reconciliation, webhook secret and Cron definitions. Capture a verified private rollback source set and appropriate data backup; a backup file existing does not prove restorable recovery.

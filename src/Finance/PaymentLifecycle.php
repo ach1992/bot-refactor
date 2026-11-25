@@ -10,6 +10,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+require_once __DIR__.'/../Diagnostics/EventLog.php';
 
 function achbotPayUxTable(mysqli $db, string $name): bool {
     if (!in_array($name, ['payment_attempts','payment_transactions',
@@ -233,8 +234,14 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, arr
             throw new RuntimeException('draft_commit_unknown');
         return $draftId;
     } catch (Throwable $error) {
+        $diagnostic=achbotDiagnosticLocalFailure($error);
+        if ($diagnostic['reason']==='draft_insert_failed' && $insert->errno>0)
+            $diagnostic['sql_errno']=$insert->errno;
         if ($started) {try{$db->rollback();}catch(Throwable $ignored){}}
-        error_log('achbot_customer_draft_creation_deferred');
+        achbotDiagnosticEvent('achbot.finance.draft_creation_deferred',[
+            'actor_id'=>$actor,'pay_id'=>$draftId??0,
+            'server_id'=>(int)($pay['server_id']??0),'order_id'=>(int)($pay['order_id']??0)
+        ]+$diagnostic,'warning');
         // A lost COMMIT ack is ambiguous. The caller must not retry this
         // potentially committed invoice or advertise an unverified hash.
         return 0;
