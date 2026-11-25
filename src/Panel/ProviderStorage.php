@@ -191,9 +191,9 @@ function achbotProviderSnapshot(mysqli $db,int $serverId,?int $planId=null): arr
         'endpoint_sha256'=>hash('sha256',rtrim($panel['api_url'],'/')),
         'group_ids'=>achbotProviderGroups($groups)];
 }
-function achbotProviderPanelForSnapshot(mysqli $db,array $snapshot): array {
+function achbotProviderPanelForSnapshot(mysqli $db,array $snapshot,bool $lock=false): array {
     $snapshot=achbotProviderCanonicalSnapshot($snapshot);
-    $p=achbotProviderPanel($db,$snapshot['panel_id']);
+    $p=achbotProviderPanel($db,$snapshot['panel_id'],$lock);
     if (!hash_equals($snapshot['instance_key'],$p['instance_key']) ||
         !hash_equals($snapshot['endpoint_sha256'],hash('sha256',rtrim($p['api_url'],'/'))))
         throw new RuntimeException('provider_snapshot_target_changed');
@@ -572,6 +572,34 @@ function achbotProviderAccountIdentity(mysqli $db,array $account,bool $lock=fals
     return $identity+['identity_mode'=>'adopted','remote_username'=>$account['remote_username'],
         'adoption_sha256'=>$digest];
 }
+/**
+ * Physical account occupancy, regardless of the originating effect's
+ * target_key. The caller locks the current physical panel (all aliases)
+ * in its transaction before checking or reserving a name. Attachments
+ * have no independent provider_reference_id. A deleted incarnation with
+ * a live local reference remains an identity/routing conflict.
+ * Locking reads include the live-reference check, not an older snapshot.
+ */
+function achbotProviderPhysicalNameClaimsLocked(mysqli $db,int $panelId,string $first,
+    string $last,?int $exceptNativeId=null): array {
+    $sql="SELECT e.remote_username FROM service_effects e
+        WHERE e.provider_connection_id=? AND e.remote_username BETWEEN ? AND ?
+          AND e.provider_reference_id IS NOT NULL AND e.state<>'cancelled'
+          AND (e.provider_state IS NULL OR e.provider_state<>'deleted' OR EXISTS
+              (SELECT 1 FROM orders_list o WHERE o.provider_effect_id=e.id AND o.status=1 FOR UPDATE))";
+    $types='iss';$args=[$panelId,$first,$last];
+    if ($exceptNativeId!==null) {
+        $sql.=" AND (e.provider_remote_user_id IS NULL OR e.provider_remote_user_id<>?)";
+        $types.='i';$args[]=$exceptNativeId;
+    }
+    $s=achbotProviderStatement($db,$sql.' FOR UPDATE',$types,$args);
+    try {
+        $names=[];$r=$s->get_result();
+        while ($row=$r->fetch_assoc()) $names[]=$row['remote_username'];
+        return $names;
+    } finally {$s->close();}
+}
+
 /** Caller owns one transaction spanning the order, source credential and both evidence rows. */
 function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array $proof,
     int $owner,int $orderId,int $actor,int $primary): void {
@@ -580,7 +608,7 @@ function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array
     if ((int)($tx['tx']??0)!==1 || min($serverId,$owner,$orderId,$actor)<=0)
         throw new RuntimeException('provider_adoption_transaction_invalid');
     $native=achbotPgNormalizeUser($native);
-    $panel=achbotPgServerPanel($db,$serverId);
+    $panel=achbotPgServerPanel($db,$serverId,true);
     if (achbotPgImportTarget($panel)!==($proof['target']??null))
         throw new RuntimeException('provider_adoption_target_changed');
     $s=achbotProviderStatement($db,'SELECT userid,isAdmin,step FROM users WHERE userid=? LIMIT 2 FOR UPDATE','i',[$actor]);
@@ -615,14 +643,9 @@ function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array
     if ($physical===null) {
         // Reused Native usernames must not hide an active old identity or
         // a deleted account that still has live local references.
-        $conflict=achbotProviderRow($db,"SELECT e.id FROM service_effects e
-            WHERE e.provider_connection_id=? AND e.remote_username=?
-              AND e.provider_reference_id IS NOT NULL AND e.state<>'cancelled'
-              AND (e.provider_remote_user_id IS NULL OR e.provider_remote_user_id<>?)
-              AND (e.provider_state IS NULL OR e.provider_state<>'deleted' OR EXISTS
-                  (SELECT 1 FROM orders_list o WHERE o.provider_effect_id=e.id AND o.status=1))
-            LIMIT 1 FOR UPDATE",'isi',[$panel['id'],$native['username'],$native['id']]);
-        if ($conflict!==null) throw new RuntimeException('provider_adoption_username_conflict');
+        if (achbotProviderPhysicalNameClaimsLocked($db,$panel['id'],$native['username'],
+            $native['username'],$native['id']))
+            throw new RuntimeException('provider_adoption_username_conflict');
     }
     if ($physical!==null) {
         $physicalIdentity=achbotProviderAccountIdentity($db,$physical,true);

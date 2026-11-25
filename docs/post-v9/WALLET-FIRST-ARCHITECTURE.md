@@ -317,7 +317,15 @@ Do not treat 404/409 indiscriminately as safe retry.
 ordinal and marker before POST. Before creating a new effect, resolve a local
 generated-name collision within the existing five-digit naming shape on the
 same physical target; explicit single names are never changed. Paid BUY and
-nonpayment creation share the allocator. Once reserved, the exact name and
+nonpayment creation share the allocator. Local import and first CREATE
+reservation serialize on the same current physical-panel rows, across
+logical aliases. Both use the originating-account occupancy predicate,
+independent of the import effect's `target_key`. Attachments are not separate
+physical claims; deleted imported incarnations without active local references
+do not permanently exclude a name. Deleted incarnations with active references
+remain a conflict, and the existing CREATE target-key uniqueness fence is
+preserved. The fresh schema indexes `(provider_connection_id, remote_username)`
+for exact and suffix-range occupancy reads. Once reserved, the exact name and
 marker are immutable. Exhaustion or an explicit-name conflict is classified;
 a foreign remote identity is not a reason to allocate another name.
 Use authenticated GET by exact username/identity;

@@ -5,7 +5,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(40
 /** Resolve only the original physical panel, independently of mutable
  * sales/catalog settings. Authorized credential rotation on that same
  * instance is permitted; a moved server never redirects a funded effect. */
-function achbotPasarGuardBuySnapshot(mysqli $db,array $quote): array {
+function achbotPasarGuardBuySnapshot(mysqli $db,array $quote,bool $lock=false): array {
     achbotPgLoad();
     $t=$quote['target'];$q=$quote['request'];
     if (($t['provider']??null)!=='pasarguard' ||
@@ -13,8 +13,8 @@ function achbotPasarGuardBuySnapshot(mysqli $db,array $quote): array {
         throw new RuntimeException('service_buy_target_invalid');
     $snapshot=achbotProviderCanonicalSnapshot(['provider'=>'pasarguard','panel_id'=>$t['panel_id'],
         'instance_key'=>substr($t['physical'],3),'endpoint_sha256'=>$t['endpoint'],'group_ids'=>$t['groups']]);
-    $panel=achbotProviderPanelForSnapshot($db,$snapshot);
-    $current=achbotPgServerPanel($db,$q['server_id']);
+    $panel=achbotProviderPanelForSnapshot($db,$snapshot,$lock);
+    $current=achbotPgServerPanel($db,$q['server_id'],$lock);
     if ($current['id']!==$panel['id'] || $current['instance_key']!==$panel['instance_key'] ||
         $current['api_url']!==$panel['api_url'] || $current['api_key']!==$panel['api_key'])
         throw new RuntimeException('service_buy_target_changed');
@@ -54,7 +54,8 @@ function achbotPasarGuardBuyPrepareLocked(mysqli $db,array $op,array $quote): ?a
     $id=(int)$op['id'];$ref=(string)$id;$q=$quote['request'];$count=$q['quantity'];
     if ($op['kind']!=='BUY' || (int)$op['reserved_count']!==$count)
         throw new RuntimeException('service_buy_capacity_unverified');
-    [$snapshot]=achbotPasarGuardBuySnapshot($db,$quote);
+    // Serialize alias reservations before taking any source-range locks.
+    [$snapshot,$panel]=achbotPasarGuardBuySnapshot($db,$quote,true);
     $s=achbotProviderStatement($db,"SELECT * FROM service_effects
         WHERE source_kind='service_operation' AND source_ref=? ORDER BY ordinal FOR UPDATE",'s',[$ref]);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
@@ -82,7 +83,7 @@ function achbotPasarGuardBuyPrepareLocked(mysqli $db,array $op,array $quote): ?a
         $ordinal=count($rows)+1;
         $remark=achbotStyledAccountRemark($q['remark'],'pasarguard','service:'.$id,
             $ordinal,$count,$q['naming_mode'],$q['explicit_name']);
-        $remark=achbotAvailableAccountRemarkLocked($db,$quote['target']['physical'],$remark,
+        $remark=achbotAvailableAccountRemarkLocked($db,$panel,$remark,
             $q['explicit_name'] && $count===1,$q['explicit_name'] && $count>1);
         // Exact real orders_list expiry INT contract; not a new provider cap.
         $expiry=time()+$q['days']*86400;

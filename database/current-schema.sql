@@ -641,6 +641,7 @@ CREATE TABLE `service_effects` (
   UNIQUE KEY `uq_effect_target_username` (`target_key`,`active_username`),
   KEY `idx_effect_panel_username` (`target_server_id`,`remote_username`),
   KEY `idx_effect_review` (`state`,`updated_at`),
+  KEY `idx_effect_physical_username` (`provider_connection_id`,`remote_username`),
   CONSTRAINT `fk_effect_pay` FOREIGN KEY (`pay_row_id`) REFERENCES `pays` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;

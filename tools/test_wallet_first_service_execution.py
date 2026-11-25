@@ -19,6 +19,7 @@ import re
 from urllib.parse import unquote
 
 import database_fixture as owned
+import import_occupancy_fixture as imports
 from test_wallet_first_cutover import LEGACY_RESERVE_PHP
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -148,6 +149,7 @@ if (!$db->set_charset('utf8mb4')) throw new RuntimeException('fixture_charset');
 $connection=$db;$GLOBALS['admin']=9001;
 $x=json_decode($argv[5],true,512,JSON_THROW_ON_ERROR);
 if ($x['short_lock_timeout']??false) $db->query('SET SESSION innodb_lock_wait_timeout=2');
+if ($x['read_committed']??false) $db->query('SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED');
 if ($x['qr_local_fail']??false) {
     class QRcode {public static function png(...$args) {throw new RuntimeException('fixture_qr_prepare');}}
 }
@@ -158,10 +160,11 @@ if (isset($x['menu_state'])) {
     $GLOBALS['from_id']=1001;$GLOBALS['userInfo']=['isAdmin'=>0,'is_agent'=>0,'freetrial'=>'used'];
 }
 $GLOBALS['paymentKeys']=['bankAccount'=>'fixture-bank','holderName'=>'fixture-holder'];
-''' + LEGACY_RESERVE_PHP + r'''
+''' + LEGACY_RESERVE_PHP + imports.PHP_IMPORT + r'''
 try {
     $presentation=['bot_state'=>[],'bot_url'=>'https://bot.fixture.invalid','bot_username'=>'fixture_bot'];
-    if ($x['op']==='step') $r=achbotServiceExecuteStep($db,$x['id'],$presentation,(bool)($x['force']??false));
+    if ($x['op']==='import_occupancy') $r=fixtureImportOccupancy($db,$x);
+    elseif ($x['op']==='step') $r=achbotServiceExecuteStep($db,$x['id'],$presentation,(bool)($x['force']??false));
     elseif ($x['op']==='resolution_preview') {
         $actor=(int)($x['actor']??9001);
         $r=achbotServiceResolutionPreview($db,$x['id'],$actor,9001);
@@ -483,10 +486,23 @@ def main():
                 self.wfile.write(data)
             def do_GET(self):
                 try:
+                    with lock:
+                        public=imports.public_info(self.path,users.values())
+                    if public is not None:
+                        assert not self.headers.get('X-Api-Key') and not self.headers.get('Authorization')
+                        with lock:requests.append(('IMPORT_INFO',self.path))
+                        return self.reply(*public)
                     assert self.headers['X-Api-Key'] in ('fixture','fixture-rotated')
                     # Actual SQL writer on another connection proves no open
                     # InnoDB owner/effect lock spans the authenticated request.
-                    sql('SET SESSION innodb_lock_wait_timeout=2; UPDATE users SET wallet=wallet WHERE userid=1001')
+                    with lock:
+                        is_import_read=self.path.startswith('/api/user/by-id/') and any(
+                            u['note']=='independent-native-origin' and str(u['id'])==self.path.rsplit('/',1)[1]
+                            for u in users.values())
+                    # The supported import rechecks a read-only proof inside
+                    # its transaction; this is not a Native service write.
+                    if not is_import_read:
+                        sql('SET SESSION innodb_lock_wait_timeout=2; UPDATE users SET wallet=wallet WHERE userid=1001')
                     with lock:
                         requests.append(('GET',self.path))
                         if faults and (faults[0]=='get_unavailable' or (faults[0]=='correction_prewrite_get_unavailable' and sql("SELECT COUNT(*) FROM service_plan_changes WHERE provider='pasarguard_correction' AND state='prepared'")!='0')):
@@ -647,7 +663,7 @@ def main():
             sql('UPDATE users SET wallet=50000 WHERE userid=9002')
             driver=work/'execution.php';driver.write_text(PHP)
             last_diagnostics=[]
-            def php(mysqli_mode,op,**kw):
+            def php(mysqli_mode,op,*,return_diagnostics=False,**kw):
                 p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=curl','-d','extension=gd',
                     '-d','allow_url_fopen=0','-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
                     str(driver),str(ROOT),str(work/'mysql.sock'),DB,mysqli_mode,json.dumps(dict(op=op,**kw))],
@@ -675,7 +691,7 @@ def main():
                     assert not r['ok'] and r['reason']==kw['expect_error'],r
                     return r['reason']
                 assert r['ok'],r
-                return r['result']
+                return (r['result'],diagnostics) if return_diagnostics else r['result']
             def issue(mode,ref,quantity=1,server=2,plan=7,policy=None):
                 return php(mode,'issue',ref=mode+'-'+ref,quote=dict(kind='BUY',variant='standard',price=100,
                     server_id=server,plan_id=plan,order_id=0,quantity=quantity,days=30,volume=2,
@@ -2773,15 +2789,152 @@ DELIMITER ;
                     assert php(mode,'fund',id=other,owner=9002)=='funded'
                     fund(mode,own);before=finance();n=posts()
                     with ThreadPoolExecutor(max_workers=2) as pool:
-                        results=list(pool.map(lambda oid:php(mode,'step',id=oid),(own,other)))
-                    for oid,result in zip((own,other),results):
+                        results=list(pool.map(lambda oid:php(mode,'step',id=oid,return_diagnostics=True),(own,other)))
+                    for oid,(result,diagnostics) in zip((own,other),results):
                         if result['status']=='pending':
-                            assert result['reason']=='provider_storage_unavailable',result
+                            assert result['reason']=='provider_storage_unavailable',(result,diagnostics)
                             retry(oid);step(mode,oid,'applied')
                         else:assert result['status']=='applied',result
                         step(mode,oid,'completed')
                     assert posts()==n+2 and finance()==before and len({rows(oid)[0].split('\t')[2] for oid in (own,other)})==2
                     cases.append(mode+'_physical_generated_name_collision_before_dispatch_only')
+
+                # F15: real imported origins use import:<order_id>, not pg:<instance>.
+                for mode in ('strict','off'):
+                    sql("UPDATE users SET wallet=50000 WHERE userid IN (1001,9002); UPDATE server_info SET ucount=100,state=1,active=1 WHERE id IN (2,3)")
+                    def imported_name(ref,name,quantity=1,explicit=False,server=2,plan=7,**kw):
+                        return php(mode,'issue',ref=mode+'-import-'+ref,**kw,quote=dict(kind='BUY',variant='standard',
+                            price=100,server_id=server,plan_id=plan,order_id=0,quantity=quantity,days=30,volume=2,
+                            remark=name,uuid='',naming_mode='manual' if explicit else 'digits',
+                            explicit_name=explicit,policy={}))
+                    def remote_existing(name):
+                        nonlocal next_native_id
+                        with lock:
+                            assert name not in users
+                            next_native_id+=1
+                            u=imports.external_user('http://127.0.0.1:'+str(server.server_port),next_native_id,name)
+                            users[name]=u
+                            return u['subscription_url']
+                    def adopt(url,server_id=3,owner=9001,**kw):
+                        return php(mode,'import_occupancy',server=server_id,owner=owner,url=url,**kw)
+                    def import_identity(effect):
+                        return sql(f"SELECT target_key,source_kind,source_ref,provider_remote_user_id,provider_operation_marker,provider_snapshot FROM service_effects WHERE id={effect}")
+                    prefix=mode+'-import-'
+                    name=prefix+'99999'
+                    awaiting=imported_name('awaiting',name,explicit=True)
+                    funded=imported_name('funded',name,explicit=True)
+                    fund(mode,funded)
+                    before=finance();n=posts()
+                    url=remote_existing(name)
+                    anchor=adopt(url)
+                    attachment=adopt(url,server_id=2,owner=9002)
+                    assert anchor['target']=='import:'+str(anchor['order'])
+                    assert attachment['target']=='attachment:'+str(attachment['order']) and attachment['effect']==anchor['effect']
+                    assert finance()==before and posts()==n
+                    original=import_identity(anchor['effect'])
+                    wire=len(requests)
+                    assert php(mode,'fund',id=awaiting)=='request_invalidated'
+                    assert sql(f"SELECT failure_code FROM service_operations WHERE id={awaiting}")=='service_account_name_conflict'
+                    imported_name('known',name,explicit=True,expect_error='service_account_name_conflict')
+                    step(mode,funded,'pending','service_account_name_conflict')
+                    assert finance()==before and len(requests)==wire and not rows(awaiting) and not rows(funded)
+                    sql(f"UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE id={funded}")
+                    # The next suffix is occupied by a different imported
+                    # origin as well; both namespaces must be considered.
+                    other=adopt(remote_existing(prefix+'10000'),server_id=2)
+                    other_original=import_identity(other['effect'])
+                    single=imported_name('single',name,server=3,plan=9)
+                    fund(mode,single);before=finance();n=posts()
+                    faults.append('lost_response');step(mode,single,'pending','pg_vendor_unavailable')
+                    pinned=rows(single)[0].split('\t')[:5]
+                    assert pinned[2]==prefix+'10001' and posts()==n+1,pinned
+                    retry(single);step(mode,single,'applied');step(mode,single,'completed')
+                    assert rows(single)[0].split('\t')[:5]==pinned and posts()==n+1 and finance()==before
+                    assert import_identity(anchor['effect'])==original and import_identity(other['effect'])==other_original
+                    bulk=imported_name('bulk',prefix+'bulk-12345',quantity=2,server=3,plan=9)
+                    t=10000+((int(hashlib.sha256(f'service:{bulk}'.encode()).hexdigest()[:11],16)+1)%90000)
+                    occupied=prefix+'bulk-'+str(t)
+                    anchor_bulk=adopt(remote_existing(occupied),server_id=2)
+                    original_bulk=import_identity(anchor_bulk['effect'])
+                    fund(mode,bulk);before=finance();n=posts()
+                    for stage in ('applied','progressed','applied','completed'):step(mode,bulk,stage)
+                    names=[r.split('\t')[2] for r in rows(bulk)]
+                    assert len(set(names))==2 and occupied not in names and all(re.fullmatch(re.escape(prefix)+r'bulk-[1-9][0-9]{4}',v) for v in names),names
+                    assert posts()==n+2 and finance()==before and import_identity(anchor_bulk['effect'])==original_bulk
+
+                    # Model the established verified-deletion/live-reference
+                    # states of the real imported origin. The existing delete
+                    # and re-import suites prove the actual deletion protocol.
+                    with lock:del users[name]
+                    sql(f"UPDATE service_effects SET provider_state='deleted' WHERE id={anchor['effect']}; UPDATE orders_list SET status=0 WHERE id={anchor['order']}")
+                    imported_name('stale-live',name,explicit=True,expect_error='service_account_name_conflict')
+                    sql(f"UPDATE orders_list SET status=0 WHERE id={attachment['order']}")
+                    reusable=imported_name('retired-reuse',name)
+                    fund(mode,reusable);before=finance();n=posts()
+                    step(mode,reusable,'applied');step(mode,reusable,'completed')
+                    assert rows(reusable)[0].split('\t')[2]==name and finance()==before and posts()==n+1
+                    assert import_identity(anchor['effect'])==original
+                    assert sql(f"SELECT provider_state FROM service_effects WHERE id={anchor['effect']}")=='deleted'
+                    cases.append(mode+'_imported_physical_names_paid_explicit_generated_bulk_deleted_and_attachment')
+
+                    # Deliberately hold a genuine new import transaction
+                    # while a funded BUY on another alias competes. Use
+                    # READ COMMITTED: the panel row lock, not an accidental
+                    # repeatable-read gap lock, must serialize both claims.
+                    race_name=prefix+'race-12345'
+                    race=imported_name('race',race_name)
+                    fund(mode,race);before=finance();n=posts()
+                    race_url=remote_existing(race_name)
+                    barrier=work/('import-barrier-'+mode);barrier.mkdir()
+                    with ThreadPoolExecutor(max_workers=2) as pool:
+                        pending=pool.submit(adopt,race_url,3,9001,barrier=str(barrier),read_committed=True)
+                        try:
+                            deadline=time.monotonic()+6
+                            while not (barrier/'ready').exists() and not pending.done() and time.monotonic()<deadline:time.sleep(.02)
+                            assert (barrier/'ready').exists(),pending.result() if pending.done() else 'import not ready'
+                            # Prove the import transaction owns the row of
+                            # the OTHER logical alias, not merely its own.
+                            probe=subprocess.run(client,input='START TRANSACTION; SELECT id FROM server_config WHERE id=2 FOR UPDATE NOWAIT; ROLLBACK;',
+                                text=True,env=env,capture_output=True,timeout=3)
+                            assert probe.returncode!=0 and 'ERROR 1205' in probe.stderr,probe
+                            worker=pool.submit(php,mode,'step',id=race,read_committed=True)
+                            # INNODB_LOCK_WAITS is not reliably populated by
+                            # all supported MariaDB builds. Observe the exact
+                            # outstanding locking SQL plus the NOWAIT proof.
+                            wait_sql=("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE DB=DATABASE() "
+                                "AND COMMAND='Execute' AND TIME>=1 AND INFO LIKE 'SELECT c.*,i.title FROM server_config c JOIN server_info i ON i.id=c.id%' "
+                                "AND INFO LIKE '%FOR UPDATE%'")
+                            deadline=time.monotonic()+4
+                            waiting=False
+                            while not worker.done() and time.monotonic()<deadline:
+                                waiting=int(sql(wait_sql))>0
+                                if waiting:break
+                                time.sleep(.03)
+                            assert waiting and not worker.done(),('missing physical reservation wait',worker.result() if worker.done() else sql('SHOW FULL PROCESSLIST'),last_diagnostics)
+                        finally:(barrier/'release').touch()
+                        race_anchor=pending.result()
+                        result=worker.result()
+                    assert result['status']=='applied',result
+                    step(mode,race,'completed')
+                    assert rows(race)[0].split('\t')[2]!=race_name and posts()==n+1 and finance()==before
+                    assert race_anchor['target']=='import:'+str(race_anchor['order'])
+
+                    # Reverse ownership: a committed CREATE reservation
+                    # cannot be bypassed by a subsequent competing import
+                    # of an independently existing remote account.
+                    foreign=prefix+'foreign-12345'
+                    op=imported_name('foreign',foreign)
+                    fund(mode,op);before=finance();n=posts()
+                    foreign_url=remote_existing(foreign)
+                    step(mode,op,'pending','pg_create_name_identity_conflict')
+                    pinned=rows(op)[0]
+                    counts=sql("SELECT COUNT(*) FROM orders_list; SELECT COUNT(*) FROM service_effects; SELECT COUNT(*) FROM add_link")
+                    adopt(foreign_url,expect_error='provider_adoption_username_conflict')
+                    assert sql("SELECT COUNT(*) FROM orders_list; SELECT COUNT(*) FROM service_effects; SELECT COUNT(*) FROM add_link")==counts
+                    retry(op);step(mode,op,'pending','pg_create_name_identity_conflict')
+                    assert rows(op)[0]==pinned and posts()==n and finance()==before and not faults and not errors
+                    sql(f"UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE id={op}")
+                    cases.append(mode+'_import_create_physical_lock_read_committed_and_original_fence')
             if not (args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.zero_commercial_only or args.name_collision_only):
                 # Actual large BUY: every Native name and original order ID
                 # is present in exactly one bounded report per recipient.

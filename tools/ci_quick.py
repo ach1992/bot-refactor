@@ -104,6 +104,8 @@ REQUIRED_CURRENT_CASES = {
         "actual_bulk_checkout_draft",
         "zero_commercial_actual_checkout_native_delivery_reports",
         "physical_generated_name_collision_before_dispatch_only",
+        "imported_physical_names_paid_explicit_generated_bulk_deleted_and_attachment",
+        "import_create_physical_lock_read_committed_and_original_fence",
         "actual_addon_current_agency_pricing_and_draft_guard",
         "positive_addons_shared_configured_method_eligibility",
         "ordinary_zero_commercial_origin_survives_demotion",
@@ -225,6 +227,8 @@ REQUIRED_SCENARIOS = {
         "restricted_or_revoked_bulk_staff_denied_at_reservation",
         "actual_nonpaid_bulk_physical_name_collision_resolved_before_dispatch",
         "actual_trial_generated_name_collision_resolved_before_dispatch",
+        "strict_actual_nonpaid_imported_name_occupancy_alias_trial_and_bulk",
+        "off_actual_nonpaid_imported_name_occupancy_alias_trial_and_bulk",
     ),
     "current_payment_readiness": (
         "fresh_empty_structure_ready_not_payment_configured",

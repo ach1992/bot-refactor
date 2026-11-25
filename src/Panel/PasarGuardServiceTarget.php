@@ -71,7 +71,7 @@ function achbotPasarGuardServiceTargetLocked(mysqli $db,array $q,?array $o,?arra
                     achbotStyledAccountRemark($q['remark'],'pasarguard','service:quote-check',
                         $ordinal,$q['quantity'],$q['naming_mode'],$q['explicit_name']);
                 if ($q['explicit_name'] && $q['quantity']===1)
-                    achbotAvailableAccountRemarkLocked($db,$target['physical'],$q['remark'],true);
+                    achbotAvailableAccountRemarkLocked($db,$panel,$q['remark'],true);
             } catch (InvalidArgumentException $e) {
                 throw new DomainException('service_account_name_invalid',0,$e);
             }

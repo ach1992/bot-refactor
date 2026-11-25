@@ -12,6 +12,7 @@ from pathlib import Path
 
 import database_fixture as owned
 import provider_storage_fixture as storage
+import import_occupancy_fixture as imports
 
 ROOT=Path(__file__).resolve().parents[1]
 DB=owned.NAMES[1]
@@ -21,6 +22,7 @@ set_error_handler(static function($n,$m){throw new ErrorException($m,0,$n);});
 $_SERVER['SCRIPT_FILENAME']=__FILE__;
 define('ACHBOT_PG_TEST_LOOPBACK',true);
 $root=$argv[1];$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
+mysqli_report(($spec['mysqli_mode']??'strict')==='strict'?MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT:MYSQLI_REPORT_OFF);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 $actor=(int)($spec['actor']??1001);
@@ -120,7 +122,10 @@ function ensureAccountCreationSucceeded($response,$serverInfo,$inbound,$admin,$t
 require_once $root.'/src/Purchase/Core.php';
 require_once $root.'/src/Purchase/OrderWrites.php';
 require_once $root.'/src/Finance/ServiceEffects.php';
-if (($spec['route']??'trial')==='boundary') {
+''' + imports.PHP_IMPORT + r'''
+if (($spec['route']??'trial')==='import_occupancy') {
+    $GLOBALS['events'][]=['name'=>'IMPORTED','identity'=>fixtureImportOccupancy($connection,$spec)];
+} elseif (($spec['route']??'trial')==='boundary') {
     $kind=$spec['kind']??'free_trial';
     $ref=$kind==='free_trial'?'trial:'.$actor:'bulk:'.$actor.':'.$updateId;
     try {
@@ -223,6 +228,11 @@ def provider(work,env):
             self.wfile.write(body)
         def do_GET(self):
             try:
+                with self.server.lock:
+                    public=imports.public_info(self.path,self.server.users.values())
+                if public is not None:
+                    assert not self.headers.get('X-Api-Key') and not self.headers.get('Authorization')
+                    return self.reply(*public)
                 assert self.headers['X-Api-Key']=='fixture-private-key'
                 path=urlsplit(self.path).path
                 if path=='/api/system': return self.reply(200,{'version':'5.5.1'})
@@ -347,7 +357,7 @@ def check():
         cases.append('pasarguard_forced_random_collision_source_bound_bulk_and_provider_limits')
         def reset():
             sql(work,env,'DELETE FROM payment_followup_attempts; DELETE FROM payment_followup_intents; DELETE FROM payment_delivery_attempts; DELETE FROM payment_delivery_parts; DELETE FROM payment_delivery_intents; DELETE FROM service_effects')
-            sql(work,env,'DELETE FROM orders_list; DELETE FROM server_plans; DELETE FROM server_categories; DELETE FROM server_info; DELETE FROM server_config')
+            sql(work,env,"DELETE FROM orders_list; DELETE FROM add_link; DELETE FROM setting WHERE type LIKE 'ACHBOT_SERVICE_ORIGIN:%'; DELETE FROM server_plans; DELETE FROM server_categories; DELETE FROM server_info; DELETE FROM server_config")
             configure_pg()
             with PEER.lock:PEER.users.clear();PEER.sources.clear();PEER.trace.clear();PEER.faults.clear()
             sql(work,env,'UPDATE users SET freetrial=NULL WHERE userid=1001')
@@ -601,6 +611,41 @@ def check():
             names.extend(posts)
         assert len(set(names))==2 and capacity()==8 and all(re.fullmatch(r'buyfixture-[1-9][0-9]{4}',v) for v in names),names
         cases.append('actual_trial_generated_name_collision_resolved_before_dispatch')
+
+        # F15: imported Native origins from another logical alias occupy
+        # the same physical namespace before either nonpaid route reserves.
+        for mode in ('strict','off'):
+            for kind in ('trial','digits','manual'):
+                reset()
+                sql(work,env,"INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES(3,'Alias',10,'other','',1,1);"+
+                    storage.clone(3,2,current=True))
+                if kind=='trial':
+                    suffix=subprocess.check_output(['php','-r','mt_srand(20261125); echo rand(10000,99999);'],text=True).strip()
+                    preferred='buyfixture-'+suffix
+                else:
+                    ordinal=1 if kind=='digits' else 0
+                    token=10000+((int(hashlib.sha256(b'bulk:9001:991000').hexdigest()[:11],16)+ordinal)%90000)
+                    preferred='buyfixture-'+str(token) if kind=='digits' else 'collision_manual_'+str(token)+'_1'
+                with PEER.lock:
+                    PEER.next_id+=1
+                    u=imports.external_user(url,PEER.next_id,preferred)
+                    PEER.users[preferred]=u;PEER.sources[preferred]='import-fixture'
+                observed=php(work,env,driver,route='import_occupancy',actor=9001,owner=9002,
+                    server=3,url=u['subscription_url'],mysqli_mode=mode)
+                anchor=next(e['identity'] for e in observed if e['name']=='IMPORTED')
+                assert anchor['target']=='import:'+str(anchor['order'])
+                snapshot=sql(work,env,f"SELECT provider_snapshot,provider_operation_marker,provider_remote_user_id FROM service_effects WHERE id={anchor['effect']}")
+                if kind=='trial':
+                    events=php(work,env,driver,route='trial',actor=9001,seed=20261125,update_id=991000,mysqli_mode=mode)
+                else:
+                    sql(work,env,"UPDATE users SET step='createAccAmount7_30_2' WHERE userid=9001; UPDATE server_plans SET descr='collision_manual' WHERE id=7")
+                    events=php(work,env,driver,route='bulk',actor=9001,text='1',remark_mode=kind,update_id=991000,mysqli_mode=mode)
+                names=[e['remark'] for e in events if e['name']=='POST']
+                assert len(names)==1 and names[0]!=preferred and len([e for e in events if e['name']=='DELIVER'])==1,events
+                assert re.fullmatch(r'collision_manual_[1-9][0-9]{4}_1' if kind=='manual' else r'buyfixture-[1-9][0-9]{4}',names[0]),names
+                assert capacity()==9 and sql(work,env,f"SELECT provider_snapshot,provider_operation_marker,provider_remote_user_id FROM service_effects WHERE id={anchor['effect']}")==snapshot
+                assert sql(work,env,"SELECT COUNT(*) FROM wallet_entries")=='0'
+            cases.append(mode+'_actual_nonpaid_imported_name_occupancy_alias_trial_and_bulk')
 
         reset()
         # Preserve the current provider limit while keeping ordinal uniqueness.

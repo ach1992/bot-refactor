@@ -470,12 +470,12 @@ function achbotPgLoad(): void {
     require_once __DIR__.'/PasarGuard.php';
     require_once __DIR__.'/ProviderStorage.php';
 }
-function achbotPgServerPanel(mysqli $db,int $serverId): array {
+function achbotPgServerPanel(mysqli $db,int $serverId,bool $lock=false): array {
     achbotPgLoad();
-    $s=$db->prepare('SELECT c.provider_connection_id,c.type,c.panel_url FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=?');
-    $s->bind_param('i',$serverId);$s->execute();$r=$s->get_result()->fetch_assoc();$s->close();
+    $r=achbotProviderRow($db,'SELECT c.provider_connection_id,c.type,c.panel_url
+        FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=?'.($lock?' FOR UPDATE':''),'i',[$serverId]);
     if (!$r || $r['type']!=='pasarguard') throw new RuntimeException('pg_server_identity_missing');
-    $p=achbotProviderPanel($db,(int)$r['provider_connection_id']);
+    $p=achbotProviderPanel($db,(int)$r['provider_connection_id'],$lock);
     if (rtrim($r['panel_url'],'/')!==rtrim($p['api_url'],'/')) throw new RuntimeException('pg_endpoint_changed');
     return $p;
 }

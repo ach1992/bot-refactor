@@ -94,16 +94,20 @@ function achbotAccountNumericToken(string $source,int $ordinal): string {
  * Allocate a locally available name ONLY for a new, not-yet-journaled CREATE.
  * Keep the approved five-digit name shape and exact explicitly chosen single
  * names. A committed effect is never renamed, even after uncertain HTTP.
- * The physical-target unique index remains the atomic concurrency fence.
+ * Serialize local adoption and CREATE allocation on the same physical
+ * panel rows, locked by the caller before effect-range reads. Preserve
+ * the existing target-key unique reservation fence.
  */
-function achbotAvailableAccountRemarkLocked(mysqli $db,string $targetKey,string $preferred,
+function achbotAvailableAccountRemarkLocked(mysqli $db,array $panel,string $preferred,
     bool $explicitSingle=false,bool $manualBulk=false): string {
     require_once __DIR__.'/ProviderStorage.php';
     if ((int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==1)
         throw new LogicException('service_account_name_requires_transaction');
+    $targetKey='pg:'.$panel['instance_key'];
     $used=achbotProviderRow($db,'SELECT id FROM service_effects
         WHERE target_key=? AND active_username=? FOR UPDATE','ss',[$targetKey,$preferred]);
-    if ($used===null) return $preferred;
+    if ($used===null && !achbotProviderPhysicalNameClaimsLocked($db,$panel['id'],$preferred,$preferred))
+        return $preferred;
     if ($explicitSingle) throw new RuntimeException('service_account_name_conflict');
     $pattern=$manualBulk
         ? '/\A(.+_)([1-9][0-9]{4})(_[1-9][0-9]*)\z/D'
@@ -114,21 +118,23 @@ function achbotAvailableAccountRemarkLocked(mysqli $db,string $targetKey,string 
     // On collision, read the occupied names in this actual finite namespace
     // once (not up to 90,000 separate SQL round trips). Current locking read
     // avoids a stale snapshot after waiting for another reservation.
+    $first=$prefix.'10000'.$suffix;$last=$prefix.'99999'.$suffix;
     $s=achbotProviderStatement($db,'SELECT active_username FROM service_effects
         WHERE target_key=? AND active_username BETWEEN ? AND ? FOR UPDATE',
-        'sss',[$targetKey,$prefix.'10000'.$suffix,$prefix.'99999'.$suffix]);
-    $occupied=[];
+        'sss',[$targetKey,$first,$last]);
     try {
-        $r=$s->get_result();
-        while ($row=$r->fetch_assoc()) {
-            $name=$row['active_username'];
-            if (strlen($name)===strlen($preferred) && str_starts_with($name,$prefix) &&
-                str_ends_with($name,$suffix)) {
-                $token=substr($name,strlen($prefix),5);
-                if (preg_match('/\A[1-9][0-9]{4}\z/D',$token)===1) $occupied[(int)$token]=true;
-            }
-        }
+        $names=[];$r=$s->get_result();
+        while ($row=$r->fetch_assoc()) $names[]=$row['active_username'];
     } finally {$s->close();}
+    $names=array_merge($names,achbotProviderPhysicalNameClaimsLocked($db,$panel['id'],$first,$last));
+    $occupied=[];
+    foreach ($names as $name) {
+        if (strlen($name)===strlen($preferred) && str_starts_with($name,$prefix) &&
+            str_ends_with($name,$suffix)) {
+            $token=substr($name,strlen($prefix),5);
+            if (preg_match('/\A[1-9][0-9]{4}\z/D',$token)===1) $occupied[(int)$token]=true;
+        }
+    }
     for ($offset=1;$offset<90000;$offset++) {
         $token=10000+(((int)$digits-10000+$offset)%90000);
         if (!isset($occupied[$token])) return $prefix.$token.$suffix;
