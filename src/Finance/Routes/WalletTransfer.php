@@ -304,7 +304,7 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         }
         sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.6924ce253f')
             . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.f933fbcd9d')
-            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.e9940862a9', ['reference' => $reference]));
+            . \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.e9940862a9', ['reference' => $reference]), null, 'HTML');
         exit;
     }
 

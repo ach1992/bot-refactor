@@ -483,12 +483,12 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$achbotWalletStep]) &&
             setUser();
             sendMessage($matches > 1 ?
                 \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.840dca2362') :
-                \achbotMessage('legacy_messages.user_not_found'), $removeKeyboard);
+                \achbotMessage('legacy_messages.user_not_found'), $removeKeyboard, 'HTML');
             sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');
         } else {
             [$kind, $prefix, $prompt] = $achbotWalletModes[$achbotWalletStep];
             setUser($prefix . $achbotWalletTarget);
-            sendMessage(\achbotMessage('legacy_messages.'.$prompt));
+            sendMessage(\achbotMessage('legacy_messages.'.$prompt), null, 'HTML');
         }
     }
 }

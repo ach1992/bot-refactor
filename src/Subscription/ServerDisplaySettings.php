@@ -387,7 +387,7 @@ function achbotHandleServerDisplayAdmin(): bool {
                 achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,'start',
                     null,$field,$action==='Edit'?null:$revision);
                 if ($field==='document') sendMessage($prompt,$cancelKey,'HTML');
-                else sendMessage($prompt,$cancelKey);
+                else sendMessage($prompt,$cancelKey, 'HTML');
             } elseif ($action==='Set') {
                 achbotServerDisplayEdit($connection,$sid,(int)$from_id,(int)$admin,$source,'set',$choice,$field,$revision);
                 if (preg_match('/^[dv](?:cfg|sub|aux|qr)$/D',$field)) {
@@ -423,7 +423,7 @@ function achbotHandleServerDisplayAdmin(): bool {
                         \achbotMessage('subscription.server_display_settings.handle_server_display_admin.body.dc1a09d9ef');
                 } else throw new RuntimeException('display_action_invalid');
                 $keys[]=[['text'=>\achbotMessage('subscription.server_display_settings.handle_server_display_admin.button.63b4398cc3'),'callback_data'=>(in_array($action,['SelectD','SelectV'],true)?'serverDisplaySelect':'serverDisplay').$sid]];
-                sendMessage($body,json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE));
+                sendMessage($body,json_encode(['inline_keyboard'=>$keys],JSON_UNESCAPED_UNICODE), 'HTML');
             } else achbotServerDisplayShow($connection,$sid);
         } else {
             if (!preg_match('/^achbotDisplay\|([1-9][0-9]*)\|/D',$step,$m) || !is_string($text))

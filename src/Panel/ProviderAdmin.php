@@ -40,7 +40,7 @@ function achbotPgServerAdminKeys(array $info,array $config,int $offset): string 
 /** Return to the edited object; never let generic cancel process a stale step. */
 function achbotPgAdminReturn(string $step,string $notice): void {
     global $removeKeyboard;
-    sendMessage($notice,$removeKeyboard??json_encode(['remove_keyboard'=>true]));
+    sendMessage($notice,$removeKeyboard??json_encode(['remove_keyboard'=>true]), 'HTML');
     $sid=0;$plan=0;
     if (preg_match('/^pg:groups:(plan|server):([1-9][0-9]*)$/D',$step,$m)) {
         if ($m[1]==='plan') $plan=(int)$m[2];else $sid=(int)$m[2];

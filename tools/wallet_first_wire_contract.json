@@ -52,18 +52,18 @@
   ],
   "changes": {
     "src/Plans/Categories.php": {
-      "reason": "Use existing management error/review copy on failed actor-owned category mutation; typed input has no callback ID. All normal prompt and success wire calls remain exact.",
       "before_count": 8,
       "after_count": 9,
       "before_sha256": "38445729b82b210349287fde3defcbbc86d7e310e9b537f21e121cba2c640125",
-      "after_sha256": "d908db742ddf1aa5b1545d02f273ac37ae9c0a23d6cf3b52378394c6642d6d8f"
+      "after_sha256": "862630012a225f58c99cd181c60382ffa7cccd96d30a6498c13051248a4a70b4",
+      "reason": "Use existing management error/review copy on failed actor-owned category mutation; typed input has no callback ID. All normal prompt and success wire calls remain exact. #209: 2 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged."
     },
     "bot.php": {
       "before_count": 200,
       "after_count": 168,
       "before_sha256": "cff48d8a700a865d62d8c96389da43e7a2d34431deff1f650f3bd4b107808baa",
-      "after_sha256": "cf34a27ec6ca20f494932efa29eb14e2e5bcef14c37234254b2c5c147fbd879e",
-      "reason": "F7 retire unsupported shared availability, F8 dispatch authenticated shortcuts through canonical Home and customer routes; F6 denied content reads do not send values"
+      "after_sha256": "d46178e212edf7bdbb4049b378ded70154df36fe420080fceaf1401206e9aa5e",
+      "reason": "F7 retire unsupported shared availability, F8 dispatch authenticated shortcuts through canonical Home and customer routes; F6 denied content reads do not send values #209: 3 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged."
     },
     "src/Finance/ApiPaymentPresentation.php": {
       "before_count": 1,
@@ -97,8 +97,8 @@
       "before_count": 13,
       "after_count": 14,
       "before_sha256": "6895b524dcc7fbef044102999af033e94803d234b41f05c7c27315cedc85f5a6",
-      "after_sha256": "b4994bb00ffa380bedf4358b038e643e52bbf9f396fc29a73fd1e01a69d68209",
-      "reason": "Correct invalid-discount notice in shared quote flow."
+      "after_sha256": "df91d1b5ee30b58ad431624bbdb2259e240fb8f7897cbdd9cdade5f4b5c275a3",
+      "reason": "Correct invalid-discount notice in shared quote flow. #209: 3 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged."
     },
     "src/Finance/GatewayReturn.php": {
       "before_count": 6,
@@ -181,8 +181,8 @@
       "before_count": 18,
       "after_count": 15,
       "before_sha256": "f834fa0961d4d1557238d2cf9efe9d2bb94b7bbf971887697ace11d9258b7400",
-      "after_sha256": "7e907329875dbb1a33d8b4ed408ee81319662f29f8daf65ccdd7e67e1faa31d0",
-      "reason": "F5 render original custom draft through shared presentation; remove duplicate discount continuation"
+      "after_sha256": "d46021a9a77f2d7f9c5e8df07c825fbf113a07532aed481ce6808b934d96c96a",
+      "reason": "F5 render original custom draft through shared presentation; remove duplicate discount continuation #209: 2 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged."
     },
     "src/Subscription/Delivery.php": {
       "before_count": 2,
@@ -248,11 +248,11 @@
       "reason": "F8 send own subscription menu for a genuine shortcut"
     },
     "src/Finance/Routes/AdminWallet.php": {
-      "reason": "Current credit/debit reason prompt excludes unreachable pre-upgrade direct debt wording; confirmation of negative balance remains unchanged.",
       "before_count": 16,
       "after_count": 16,
       "before_sha256": "6e6a0f519cbdc4e6e430dc2236b14cbea688ffc4ff1905082f9f02ddeadf9127",
-      "after_sha256": "cf764205db4590e33259730717dfee5c755d9629df5fbfcd9c3c4c5bdf8e9658"
+      "after_sha256": "18d8bfcc4841ae943c3758c72665801a41cb28c3497669a7f187c9e173856593",
+      "reason": "Current credit/debit reason prompt excludes unreachable pre-upgrade direct debt wording; confirmation of negative balance remains unchanged. #209: 2 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged."
     },
     "src/Purchase/EntryAndBulk.php": {
       "before_count": 16,
@@ -295,6 +295,34 @@
       "before_sha256": "39dc221acd00a309063d3ac87c0577a8096e470325d3ed1cb1da82182a484420",
       "after_sha256": "50d21e50e22027fdcc52f74f9fd5250b64a66c6da9841c7974bab5617b49f277",
       "reason": "F9 original free commercial command instead of one-account trial; remove duplicate presentation"
+    },
+    "src/Finance/Routes/WalletRecharge.php": {
+      "before_count": 16,
+      "after_count": 16,
+      "before_sha256": "8bbd74be8991a5d14cb9afd554126fd0ad9aa7c7085f87e7d88b7c443f31d056",
+      "after_sha256": "8d6bc237a154edf3dd6c87dcef76f4485a60497f76e1d1c828158e275b30293b",
+      "reason": "#209: 2 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged."
+    },
+    "src/Finance/Routes/WalletTransfer.php": {
+      "before_count": 16,
+      "after_count": 16,
+      "before_sha256": "0e4c190e58c188cdd2f112f6c9caae5ba318d3a70a90f67d4fe0455402d37e0a",
+      "after_sha256": "25de759a095793979d52d96a7299d52abc4aaec4291630daf93ef0df9a528f46",
+      "reason": "#209: 1 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged."
+    },
+    "src/Panel/ProviderAdmin.php": {
+      "before_count": 10,
+      "after_count": 10,
+      "before_sha256": "82569d44e2178d362da7d253e7be45b7ac82450d7ad6f1e58946ceaa6e96b278",
+      "after_sha256": "e9f917b98b56c7764909edba9d3050e4ea77f0056f697ed7f12d0725add0b773",
+      "reason": "#209: 1 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged."
+    },
+    "src/Subscription/ServerDisplaySettings.php": {
+      "before_count": 7,
+      "after_count": 7,
+      "before_sha256": "ab0d258e8aa0b7b23332ab513274ec1de1bbd32fd72c44f9ae36d3c5d0167c95",
+      "after_sha256": "d9a9f2133823a4e0a5ad2b36ac04f96d90fa4cafe449b09f5602a24e2ec4b599",
+      "reason": "#209: 2 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged."
     }
   },
   "added_with_direct_send": [

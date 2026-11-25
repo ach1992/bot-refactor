@@ -219,7 +219,7 @@ def indirect_legacy_keys(sources: dict[str, str],
     wallet_route = scans["src/Finance/Routes/AdminWallet.php"]["clean"]
     modes = re.search(r"\$achbotWalletModes\s*=\s*\[(.*?)\];", wallet_route, re.S)
     check(modes is not None and
-          "sendMessage(\\achbotMessage('legacy_messages.'.$prompt))" in wallet_route,
+          "sendMessage(\\achbotMessage('legacy_messages.'.$prompt), null, 'HTML')" in wallet_route,
           "admin_wallet_prompt_binding_changed")
     wallet_prompts = set(re.findall(
         r"""'[^']+'\s*=>\s*\[\s*'[^']+'\s*,\s*'[^']+'\s*,\s*'([^']+)'\s*\]""",

@@ -631,7 +631,7 @@ if (is_string($userInfo['step']??null) &&
         json_encode(['inline_keyboard'=>[
             [['text'=>\achbotMessage('bot.bot.gateway_audience_settings.button.9b026e4934'),'callback_data'=>'gr|s|'.$sourceId]],
             [['text'=>\achbotMessage('bot.bot.gateway_audience_settings.button.1fe862ea18'),'callback_data'=>'gr|x|'.$sourceId]]
-        ]],JSON_UNESCAPED_UNICODE));
+        ]],JSON_UNESCAPED_UNICODE), 'HTML');
     return;
 }
 // Per-gateway audience restrictions. Re-check the current setting on every
@@ -829,7 +829,7 @@ if(preg_match('/^edit(RewaredTime|cartToCartAutoAcceptTime)/', $data, $match) &&
     if($match[1] == "RewaredTime") $txt = \achbotMessage('bot.bot.change_config_remark_type.txt.d867040876');
     else $txt = \achbotMessage('bot.bot.change_config_remark_type.txt.fcd2e548b6');
 
-    sendMessage($txt,$cancelKey);
+    sendMessage($txt,$cancelKey, 'HTML');
     setUser($data);
 }
 if ($data == "userReports" && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
@@ -1187,7 +1187,7 @@ if (
         exit;
     }
 
-    sendMessage(\achbotMessage('legacy_messages.the_bot_in_not_admin') ?? \achbotMessage('bot.bot.edit_lock_channel.message.949fda751f'));
+    sendMessage(\achbotMessage('legacy_messages.the_bot_in_not_admin') ?? \achbotMessage('bot.bot.edit_lock_channel.message.949fda751f'), null, 'HTML');
 }
 // End Edited by ACh
 

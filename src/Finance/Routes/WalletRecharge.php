@@ -187,7 +187,7 @@ if (strpos($data, 'increaseWallet_') === 0) {
     $amount = achbotParseWalletTopupRawInteger(substr($data, strlen('increaseWallet_')));
     $problem = achbotWalletTopupAmountProblem($amount);
     if ($problem !== null) {
-        sendMessage($problem);
+        sendMessage($problem, null, 'HTML');
         return;
     }
     if (!$canSelect) {
@@ -253,7 +253,7 @@ if ($text != (\achbotMessage('legacy_buttons.cancel') ?? null) &&
     $amount = achbotParseWalletTopupRawInteger($text);
     $problem = achbotWalletTopupAmountProblem($amount);
     if ($problem !== null) {
-        sendMessage($problem);
+        sendMessage($problem, null, 'HTML');
         return;
     }
     $result = startWalletPayment($connection, $botUrl,
