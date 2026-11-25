@@ -331,6 +331,38 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
     return achbotServiceQuoteRequest($q);
 }
 
+/** Configured, audience-eligible monetary methods for a positive service
+ * quote. Never probe merchants or claim future payment success. Final use
+ * holds the owner/draft/settings locks. Return names only, never keys. */
+function achbotCheckoutPaymentMethodsLocked(mysqli $db,int $actor,string $type,int $price): array {
+    if ($price<=0) return [];
+    $states=achbotPayUxCurrentStatesLocked($db)??[];
+    $keys=null;
+    $methods=[];
+    foreach (achbotPayUxAudienceMethods() as $method=>$label) {
+        $flag=achbotPayUxMethodFlag($method,$type);
+        if ($flag===null || ($states[$flag]??'off')!=='on') continue;
+        if (!achbotPayUxAudienceAllowed($db,$method,$actor,true,$type)) continue;
+        if ($method!=='wallet') {
+            $keys??=achbotPayUxCurrentDocumentLocked($db,'PAYMENT_KEYS')??[];
+            $def=achbotCreditMethodRegistry()[$method]??[];
+            if (isset($def['manual_quote'])) {
+                if (!achbotManualEnabled($method,$states,$keys)) continue;
+            } elseif (isset($def['hosted'])) {
+                $credential=$keys[$def['hosted']['credential_setting']]??null;
+                if (!is_string($credential) || trim($credential)==='') continue;
+                if ($method==='nowpayments') {
+                    $rate=achbotUsdtRate($keys);
+                    if ($rate===null || round($price/$rate,2)<0.01 ||
+                        trim((string)($GLOBALS['nowpaymentsIpnSecret']??''))==='') continue;
+                }
+            } else continue;
+        }
+        $methods[]=$method;
+    }
+    return $methods;
+}
+
 /** Read original unclaimed checkout, validate its actual local admission,
  * and capture the exact display context. Caller holds owner and pay locks.
  * No external I/O, no new operation, no Wallet write. */
@@ -378,6 +410,7 @@ function achbotCheckoutDraftView(mysqli $db,int $id,int $actor,array $states): ?
         $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=? AND user_id=? FOR UPDATE','ii',[$id,$actor]);
         if (!$pay) throw new DomainException('checkout_view_missing');
         $view=achbotCheckoutDraftViewLocked($db,$pay,$actor,$states);
+        $view['payment_methods']=achbotCheckoutPaymentMethodsLocked($db,$actor,$pay['type'],(int)$pay['price']);
         $db->rollback();return $view;
     } catch (Throwable $e) {
         if ($begun) try {$db->rollback();} catch (Throwable $ignored) {}

@@ -40,7 +40,10 @@ $callbackId='fixture';$message_id=81;$username='fixture';$first_name='Fixture';
 $userInfo=achbotProviderRow($connection,'SELECT * FROM users WHERE userid=?','i',[$from_id])??[];
 $botState=json_decode(achbotProviderRow($connection,"SELECT value FROM setting WHERE type='BOT_STATES'")['value'],true);
 $robotState=$botState['botState']??'on';$botUrl='https://fixture.invalid/';
-$paymentKeys=['bankAccount'=>'fixture-bank','holderName'=>'fixture-holder'];
+$paymentKeys=json_decode(achbotProviderRow($connection,"SELECT value FROM setting WHERE type='PAYMENT_KEYS'")['value'],true)??[];
+$nowpaymentsIpnSecret='fixture-ipn-secret';
+if (isset($spec['stale_state'])) $botState=array_replace($botState,$spec['stale_state']);
+if (isset($spec['stale_keys'])) $paymentKeys=array_replace($paymentKeys,$spec['stale_keys']);
 $cancelKey=$removeKeyboard='{}';$events=[];$inviteReward=0;$joinLink='https://t.me/fixture';
 $channelLock=$spec['forced']??'';$joinMembershipVerified=$spec['member']??false;
 $data=$spec['callback']??'';$text=$spec['text']??'';
@@ -173,7 +176,7 @@ def main():
         def state(**kw):
             s=dict(sellState='on',walletState='on',remark='digits',agencyState='on',agencyPlanDiscount='off',plandelkhahState='on',gbPrice=10,dayPrice=20,individualExistence='on',renewAccountState='on',increaseTimeState='on',increaseVolumeState='on')
             s.update(kw);sql("UPDATE setting SET value='"+json.dumps(s)+"' WHERE type='BOT_STATES'")
-        sql("INSERT INTO setting(id,type,value) VALUES (1,'BOT_STATES','{}'),(2,'PAYMENT_KEYS','PRIVATE_SYNTHETIC'),(3,'MAIN_BUTTONSVisible','Public answer'),(4,'XMAIN_BUTTONSBad','PRIVATE_SYNTHETIC'),(5,'MAINXBUTTONSBad','PRIVATE_SYNTHETIC'),(6,'main_buttonsBad','PRIVATE_SYNTHETIC'),(7,'TICKETS_CATEGORY','Ticket'),(8,'tickets_category','PRIVATE_SYNTHETIC'),(9,'MAIN_BUTTONSDelete','Public second'),(10,'TICKETS_CATEGORY','Ticket second')")
+        sql("INSERT INTO setting(id,type,value) VALUES (1,'BOT_STATES','{}'),(2,'PAYMENT_KEYS','{\"bankAccount\":\"fixture-bank\",\"holderName\":\"fixture-holder\",\"private\":\"PRIVATE_SYNTHETIC\"}'),(3,'MAIN_BUTTONSVisible','Public answer'),(4,'XMAIN_BUTTONSBad','PRIVATE_SYNTHETIC'),(5,'MAINXBUTTONSBad','PRIVATE_SYNTHETIC'),(6,'main_buttonsBad','PRIVATE_SYNTHETIC'),(7,'TICKETS_CATEGORY','Ticket'),(8,'tickets_category','PRIVATE_SYNTHETIC'),(9,'MAIN_BUTTONSDelete','Public second'),(10,'TICKETS_CATEGORY','Ticket second')")
         state()
         for uid,admin,agent in [(2001,0,0),(2002,0,1),(2003,1,0),(2004,1,0)]:
             sql(f"INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,is_agent,discount_percent,first_start) VALUES ({uid},'Fixture','fixture','0',1000000,'1700000000',{admin},{agent},'{{\"normal\":0}}','sent')")
@@ -329,8 +332,8 @@ def main():
             assert 'selectServer2_none' in callbacks(run('shortcut',text='/buy')),method
             assert 'selectServer2_none' in callbacks(run('entry',callback='buySubscription')),method
         state(gatewayAudience={'wallet':'agents'})
-        assert 'selectServer2_none' not in callbacks(run('shortcut',text='/buy'))
-        assert 'selectServer2_none' not in callbacks(run('entry',callback='buySubscription'))
+        assert 'selectServer2_none' in callbacks(run('shortcut',text='/buy'))
+        assert 'selectServer2_none' in callbacks(run('entry',callback='buySubscription'))
         assert 'agentOneBuy' in callbacks(run('shortcut',actor=2002,text='/buy'))
         state(requirePhone='on')
         r=run('shortcut',text='/buy')
@@ -457,14 +460,14 @@ def main():
         sql("UPDATE users SET discount_percent='{\"normal\":100}' WHERE userid=2002")
         # No monetary method is enabled. Authorized zero standard and
         # custom offers remain selectable throughout the catalogue.
-        assert 'selectServer2_none' not in callbacks(run('entry',callback='buySubscription'))
+        assert 'selectServer2_none' in callbacks(run('entry',callback='buySubscription'))
         assert 'selectServer2_one' in callbacks(run('entry',actor=2002,callback='agentOneBuy'))
         assert 'selectServer2_much' in callbacks(run('entry',actor=2002,callback='agentMuchBuy'))
         assert 'selectServer2_none' in callbacks(run('entry',actor=9001,callback='buySubscription'))
         assert 'selectCategory1_2_one' in callbacks(run('catalogue',actor=2002,callback='selectServer2_one'))
         cb=callbacks(run('catalogue',actor=2002,callback='selectCategory1_2_one'))
         assert 'selectPlan7_1_one' in cb and 'selectCustomPlan1_2_one' in cb,cb
-        assert 'selectPlan7_1_none' not in callbacks(run('catalogue',callback='selectCategory1_2_none'))
+        assert 'selectPlan7_1_none' in callbacks(run('catalogue',callback='selectCategory1_2_none'))
         cases.append('zero_commercial_catalogue_without_any_monetary_method')
         def free_checkout(uid,r,count):
             pid,h,price,qty=latest(uid)
@@ -580,7 +583,7 @@ def main():
         state(gbPrice=0,dayPrice=0,walletState='off')
         assert 'selectServer2_none' in callbacks(run('entry',callback='buySubscription'))
         assert 'selectCustomPlan1_2_none' in callbacks(run('catalogue',callback='selectCategory1_2_none'))
-        assert 'selectPlan7_1_none' not in callbacks(run('catalogue',callback='selectCategory1_2_none'))
+        assert 'selectPlan7_1_none' in callbacks(run('catalogue',callback='selectCategory1_2_none'))
         funded=run('wallet',hash=h,mode='custom')['events'][0][1]
         assert funded['status']=='funded',funded
         assert sql(f"SELECT debit_entry_id IS NULL FROM service_operations WHERE id={funded['operation']}")=='1'
@@ -607,6 +610,13 @@ def main():
         state(sellState='off',testAccount='off',renewAutoState='on')
         assert 'getTestAccount' not in callbacks(run('menu'))
         assert 'buySubscription' in callbacks(run('menu',actor=9001))
+        for actor in (2001,2002,2003,2004):
+            assert not set(callbacks(run('menu',actor=actor))) & {'buySubscription','agentOneBuy','agentMuchBuy'}
+            assert 'increaseMyWallet' in callbacks(run('menu',actor=actor))
+            assert not any(x.startswith('selectServer') for x in callbacks(run('entry',actor=actor,callback='buySubscription')))
+            assert not any(x.startswith('selectServer') for x in callbacks(run('shortcut',actor=actor,text='/buy')))
+            assert not callbacks(run('catalogue',actor=actor,callback='selectCategory1_2_none'))
+        assert 'selectServer2_none' in callbacks(run('entry',actor=9001,callback='buySubscription'))
         cases.append('sales_closure_denies_unissued_positive_quote_preserves_independent_trial_switch')
         # The original valid code is consumed atomically even when all
         # monetary methods are disabled after the positive draft was issued.
@@ -625,12 +635,94 @@ def main():
         assert op['status']=='funded' and sql("SELECT COUNT(*) FROM wallet_entries")==before
         assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
         cases.append('full_discount_zero_confirmation_without_wallet_or_gateway')
-        # Unlike purchase discovery, existing service renewal is reachable
-        # before a coupon is entered, even with all monetary methods off.
+        # Fresh discount discovery works for each existing commercial route
+        # with all monetary methods off, or an ineligible method audience.
+        no_method_notice='\u26a0\ufe0f \u0647\u06cc\u0686 \u0631\u0648\u0634 \u067e\u0631\u062f\u0627\u062e\u062a\u06cc \u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0633\u0641\u0627\u0631\u0634 \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a. \u062f\u0631 \u0627\u06cc\u0646 \u0634\u0631\u0627\u06cc\u0637 \u0641\u0642\u0637 \u06a9\u062f \u062a\u062e\u0641\u06cc\u0641\u06cc \u06a9\u0647 \u0645\u0628\u0644\u063a \u0646\u0647\u0627\u06cc\u06cc \u0631\u0627 \u0635\u0641\u0631 \u06a9\u0646\u062f \u0642\u0627\u0628\u0644 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0627\u0633\u062a.'
+        def buttons(r):
+            return [b for e in r['events'] if e[0] in ('send','edit') and len(e)>2 and e[2]
+                for row in json.loads(e[2]).get('inline_keyboard',[]) for b in row]
+        def no_money_card(r,pid):
+            cb=callbacks(r)
+            assert 'haveDiscountCheckout_'+str(pid) in cb,r
+            assert not any(b.get('url') or b.get('callback_data','').startswith(('payBuyWith','payCustomWith','payRenewWith','renewPay_','mcm_')) for b in buttons(r)),r
+            assert sum(no_method_notice in e[1] for e in r['events'] if e[0]=='send')==1,r
+        def reject_partial(uid,r,tag,discount_type='percent',amount=20,maximum=None,stale_state=None,stale_keys=None):
+            pid,h,price,_=latest(uid)
+            no_money_card(r,pid)
+            run('discount',actor=uid,callback='haveDiscountCheckout_'+pid)
+            max_value='NULL' if maximum is None else str(maximum)
+            sql(f"INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use,max_discount) VALUES ('{tag}','{discount_type}',{amount},0,2,-1,{max_value})")
+            queries=[f"SELECT * FROM pays WHERE id={pid}",f"SELECT * FROM discounts WHERE hash_id='{tag}'",
+                'SELECT COUNT(*) FROM wallet_entries','SELECT COUNT(*) FROM service_operations',
+                'SELECT COUNT(*) FROM payment_attempts','SELECT id,ucount FROM server_info ORDER BY id']
+            # Message tracking may change after rendering; compare actual
+            # immutable draft/discount and financial fields instead.
+            queries[0]=f"SELECT price,checkout_draft_context,state,checkout_operation_id FROM pays WHERE id={pid}"
+            snapshot=tuple(sql(q) for q in queries)
+            extra={}
+            if stale_state is not None:extra['stale_state']=stale_state
+            if stale_keys is not None:extra['stale_keys']=stale_keys
+            rr=run('discount',actor=uid,text=tag,**extra)
+            no_money_card(rr,pid)
+            assert not any(e[0]=='notice' for e in rr['events']),rr
+            assert tuple(sql(q) for q in queries)==snapshot,(tag,rr)
+            assert rr['user']['step']=='none',rr
+            return rr
+        state(walletState='off')
+        sql("UPDATE users SET discount_percent='{\"normal\":0}' WHERE userid=2002")
+        for uid,mode,back,quantity,tag in [(2001,'standard','selectCategory1_2_none',1,'freshordinary'),
+                (2002,'standard','selectCategory1_2_one',1,'freshagent'),
+                (2002,'standard','selectCategory1_2_much',3,'freshbulk'),
+                (2001,'custom','mainMenu',1,'freshcustom'),
+                (2002,'custom','mainMenu',1,'freshagentcustom')]:
+            if mode=='custom':
+                role='one' if uid==2002 else 'none'
+                assert 'selectCustomPlan1_2_'+role in callbacks(run('catalogue',actor=uid,callback='selectCategory1_2_'+role))
+                run('catalogue',actor=uid,callback='selectCustomePlan7_1_'+role)
+                run('catalogue',actor=uid,text='2')
+                run('catalogue',actor=uid,text='3')
+                r=run('catalogue',actor=uid,text='custom12345')
+            elif quantity>1:
+                run('standard',actor=uid,callback='selectPlan7_1_much')
+                r=run('standard',actor=uid,text=str(quantity))
+            else:
+                r=run('standard',actor=uid,callback='selectPlan7_1_'+('one' if uid==2002 else 'none'))
+            pid,h,price,_=latest(uid)
+            assert int(price)>0,(tag,r)
+            before=sql(f"SELECT wallet,freetrial FROM users WHERE userid={uid}")
+            ledger=sql("SELECT COUNT(*) FROM wallet_entries")
+            r=reject_partial(uid,r,tag+'partial','amount',1)
+            r=reject_partial(uid,r,tag+'capped','percent',100,1)
+            r=redeem(uid,r,tag+'full',mode,back,0,quantity,True)
+            assert sql(f"SELECT wallet,freetrial FROM users WHERE userid={uid}")==before
+            assert sql("SELECT COUNT(*) FROM wallet_entries")==ledger
+            assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
+            assert run('wallet',actor=uid,hash=h,mode=mode)['events'][0][1]['status']=='already_funded'
+        cases.append('fresh_ordinary_agent_bulk_custom_discount_only_routes_atomic_partial_refusal')
+        # A configured but audience-denied method is not available.
+        state(gatewayAudience={'wallet':'agents'})
+        r=run('standard',callback='selectPlan7_1_none')
+        r=reject_partial(2001,r,'audiencedeniedpartial',stale_state={'gatewayAudience':{'wallet':'all'}})
+        redeem(2001,r,'audiencedeniedfull','standard','selectCategory1_2_none',0,zero=True)
+        # A stale request's enabled gateway flag cannot consume a positive
+        # discount after the current policy was switched off.
+        state(walletState='off')
+        r=run('standard',callback='selectPlan7_1_none')
+        r=reject_partial(2001,r,'staleflagpartial',stale_state={'walletState':'on'})
+        redeem(2001,r,'staleflagfull','standard','selectCategory1_2_none',0,zero=True)
+        # A configured flag without its actual credential does not count.
+        state(walletState='off',zarinpal='on')
+        r=run('standard',callback='selectPlan7_1_none')
+        r=reject_partial(2001,r,'missingmerchantpartial',stale_keys={'zarinpal':'fixture-removed'})
+        redeem(2001,r,'missingmerchantfull','standard','selectCategory1_2_none',0,zero=True)
+        cases.append('current_audience_flag_and_credential_not_stale_request_snapshot')
+        state(walletState='off')
+        # Existing service renewal also supports discount-only checkout.
         r=run('renew',callback=f'renewAccount{oid}')
         pid,h,price,_=latest(2001)
         assert int(price)>0 and 'haveDiscountCheckout_'+pid in callbacks(r),r
         assert 'payRenewWithWallet'+h not in callbacks(r),r
+        r=reject_partial(2001,r,'nomoneyrenewpartial')
         before=sql("SELECT COUNT(*) FROM wallet_entries")
         before_wallet=sql("SELECT wallet FROM users WHERE userid=2001")
         r=redeem(2001,r,'nomoneyrenew','renew','mainMenu',0,zero=True)
@@ -673,6 +765,58 @@ def main():
         r=run('renew',callback=f'renewAccount{oid}')
         assert int(latest(2001)[2])==100,r
         cases.append('actual_current_agency_discount_standard_bulk_custom_and_renewal')
+        base_keys={'bankAccount':'fixture-bank','holderName':'fixture-holder','private':'PRIVATE_SYNTHETIC'}
+        methods=[
+            ('walletState','wallet',{},'payBuyWithWallet'),
+            ('cartToCartState','bank_transfer',{},'payBuyWithCartToCart'),
+            ('giftCardState','gift_card',{'giftCardUrl':'https://fixture.invalid/gift'},'payBuyWithGiftCard'),
+            ('manualUsdtState','manual_usdt',{'manualUsdtWalletBEP20':'0x'+'a'*40,'manualUsdtRateToman':'1000'},'mcm_'),
+            ('manualUsdtState','manual_trx',{'manualTrxWallet':'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb','manualTrxRateToman':'1000'},'mcm_'),
+            ('zarinpal','zarinpal',{'zarinpal':'fixture-merchant'},'zarinpal'),
+            ('nextpay','nextpay',{'nextpay':'fixture-merchant'},'nextpay'),
+            ('nowPaymentOther','nowpayments',{'nowpayment':'fixture-merchant','manualUsdtRateToman':'1000'},'nowpayment'),
+        ]
+        for index,(flag,method,keys,prefix) in enumerate(methods):
+            sql("UPDATE setting SET value='"+json.dumps(base_keys|keys)+"' WHERE type='PAYMENT_KEYS'")
+            state(**({'walletState':'off',flag:'on'} if flag!='walletState' else {'walletState':'on'}))
+            r=run('standard',callback='selectPlan7_1_none')
+            pid,h,price,_=latest(2001)
+            def method_visible(r):
+                if method in ('zarinpal','nextpay','nowpayments'):
+                    return any('?'+prefix+'&hash_id='+h in b.get('url','') for b in buttons(r))
+                return prefix+h in callbacks(r)
+            assert method_visible(r), (method,r)
+            code='methodpositive'+str(index)
+            sql(f"INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('{code}','percent',20,0,2,-1)")
+            run('discount',callback='haveDiscountCheckout_'+pid)
+            rr=run('discount',text=code)
+            assert method_visible(rr) and latest(2001)[2]=='80',(method,rr)
+            assert sql(f"SELECT expire_count FROM discounts WHERE hash_id='{code}'")=='1'
+            assert not any(no_method_notice in e[1] for e in rr['events'] if e[0]=='send'),rr
+        # TRX-only configuration must not become usable via the USDT audience.
+        state(walletState='off',manualUsdtState='on',gatewayAudience={'manual_trx':'off','manual_usdt':'all'})
+        sql("UPDATE setting SET value='"+json.dumps(base_keys|methods[4][2])+"' WHERE type='PAYMENT_KEYS'")
+        r=run('standard',callback='selectPlan7_1_none')
+        r=reject_partial(2001,r,'trxaudiencepartial')
+        redeem(2001,r,'trxaudiencefull','standard','selectCategory1_2_none',0,zero=True)
+        sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
+        state()
+        cases.append('all_eight_configured_methods_positive_discount_and_crypto_audience_exactness')
+        # Invalid destination types are unavailable, never an implicit
+        # string conversion into a bank recipient or crypto destination.
+        state(walletState='off',cartToCartState='on',giftCardState='on',manualUsdtState='on')
+        invalid_keys=base_keys|{'bankAccount':['invalid'],'holderName':['invalid'],
+            'giftCardUrl':['invalid'],'manualUsdtWalletBEP20':['invalid'],
+            'manualTrxWallet':['invalid'],'manualUsdtRateToman':'1000','manualTrxRateToman':'1000'}
+        sql("UPDATE setting SET value='"+json.dumps(invalid_keys)+"' WHERE type='PAYMENT_KEYS'")
+        r=run('standard',callback='selectPlan7_1_none')
+        r=reject_partial(2001,r,'malformedmethodpartial')
+        redeem(2001,r,'malformedmethodfull','standard','selectCategory1_2_none',0,zero=True)
+        sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
+        state()
+        cases.append('malformed_payment_destinations_do_not_block_free_or_consume_partial_discount')
+
+
 
 
 

@@ -22,6 +22,7 @@ set_error_handler(static function($level,$message) { throw new ErrorException($m
 $root=$argv[1];
 $spec=json_decode($argv[2],true,512,JSON_THROW_ON_ERROR);
 require_once $root.'/src/Presentation/Text.php';
+require_once $root.'/src/Purchase/AgentPricing.php';
 require_once $root.'/messages/loader.php';
 $buttonValues=achbotMessages('legacy_buttons');
 $adminSearchLabel=achbotMessage('admin_settings.config.get_main_keys.button.11b0188fcb');
@@ -97,6 +98,17 @@ if ($prior===false) throw new RuntimeException('missing_prior_source');
 eval($prior);
 $rows=json_decode(getMainKeys(),true,512,JSON_THROW_ON_ERROR)['inline_keyboard'];
 $previous=json_decode(getMainKeysBaseline(),true,512,JSON_THROW_ON_ERROR)['inline_keyboard'];
+// Owner-approved delta: closed sales hides only ordinary purchase buttons
+// for secondary staff. Keep all unrelated rows and their exact labels.
+if (($botState['sellState']??'off')!=='on' && $from_id!==$admin && $userInfo['isAdmin']) {
+    $expected=[];
+    foreach ($previous as $row) {
+        $filtered=array_values(array_filter($row,static fn($button)=>
+            !in_array($button['callback_data']??'', ['buySubscription','agentOneBuy','agentMuchBuy'],true)));
+        if ($filtered || !$row) $expected[]=$filtered;
+    }
+    $previous=$expected;
+}
 // Compare complete Telegram keyboard structure, including empty rows.
 // Existing pinned visual checks separately inspect only the nonempty rows.
 if ($rows!==$previous)
@@ -249,6 +261,9 @@ def check(root: Path = ROOT) -> dict:
             ('owner_agent',{'admin':True,'agent':True}),
             ('owner_custom_button',{'admin':True,'extra':True}),
             ('staff_sales_disabled',{'secondary_admin':True,'sales_off':True}),
+            ('staff_agent_sales_disabled',{'secondary_admin':True,'agent':True,'sales_off':True}),
+            ('owner_sales_disabled',{'admin':True,'sales_off':True}),
+            ('owner_agent_sales_disabled',{'admin':True,'agent':True,'sales_off':True}),
         ]:
             staff=execute(**options)
             srows=staff['rows']

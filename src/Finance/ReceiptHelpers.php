@@ -99,18 +99,20 @@ function achbotUsdtRateForUser(mysqli $db,int $userId): ?float {
  * A rate and destination are required before an option appears. Neither a
  * screenshot nor an operator click is automatic blockchain settlement proof.
  */
-function achbotManualUsdtConfiguration(?string $network = null): ?array {
+function achbotManualUsdtConfiguration(?string $network = null,?array $keys=null): ?array {
     global $paymentKeys;
-    $keys = is_array($paymentKeys ?? null) ? $paymentKeys : [];
+    $keys ??= is_array($paymentKeys ?? null) ? $paymentKeys : [];
     if ($network === null) {
         $available=[];
         foreach (['BEP20','TRC20','ERC20'] as $candidate)
-            if (($config=achbotManualUsdtConfiguration($candidate))!==null) $available[]=$config;
+            if (($config=achbotManualUsdtConfiguration($candidate,$keys))!==null) $available[]=$config;
         return count($available)===1?$available[0]:null;
     }
     if (!in_array($network, ['BEP20','TRC20','ERC20'], true)) return null;
     $field = 'manualUsdtWallet' . $network;
-    $wallet = trim((string)($keys[$field]??''));
+    $rawWallet=$keys[$field]??null;
+    if (!is_string($rawWallet)) return null;
+    $wallet = trim($rawWallet);
     if (!achbotManualUsdtWalletValid($wallet, $network)) return null;
     $rate=achbotUsdtRate($keys);
     if ($rate===null) return null;
@@ -118,10 +120,12 @@ function achbotManualUsdtConfiguration(?string $network = null): ?array {
 }
 
 /** Independent, explicit TRX/Toman rate; never infer it from legacy checker. */
-function achbotManualTrxConfiguration(): ?array {
+function achbotManualTrxConfiguration(?array $keys=null): ?array {
     global $paymentKeys;
-    $keys = is_array($paymentKeys ?? null) ? $paymentKeys : [];
-    $wallet = trim((string)($keys['manualTrxWallet'] ?? ''));
+    $keys ??= is_array($paymentKeys ?? null) ? $paymentKeys : [];
+    $rawWallet=$keys['manualTrxWallet']??null;
+    if (!is_string($rawWallet)) return null;
+    $wallet = trim($rawWallet);
     $rawRate = $keys['manualTrxRateToman'] ?? null;
     if (!achbotManualTronAddressValid($wallet) ||
         !is_scalar($rawRate) ||
@@ -161,11 +165,14 @@ function achbotManualCryptoEnabled(?int $userId=null): bool {
 }
 
 /** No implicit recipient or gift seller: invalid settings disable initiation. */
-function achbotManualBankIdentity(): ?array {
+function achbotManualBankIdentity(?array $keys=null): ?array {
     global $paymentKeys;
-    $keys = is_array($paymentKeys ?? null) ? $paymentKeys : [];
-    $account = trim((string)($keys['bankAccount'] ?? ''));
-    $holder = trim((string)($keys['holderName'] ?? ''));
+    $keys ??= is_array($paymentKeys ?? null) ? $paymentKeys : [];
+    $rawAccount=$keys['bankAccount']??null;
+    $rawHolder=$keys['holderName']??null;
+    if ((!is_string($rawAccount) && !is_int($rawAccount)) || !is_string($rawHolder)) return null;
+    $account = trim((string)$rawAccount);
+    $holder = trim($rawHolder);
     if ($account === '' || $holder === '' || strlen($account) > 150 || strlen($holder) > 150) return null;
     return ['account' => $account, 'holder' => $holder];
 }
@@ -181,25 +188,29 @@ function achbotManualGiftSellerUrlValid(string $rawUrl): bool {
         !empty($parts['host']) &&
         !isset($parts['user']) && !isset($parts['pass']);
 }
-function achbotManualSellerUrl(): ?string {
+function achbotManualSellerUrl(?array $keys=null): ?string {
     global $paymentKeys;
-    $url = trim((string)($paymentKeys['giftCardUrl'] ?? ''));
+    $keys ??= is_array($paymentKeys ?? null) ? $paymentKeys : [];
+    $rawUrl=$keys['giftCardUrl']??null;
+    if (!is_string($rawUrl)) return null;
+    $url = trim($rawUrl);
     return achbotManualGiftSellerUrlValid($url) ? $url : null;
 }
 
 /** This JSON is a manual-only immutable destination intent, not a gateway URL. */
-function achbotManualEnabled(string $method): bool {
-    global $botState;
-    if ($method === 'gift_card') return ($botState['giftCardState'] ?? 'off') === 'on' &&
-        achbotManualSellerUrl() !== null;
+function achbotManualEnabled(string $method,?array $states=null,?array $keys=null): bool {
+    $states ??= (array)($GLOBALS['botState']??[]);
+    if ($method === 'gift_card') return ($states['giftCardState'] ?? 'off') === 'on' &&
+        achbotManualSellerUrl($keys) !== null;
     if ($method === 'manual_usdt' || $method === 'manual_trx') {
-        if (($botState['manualUsdtState'] ?? 'off') !== 'on') return false;
-        return $method === 'manual_trx'
-            ? achbotManualTrxConfiguration() !== null
-            : achbotManualCryptoEnabled();
+        if (($states['manualUsdtState'] ?? 'off') !== 'on') return false;
+        if ($method==='manual_trx') return achbotManualTrxConfiguration($keys)!==null;
+        foreach (['BEP20','TRC20','ERC20'] as $network)
+            if (achbotManualUsdtConfiguration($network,$keys)!==null) return true;
+        return false;
     }
-    return $method === 'bank_transfer' && ($botState['cartToCartState'] ?? 'off') === 'on' &&
-        achbotManualBankIdentity() !== null;
+    return $method === 'bank_transfer' && ($states['cartToCartState'] ?? 'off') === 'on' &&
+        achbotManualBankIdentity($keys) !== null;
 }
 
 /** Method inquiry for customer/status only; never use null as bank auto-eligibility. */

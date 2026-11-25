@@ -33,6 +33,8 @@ if (preg_match('/\AdiscountCheckout_([1-9][0-9]*)\z/D',(string)($userInfo['step'
     $result=applyDiscountToPay($connection,$id,$text,$actor,$username,$first_name,$admin,$botState);
     setUser();
     $view=$result['view']??achbotCheckoutDraftView($connection,$id,$actor,$botState);
-    if ($view!==null) achbotRenderCheckoutDraft($connection,$view,$botState,$botUrl,false);
+    $noMethod=($result['reason']??null)==='discount_no_monetary_method';
+    if ($view!==null) achbotRenderCheckoutDraft($connection,$view,$botUrl,false,$noMethod);
+    elseif ($noMethod) sendMessage(achbotMessage('payment.discounts.no_monetary_method'),null,'HTML');
     return null;
 }

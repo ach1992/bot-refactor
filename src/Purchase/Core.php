@@ -390,57 +390,22 @@ function achbotSaleablePlans(mysqli $db,?int $server=null,?int $category=null): 
     return achbotAvailablePlans($db,$server,$category,'standard');
 }
 
-/** Read-only menu admission; use the same configured methods as checkout. */
-function achbotCustomerHasPaymentMethod(mysqli $db,int $userId,array $state): bool {
-    foreach (['bank_transfer','gift_card'] as $method)
-        if (achbotManualEnabled($method) && achbotPayUxAudienceAllowed($db,$method,$userId)) return true;
-    if (achbotManualCryptoEnabled($userId)) {
-        foreach (['manual_usdt','manual_trx'] as $method)
-            if (achbotManualEnabled($method) && achbotPayUxAudienceAllowed($db,$method,$userId)) return true;
-    }
-    foreach (['wallet'=>'walletState','nowpayments'=>'nowPaymentOther','zarinpal'=>'zarinpal','nextpay'=>'nextpay'] as $method=>$flag) {
-        if (($state[$flag]??'off')!=='on' || !achbotPayUxAudienceAllowed($db,$method,$userId)) continue;
-        if ($method!=='nowpayments' || achbotUsdtRateForUser($db,$userId)!==null) return true;
-    }
-    return false;
-}
-
 function achbotPurchaseModeAllowed(array $user,array $states,string $mode): bool {
     return $mode==='none' || (in_array($mode,['one','much'],true) &&
         achbotAgencyActive($user,$states));
 }
 
-/** A custom template is independently saleable when both configured
- * effective rates are zero, even if every monetary method is disabled. */
+/** Custom purchase uses the same commercial templates as standard.
+ * Payment-method discovery belongs to checkout, after the price is known. */
 function achbotCustomerCustomPlans(mysqli $db,array $user,array $states,string $mode,int $actor,int $primary,?int $server=null,?int $category=null): array {
-    if (!achbotCustomerSaleAllowed($states,$actor,$primary) ||
-        !achbotPurchaseModeAllowed($user,$states,$mode) || !achbotCustomPurchaseEnabled($states,$mode)) return [];
-    $plans=achbotSaleablePlans($db,$server,$category);
-    if (achbotCustomerHasPaymentMethod($db,$actor,$states)) return $plans;
-    return array_values(array_filter($plans,static fn($p)=>
-        achbotCustomRatesAreZero($user,$states,(int)$p['id'],(int)$p['server_id'])));
+    if (!achbotCustomPurchaseEnabled($states,$mode)) return [];
+    return achbotCustomerPurchasePlans($db,$user,$states,$mode,$actor,$primary,$server,$category);
 }
 
-/** Navigation offers the union of eligible standard and custom templates;
- * each selection route independently enforces its own offering. */
-function achbotCustomerCataloguePlans(mysqli $db,array $user,array $states,string $mode,int $actor,int $primary,?int $server=null,?int $category=null): array {
-    $standard=achbotCustomerPurchasePlans($db,$user,$states,$mode,$actor,$primary,$server,$category);
-    $custom=achbotCustomerCustomPlans($db,$user,$states,$mode,$actor,$primary,$server,$category);
-    $plans=array_column(array_merge($standard,$custom),null,'id');
-    ksort($plans);
-    return array_values($plans);
-}
-
-/** Offer only purchasable plans. An authorized standard zero-price
- * command does not require a monetary method. Final authorization is locked
- * in CheckoutAdmission; this is read-only catalogue filtering. */
+/** Discover eligible commercial offerings even with no monetary method:
+ * a valid discount can make the final command free. Admission still owns
+ * sales policy, identity, capacity, quote and actual funding. */
 function achbotCustomerPurchasePlans(mysqli $db,array $user,array $states,string $mode,int $actor,int $primary,?int $server=null,?int $category=null): array {
     if (!achbotCustomerSaleAllowed($states,$actor,$primary) || !achbotPurchaseModeAllowed($user,$states,$mode)) return [];
-    $plans=achbotSaleablePlans($db,$server,$category);
-    if (achbotCustomerHasPaymentMethod($db,$actor,$states) || ($primary>0 && $actor===$primary)) return $plans;
-    if (!achbotAgencyActive($user,$states) || ($states['sellState']??'off')!=='on') return [];
-    return array_values(array_filter($plans,static function($p) use ($user,$states) {
-        [,,$percent]=achbotAgencyPrice($user,$states,(int)$p['id'],(int)$p['server_id'],(int)$p['price']);
-        return $percent===100;
-    }));
+    return achbotSaleablePlans($db,$server,$category);
 }

@@ -1458,6 +1458,15 @@ audience remains distinct from gateway active-entitlement classification.
   uses the free confirmation through the existing durable local funding
   engine without any monetary method gate or debit. The renderer uses the
   original quantity, price and purchase mode, including Back navigation.
+  With sales open, payment-method availability never hides eligible standard,
+  custom or representative purchase offerings. Both the initial card and
+  atomic redemption use the same current configured monetary-method list
+  under owner/settings locks, including audience and locally required
+  payment configuration. A positive residual without any eligible method
+  leaves price, context, counters and usage unchanged; the existing code
+  button is retained for retry with the approved explanation. A zero
+  residual bypasses the monetary-method test. A locally eligible method
+  is not a claim of merchant acceptance or sufficient Wallet balance.
 - The retired shared-inbound availability menu and settings toggle have
   no supported Native saleable-plan meaning. Individual capacity and
   purchase selection share the current provider-validated active
@@ -1499,7 +1508,10 @@ selection. The existing command callbacks and durable service engine are
 reused; no second executor, new schema or compatibility layer is needed.
 
 Sales closure independently denies new ordinary commercial drafts and
-first admission of positive and zero unissued quotes. The trial setting,
+first admission of positive and zero unissued quotes. Main menu, welcome,
+purchase shortcut and catalogue use the same primary-owner-only purchase
+exception; secondary staff do not see unusable ordinary purchase buttons.
+Administrative provisioning remains distinct. The trial setting,
 automatic-renewal opt-in policy and authorized administrative provisioning
 remain independent. Already issued receipt attempts and funded operations
 retain their immutable original evidence and recovery semantics.

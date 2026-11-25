@@ -257,6 +257,11 @@ REQUIRED_SCENARIOS = {
         "zero_custom_configured_rates_and_agency_without_monetary_methods",
         "sales_closure_denies_unissued_positive_quote_preserves_independent_trial_switch",
         "full_discount_zero_confirmation_without_wallet_or_gateway",
+        "fresh_ordinary_agent_bulk_custom_discount_only_routes_atomic_partial_refusal",
+        "current_audience_flag_and_credential_not_stale_request_snapshot",
+        "fresh_renewal_full_discount_without_monetary_methods",
+        "all_eight_configured_methods_positive_discount_and_crypto_audience_exactness",
+        "malformed_payment_destinations_do_not_block_free_or_consume_partial_discount",
     ),
     "current_sales_discount": (
         "actual_sales_keyboard_net_completed_value_wallet_origin_and_original_windows",

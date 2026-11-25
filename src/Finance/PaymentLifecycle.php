@@ -485,9 +485,12 @@ function achbotPayUxAudienceMethods(): array {
 /** Current exact settings row under the existing owner/setting lock order.
  * Call only inside the caller's admission transaction. */
 function achbotPayUxCurrentStatesLocked(mysqli $db): ?array {
+    return achbotPayUxCurrentDocumentLocked($db,'BOT_STATES');
+}
+function achbotPayUxCurrentDocumentLocked(mysqli $db,string $type): ?array {
     $stmt=$db->prepare("SELECT id FROM setting
-        WHERE type='BOT_STATES' ORDER BY id LIMIT 2");
-    if (!$stmt || !$stmt->execute())
+        WHERE type=? ORDER BY id LIMIT 2");
+    if (!$stmt || !$stmt->bind_param('s',$type) || !$stmt->execute())
         throw new RuntimeException('audience_settings_locate_failed');
     $ids=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
@@ -501,9 +504,24 @@ function achbotPayUxCurrentStatesLocked(mysqli $db): ?array {
         throw new RuntimeException('audience_settings_lock_failed');
     $row=$stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if (!$row || $row['type']!=='BOT_STATES') return null;
+    if (!$row || $row['type']!==$type) return null;
     $states=json_decode((string)$row['value'],true);
     return is_array($states)?$states:null;
+}
+
+/** Single method flag owner for presentation and locked admission. */
+function achbotPayUxMethodFlag(string $method,?string $subjectType): ?string {
+    return match($method) {
+        'wallet'=>'walletState',
+        'bank_transfer'=>'cartToCartState',
+        'gift_card'=>'giftCardState',
+        'manual_usdt','manual_trx'=>'manualUsdtState',
+        'zarinpal'=>'zarinpal',
+        'nextpay'=>'nextpay',
+        'nowpayments'=>$subjectType===null || $subjectType===''?null:
+            ($subjectType==='INCREASE_WALLET'?'nowPaymentWallet':'nowPaymentOther'),
+        default=>null
+    };
 }
 
 /**
@@ -524,22 +542,7 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
         // Only a final financial authorization requires persisted flags;
         // preview/menu checks remain presentation-only.
         if ($final) {
-            $primaryFlags=[
-                'wallet'=>'walletState',
-                'bank_transfer'=>'cartToCartState',
-                'gift_card'=>'giftCardState',
-                'manual_usdt'=>'manualUsdtState',
-                'manual_trx'=>'manualUsdtState',
-                'zarinpal'=>'zarinpal',
-                'nextpay'=>'nextpay',
-            ];
-            if ($method==='nowpayments') {
-                if ($subjectType===null || $subjectType==='') return false;
-                $primaryFlag=$subjectType==='INCREASE_WALLET'
-                    ? 'nowPaymentWallet' : 'nowPaymentOther';
-            } else {
-                $primaryFlag=$primaryFlags[$method]??null;
-            }
+            $primaryFlag=achbotPayUxMethodFlag($method,$subjectType);
             if ($primaryFlag===null || ($states[$primaryFlag]??null)!=='on')
                 return false;
         }

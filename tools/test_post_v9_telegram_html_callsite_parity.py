@@ -129,7 +129,7 @@ AUDITED = {
     'src/Finance/Discounts.php': (11, 'c85401369c00918a99d619226eef481aa9261a14568941ecddad47866aff2e90'),
     'src/Finance/ReceiptHelpers.php': (1, '0231bfa34c85136afce04b2fc1d876c9ac7296e6504a100d5a3ff1e2319b09cb'),
     'src/Finance/Routes/AdminWallet.php': (8, '0658a0ac6b539ad790c23cb504178ad3ca2303a8d2019b5132828ab1b0f7a28b'),
-    'src/Finance/Routes/DiscountEntry.php': (2, '266664f80161bcf118c60751c85f123e079ca939e8921f637d1f4b2a3b652d41'),
+    'src/Finance/Routes/DiscountEntry.php': (3, '62144a9cf55013a13cd3aa3dfb5adf8c9612d7b23c8910b08a5d2a76af6aa472'),
     'src/Finance/Routes/ApiPayments.php': (2, 'a737b2417fc01a6c7bea5044cdc93e501b6ef5c4f3d114fa69348e9d0a8e84e4'),
     'src/Finance/Routes/Checkout.php': (4, 'bb5da20580176f2fc1929ac4735bf1cb86630631ba77120c0658452fb1e26551'),
     'src/Finance/Routes/Extensions.php': (6, 'd26c46ebe037a43403d4cbefcd628e3a6edd40eed88d6450eaabebf8d3021844'),

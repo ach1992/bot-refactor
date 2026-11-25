@@ -568,6 +568,7 @@ return [
         'agent_discounts.get_agent_discounts.button.d15a8dbd6d' => '🎁 افزودن تخفیف پلن',
         'agent_discounts.get_agent_discounts.button.82aaebb083' => '🎁 افزودن تخفیف سرور',
         // discounts.apply_discount_to_pay
+        'discounts.no_monetary_method' => '⚠️ هیچ روش پرداختی برای این سفارش در دسترس نیست. در این شرایط فقط کد تخفیفی که مبلغ نهایی را صفر کند قابل استفاده است.',
         'discounts.apply_discount_to_pay.text.2cc98f7f7c' => ' تومان',
         'discounts.apply_discount_to_pay.message.e3c216313a' => 'کد تخفیف با موفقیت اعمال شد. مبلغ تخفیف: ',
         'discounts.apply_discount_to_pay.button.16e81418a3' => '❤️',

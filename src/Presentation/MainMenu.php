@@ -2,6 +2,7 @@
 /** Existing main menu with an explicit recipient context. No Telegram I/O. */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/Text.php';
+require_once __DIR__.'/../Purchase/AgentPricing.php';
 require_once __DIR__.'/../../messages/loader.php';
 
 function achbotMainButtonNamespace(): string {
@@ -12,6 +13,7 @@ function achbotMainMenuForContext($connection,$userInfo,$from_id,$admin,$botStat
     $mainKeys = array();
     $temp = array();
     $isAdminMenu = ($from_id == $admin || $userInfo['isAdmin'] == true);
+    $canBuy=achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin);
     $cooperationUrl = \AchBot\Presentation\Text\configuredDestination($botState,'cooperationUrl',true);
     $helpChannelUrl = \AchBot\Presentation\Text\configuredDestination($botState,'helpChannel');
 
@@ -21,7 +23,7 @@ function achbotMainMenuForContext($connection,$userInfo,$from_id,$admin,$botStat
 			[['text'=>\achbotMessage('legacy_buttons.sharj'),'callback_data'=>"increaseMyWallet"]],
 		]);
 
-		if ((($botState['sellState'] ?? 'off') ?? 'off') == "on" || $from_id == $admin || !empty($userInfo['isAdmin'])) {
+		if ($canBuy) {
 			$mainKeys[] = [
 				['text'=>\achbotMessage('legacy_buttons.agent_one_buy'),'callback_data'=>"agentOneBuy"],
 				['text'=>\achbotMessage('legacy_buttons.agent_much_buy'),'callback_data'=>"agentMuchBuy"]
@@ -32,7 +34,7 @@ function achbotMainMenuForContext($connection,$userInfo,$from_id,$admin,$botStat
             ((($botState['agencyState'] ?? 'off') == "on" && $userInfo['is_agent'] == 0)?[
                 ['text'=>\achbotMessage('legacy_buttons.request_agency'),'callback_data'=>"requestAgency"]
             ]: []),
-            ((($botState['sellState'] ?? 'off') == "on" || $from_id == $admin || $userInfo['isAdmin'] == true)?
+            ($canBuy?
                 [['text'=>\achbotMessage('legacy_buttons.sharj'),'callback_data'=>"increaseMyWallet"],['text'=>\achbotMessage('legacy_buttons.buy_subscriptions'),'callback_data'=>"buySubscription"]]
                 :
                 [['text'=>\achbotMessage('legacy_buttons.sharj'),'callback_data'=>"increaseMyWallet"]]

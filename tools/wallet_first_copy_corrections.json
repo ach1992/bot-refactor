@@ -600,5 +600,9 @@
   "renewal.free_confirmation.day": {
     "after": "✅ افزایش زمان رایگان",
     "before": null
+  },
+  "payment.discounts.no_monetary_method": {
+    "before": null,
+    "after": "⚠️ هیچ روش پرداختی برای این سفارش در دسترس نیست. در این شرایط فقط کد تخفیفی که مبلغ نهایی را صفر کند قابل استفاده است."
   }
 }

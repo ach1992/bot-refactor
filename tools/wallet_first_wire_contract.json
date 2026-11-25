@@ -277,10 +277,10 @@
     },
     "src/Finance/Routes/DiscountEntry.php": {
       "before_count": 1,
-      "after_count": 2,
+      "after_count": 3,
       "before_sha256": "33676f503ea1ccf762f477c6859b83364dccf586e77187d6e9d18de2d30fb189",
-      "after_sha256": "cfe11fabe110a52587ec2622207974ff3add4956c83a2a945ad26a5bf8e555cb",
-      "reason": "F5 one owned current draft prompt and redemption route with exact continuation"
+      "after_sha256": "251d5907114eda1a28430706a8945bcc94c239f413424a23d0c6f2c581035018",
+      "reason": "F5 one owned current draft prompt and redemption route with exact continuation; Owner-approved no-monetary-method discount explanation, with fallback send if the original card becomes unavailable."
     },
     "src/Purchase/TrialCatalogue.php": {
       "before_count": 1,

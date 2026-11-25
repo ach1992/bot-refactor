@@ -236,6 +236,9 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         if ($maxDiscount>0) $discountValue=min($maxDiscount,$discountValue);
         $discountValue=max(0,min($price,$discountValue));
         $newPrice=$price-$discountValue;
+        $view['payment_methods']=achbotCheckoutPaymentMethodsLocked($connection,(int)$from_id,$current['type'],$newPrice);
+        if ($newPrice>0 && !$view['payment_methods'])
+            throw new DomainException('discount_no_monetary_method');
         $view['context']['discount_applied']=true;
         $encodedContext=achbotServiceJson($view['context']);
 
@@ -254,6 +257,9 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         $view['pay']=$payInfo;
     } catch (Throwable $e) {
         if ($started) {try {$connection->rollback();} catch (Throwable $ignored) {}}
+        if ($e instanceof DomainException && $e->getMessage()==='discount_no_monetary_method')
+            return ['success'=>false,'price'=>$price,'hash_id'=>$hash_id,'discount_value'=>0,
+                'discount_text'=>'','payInfo'=>$payInfo,'reason'=>'discount_no_monetary_method'];
         sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'),null,'HTML');
         return ['success'=>false,'price'=>0,'hash_id'=>'','discount_value'=>0,'discount_text'=>'','payInfo'=>null];
     }

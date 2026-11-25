@@ -266,8 +266,7 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == \achbotMessage('legacy_butt
     setUser();
     setUser("", "temp");
 
-    $isRealAdmin  = ($from_id == $admin || (!empty($userInfo['isAdmin']) && $userInfo['isAdmin'] == true));
-    $canBuy       = (($botState['sellState'] ?? 'off') == "on" || $isRealAdmin);
+    $canBuy=achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin);
 
     if ($customerShortcut===null && isset($data) && ($data == "mainMenu" || $data == "evidenceHome" || $paymentHome)) {
         // Legacy Home buttons can be on untracked financial/support evidence.

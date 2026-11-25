@@ -9,12 +9,12 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__ . '/../Finance/PaymentLifecycle.php';
 
-if(preg_match('/\AselectServer(?<serverId>[1-9][0-9]*)_(?<buyType>none|one|much)\z/D',$data, $match) && ($botState['sellState']=="on" || ($from_id == $admin || $userInfo['isAdmin'] == true)) ) {
+if(preg_match('/\AselectServer(?<serverId>[1-9][0-9]*)_(?<buyType>none|one|much)\z/D',$data, $match) && achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin) ) {
     if (!achbotPurchaseModeAllowed($userInfo,$botState,$match['buyType'])) return;
     $sid = $match['serverId'];
         
     $categories=[];
-    foreach (achbotCustomerCataloguePlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,(int)$sid) as $plan)
+    foreach (achbotCustomerPurchasePlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,(int)$sid) as $plan)
         $categories[(int)$plan['catid']]=$plan['category_title'];
     if (!$categories) {
         alert(\achbotMessage('legacy_messages.category_not_avilable'));
@@ -32,12 +32,12 @@ if(preg_match('/\AselectServer(?<serverId>[1-9][0-9]*)_(?<buyType>none|one|much)
     }
 
 }
-if(preg_match('/\AselectCategory(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0-9]*)_(?<buyType>none|one|much)\z/D',$data,$match) && ($botState['sellState']=="on" || $from_id == $admin || $userInfo['isAdmin'] == true)) {
+if(preg_match('/\AselectCategory(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0-9]*)_(?<buyType>none|one|much)\z/D',$data,$match) && achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin)) {
     if (!achbotPurchaseModeAllowed($userInfo,$botState,$match['buyType'])) return;
     $call_id = $match['categoryId'];
     $sid = $match['serverId'];
     $respd=achbotCustomerPurchasePlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,(int)$sid,(int)$call_id);
-    $custom=achbotCustomerCustomPlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,(int)$sid,(int)$call_id)!==[];
+    $custom=$respd!==[] && achbotCustomPurchaseEnabled($botState,$match['buyType']);
     if(!$respd && !$custom){
         alert(\achbotMessage('legacy_messages.no_plan_available'));
     }else{
@@ -60,7 +60,7 @@ if(preg_match('/\AselectCategory(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0-9
     }
 
 }
-if(preg_match('/\AselectCustomPlan(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$data,$match) && ($botState['sellState']=="on" || $from_id == $admin || $userInfo['isAdmin'] == true)) {
+if(preg_match('/\AselectCustomPlan(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$data,$match) && achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin)) {
     if (!achbotPurchaseModeAllowed($userInfo,$botState,$match['buyType'])) return;
     $call_id = $match['categoryId'];
     $sid = $match['serverId'];
