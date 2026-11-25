@@ -19,7 +19,7 @@ import provider_storage_fixture as storage
 import operational_report_fixture as reports
 import database_fixture as owned
 import test_post_v9_direct_gift as direct
-import test_post_v9_gift_physical as physical
+import retired_panel_http_fixture as physical
 import test_post_v9_pasarguard_client as pg
 
 ROOT=Path(__file__).resolve().parents[1]

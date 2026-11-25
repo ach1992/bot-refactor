@@ -17,7 +17,7 @@ from urllib.parse import urlsplit
 
 import provider_storage_fixture as storage
 import operational_report_fixture as reports
-import test_post_v9_scoped_api_pg as api
+import native_identity_fixture as api
 import test_post_v9_pasarguard_client as native
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -199,7 +199,7 @@ def expect_review(value):
 
 def case_retry(mode: str, actor: int, *, legacy: bool=False):
     checks=[]
-    with current_delete_sandbox() as (sql, run, provider, _bank, epoch):
+    with current_delete_sandbox() as (sql, run, provider, epoch):
         provider_url=sql('SELECT panel_url FROM server_config WHERE id=2')
         if legacy: setup_legacy(sql,provider_url,epoch)
         else: setup(sql,provider_url,epoch)
@@ -252,7 +252,7 @@ def case_retry(mode: str, actor: int, *, legacy: bool=False):
 def case_local_retry(*, legacy: bool):
     # Real native deletion succeeds, but the original SQL finalizer fails.
     # The next callback must ONLY finalize locally, never DELETE by ID twice.
-    with current_delete_sandbox() as (sql, run, provider, _bank, epoch):
+    with current_delete_sandbox() as (sql, run, provider, epoch):
         url=sql('SELECT panel_url FROM server_config WHERE id=2')
         if legacy: setup_legacy(sql,url,epoch)
         else: setup(sql,url,epoch)
@@ -285,7 +285,7 @@ def case_local_retry(*, legacy: bool):
 
 
 def case_changed_identity():
-    with current_delete_sandbox() as (sql, run, provider, _bank, epoch):
+    with current_delete_sandbox() as (sql, run, provider, epoch):
         url=sql('SELECT panel_url FROM server_config WHERE id=2')
         setup(sql,url,epoch)
         provider.mode='delete_lie'
@@ -314,7 +314,7 @@ def case_changed_identity():
 def case_delete_readback_foreign_identity():
     # The DELETE gets HTTP204, but by-ID HTTP200 in the next GET is a FOREIGN
     # incarnation. It must not be interpreted as a retryable original account.
-    with current_delete_sandbox() as (sql,run,provider,_bank,epoch):
+    with current_delete_sandbox() as (sql,run,provider,epoch):
         url=sql('SELECT panel_url FROM server_config WHERE id=2')
         setup(sql,url,epoch)
         provider.mode='delete_lie'
@@ -354,7 +354,7 @@ def case_delete_readback_foreign_identity():
 def case_recovery_authority_denied():
     # A real permission/identity barrier cannot be fixed merely by repeating
     # confirmation. Error guidance must not promise another DELETE attempt.
-    with current_delete_sandbox() as (sql,run,provider,_bank,epoch):
+    with current_delete_sandbox() as (sql,run,provider,epoch):
         url=sql('SELECT panel_url FROM server_config WHERE id=2')
         setup(sql,url,epoch)
         provider.mode='delete_lie'
@@ -374,7 +374,7 @@ def case_recovery_authority_denied():
 
 
 def case_no_intent():
-    with current_delete_sandbox() as (sql, run, provider, _bank, epoch):
+    with current_delete_sandbox() as (sql, run, provider, epoch):
         url=sql('SELECT panel_url FROM server_config WHERE id=2')
         setup(sql,url,epoch)
         sql("UPDATE orders_list SET status=0,autoRenew='off' WHERE id=41")
@@ -390,7 +390,7 @@ def case_no_intent():
 def case_claimed_before_dispatch():
     checks=[]
     for native_absent in (False,True):
-        with current_delete_sandbox() as (sql,run,provider,_bank,epoch):
+        with current_delete_sandbox() as (sql,run,provider,epoch):
             url=sql('SELECT panel_url FROM server_config WHERE id=2')
             setup(sql,url,epoch)
             result=driver(run,'fixture-claim-only')
@@ -410,7 +410,7 @@ def case_claimed_before_dispatch():
 
 
 def case_atomic_claim_rollback():
-    with current_delete_sandbox() as (sql,run,provider,_bank,epoch):
+    with current_delete_sandbox() as (sql,run,provider,epoch):
         url=sql('SELECT panel_url FROM server_config WHERE id=2')
         setup(sql,url,epoch)
         sql("CREATE TRIGGER fixture_block_status BEFORE UPDATE ON orders_list FOR EACH ROW "
@@ -433,7 +433,7 @@ def case_scheduled_vs_manual():
     """
     checks=[]
     for mode in ('ok','delete_lie','write_timeout'):
-        with current_delete_sandbox() as (sql,run,provider,_bank,epoch):
+        with current_delete_sandbox() as (sql,run,provider,epoch):
             url=sql('SELECT panel_url FROM server_config WHERE id=2')
             setup(sql,url,epoch)
             sql('UPDATE orders_list SET date=1700000000,notif=UNIX_TIMESTAMP()-1,'
@@ -528,7 +528,7 @@ def case_original_capacity_claims():
     checks=[]
     for cron in (False,True):
         for actor in (1001,9001):
-            with current_delete_sandbox() as (sql,run,provider,_bank,epoch):
+            with current_delete_sandbox() as (sql,run,provider,epoch):
                 setup(sql,sql('SELECT panel_url FROM server_config WHERE id=2'),epoch)
                 capacity=int(sql('SELECT ucount FROM server_info WHERE id=2'))
                 before_payments=sql('SELECT * FROM pays ORDER BY id')
@@ -559,7 +559,7 @@ def case_unpinned_legacy_capacity():
     """Do not guess whether an older unmarked claim originated in Cron/UI."""
     checks=[]
     for legacy in (True,False):
-        with current_delete_sandbox() as (sql,run,provider,_bank,epoch):
+        with current_delete_sandbox() as (sql,run,provider,epoch):
             url=sql('SELECT panel_url FROM server_config WHERE id=2')
             if legacy:
                 setup_legacy(sql,url,epoch)
@@ -594,7 +594,7 @@ def case_cron_native_reactivated_before_delete():
     # A service can be renewed externally after an earlier expiry observation.
     # The Cron dispatch guard must check the final ORIGINAL Native identity
     # and entitlement immediately before sending the irreversible DELETE.
-    with current_delete_sandbox() as (sql,run,provider,_bank,epoch):
+    with current_delete_sandbox() as (sql,run,provider,epoch):
         setup(sql,sql('SELECT panel_url FROM server_config WHERE id=2'),epoch)
         sql('UPDATE orders_list SET date=1700000000,notif=UNIX_TIMESTAMP()-1,'
             'expire_date=1700000000 WHERE id=41')
@@ -636,7 +636,7 @@ def case_cron_native_reactivated_before_delete():
 def case_cron_local_finalizer_failure():
     checks=[]
     for actor in (1001,9001):
-        with current_delete_sandbox() as (sql,run,provider,_bank,epoch):
+        with current_delete_sandbox() as (sql,run,provider,epoch):
             setup(sql,sql('SELECT panel_url FROM server_config WHERE id=2'),epoch)
             sql('UPDATE orders_list SET date=1700000000,notif=UNIX_TIMESTAMP()-1,'
                 'expire_date=1700000000 WHERE id=41')
@@ -673,7 +673,7 @@ def case_cron_local_finalizer_failure():
 
 
 def case_concurrent():
-    with current_delete_sandbox() as (sql, run, provider, _bank, epoch):
+    with current_delete_sandbox() as (sql, run, provider, epoch):
         url=sql('SELECT panel_url FROM server_config WHERE id=2')
         setup(sql,url,epoch)
         provider.mode='write_timeout'
@@ -701,7 +701,7 @@ def case_native_finality_retry():
     # Remote DELETE definitely ran on the first request but its ACK was lost.
     # A second request fails specifically at the Native journal terminal write;
     # its third attempt must commit BOTH Native and SQL finality without DELETE.
-    with current_delete_sandbox() as (sql, run, provider, _bank, epoch):
+    with current_delete_sandbox() as (sql, run, provider, epoch):
         url=sql('SELECT panel_url FROM server_config WHERE id=2')
         setup(sql,url,epoch)
         provider.mode='write_timeout'
@@ -731,7 +731,7 @@ def case_native_finality_retry():
 def case_shared_historical_reference():
     # A legitimate second order points at the SAME historical physical ID.
     # Neither its owner nor staff may fence one order then delete both users.
-    with current_delete_sandbox() as (sql,run,provider,_bank,epoch):
+    with current_delete_sandbox() as (sql,run,provider,epoch):
         url=sql('SELECT panel_url FROM server_config WHERE id=2')
         setup_legacy(sql,url,epoch)
         snapshot=json.loads(sql('SELECT provider_snapshot FROM service_effects WHERE id=1'))
@@ -758,7 +758,7 @@ def case_shared_historical_reference():
 
 
 def case_unauthorized():
-    with current_delete_sandbox() as (sql, run, provider, _bank, epoch):
+    with current_delete_sandbox() as (sql, run, provider, epoch):
         url=sql('SELECT panel_url FROM server_config WHERE id=2')
         setup(sql,url,epoch)
         result=driver(run,'yesDeleteConfig41',actor=1002)

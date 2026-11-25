@@ -22,7 +22,7 @@ function achbotSupportsAccount($type,$inbound){return in_array($type,['marzban',
 function achbotSupportsOrder($db,$orderId,$planId=null,$userId=null,$lock=false){return $orderId===91;}
 // This composition harness controls native packets and the plan-admission
 // seam. Actual adapter eligibility/import/payment are tested separately by
-// test_imported_plan_selection.py and the native existing-subscription suite.
+// current Native import, customer-route and Wallet-first service suites.
 function achbotServerCommerceAvailable($db,$serverId,$newPurchase,$lock=false) {
  $q=$db->prepare('SELECT active,state FROM server_info WHERE id=?');
  $q->bind_param('i',$serverId);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();

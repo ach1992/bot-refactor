@@ -293,3 +293,18 @@ construction only, and removes the retired category draft fields. The
 current-route regression checks concurrent managers, inactive-row retention,
 callback/typed-input separation, revoked access, exact rename targets and
 storage-width rejection of bulk count/price overflow.
+
+
+### Current-source fixture boundary
+
+The current Native import and DELETE suites use `native_identity_fixture.py`:
+only authenticated Native identity bootstrap and task-owned SQL/HTTP fixtures,
+not the retired scoped API payment driver. The direct gift suite uses
+`retired_panel_http_fixture.py` solely as a synthetic peer to prove
+retired-provider refusal; no old provider implementation is executed.
+Original pre-Wallet-first checkout/recovery/Marzban-only test drivers and
+their old-only callers are removed from this branch; they remain available
+at [the prior exact source](https://github.com/ach1992/bot-refactor/tree/05894a72e8d8c27fcae03d742e0abd0f31a4cb43/tools).
+The current roster and retained historical account-provenance construction
+are unchanged. Old test commands in historical records refer to their
+original source, not executable instructions for the new runtime.
