@@ -9,8 +9,7 @@ if (preg_match('/\AhaveDiscountCheckout_([1-9][0-9]*)\z/D',(string)$data,$match)
     if (($frame->from->id??null)!==(int)$from_id || ($frame->message->chat->id??null)!==(int)$from_id ||
         ($frame->message->chat->type??null)!=='private') return null;
     $view=achbotCheckoutDraftView($connection,(int)$match[1],(int)$from_id,$botState);
-    if ($view===null || !empty($view['context']['discount_applied']) ||
-        ($view['mode']!=='renew' && ($botState['sellState']??'off')!=='on' && $from_id!=$admin)) {
+    if ($view===null || (int)$view['pay']['price']<=0 || !empty($view['context']['discount_applied'])) {
         alert(achbotMessage('legacy_messages.not_valid_discount_code'),true);
         return null;
     }
@@ -26,8 +25,7 @@ if (preg_match('/\AdiscountCheckout_([1-9][0-9]*)\z/D',(string)($userInfo['step'
     if (($update->message->from->id??null)!==$actor || ($update->message->chat->id??null)!==$actor ||
         ($update->message->chat->type??null)!=='private') return null;
     $view=achbotCheckoutDraftView($connection,$id,$actor,$botState);
-    if ($view===null || !empty($view['context']['discount_applied']) ||
-        ($view['mode']!=='renew' && ($botState['sellState']??'off')!=='on' && $from_id!=$admin)) {
+    if ($view===null || (int)$view['pay']['price']<=0 || !empty($view['context']['discount_applied'])) {
         setUser();
         sendMessage(achbotMessage('legacy_messages.not_valid_discount_code'),null,'HTML');
         return null;

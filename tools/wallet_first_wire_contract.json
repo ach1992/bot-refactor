@@ -139,8 +139,8 @@
       "before_count": 25,
       "after_count": 19,
       "before_sha256": "9ba80f3c2290c756f396e7171ad030eb5d5cf4f60009600ddce7d058b6fc32b7",
-      "after_sha256": "c62906cd56a2c9c8ec6ee1fc5384a2a6a988277a659eb74e22b0f3f6d8dba6df",
-      "reason": "Same shared command and delivery for day and volume."
+      "after_sha256": "26b0f9c43b0e99799d61516724d0123a5db06589c32ff6816d6a8bd18b5a9659",
+      "reason": "Same shared command and delivery for day and volume.; Owner-approved zero-value confirmation prompt; positive copy and send parameters unchanged."
     },
     "src/Finance/Routes/ManualApproval.php": {
       "before_count": 2,

@@ -219,7 +219,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         $current=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=? FOR UPDATE','i',[(int)$rowId]);
         if (!$current || $current!==$payInfo) throw new DomainException('discount_draft_changed');
         $view=achbotCheckoutDraftViewLocked($connection,$current,(int)$from_id,$botState);
-        if (!empty($view['context']['discount_applied']))
+        if ((int)$current['price']<=0 || !empty($view['context']['discount_applied']))
             throw new DomainException('discount_already_applied');
         $locked=achbotProviderRow($connection,'SELECT * FROM discounts WHERE id=? FOR UPDATE','i',[(int)$discountInfo['id']]);
         if (!$locked || $locked!==$discountInfo ||
@@ -236,8 +236,6 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         if ($maxDiscount>0) $discountValue=min($maxDiscount,$discountValue);
         $discountValue=max(0,min($price,$discountValue));
         $newPrice=$price-$discountValue;
-        if ($newPrice===0 && !achbotPayUxAudienceAllowed($connection,'wallet',(int)$from_id,true,$current['type']))
-            throw new DomainException('discount_zero_price_wallet_unavailable');
         $view['context']['discount_applied']=true;
         $encodedContext=achbotServiceJson($view['context']);
 

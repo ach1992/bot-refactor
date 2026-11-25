@@ -455,15 +455,15 @@ def main():
         # command, not trial entitlement or a fabricated monetary debit.
         state(walletState='off')
         sql("UPDATE users SET discount_percent='{\"normal\":100}' WHERE userid=2002")
-        # No monetary method is enabled. Only already-authorized standard
-        # zero commercial offers remain selectable throughout the catalogue.
+        # No monetary method is enabled. Authorized zero standard and
+        # custom offers remain selectable throughout the catalogue.
         assert 'selectServer2_none' not in callbacks(run('entry',callback='buySubscription'))
         assert 'selectServer2_one' in callbacks(run('entry',actor=2002,callback='agentOneBuy'))
         assert 'selectServer2_much' in callbacks(run('entry',actor=2002,callback='agentMuchBuy'))
         assert 'selectServer2_none' in callbacks(run('entry',actor=9001,callback='buySubscription'))
         assert 'selectCategory1_2_one' in callbacks(run('catalogue',actor=2002,callback='selectServer2_one'))
         cb=callbacks(run('catalogue',actor=2002,callback='selectCategory1_2_one'))
-        assert 'selectPlan7_1_one' in cb and 'selectCustomPlan1_2_one' not in cb,cb
+        assert 'selectPlan7_1_one' in cb and 'selectCustomPlan1_2_one' in cb,cb
         assert 'selectPlan7_1_none' not in callbacks(run('catalogue',callback='selectCategory1_2_none'))
         cases.append('zero_commercial_catalogue_without_any_monetary_method')
         def free_checkout(uid,r,count):
@@ -578,14 +578,55 @@ def main():
         denied=run('wallet',hash=h,mode='custom',expect_denied=True)
         assert denied['events'][0]==['denied','checkout_zero_custom_changed'],denied
         state(gbPrice=0,dayPrice=0,walletState='off')
-        denied=run('wallet',hash=h,mode='custom',expect_denied=True)
-        assert denied['events'][0]==['denied','checkout_draft_unavailable'],denied
+        assert 'selectServer2_none' in callbacks(run('entry',callback='buySubscription'))
+        assert 'selectCustomPlan1_2_none' in callbacks(run('catalogue',callback='selectCategory1_2_none'))
+        assert 'selectPlan7_1_none' not in callbacks(run('catalogue',callback='selectCategory1_2_none'))
+        funded=run('wallet',hash=h,mode='custom')['events'][0][1]
+        assert funded['status']=='funded',funded
+        assert sql(f"SELECT debit_entry_id IS NULL FROM service_operations WHERE id={funded['operation']}")=='1'
+        assert run('wallet',hash=h,mode='custom')['events'][0][1]['status']=='already_funded'
         state()
         sql("UPDATE users SET step='selectCustomPlanGB7_1_none' WHERE userid=2001")
         assert run('catalogue',text='1e2')['user']['step']=='selectCustomPlanGB7_1_none'
         assert run('catalogue',text='2')['user']['step']=='selectCustomPlanDay7_1_2_none'
         assert run('catalogue',text='3')['user']['step']=='enterCustomPlanName7_1_2_3_none'
-        cases.append('zero_custom_configured_rates_and_agency_rechecked_without_policy_expansion')
+        cases.append('zero_custom_configured_rates_and_agency_without_monetary_methods')
+        state(testAccount='on',renewAutoState='on')
+        r=run('standard',callback='selectPlan7_1_none')
+        pid,h,price,_=latest(2001)
+        assert int(price)>0 and 'payBuyWithWallet'+h in callbacks(r),r
+        before=tuple(sql(q) for q in ['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet FROM users WHERE userid=2001'])
+        sql('UPDATE server_plans SET active=1,price=0 WHERE id=14')
+        state(sellState='off',testAccount='on',renewAutoState='on')
+        denied=run('wallet',hash=h,mode='standard',expect_denied=True)
+        assert denied['events'][0]==['denied','checkout_sales_disabled'],denied
+        assert tuple(sql(q) for q in ['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet FROM users WHERE userid=2001'])==before
+        assert 'buySubscription' not in callbacks(run('menu'))
+        assert 'getTestAccount' in callbacks(run('menu'))
+        assert 'freeTrial14_normal' in callbacks(run('trial_catalogue',callback='getTestAccount'))
+        state(sellState='off',testAccount='off',renewAutoState='on')
+        assert 'getTestAccount' not in callbacks(run('menu'))
+        assert 'buySubscription' in callbacks(run('menu',actor=9001))
+        cases.append('sales_closure_denies_unissued_positive_quote_preserves_independent_trial_switch')
+        # The original valid code is consumed atomically even when all
+        # monetary methods are disabled after the positive draft was issued.
+        state()
+        run('standard',callback='selectPlan7_1_none')
+        pid,h,price,_=latest(2001)
+        sql("INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('nomoneyfull','percent',100,0,1,-1)")
+        state(walletState='off')
+        run('discount',callback=f'haveDiscountCheckout_{pid}')
+        r=run('discount',text='nomoneyfull')
+        assert 'payBuyWithWallet'+h in callbacks(r),r
+        assert any(b.get('text')=='📥 دریافت رایگان' for e in r['events'] if e[0]=='send' and e[2] for row in json.loads(e[2])['inline_keyboard'] for b in row),r
+        assert sql(f"SELECT price FROM pays WHERE id={pid}")=='0'
+        before=sql("SELECT COUNT(*) FROM wallet_entries")
+        op=run('wallet',hash=h,mode='standard')['events'][0][1]
+        assert op['status']=='funded' and sql("SELECT COUNT(*) FROM wallet_entries")==before
+        assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
+        cases.append('full_discount_zero_confirmation_without_wallet_or_gateway')
+        state()
+
         # Active representative pricing must not depend on route or historical
         # classification. Assert the actual persisted user checkout drafts.
         sql("UPDATE users SET step='none',discount_percent='{\"normal\":25,\"plans\":{\"7\":40},\"servers\":{\"2\":30}}' WHERE userid=2002")

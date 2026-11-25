@@ -324,6 +324,10 @@ original operations do not acquire a new admission requirement during recovery.
 Required current-customer and service-execution cases cover trial and disabled
 policy refusal, stale unissued renew/day/volume drafts, completed zero-effective
 ordinary and representative purchases, demotion, full discount-code purchase,
-and zero-allocated retained bulk ordinals. The exact zero-value confirmation
-presentation for other command families remains an explicit Owner decision
-(F13); this remediation does not broaden existing monetary-method exemptions.
+and zero-allocated retained bulk ordinals. The Owner-approved F13 policy is
+covered by source-real zero-value confirmation for standard/custom/renewal/
+time/volume commands, full discount-code zero without Wallet or gateways,
+current zero-price entitlement revocation, and refusal of an unissued
+positive draft after sales closure. The trial switch and automatic renewal
+remain independent; issued original payment evidence and funded recovery
+are not re-admitted under the new sales gate.

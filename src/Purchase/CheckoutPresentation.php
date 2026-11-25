@@ -3,6 +3,19 @@ declare(strict_types=1);
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/../Finance/CheckoutAdmission.php';
 
+/** Zero-value confirmation uses the original command callback, not a
+ * bank/gateway attempt or a Wallet debit. The locked admission proves zero. */
+function achbotFreeCheckoutButton(string $mode,string $hash): array {
+    [$prefix,$label]=match($mode) {
+        'standard'=>['payBuy',achbotMessage('purchase.select_plan.button.8719396e1e')],
+        'custom'=>['payCustom',achbotMessage('purchase.select_plan.button.8719396e1e')],
+        'renew'=>['payRenew',achbotMessage('renewal.free_confirmation.renew')],
+        'day'=>['payIncreaseDay',achbotMessage('renewal.free_confirmation.day')],
+        'volume'=>['payIncrease',achbotMessage('renewal.free_confirmation.volume')]
+    };
+    return ['text'=>$label,'callback_data'=>$prefix.'WithWallet'.$hash];
+}
+
 function achbotRenderCheckoutDraft(mysqli $db,array $view,array $states,string $botUrl,bool $offerDiscount): void {
     $pay=$view['pay'];$q=$view['quote'];$plan=$view['plan'];$mode=$view['mode'];
     $hash_id=$pay['hash_id'];$actor=(int)$pay['user_id'];$amount=(int)$pay['price'];
@@ -28,8 +41,8 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,array $states,string $
             $keyboard[]=[$button];
         }
     }
-    if (isset($view['context']['zero_commercial'])) {
-        $keyboard[]=[['text'=>achbotMessage('purchase.select_plan.button.8719396e1e'),'callback_data'=>$prefix.'WithWallet'.$hash_id]];
+    if ($amount===0) {
+        $keyboard[]=[achbotFreeCheckoutButton($mode,$hash_id)];
     } elseif (($states['walletState']??'off')==='on' && achbotPayUxAudienceAllowed($db,'wallet',$actor))
         $keyboard[]=[['text'=>$renew?achbotMessage('renewal.renewal_checkout.button.0eed1dd8e8',['price'=>$price]):achbotMessage('legacy_buttons.pay_with_wallet'),'callback_data'=>$prefix.'WithWallet'.$hash_id]];
     if ($offerDiscount && $amount>0 && empty($view['context']['discount_applied']))
@@ -41,7 +54,7 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,array $states,string $
     } else {
         $keyboard[]=[['text'=>achbotMessage('legacy_buttons.cancel'),'callback_data'=>'mainMenu']];
     }
-    if ($renew) $msg=achbotMessage('renewal.renewal_checkout.message.24ae8c4399');
+    if ($renew) $msg=$amount===0?achbotMessage('renewal.free_confirmation.prompt'):achbotMessage('renewal.renewal_checkout.message.24ae8c4399');
     else {
         $name=$view['category']['title'].' '.$plan['title'];$desc=$plan['descr'];
         if ($mode==='standard' && (int)$pay['agent_count']>0) {

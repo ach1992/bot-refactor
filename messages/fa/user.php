@@ -504,7 +504,6 @@ return [
         'extensions.alert.6173c35986' => '📦 پلن حجمی در دسترس نیست؛ دوباره از منوی اشتراک انتخاب کنید.',
         'extensions.alert.f5aab191db' => '📆 اشتراک شما منقضی شده است. ابتدا آن را تمدید کنید.',
         // extensions.planprice
-        'extensions.planprice.97e0b2bd8a' => ' رایگان',
         // extensions.button
         'extensions.button.5adbd64a32' => '💰پرداخت با موجودی',
         // extensions.text
@@ -532,6 +531,10 @@ return [
         'renewal_checkout.button.0eed1dd8e8' => ['text' => '💰پرداخت با موجودی مبلغ {price}', 'parameters' => ['price']],
         'renewal_checkout.button.05c3a1e3f4' => ' 🎟 افزودن کد تخفیف ',
         // renewal_checkout.message
+        'free_confirmation.prompt' => '🧾 مبلغ نهایی این سفارش صفر تومان است. برای انجام عملیات، تأیید کنید.',
+        'free_confirmation.renew' => '✅ تمدید رایگان',
+        'free_confirmation.day' => '✅ افزایش زمان رایگان',
+        'free_confirmation.volume' => '✅ افزایش حجم رایگان',
         'renewal_checkout.message.24ae8c4399' => '🧾 روش پرداخت این تمدید را انتخاب کنید. فقط یک روش فعال را ادامه دهید.',
         // renewal_checkout.alert
         'renewal_checkout.message.47b1149fb0' => ['text' => '✅ اشتراک <code>{remark}</code> با موفقیت تمدید شد.', 'parameters' => ['remark']],

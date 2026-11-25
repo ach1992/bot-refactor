@@ -50,3 +50,20 @@ function achbotAgencyPrice(array $user,array $state,int $planId,int $serverId,in
 function achbotExistingServicePrice(array $user,array $state,array $order,int $basePrice): int {
     return achbotAgencyPrice($user,$state,(int)$order['fileid'],(int)$order['server_id'],$basePrice)[0];
 }
+
+
+/** Current commercial customer sales; administrative provisioning and
+ * trial/automatic-renewal switches remain independent. */
+function achbotCustomerSaleAllowed(array $states,int $actor,int $primary): bool {
+    return ($states['sellState']??'off')==='on' || ($primary>0 && $actor===$primary);
+}
+
+/** Both positive custom dimensions must be free for a raw zero quote. */
+function achbotCustomRatesAreZero(array $owner,array $states,int $planId,int $serverId): bool {
+    foreach (['gbPrice','dayPrice'] as $key) {
+        if (!isset($states[$key]) || filter_var($states[$key],FILTER_VALIDATE_INT,['options'=>['min_range'=>0]])===false)
+            return false;
+        if (achbotAgencyPrice($owner,$states,$planId,$serverId,(int)$states[$key])[0]!==0) return false;
+    }
+    return true;
+}

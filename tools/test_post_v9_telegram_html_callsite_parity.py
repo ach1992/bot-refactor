@@ -132,7 +132,7 @@ AUDITED = {
     'src/Finance/Routes/DiscountEntry.php': (2, '266664f80161bcf118c60751c85f123e079ca939e8921f637d1f4b2a3b652d41'),
     'src/Finance/Routes/ApiPayments.php': (2, 'a737b2417fc01a6c7bea5044cdc93e501b6ef5c4f3d114fa69348e9d0a8e84e4'),
     'src/Finance/Routes/Checkout.php': (4, 'bb5da20580176f2fc1929ac4735bf1cb86630631ba77120c0658452fb1e26551'),
-    'src/Finance/Routes/Extensions.php': (8, '713c4811836cb404d815545d4fe715765884c6f724c499bd4fb5d29c1698a89a'),
+    'src/Finance/Routes/Extensions.php': (6, 'd26c46ebe037a43403d4cbefcd628e3a6edd40eed88d6450eaabebf8d3021844'),
     'src/Finance/Routes/ManualReceipts.php': (2, '786805fadd4e8234e6475dfd718160b80ce5ec70fb7881ed95b30fd88d4ecf3e'),
     'src/Finance/Routes/PrePayment.php': (0, '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'),
     'src/Finance/Routes/RenewalCheckout.php': (5, '285dc4c7445ed5064489f6dba189527bf46e1c7e3512f113494cea026e36a166'),

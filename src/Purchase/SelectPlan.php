@@ -13,7 +13,7 @@ $typedPlanInput=isset($update->message->text) && !isset($update->callback_query)
 $planSelectionCallback=preg_match('/\AselectPlan([1-9][0-9]*)_([1-9][0-9]*)_(?<buyType>none|one|much)\z/D',(string)$data,$match)===1;
 if(($planSelectionCallback ||
     ($typedPlanInput && preg_match('/\A(?:selectPlan|enterAccountName)([1-9][0-9]*)_([1-9][0-9]*)_(?<buyType>none|one|much)\z/D',$userInfo['step'],$match))) &&
-    (($botState['sellState']??'off')==="on" || $from_id==$admin) &&
+    achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin) &&
     $text != \achbotMessage('legacy_buttons.cancel')){
     if (!achbotPurchaseModeAllowed($userInfo,$botState,$match['buyType'])) return;
     if (!achbotSupportsPlan($connection, (int)($match[1] ?? 0))) {

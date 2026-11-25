@@ -15,7 +15,7 @@ if(in_array($data,['agentOneBuy','buySubscription','agentMuchBuy'],true)){
     $isAdmin=$from_id==$admin || !empty($userInfo['isAdmin']);
     $buyType=match($data){'agentOneBuy'=>'one','agentMuchBuy'=>'much',default=>'none'};
     $agentShortcut=$shortcut && ($botState['agencyState']??'off')==='on' && (int)$userInfo['is_agent']===1;
-    $plans=achbotCustomerPurchasePlans($connection,$userInfo,$botState,$agentShortcut?'one':$buyType,(int)$from_id,(int)$admin);
+    $plans=achbotCustomerCataloguePlans($connection,$userInfo,$botState,$agentShortcut?'one':$buyType,(int)$from_id,(int)$admin);
     if ((($botState['sellState']??'off')!=='on' && !$isAdmin) ||
         (!achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState) && !$plans)){
         if ($shortcut) sendMessage(\achbotMessage('legacy_messages.selling_is_off'),null,'HTML');

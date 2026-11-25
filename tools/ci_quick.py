@@ -107,6 +107,7 @@ REQUIRED_CURRENT_CASES = {
         "ordinary_zero_commercial_origin_survives_demotion",
         "discounted_and_zero_allocated_bulk_commercial_origin",
         "managed_addon_policy_revocation_blocks_new_funding",
+        "zero_managed_free_confirmation_no_monetary_methods",
         "actual_auto_renew_current_agency_policy",
         "manual_receipt_original_frozen_quote",
         "actual_custom_draft_and_review_completion_truth",
@@ -253,7 +254,9 @@ REQUIRED_SCENARIOS = {
         "zero_commercial_catalogue_without_any_monetary_method",
         "zero_commercial_current_agency_authorization_rechecked_before_reservation",
         "zero_commercial_synchronized_role_plan_policy_revocation_before_reservation",
-        "zero_custom_configured_rates_and_agency_rechecked_without_policy_expansion",
+        "zero_custom_configured_rates_and_agency_without_monetary_methods",
+        "sales_closure_denies_unissued_positive_quote_preserves_independent_trial_switch",
+        "full_discount_zero_confirmation_without_wallet_or_gateway",
     ),
     "current_sales_discount": (
         "actual_sales_keyboard_net_completed_value_wallet_origin_and_original_windows",

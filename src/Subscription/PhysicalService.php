@@ -458,11 +458,6 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
             throw new RuntimeException('physical_plan_unavailable');
         $snapshot=achbotPgPlanSnapshot($db,$server,$newPlanId,true);
         $groups=$snapshot['group_ids'];
-        if (!$admin) {
-            require_once __DIR__.'/../Purchase/OrderWrites.php';
-            if (achbotPaidPlanForOrder($db,$order,$newPlanId,true)===null)
-                throw new RuntimeException('physical_plan_not_eligible');
-        }
         $all=achbotPhysicalActiveOrders($db,$order,true);
         foreach ($all as $peer) {
             $peerServer=(int)$peer['server_id'];
@@ -471,6 +466,11 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
                 throw new RuntimeException('physical_peer_server_mismatch');
         }
         achbotPhysicalNoPendingPayments($db,$all,achbotPhysicalPlanChangesLocalPlan($all,$newPlanId));
+        if (!$admin) {
+            require_once __DIR__.'/../Purchase/OrderWrites.php';
+            if (achbotPaidPlanForOrder($db,$order,$newPlanId,true)===null)
+                throw new RuntimeException('physical_plan_not_eligible');
+        }
         $targetSha=achbotPhysicalTargetFingerprint($db,$order);
         $pgIdentitySha=$provider==='pasarguard'?
             achbotPhysicalPgIdentityFingerprint(achbotPgOrderContext($db,$orderId,true)):null;

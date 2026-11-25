@@ -14,7 +14,7 @@ if(preg_match('/\AselectServer(?<serverId>[1-9][0-9]*)_(?<buyType>none|one|much)
     $sid = $match['serverId'];
         
     $categories=[];
-    foreach (achbotCustomerPurchasePlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,(int)$sid) as $plan)
+    foreach (achbotCustomerCataloguePlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,(int)$sid) as $plan)
         $categories[(int)$plan['catid']]=$plan['category_title'];
     if (!$categories) {
         alert(\achbotMessage('legacy_messages.category_not_avilable'));
@@ -37,8 +37,7 @@ if(preg_match('/\AselectCategory(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0-9
     $call_id = $match['categoryId'];
     $sid = $match['serverId'];
     $respd=achbotCustomerPurchasePlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,(int)$sid,(int)$call_id);
-    $custom=achbotCustomPurchaseEnabled($botState,$match['buyType']) &&
-        achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState) && $respd!==[];
+    $custom=achbotCustomerCustomPlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,(int)$sid,(int)$call_id)!==[];
     if(!$respd && !$custom){
         alert(\achbotMessage('legacy_messages.no_plan_available'));
     }else{
@@ -65,8 +64,7 @@ if(preg_match('/\AselectCustomPlan(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0
     if (!achbotPurchaseModeAllowed($userInfo,$botState,$match['buyType'])) return;
     $call_id = $match['categoryId'];
     $sid = $match['serverId'];
-    if (!achbotCustomPurchaseEnabled($botState,$match['buyType']) || !achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState)) return;
-    $respd=achbotSaleablePlans($connection,(int)$sid,(int)$call_id);
+    $respd=achbotCustomerCustomPlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,(int)$sid,(int)$call_id);
     if (!$respd) {alert(achbotMessage('legacy_messages.no_plan_available'));return;}
     alert(\achbotMessage('legacy_messages.receive_plans'));
     $keyboard = [];
@@ -80,12 +78,9 @@ if(preg_match('/\AselectCustomPlan(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0
     editText($message_id, \achbotMessage('legacy_messages.select_one_plan_to_edit'), json_encode(['inline_keyboard'=>$keyboard]));
 
 }
-if(preg_match('/\AselectCustomePlan(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$data, $match) && ($botState['sellState']=="on" ||$from_id == $admin)){
-    if (!achbotCustomPurchaseEnabled($botState,$match['buyType']) ||
-        !achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState) ||
-        !achbotPurchaseModeAllowed($userInfo,$botState,$match['buyType'])) return;
+if(preg_match('/\AselectCustomePlan(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$data, $match) && achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin)){
     $plan=null;
-    foreach (achbotSaleablePlans($connection,null,(int)$match['categoryId']) as $candidate)
+    foreach (achbotCustomerCustomPlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,null,(int)$match['categoryId']) as $candidate)
         if ((int)$candidate['id']===(int)$match['planId']) {$plan=$candidate;break;}
     if (!$plan) {
         alert(achbotMessage('purchase.catalogue.alert.67fda139df'), true);
@@ -96,12 +91,9 @@ if(preg_match('/\AselectCustomePlan(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-
 	sendMessage(str_replace("VOLUME-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_volume')),$cancelKey);
 	setUser("selectCustomPlanGB" . $match[1] . "_" . $match[2] . "_" . $match['buyType']);
 }
-if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AselectCustomPlanGB(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'], $match) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != \achbotMessage('legacy_buttons.cancel')){
-    if (!achbotCustomPurchaseEnabled($botState,$match['buyType']) ||
-        !achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState) ||
-        !achbotPurchaseModeAllowed($userInfo,$botState,$match['buyType'])) return;
+if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AselectCustomPlanGB(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'], $match) && achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin) && $text != \achbotMessage('legacy_buttons.cancel')){
     $plan=null;
-    foreach (achbotSaleablePlans($connection,null,(int)$match['categoryId']) as $candidate)
+    foreach (achbotCustomerCustomPlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,null,(int)$match['categoryId']) as $candidate)
         if ((int)$candidate['id']===(int)$match['planId']) {$plan=$candidate;break;}
     if (!$plan) return;
     if(!is_numeric($text)){
@@ -129,12 +121,9 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
 	sendMessage(str_replace("DAY-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_day')));
 	setUser("selectCustomPlanDay" . $id . "_" . $match['categoryId'] . "_" . $units . "_" . $match['buyType']);
 }
-if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AselectCustomPlanDay(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<accountCount>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'], $match) && ($botState['sellState']=="on" ||$from_id == $admin) && $text != \achbotMessage('legacy_buttons.cancel')){
-    if (!achbotCustomPurchaseEnabled($botState,$match['buyType']) ||
-        !achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState) ||
-        !achbotPurchaseModeAllowed($userInfo,$botState,$match['buyType'])) return;
+if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AselectCustomPlanDay(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<accountCount>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'], $match) && achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin) && $text != \achbotMessage('legacy_buttons.cancel')){
     $plan=null;
-    foreach (achbotSaleablePlans($connection,null,(int)$match['categoryId']) as $candidate)
+    foreach (achbotCustomerCustomPlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,null,(int)$match['categoryId']) as $candidate)
         if ((int)$candidate['id']===(int)$match['planId']) {$plan=$candidate;break;}
     if (!$plan) return;
     if(!is_numeric($text)){
@@ -162,7 +151,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
 }
 
 if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AenterCustomPlanName([1-9][0-9]*)_([1-9][0-9]*)_([1-9][0-9]*)_([1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'],$match) &&
-    ($botState['sellState']=="on" ||$from_id==$admin) && $text!=achbotMessage('legacy_buttons.cancel')){
+    achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin) && $text!=achbotMessage('legacy_buttons.cancel')){
     if (!achbotSupportsPlan($connection,(int)$match[1])) {
         alert(achbotMessage('purchase.catalogue.alert.10fd7f4fa9'),true);return;
     }
@@ -178,11 +167,8 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
             sendMessage(\achbotMessage('legacy_messages.incorrect_config_name'), null, 'HTML');
             exit();
         }
-    if (!achbotCustomPurchaseEnabled($botState,$match['buyType']) ||
-        !achbotCustomerHasPaymentMethod($connection,(int)$from_id,$botState) ||
-        !achbotPurchaseModeAllowed($userInfo,$botState,$match['buyType'])) return;
     $respd=null;
-    foreach (achbotSaleablePlans($connection,null,(int)$call_id) as $candidate)
+    foreach (achbotCustomerCustomPlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,null,(int)$call_id) as $candidate)
         if ((int)$candidate['id']===(int)$id) {$respd=$candidate;break;}
     if (!$respd) {
         alert(achbotMessage('purchase.catalogue.alert.10fd7f4fa9'),true);return;

@@ -104,7 +104,7 @@ def main():
             assert p.returncode==0 and not p.stderr,(op,p.returncode,p.stdout[-1000:],p.stderr[-1000:])
             return json.loads(p.stdout)['result']
         def literal(value):return "'"+str(value).replace("'","''")+"'"
-        sql("INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\"}')")
+        sql("INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"walletState\":\"on\",\"sellState\":\"on\"}')")
         for uid in range(2001,2012):
             sql(f"INSERT INTO users(userid,name,username,refcode,wallet,date,is_agent) VALUES({uid},'Fixture','fixture{uid}','0',1000000,'1700000000',{int(uid==2003)})")
         sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (2,'Fixture A','100','a','',1,1),(3,'Fixture B','100','b','',1,1),(4,'Fixture Empty','100','c','',1,1)")

@@ -410,11 +410,32 @@ function achbotPurchaseModeAllowed(array $user,array $states,string $mode): bool
         achbotAgencyActive($user,$states));
 }
 
+/** A custom template is independently saleable when both configured
+ * effective rates are zero, even if every monetary method is disabled. */
+function achbotCustomerCustomPlans(mysqli $db,array $user,array $states,string $mode,int $actor,int $primary,?int $server=null,?int $category=null): array {
+    if (!achbotCustomerSaleAllowed($states,$actor,$primary) ||
+        !achbotPurchaseModeAllowed($user,$states,$mode) || !achbotCustomPurchaseEnabled($states,$mode)) return [];
+    $plans=achbotSaleablePlans($db,$server,$category);
+    if (achbotCustomerHasPaymentMethod($db,$actor,$states)) return $plans;
+    return array_values(array_filter($plans,static fn($p)=>
+        achbotCustomRatesAreZero($user,$states,(int)$p['id'],(int)$p['server_id'])));
+}
+
+/** Navigation offers the union of eligible standard and custom templates;
+ * each selection route independently enforces its own offering. */
+function achbotCustomerCataloguePlans(mysqli $db,array $user,array $states,string $mode,int $actor,int $primary,?int $server=null,?int $category=null): array {
+    $standard=achbotCustomerPurchasePlans($db,$user,$states,$mode,$actor,$primary,$server,$category);
+    $custom=achbotCustomerCustomPlans($db,$user,$states,$mode,$actor,$primary,$server,$category);
+    $plans=array_column(array_merge($standard,$custom),null,'id');
+    ksort($plans);
+    return array_values($plans);
+}
+
 /** Offer only purchasable plans. An authorized standard zero-price
  * command does not require a monetary method. Final authorization is locked
  * in CheckoutAdmission; this is read-only catalogue filtering. */
 function achbotCustomerPurchasePlans(mysqli $db,array $user,array $states,string $mode,int $actor,int $primary,?int $server=null,?int $category=null): array {
-    if (!achbotPurchaseModeAllowed($user,$states,$mode)) return [];
+    if (!achbotCustomerSaleAllowed($states,$actor,$primary) || !achbotPurchaseModeAllowed($user,$states,$mode)) return [];
     $plans=achbotSaleablePlans($db,$server,$category);
     if (achbotCustomerHasPaymentMethod($db,$actor,$states) || ($primary>0 && $actor===$primary)) return $plans;
     if (!achbotAgencyActive($user,$states) || ($states['sellState']??'off')!=='on') return [];

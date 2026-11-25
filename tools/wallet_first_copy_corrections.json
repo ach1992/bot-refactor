@@ -584,5 +584,21 @@
   "admin_settings.management.category_referenced": {
     "before": null,
     "after": "⚠️ این دسته‌بندی دارای پلن است و حذف نمی‌شود. ابتدا پلن‌های وابسته را تعیین تکلیف کنید."
+  },
+  "renewal.free_confirmation.volume": {
+    "after": "✅ افزایش حجم رایگان",
+    "before": null
+  },
+  "renewal.free_confirmation.renew": {
+    "after": "✅ تمدید رایگان",
+    "before": null
+  },
+  "renewal.free_confirmation.prompt": {
+    "after": "🧾 مبلغ نهایی این سفارش صفر تومان است. برای انجام عملیات، تأیید کنید.",
+    "before": null
+  },
+  "renewal.free_confirmation.day": {
+    "after": "✅ افزایش زمان رایگان",
+    "before": null
   }
 }

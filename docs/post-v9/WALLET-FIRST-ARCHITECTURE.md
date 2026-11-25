@@ -1453,7 +1453,8 @@ audience remains distinct from gateway active-entitlement classification.
   A single discount redemption route rechecks that same draft and its
   current admissible target before atomic price/counter updates. A
   redeemed draft cannot consume a second code; a zero-priced result
-  requires the existing Wallet admission. The renderer uses the
+  uses the free confirmation through the existing durable local funding
+  engine without any monetary method gate or debit. The renderer uses the
   original quantity, price and purchase mode, including Back navigation.
 - The retired shared-inbound availability menu and settings toggle have
   no supported Native saleable-plan meaning. Individual capacity and
@@ -1471,8 +1472,8 @@ audience remains distinct from gateway active-entitlement classification.
 Provider-supported active root-category plans and available servers share
 one structural offering query. A positive base price identifies standard
 purchase offerings; a zero base price identifies dedicated trials. A
-configured, enabled custom purchase may use either as a template, with
-its own units and price. The administrative bulk catalogue uses the same
+configured, enabled custom purchase uses a positive-base commercial
+template, with its own units and price. The administrative bulk catalogue uses the same
 structural eligibility, not the ordinary commercial price filter.
 
 Ordinary free trials require the current enabled trial setting, the
@@ -1482,11 +1483,21 @@ Primary-admin trials use their own exact update reference; administrative
 bulk provisioning rechecks the operations capability under the owner lock.
 Neither a stale button nor a caller-supplied admin flag authorizes creation.
 
-Standard zero-price commercial checkout for the primary administrator or
-a configured 100-percent agency discount is an original service command,
-not a trial. It preserves its plan, quantity and naming context. Its
-authorization is pinned at draft creation and rechecked under lock at
-first admission; no Wallet debit or trial consumption is required, even
-if Wallet is disabled. The existing confirmation button and service
-engine are reused. An already funded command retains its recovery
-semantics. Discount-code zero checkout retains its existing Wallet gate.
+Legitimate zero-effective commercial purchases (standard/custom), manual
+renewals and time/volume add-ons are original commercial service commands,
+not trials. A raw zero price must be authorized by the current eligible
+offer, configured custom rates or current agency entitlement, or the
+existing primary-administrator standard-purchase exception. A redeemed
+discount-code zero is proven by the atomically consumed original draft
+discount. No monetary method enablement or audience permission is needed
+for those commands. Only the approved free-confirmation button and
+existing navigation are displayed; no external payment attempt or Wallet
+debit is created. Positive-amount checkout retains its existing method
+selection. The existing command callbacks and durable service engine are
+reused; no second executor, new schema or compatibility layer is needed.
+
+Sales closure independently denies new ordinary commercial drafts and
+first admission of positive and zero unissued quotes. The trial setting,
+automatic-renewal opt-in policy and authorized administrative provisioning
+remain independent. Already issued receipt attempts and funded operations
+retain their immutable original evidence and recovery semantics.
