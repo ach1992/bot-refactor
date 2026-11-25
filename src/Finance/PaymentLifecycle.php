@@ -23,29 +23,41 @@ function achbotPayUxTable(mysqli $db, string $name): bool {
     }
 }
 
-/**
- * BOT_STATES stores bounded, per-instance policy in minutes/hours.
- * Invalid/missing values retain the last safe defaults. Never use zero to
- * disable a financial safety control or interpret a provider claim as paid.
- */
-function achbotPayUxPolicyNumber(string $field, int $default, int $min, int $max): int {
-    $states=$GLOBALS['botState'] ?? [];
-    if (!is_array($states)) return $default;
-    $raw=$states[$field] ?? null;
-    if (!(is_int($raw) || is_string($raw)) ||
-        !preg_match('/^[0-9]{1,5}$/D',(string)$raw)) return $default;
+/** Strictly bounded per-instance financial UX policy editor. */
+function achbotPaymentPolicyFields(): array {
+    return [
+        'paymentDraftMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.ca36f51ec1'),'default'=>30,'min'=>5,'max'=>180],
+        'paymentManualHours'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.9bd7de27ab'),'default'=>6,'min'=>1,'max'=>72],
+        'paymentHostedHours'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.7763855ebb'),'default'=>6,'min'=>1,'max'=>72],
+        'receiptApprovedMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.99467f1d89'),'default'=>10,'min'=>1,'max'=>1440],
+        'receiptApprovedOtherMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.c23b59a9e3'),'default'=>60,'min'=>1,'max'=>1440],
+        'receiptReviewMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.7b27bba920'),'default'=>360,'min'=>1,'max'=>1440],
+        'receiptDeclinedMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.5fea8ef738'),'default'=>3,'min'=>1,'max'=>1440],
+    ];
+}
+/** One validated policy value for the editor and runtime. */
+function achbotPaymentPolicyValue(string $field,$raw): ?int {
+    $definition=achbotPaymentPolicyFields()[$field]??null;
+    if ($definition===null || (!is_int($raw) && !is_string($raw)) ||
+        !preg_match('/^[0-9]{1,5}$/D',(string)$raw)) return null;
     $value=(int)$raw;
-    return ($value >= $min && $value <= $max) ? $value : $default;
+    return $value>=$definition['min'] && $value<=$definition['max']?$value:null;
+}
+function achbotPayUxPolicyNumber(string $field): int {
+    $definition=achbotPaymentPolicyFields()[$field]??null;
+    if ($definition===null) throw new InvalidArgumentException('payment_policy_unknown');
+    $states=$GLOBALS['botState']??[];
+    return achbotPaymentPolicyValue($field,is_array($states)?($states[$field]??null):null)??$definition['default'];
 }
 function achbotPayUxDraftDeadlineSeconds(): int {
-    return 60*achbotPayUxPolicyNumber('paymentDraftMinutes',30,5,180);
+    return 60*achbotPayUxPolicyNumber('paymentDraftMinutes');
 }
 function achbotPayUxManualDeadlineSeconds(): int {
-    return 3600*achbotPayUxPolicyNumber('paymentManualHours',6,1,72);
+    return 3600*achbotPayUxPolicyNumber('paymentManualHours');
 }
 function achbotPayUxHostedAttentionSeconds(): int {
     // This is a UI/link review deadline, NOT evidence that upstream is unpaid.
-    return 3600*achbotPayUxPolicyNumber('paymentHostedHours',6,1,72);
+    return 3600*achbotPayUxPolicyNumber('paymentHostedHours');
 }
 function achbotPayUxManualProvider(string $provider): bool {
     require_once __DIR__.'/ReceiptMethods.php';
@@ -533,11 +545,22 @@ function achbotPayUxMethodFlag(string $method,?string $subjectType): ?string {
 function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
                                      bool $final = false,
                                      ?string $subjectType = null): bool {
-    if ($userId<=0 || !array_key_exists($method,achbotPayUxAudienceMethods()))
-        return false;
     try {
         $states=$final?achbotPayUxCurrentStatesLocked($db):($GLOBALS['botState']??[]);
-        if (!is_array($states)) return false;
+        return is_array($states) && achbotPayUxAudienceAllowedInState($db,$method,$userId,$states,$final,$subjectType);
+    } catch (Throwable $error) {
+        error_log('achbot_gateway_audience_guard_deferred method='.$method.
+            ' code='.(int)$error->getCode().' class='.get_class($error));
+        return false;
+    }
+}
+
+/** A shared snapshot is supplied only by a caller owning the current
+ * settings lock when $final is true; never pass request state for admission. */
+function achbotPayUxAudienceAllowedInState(mysqli $db,string $method,int $userId,array $states,
+    bool $final=false,?string $subjectType=null): bool {
+    if ($userId<=0 || !array_key_exists($method,achbotPayUxAudienceMethods())) return false;
+    try {
         // Gateway availability is independent from the audience rule.
         // Only a final financial authorization requires persisted flags;
         // preview/menu checks remain presentation-only.

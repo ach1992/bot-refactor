@@ -43,16 +43,9 @@ if ($isMenu || $isPick) {
             answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.4d788a75be'), true);
             return;
         }
-        $options=achbotManualCryptoOptions((int)$from_id);
-        // A current grant is needed to create a new claim. Existing pinned
-        // claims remain visible for receipt/support even if policy changes.
-        if (!$previous) {
-            foreach ($options as $networkKey=>$candidate) {
-                if (!achbotPayUxAudienceAllowed($connection,
-                    (string)$candidate['provider'],(int)$from_id))
-                    unset($options[$networkKey]);
-            }
-        }
+        require_once __DIR__.'/../CheckoutAdmission.php';
+        $options=$previous?[]:achbotManualCryptoOptions(
+            achbotCheckoutDraftPaymentOptions($connection,$payId,(int)$from_id));
         if ($previous) {
             $intent=achbotManualIntentDecode((string)$previous['checkout_url'],
                                              (string)$previous['provider']);
@@ -62,9 +55,7 @@ if ($isMenu || $isPick) {
             }
             // Do not substitute a newly configured wallet for a pinned one.
             $originalNetwork=(string)($intent['network'] ?? '');
-            $tag=match ($originalNetwork) {
-                'BEP20'=>'b','TRC20'=>'c','ERC20'=>'e','TRON'=>'t',default=>null
-            };
+            $tag=achbotManualCryptoTag($originalNetwork);
             if ($tag===null) {
                 answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.5ce97176e4'), true);
                 return;
@@ -103,19 +94,8 @@ if ($isMenu || $isPick) {
             answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.93decba032'), true);
             return;
         }
-        $type=(string)$selectedPay['type'];
-        $target=match(true) {
-            $type==='INCREASE_WALLET' => 'payIncreaseWalletWithManualUsdt',
-            $type==='RENEW_ACCOUNT' => 'payRenewWithManualUsdt',
-            $type==='BUY_SUB' && ((int)$selectedPay['day']>0 || (int)$selectedPay['volume']>0)
-                => 'payCustomWithManualUsdt',
-            $type==='BUY_SUB' => 'payBuyWithManualUsdt',
-            preg_match('/^INCREASE_DAY_[0-9]+_[0-9]+$/D',$type)===1
-                => 'payIncreaseDayWithManualUsdt',
-            preg_match('/^INCREASE_VOLUME_[0-9]+_[0-9]+$/D',$type)===1
-                => 'payIncreaseWithManualUsdt',
-            default => null
-        };
+        $mode=achbotCheckoutMode($selectedPay);
+        $target=$mode===null?null:achbotCheckoutCallbackPrefix($mode).'WithManualUsdt';
         if ($target===null) {
             answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.fc9718b40b'), true);
             return;

@@ -236,7 +236,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
         if ($maxDiscount>0) $discountValue=min($maxDiscount,$discountValue);
         $discountValue=max(0,min($price,$discountValue));
         $newPrice=$price-$discountValue;
-        $view['payment_methods']=achbotCheckoutPaymentMethodsLocked($connection,(int)$from_id,$current['type'],$newPrice);
+        $view['payment_methods']=array_keys(achbotCheckoutPaymentOptionsLocked($connection,(int)$from_id,$current['type'],$newPrice));
         if ($newPrice>0 && !$view['payment_methods'])
             throw new DomainException('discount_no_monetary_method');
         $view['context']['discount_applied']=true;

@@ -195,6 +195,7 @@ REQUIRED_CURRENT_CASES = {
         "actual_public_zarinpal_checkout_and_return",
         "actual_public_nowpayment_checkout_and_return",
         "actual_browser_nowpayments_local_policy_validation_and_original_reopen",
+        "actual_browser_current_config_not_request_snapshot_and_original_receipt",
         "signed_child_verified_exact_quote_once",
         "actual_admission_lost_creation_original_secret_ipn_recovery_and_poll_once",
     ),
@@ -267,6 +268,8 @@ REQUIRED_SCENARIOS = {
         "configured_methods_shared_by_independent_topup_no_wallet_self_payment",
         "topup_invalid_config_audience_and_quote_unavailable",
         "nowpayments_local_policy_quote_validation_atomic_discount_and_zero",
+        "actual_crypto_submenu_and_manual_issuance_current_config_original_receipt",
+        "actual_renewal_hosted_navigation_current_method_configuration",
     ),
     "current_sales_discount": (
         "actual_sales_keyboard_net_completed_value_wallet_origin_and_original_windows",

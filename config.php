@@ -991,27 +991,12 @@ function getCategoriesKeys($offset = 0){
     $keys[] = [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "managePanel"]];
     return json_encode(['inline_keyboard'=>$keys]);
 }
-/** Strictly bounded per-instance financial UX policy editor. */
-function achbotPaymentPolicyFields(): array {
-    return [
-        'paymentDraftMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.ca36f51ec1'),'default'=>30,'min'=>5,'max'=>180],
-        'paymentManualHours'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.9bd7de27ab'),'default'=>6,'min'=>1,'max'=>72],
-        'paymentHostedHours'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.7763855ebb'),'default'=>6,'min'=>1,'max'=>72],
-        'receiptApprovedMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.99467f1d89'),'default'=>10,'min'=>1,'max'=>1440],
-        'receiptApprovedOtherMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.c23b59a9e3'),'default'=>60,'min'=>1,'max'=>1440],
-        'receiptReviewMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.7b27bba920'),'default'=>360,'min'=>1,'max'=>1440],
-        'receiptDeclinedMinutes'=>['label'=>\achbotMessage('admin_settings.config.payment_policy_fields.text.5fea8ef738'),'default'=>3,'min'=>1,'max'=>1440],
-    ];
-}
 function achbotPaymentPolicyKeyboard(): string {
     global $botState;
     $rows=[];
     $states=is_array($botState??null)?$botState:[];
     foreach (achbotPaymentPolicyFields() as $key=>$field) {
-        $value=$states[$key]??$field['default'];
-        if (!is_scalar($value) || !preg_match('/^[0-9]{1,5}$/D',(string)$value) ||
-            (int)$value<$field['min'] || (int)$value>$field['max'])
-            $value=$field['default'];
+        $value=achbotPaymentPolicyValue($key,$states[$key]??null)!==null?$states[$key]:$field['default'];
         $rows[]=[['text'=>$field['label'].': '.$value,
                  'callback_data'=>'editPaymentPolicy_'.$key]];
     }

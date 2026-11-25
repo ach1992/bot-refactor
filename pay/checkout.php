@@ -83,14 +83,6 @@ if(mysqli_num_rows($payInfo)==0){
     // provider claim remains available only for status/reconciliation.
     $checkoutMethod=isset($_GET['nowpayment']) ? 'nowpayments' :
         (isset($_GET['zarinpal']) ? 'zarinpal' : 'nextpay');
-    $stateFlag=$checkoutMethod==='nowpayments'
-        ? (((string)$payParam['type']==='INCREASE_WALLET') ? 'nowPaymentWallet' : 'nowPaymentOther')
-        : $checkoutMethod;
-    if (($botState[$stateFlag]??'off')!=='on' ||
-        !achbotPayUxAudienceAllowed($connection,$checkoutMethod,(int)$payParam['user_id'])) {
-        showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.32573bc25a'));
-        exit;
-    }
     // A hosted invoice can remain payable upstream after a stale bot link
     // is removed. Stop showing/redirecting to it at the attention deadline,
     // but preserve the exact provider claim for asynchronous reconciliation.
@@ -110,18 +102,9 @@ if(mysqli_num_rows($payInfo)==0){
         achbotCheckoutRequireSchema($connection);
         if (mysqli_num_rows($payInfo)!==1)
             throw new RuntimeException('checkout_original_hash_ambiguous');
-        $originalAttempt=achbotProviderRow($connection,'SELECT provider FROM payment_attempts WHERE pay_row_id=?','i',[(int)$payParam['id']]);
-        $s=achbotProviderStatement($connection,"SELECT value FROM setting WHERE type='PAYMENT_KEYS' LIMIT 2",'',[]);
-        $keysRows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
-        if (count($keysRows)!==1) throw new RuntimeException('checkout_merchant_config_ambiguous');
-        $keys=json_decode($keysRows[0]['value'],true,32,JSON_THROW_ON_ERROR);
-        if (!is_array($keys)) throw new RuntimeException('checkout_merchant_config_invalid');
-        $price=(int)$payParam['price'];$quote=['local_price'=>$price];
-        if ($checkoutMethod==='nowpayments' && $originalAttempt===null)
-            $quote=achbotNowpaymentsQuoteInput($price,$keys,get_defined_vars());
         $r=achbotHostedReceiptIssue($connection,(int)$payParam['id'],(int)$payParam['user_id'],
-            $checkoutMethod,null,$quote,$keys,$botUrl,payTypeToDescription($payParam['type']),
-            $botState,(string)($nowpaymentsIpnSecret??''));
+            $checkoutMethod,null,null,null,$botUrl,payTypeToDescription($payParam['type']),
+            $botState,is_string($nowpaymentsIpnSecret??null)?$nowpaymentsIpnSecret:null);
         if ($r['status']==='issued' && is_string($r['url']??null) && $r['url']!=='') {
             if ($checkoutMethod==='nowpayments' && !empty($r['newly_issued']))
                 achbotCheckoutNotifyHostedInvoice($connection,$payParam,$botUrl,$hash_id);
@@ -130,6 +113,10 @@ if(mysqli_num_rows($payInfo)==0){
         }
         showForm(achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.33526fc91c'),'review');
     } catch (Throwable $e) {
+        if ($e instanceof DomainException && $e->getMessage()==='checkout_method_unavailable') {
+            showForm(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.32573bc25a'));
+            exit;
+        }
         achbotDiagnosticEvent('achbot.finance.hosted_issue',['pay_id'=>(int)$payParam['id'],
             'provider'=>$checkoutMethod,'reason'=>'original_checkout_deferred','class'=>get_class($e)],'warning');
         showForm(achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.eaf7a98f3e'),'review');

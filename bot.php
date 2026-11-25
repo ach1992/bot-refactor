@@ -681,13 +681,13 @@ if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
 if (($from_id == $admin || (int)($userInfo['isAdmin']??0)===1) &&
     preg_match('/^paymentPolicyValue_([A-Za-z]+)$/D',(string)($userInfo['step']??''),$policyMatch) &&
     $text!==\achbotMessage('legacy_buttons.cancel')) {
-    $fields=achbotPaymentPolicyFields();$key=$policyMatch[1];
-    if (!isset($fields[$key]) || !preg_match('/^[0-9]{1,5}$/D',(string)$text) ||
-        (int)$text<$fields[$key]['min'] || (int)$text>$fields[$key]['max']) {
+    $key=$policyMatch[1];
+    $value=achbotPaymentPolicyValue($key,$text);
+    if ($value===null) {
         sendMessage(\achbotMessage('bot.bot.payment_policy_settings.message.bd6943ee9d'), $cancelKey, 'HTML');
         return;
     }
-    if (!setSettings($key,(int)$text)) {
+    if (!setSettings($key,$value)) {
         sendMessage(\achbotMessage('bot.bot.payment_policy_settings.message.ed51b4cad2'), $cancelKey, 'HTML');
         return;
     }

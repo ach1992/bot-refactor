@@ -132,9 +132,17 @@ case 'extensions':
     require $root.'/src/Finance/Routes/Extensions.php';break;
 case 'topup':
     require_once $root.'/src/Finance/WalletStart.php';
-    $events[]=['topup',startWalletPayment($connection,$botState,$botUrl,$from_id,$removeKeyboard,
+    $events[]=['topup',startWalletPayment($connection,$botUrl,$from_id,
         100000,(string)$userInfo['step'],(int)$update->update_id,$message_id)];
     break;
+case 'manual_crypto':
+    require $root.'/src/Finance/Routes/ManualCrypto.php';break;
+case 'manual_claim':
+    $pay=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=?','i',[(int)$spec['pay']]);
+    $events[]=['claim',achbotManualClaim($connection,$pay,$spec['method'],$from_id,$spec['network']??null,$spec['mode']??'standard')];
+    break;
+case 'renew_link':
+    require $root.'/src/Finance/Routes/PrePayment.php';break;
 case 'renew':
     require $root.'/src/Finance/Routes/RenewalCheckout.php';break;
 case 'discount':
@@ -170,7 +178,11 @@ def main():
         def run(op,**kw):
             args=['php','-d','allow_url_fopen=0','-d','disable_functions=curl_exec,fsockopen,pfsockopen,stream_socket_client,mail,exec,shell_exec,system,passthru,popen,proc_open',str(driver),str(ROOT),str(w/'mysql.sock'),DB,json.dumps(dict(op=op,**kw))]
             r=subprocess.run(args,env=env,capture_output=True,text=True,timeout=20)
-            assert r.returncode==0 and not r.stderr,(op,kw,r.returncode,r.stdout[-1200:],r.stderr[-1600:])
+            assert r.returncode==0,(op,kw,r.returncode,r.stdout[-1200:],r.stderr[-1600:])
+            for line in r.stderr.splitlines():
+                assert op=='manual_claim' and line.startswith('[AChBot] '),(op,line)
+                diagnostic=json.loads(line[len('[AChBot] '):])
+                assert diagnostic['event']=='achbot.finance.checkout_manual_admission_deferred',diagnostic
             return json.loads(r.stdout)
         def callbacks(r):
             out=[]
@@ -909,6 +921,58 @@ def main():
         assert sql(f"SELECT price,checkout_draft_context FROM pays WHERE id={pid}")==before
         assert sql("SELECT expire_count FROM discounts WHERE hash_id='npchanged'")=='2'
         cases.append('nowpayments_local_policy_quote_validation_atomic_discount_and_zero')
+        # Compare all method rows against established callback order and
+        # exact mode-specific labels, including positive volume price.
+        # Current crypto submenus and real issuance must ignore stale
+        # request snapshots. An original receipt must keep its destination.
+        state(walletState='off',manualUsdtState='on',cartToCartState='on')
+        crypto_keys=base_keys|{'manualUsdtWalletBEP20':'0x'+'a'*40,
+            'manualUsdtWalletERC20':'0x'+'b'*40,'manualUsdtRateToman':'1000',
+            'manualTrxWallet':'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb','manualTrxRateToman':'1000'}
+        sql("UPDATE setting SET value='"+json.dumps(crypto_keys)+"' WHERE type='PAYMENT_KEYS'")
+        r=run('standard',callback='selectPlan7_1_none');pid,h,_,_=latest(2001)
+        state(walletState='off',manualUsdtState='on',gatewayAudience={'manual_trx':'off'})
+        rr=run('manual_crypto',callback='mcm_'+h,stale_state={'manualUsdtState':'off'},stale_keys={'manualUsdtWalletBEP20':'invalid','manualUsdtWalletERC20':'invalid'})
+        assert callbacks(rr)==['mc_b_'+h,'mc_e_'+h,'mainMenu'],rr
+        before=sql("SELECT COUNT(*) FROM payment_attempts")
+        rr=run('manual_claim',pay=int(pid),method='manual_trx',network='TRON')
+        assert ['claim',False] in rr['events'] and sql("SELECT COUNT(*) FROM payment_attempts")==before,rr
+        rr=run('manual_claim',pay=int(pid),method='manual_usdt',network='BEP20',
+            stale_keys={'manualUsdtWalletBEP20':'0x'+'c'*40,'manualUsdtRateToman':'10000'})
+        assert ['claim',True] in rr['events'],rr
+        issued=sql(f"SELECT checkout_url,quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}").split('\t')
+        assert json.loads(issued[0])['wallet']=='0x'+'a'*40 and float(issued[1])==0.1 and len(issued[2])==64,issued
+        sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
+        state(walletState='off',manualUsdtState='off')
+        rr=run('manual_crypto',callback='mcm_'+h)
+        assert callbacks(rr)==['mc_b_'+h,'mainMenu'],rr
+        rr=run('manual_claim',pay=int(pid),method='manual_usdt',network='BEP20')
+        assert ['claim',True] in rr['events'],rr
+        assert sql(f"SELECT checkout_url,quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}").split('\t')==issued
+        # Newly configured method can disappear between menu and claim.
+        state(walletState='off',cartToCartState='on')
+        r=run('standard',callback='selectPlan7_1_none');pid,h,_,_=latest(2001)
+        sql("UPDATE setting SET value='{}' WHERE type='PAYMENT_KEYS'")
+        before=sql("SELECT COUNT(*) FROM payment_attempts")
+        rr=run('manual_claim',pay=int(pid),method='bank_transfer',stale_keys=base_keys)
+        assert ['claim',False] in rr['events'],rr
+        assert sql("SELECT COUNT(*) FROM payment_attempts")==before
+        assert sql(f"SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}")=='1'
+        cases.append('actual_crypto_submenu_and_manual_issuance_current_config_original_receipt')
+        # A previously displayed renewal link must use current local
+        # credentials; stale request policy cannot open a new merchant.
+        state(walletState='off',nextpay='on')
+        sql("UPDATE setting SET value='"+json.dumps(base_keys|{'nextpay':'fixture-merchant'})+"' WHERE type='PAYMENT_KEYS'")
+        r=run('renew',callback=f'renewAccount{oid}');pid,h,_,_=latest(2001)
+        cb='renewPay_nextpay_'+h
+        assert cb in callbacks(r),r
+        rr=run('renew_link',callback=cb,stale_state={'nextpay':'off'})
+        assert any('?nextpay&hash_id='+h in b.get('url','') for b in buttons(rr)),rr
+        sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
+        rr=run('renew_link',callback=cb,stale_keys={'nextpay':'stale'})
+        assert not any('?nextpay&hash_id='+h in b.get('url','') for b in buttons(rr)),rr
+        cases.append('actual_renewal_hosted_navigation_current_method_configuration')
+
         sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
         state()
 

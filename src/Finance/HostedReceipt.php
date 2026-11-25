@@ -137,12 +137,13 @@ function achbotHostedReceiptBindLocked(mysqli $db,int $payId,int $userId,array $
     return ['status'=>$pay['state']==='pending'?'issued':'closed','url'=>$url];
 }
 function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $method,?int $operationId,
-    array $quote,array $paymentKeys,string $botUrl,string $description,?array $draftStates=null,?string $ipnSecret=null): array {
+    ?array $quote,?array $paymentKeys,string $botUrl,string $description,?array $draftStates=null,?string $ipnSecret=null): array {
     achbotPaymentEvidenceRequireAutocommit($db);
     $def=achbotHostedReceiptDefinition($method);
     if ($def===null) throw new DomainException('hosted_method_unavailable');
     achbotHostedCallbackBase($botUrl);
     $credential=(string)($paymentKeys[$def['credential_setting']]??'');
+    $quote??=[];
     if (!$db->begin_transaction()) throw new RuntimeException('hosted_issue_begin');
     try {
         if ($draftStates!==null) {
@@ -150,10 +151,15 @@ function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
             achbotCheckoutRequireSchema($db);
             $pay=achbotCheckoutPayLocked($db,$payId,$userId);
             $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
-            if ($a===null && ((int)$pay['price']!==($quote['local_price']??null) ||
-                ($method==='nowpayments' && trim((string)$ipnSecret)==='')))
-                throw new DomainException('hosted_draft_quote_changed');
+            if ($a!==null && !achbotPayUxAudienceAllowed($db,$method,$userId,true,$pay['type']))
+                throw new DomainException('checkout_method_unavailable');
             $operationId=achbotCheckoutAdmitDraftLocked($db,$pay,$a,$method,$draftStates);
+            if ($a===null) {
+                $keys=achbotPayUxCurrentDocumentLocked($db,'PAYMENT_KEYS')??[];
+                $inputs=achbotHostedCheckoutInputs($def,(int)$pay['price'],$keys,
+                    ['nowpaymentsIpnSecret'=>$ipnSecret]+$GLOBALS);
+                $credential=$inputs['credential'];$quote=$inputs['quote'];
+            }
         }
         $r=achbotHostedReceiptReserveLocked($db,$payId,$userId,$method,$operationId,$quote,$credential,$ipnSecret);
         if (!$db->commit()) throw new RuntimeException('hosted_reservation_commit');

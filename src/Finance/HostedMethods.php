@@ -5,6 +5,29 @@ require_once __DIR__.'/GatewayClient.php';
 
 /** Provider-specific money quote, request and response contracts. None of
  * these functions knows a service operation, writes a Wallet or handles UI. */
+/** Provider-specific local quote inputs; one configuration path for
+ * discovery and first issuance. Never contact merchants for eligibility. */
+function achbotHostedTomanCheckoutInput(int $price,array $keys,array $configuration): array {
+    return ['local_price'=>$price];
+}
+function achbotHostedNowpaymentsCheckoutInput(int $price,array $keys,array $configuration): array {
+    $secret=$configuration['nowpaymentsIpnSecret']??null;
+    if (!is_string($secret) || trim($secret)==='')
+        throw new DomainException('checkout_ipn_secret_unavailable');
+    $rate=achbotUsdtRate($keys);
+    if ($rate===null) throw new DomainException('checkout_exchange_rate_unavailable');
+    $quote=['local_price'=>$price,'usd'=>number_format(round($price/$rate,2),2,'.','')];
+    if (array_key_exists('nowpaymentsSettlementPolicy',$configuration))
+        $quote['settlement_policy']=$configuration['nowpaymentsSettlementPolicy'];
+    return $quote;
+}
+function achbotHostedCheckoutInputs(array $def,int $price,array $keys,array $configuration): array {
+    $credential=$keys[$def['credential_setting']]??null;
+    if (!is_string($credential) || trim($credential)==='')
+        throw new DomainException('hosted_method_unavailable');
+    return ['credential'=>$credential,'quote'=>($def['checkout_input'])($price,$keys,$configuration)];
+}
+
 function achbotHostedTomanQuote(array $pay,array $quote): array {
     return ['amount'=>(string)$pay['price'],'currency'=>'toman','settlement_currency'=>null,'minimum'=>'0'];
 }

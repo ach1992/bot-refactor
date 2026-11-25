@@ -624,6 +624,7 @@ def main():
                 user_id BIGINT NOT NULL, part_no INT NOT NULL,kind VARCHAR(12), qr TEXT, caption TEXT, keys_json TEXT, mode VARCHAR(12)) ENGINE=InnoDB""")
 
             sql("INSERT INTO server_categories(id,title,parent,active) VALUES (1,'Fixture category',0,1)")
+            sql("INSERT INTO setting(type,value) VALUES ('PAYMENT_KEYS','{\"bankAccount\":\"fixture-bank\",\"holderName\":\"fixture-holder\"}')")
             sql("INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"renewAutoState\":\"on\",\"sellState\":\"on\",\"renewAccountState\":\"on\",\"increaseTimeState\":\"on\",\"increaseVolumeState\":\"on\",\"plandelkhahState\":\"on\",\"gbPrice\":10,\"dayPrice\":20}')")
             sql(f"""INSERT INTO server_config(id,panel_url,type,username,password)
                 VALUES (2,'{base}','pasarguard','fixture','fixture');

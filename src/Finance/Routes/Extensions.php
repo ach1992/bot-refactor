@@ -122,22 +122,10 @@ if(preg_match('/\AselectPlanDayIncrease(?<orderId>[1-9][0-9]{0,9})_(?<dayId>[1-9
     }
 
 
-    $keyboard = array();
     $free=(int)$planprice===0;
-    if ($free) {
-        require_once __DIR__.'/../../Purchase/CheckoutPresentation.php';
-        $keyboard[]=[achbotFreeCheckoutButton('day',$hash_id)];
-    } else {
-        $methods=achbotCheckoutDraftPaymentMethods($connection,$newDraftId,(int)$from_id);
-        if(in_array('bank_transfer',$methods,true)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cart_to_cart'),  'callback_data' => "payIncreaseDayWithCartToCart$hash_id"]];
-        if(in_array('gift_card',$methods,true)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.gift_card'), 'callback_data' => "payIncreaseDayWithGiftCard$hash_id"]];
-        if (in_array('manual_usdt',$methods,true) || in_array('manual_trx',$methods,true)) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
-        if(in_array('nowpayments',$methods,true)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'),  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
-        if(in_array('zarinpal',$methods,true)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'),  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
-        if(in_array('nextpay',$methods,true)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'),  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
-        if(in_array('wallet',$methods,true)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.pay_with_wallet'),  'callback_data' => "payIncreaseDayWithWallet$hash_id"]];
-
-    }
+    require_once __DIR__.'/../../Purchase/CheckoutPresentation.php';
+    $methods=$free?[]:array_keys(achbotCheckoutDraftPaymentOptions($connection,$newDraftId,(int)$from_id));
+    $keyboard=achbotCheckoutPaymentKeyboard('day',$hash_id,(int)$planprice,$methods,$botUrl);
     $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.cancel'), 'callback_data'=> "mainMenu"]];
     $sent=sendMessage($free?achbotMessage('renewal.free_confirmation.prompt'):\achbotMessage('renewal.extensions.message.48930749a9'),
         json_encode(['inline_keyboard'=>$keyboard]),'HTML',$from_id);
@@ -494,25 +482,10 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
 	    return;
 	}
 
-    $keyboard = array();
     $free=(int)$planprice===0;
-    if ($free) {
-        require_once __DIR__.'/../../Purchase/CheckoutPresentation.php';
-        $keyboard[]=[achbotFreeCheckoutButton('volume',$hash_id)];
-    } else {
-        $methods=achbotCheckoutDraftPaymentMethods($connection,$newDraftId,(int)$from_id);
-        $planprice = " " . number_format($planprice) . \achbotMessage('renewal.extensions.text.2cc98f7f7c');
-
-
-        if(in_array('bank_transfer',$methods,true)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cart_to_cart') . $planprice,  'callback_data' => "payIncreaseWithCartToCart$hash_id"]];
-        if(in_array('gift_card',$methods,true)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.gift_card'), 'callback_data' => "payIncreaseWithGiftCard$hash_id"]];
-        if (in_array('manual_usdt',$methods,true) || in_array('manual_trx',$methods,true)) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
-        if(in_array('nowpayments',$methods,true)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'),  'url' => $botUrl . "pay/checkout.php?nowpayment&hash_id=" . $hash_id]];
-        if(in_array('zarinpal',$methods,true)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'),  'url' => $botUrl . "pay/checkout.php?zarinpal&hash_id=" . $hash_id]];
-        if(in_array('nextpay',$methods,true)) $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'),  'url' => $botUrl . "pay/checkout.php?nextpay&hash_id=" . $hash_id]];
-        if(in_array('wallet',$methods,true)) $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.5adbd64a32') . $planprice,  'callback_data' => "payIncreaseWithWallet$hash_id"]];
-
-    }
+    require_once __DIR__.'/../../Purchase/CheckoutPresentation.php';
+    $methods=$free?[]:array_keys(achbotCheckoutDraftPaymentOptions($connection,$newDraftId,(int)$from_id));
+    $keyboard=achbotCheckoutPaymentKeyboard('volume',$hash_id,(int)$planprice,$methods,$botUrl);
     $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.cancel'), 'callback_data'=> "mainMenu"]];
     $sent=sendMessage($free?achbotMessage('renewal.free_confirmation.prompt'):\achbotMessage('renewal.extensions.message.48930749a9'),
         json_encode(['inline_keyboard'=>$keyboard]),'HTML',$from_id);

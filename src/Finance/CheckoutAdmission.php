@@ -332,62 +332,66 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
     return achbotServiceQuoteRequest($q);
 }
 
-/** Configured, audience-eligible monetary methods for a positive service
- * quote. Never probe merchants or claim future payment success. Final use
- * holds the owner/draft/settings locks. Return names only, never keys. */
-function achbotCheckoutPaymentMethodsLocked(mysqli $db,int $actor,string $type,int $price): array {
+/** Configured audience-eligible methods for a positive quote; safe
+ * network names only. The same pure configuration/quote builders are used
+ * when issuing the original invoice, with no provider HTTP under locks. */
+function achbotCheckoutPaymentOptionsLocked(mysqli $db,int $actor,string $type,int $price): array {
     if ($price<=0) return [];
     $states=achbotPayUxCurrentStatesLocked($db)??[];
-    $keys=null;
-    $methods=[];
+    $keys=null;$methods=[];
     foreach (achbotPayUxAudienceMethods() as $method=>$label) {
         if ($type==='INCREASE_WALLET' && $method==='wallet') continue;
-        $flag=achbotPayUxMethodFlag($method,$type);
-        if ($flag===null || ($states[$flag]??'off')!=='on') continue;
-        if (!achbotPayUxAudienceAllowed($db,$method,$actor,true,$type)) continue;
+        if (!achbotPayUxAudienceAllowedInState($db,$method,$actor,$states,true,$type)) continue;
+        $networks=[];
         if ($method!=='wallet') {
             $keys??=achbotPayUxCurrentDocumentLocked($db,'PAYMENT_KEYS')??[];
             $def=achbotCreditMethodRegistry()[$method]??[];
             if (isset($def['manual_quote'])) {
-                if (!achbotManualEnabled($method,$states,$keys)) continue;
+                $configured=achbotManualConfigurations($method,$keys);
+                if (!$configured) continue;
+                $networks=array_values(array_filter(array_keys($configured),static fn($network)=>$network!==''));
             } elseif (isset($def['hosted'])) {
-                $credential=$keys[$def['hosted']['credential_setting']]??null;
-                if (!is_string($credential) || trim($credential)==='') continue;
-                if ($method==='nowpayments') {
-                    $secret=$GLOBALS['nowpaymentsIpnSecret']??null;
-                    if (!is_scalar($secret) || trim((string)$secret)==='') continue;
-                    try {
-                        ($def['hosted']['quote'])(['price'=>$price],
-                            achbotNowpaymentsQuoteInput($price,$keys,$GLOBALS));
-                    } catch (DomainException $e) {continue;}
-                }
+                try {
+                    $inputs=achbotHostedCheckoutInputs($def['hosted'],$price,$keys,$GLOBALS);
+                    ($def['hosted']['quote'])(['price'=>$price],$inputs['quote']);
+                } catch (DomainException $e) {continue;}
             } else continue;
         }
-        $methods[]=$method;
+        $methods[$method]=$networks;
     }
     return $methods;
 }
 
-/** The non-discount add-on/top-up cards share the same eligibility snapshot.
- * Use the committed owner/draft, never a stale route price or request flags. */
-function achbotCheckoutDraftPaymentMethods(mysqli $db,int $id,int $actor): array {
+/** Common eligibility for an unclaimed current draft. The caller owns
+ * the owner/draft locks; existing issued/funded recovery never uses this. */
+function achbotCheckoutUnclaimedViewLocked(mysqli $db,array $pay,int $actor): void {
+    $id=(int)$pay['id'];
+    if ((int)$pay['user_id']!==$actor || $pay['checkout_operation_id']!==null ||
+        !achbotPayUxCurrentDraft($pay) || !achbotPayUxUnclaimedDraftUsable($db,$pay,true) ||
+        achbotProviderRow($db,'SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]) ||
+        achbotProviderRow($db,'SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]))
+        throw new DomainException('checkout_view_closed');
+}
+
+/** Shared read-only snapshot for add-ons, top-ups and method submenus.
+ * Keys are method names; only crypto entries contain safe network names. */
+function achbotCheckoutDraftPaymentOptions(mysqli $db,int $id,int $actor): array {
     $begun=false;
     try {
         if (!$db->begin_transaction()) throw new RuntimeException('checkout_view_begin');
         $begun=true;
         achbotPayUxLockDraftOwner($db,$actor);
         $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=? AND user_id=? FOR UPDATE','ii',[$id,$actor]);
-        $methods=[];
-        if ($pay && $pay['checkout_operation_id']===null && achbotPayUxCurrentDraft($pay) &&
-            achbotPayUxUnclaimedDraftUsable($db,$pay,true) &&
-            !achbotProviderRow($db,'SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]))
-            $methods=achbotCheckoutPaymentMethodsLocked($db,$actor,$pay['type'],(int)$pay['price']);
+        if (!$pay) throw new DomainException('checkout_view_missing');
+        achbotCheckoutUnclaimedViewLocked($db,$pay,$actor);
+        $methods=achbotCheckoutPaymentOptionsLocked($db,$actor,$pay['type'],(int)$pay['price']);
         $db->rollback();
         return $methods;
     } catch (Throwable $e) {
         if ($begun) try {$db->rollback();} catch (Throwable $ignored) {}
-        achbotDiagnosticEvent('achbot.finance.checkout_view_deferred',[
-            'pay_id'=>$id,'actor_id'=>$actor]+achbotDiagnosticLocalFailure($e),'warning');
+        if (!($e instanceof DomainException))
+            achbotDiagnosticEvent('achbot.finance.checkout_view_deferred',[
+                'pay_id'=>$id,'actor_id'=>$actor]+achbotDiagnosticLocalFailure($e),'warning');
         return [];
     }
 }
@@ -396,16 +400,10 @@ function achbotCheckoutDraftPaymentMethods(mysqli $db,int $id,int $actor): array
  * and capture the exact display context. Caller holds owner and pay locks.
  * No external I/O, no new operation, no Wallet write. */
 function achbotCheckoutDraftViewLocked(mysqli $db,array $pay,int $actor,array $states): array {
-    $id=(int)$pay['id'];
-    if ((int)$pay['user_id']!==$actor || $pay['checkout_operation_id']!==null ||
-        !achbotPayUxCurrentDraft($pay) || !achbotPayUxUnclaimedDraftUsable($db,$pay,true) ||
-        achbotProviderRow($db,'SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]) ||
-        achbotProviderRow($db,'SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]))
-        throw new DomainException('checkout_view_closed');
-    $mode=null;
-    foreach (['standard','custom','renew'] as $candidate)
-        if (achbotCheckoutModeMatchesRequest($pay,$candidate)) {$mode=$candidate;break;}
-    if ($mode===null) throw new DomainException('checkout_view_subject_invalid');
+    achbotCheckoutUnclaimedViewLocked($db,$pay,$actor);
+    $mode=achbotCheckoutMode($pay);
+    if (!in_array($mode,['standard','custom','renew'],true))
+        throw new DomainException('checkout_view_subject_invalid');
     $q=achbotCheckoutDraftRequestLocked($db,$pay,$states);
     $local=achbotServiceLocalTargetLocked($db,$actor,$q,true);
     $target=$local['identity'];$adapter=achbotProviderDefinition($target['provider']);
@@ -439,7 +437,7 @@ function achbotCheckoutDraftView(mysqli $db,int $id,int $actor,array $states): ?
         $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=? AND user_id=? FOR UPDATE','ii',[$id,$actor]);
         if (!$pay) throw new DomainException('checkout_view_missing');
         $view=achbotCheckoutDraftViewLocked($db,$pay,$actor,$states);
-        $view['payment_methods']=achbotCheckoutPaymentMethodsLocked($db,$actor,$pay['type'],(int)$pay['price']);
+        $view['payment_methods']=array_keys(achbotCheckoutPaymentOptionsLocked($db,$actor,$pay['type'],(int)$pay['price']));
         $db->rollback();return $view;
     } catch (Throwable $e) {
         if ($begun) try {$db->rollback();} catch (Throwable $ignored) {}
@@ -469,9 +467,10 @@ function achbotCheckoutAdmitDraftLocked(mysqli $db,array $pay,?array $attempt,
     $context=json_decode((string)$pay['checkout_draft_context'],true,32,JSON_THROW_ON_ERROR);
     $freeCommercial=achbotCheckoutZeroAuthorizedLocked($db,$pay,$context);
     if (!achbotPayUxUnclaimedDraftUsable($db,$pay,true) ||
-        (!$freeCommercial && !achbotPayUxAudienceAllowed($db,$method,$uid,true,$pay['type'])) ||
         ((int)$pay['price']<0 || ($method!=='wallet' && (int)$pay['price']===0)) || !preg_match('/\A[A-Za-z0-9_-]{1,50}\z/D',$pay['hash_id']))
         throw new DomainException('checkout_draft_unavailable');
+    if (!$freeCommercial && !achbotPayUxAudienceAllowed($db,$method,$uid,true,$pay['type']))
+        throw new DomainException('checkout_method_unavailable');
     if (achbotProviderRow($db,'SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]))
         throw new DomainException('checkout_historical_effect_pending');
     if ($pay['type']==='INCREASE_WALLET') {
@@ -514,6 +513,19 @@ function achbotCheckoutAdmitDraftLocked(mysqli $db,array $pay,?array $attempt,
 }
 
 /** Exact persisted callback family; no external renewal route. */
+function achbotCheckoutCallbackPrefix(string $mode): ?string {
+    return match($mode) {
+        'standard'=>'payBuy','custom'=>'payCustom','renew'=>'payRenew',
+        'day'=>'payIncreaseDay','volume'=>'payIncrease','topup'=>'payIncreaseWallet',
+        default=>null
+    };
+}
+function achbotCheckoutMode(array $pay): ?string {
+    foreach (['standard','custom','renew','day','volume','topup'] as $mode)
+        if (achbotCheckoutModeMatchesRequest($pay,$mode)) return $mode;
+    return null;
+}
+
 function achbotCheckoutModeMatchesRequest(array $pay,string $mode): bool {
     $type=(string)($pay['type']??'');
     return match($mode) {

@@ -33,21 +33,21 @@ function achbotCreditMethodRegistry(): array {
         'nowpayments'=>['label'=>static fn()=>achbotMessage('automatic_gateway_review.provider_nowpayments'),
             'invoice'=>'achbotCreditValidateUsdInvoice','proofs'=>[
             'nowpayments'=>'achbotCreditVerifyNowpaymentsLocked','manual'=>'achbotCreditVerifyHostedAttestationLocked'],'additional_evidence'=>true,
-            'hosted'=>['credential_setting'=>'nowpayment','quote'=>'achbotHostedUsdQuote',
+            'hosted'=>['credential_setting'=>'nowpayment','checkout_input'=>'achbotHostedNowpaymentsCheckoutInput','quote'=>'achbotHostedUsdQuote',
                 'issue'=>'achbotHostedNowpaymentsIssue','verify'=>'achbotHostedNowpaymentsVerify',
                 'url'=>'achbotHostedNowpaymentsUrl','reference'=>'achbotHostedChildReference',
                 'child_transactions'=>true]],
         'nextpay'=>['label'=>static fn()=>achbotMessage('automatic_gateway_review.provider_nextpay'),
             'invoice'=>'achbotCreditValidateTomanInvoice','proofs'=>[
             'nextpay'=>'achbotCreditVerifyNextpayLocked','manual'=>'achbotCreditVerifyHostedAttestationLocked'],'additional_evidence'=>true,
-            'hosted'=>['credential_setting'=>'nextpay','quote'=>'achbotHostedTomanQuote',
+            'hosted'=>['credential_setting'=>'nextpay','checkout_input'=>'achbotHostedTomanCheckoutInput','quote'=>'achbotHostedTomanQuote',
                 'issue'=>'achbotHostedNextpayIssue','verify'=>'achbotHostedNextpayVerify',
                 'url'=>'achbotHostedNextpayUrl','reference'=>'achbotHostedExactReference',
                 'child_transactions'=>false]],
         'zarinpal'=>['label'=>static fn()=>achbotMessage('automatic_gateway_review.provider_zarinpal'),
             'invoice'=>'achbotCreditValidateTomanInvoice','proofs'=>[
             'zarinpal'=>'achbotCreditVerifyZarinpalLocked','manual'=>'achbotCreditVerifyHostedAttestationLocked'],'additional_evidence'=>true,
-            'hosted'=>['credential_setting'=>'zarinpal','quote'=>'achbotHostedTomanQuote',
+            'hosted'=>['credential_setting'=>'zarinpal','checkout_input'=>'achbotHostedTomanCheckoutInput','quote'=>'achbotHostedTomanQuote',
                 'issue'=>'achbotHostedZarinpalIssue','verify'=>'achbotHostedZarinpalVerify',
                 'url'=>'achbotHostedZarinpalUrl','reference'=>'achbotHostedExactReference',
                 'child_transactions'=>false]],
@@ -70,7 +70,7 @@ function achbotCreditMethodDefinition(string $key): ?array {
         if (!is_array($h) || !is_string($h['credential_setting']??null) ||
             $h['credential_setting']==='' || !is_bool($h['child_transactions']??null) ||
             !isset($method['proofs'][$key])) return null;
-        foreach (['quote','issue','verify','url','reference'] as $callback)
+        foreach (['checkout_input','quote','issue','verify','url','reference'] as $callback)
             if (!is_callable($h[$callback]??null)) return null;
     }
     return $method;

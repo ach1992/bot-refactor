@@ -120,15 +120,7 @@ if (!function_exists('achbotWalletTopupSentMessageId')) {
     }
 }
 
-if (!function_exists('achbotWalletTopupAmountProblem')) {
-    function achbotWalletTopupAmountProblem($amount): ?string {
-        if ($amount === null) return \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.label.7fab54f38e');
-        if ($amount < 100000) return \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.label.a5b8f4d84e');
-        if ($amount > 10000000) return \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.label.2ee8d817fc');
-        if ($amount % 50000 !== 0) return \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.label.9185f287a6');
-        return null;
-    }
-}
+require_once __DIR__.'/../WalletStart.php';
 
 // A fresh, private menu callback reserves a unique update identity BEFORE
 // sending choices. Only the sent bot prompt's message_id authorizes buttons.
@@ -202,8 +194,8 @@ if (strpos($data, 'increaseWallet_') === 0) {
         sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.778b5776b6'), null, 'HTML');
         return;
     }
-    $result = startWalletPayment($connection, $botState, $botUrl,
-        $from_id, $removeKeyboard, $amount, $selectStep,
+    $result = startWalletPayment($connection, $botUrl,
+        $from_id, $amount, $selectStep,
         $update->update_id, $message_id);
     if ($result === 'created') {
         achbotWalletTopupRetirePrompt();
@@ -264,8 +256,8 @@ if ($text != (\achbotMessage('legacy_buttons.cancel') ?? null) &&
         sendMessage($problem);
         return;
     }
-    $result = startWalletPayment($connection, $botState, $botUrl,
-        $from_id, $removeKeyboard, $amount, $amountStep,
+    $result = startWalletPayment($connection, $botUrl,
+        $from_id, $amount, $amountStep,
         $update->update_id, $message_id);
     if ($result === 'review') {
         sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.983d706c66'), null, 'HTML');

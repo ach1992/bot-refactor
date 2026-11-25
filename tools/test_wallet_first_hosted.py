@@ -57,6 +57,8 @@ $nowpaymentsIpnSecret='fixture-ipn';
 if (array_key_exists('settlement_policy',$c)) $nowpaymentsSettlementPolicy=$c['settlement_policy'];
 $botState=json_decode($db->query("SELECT value FROM setting WHERE type='BOT_STATES' LIMIT 1")->fetch_row()[0]??'{}',true);
 $botState['rewardChannel']='@fixture_report';
+if (isset($c['stale_state'])) $botState=array_replace($botState,$c['stale_state']);
+if (isset($c['stale_keys'])) $paymentKeys=array_replace($paymentKeys,$c['stale_keys']);
 function sendMessage(...$args){return (object)['ok'=>true,'result'=>(object)['message_id'=>572]];}
 if ($c['op']==='browser_issue') {
     // The actual public script calls exit; capture its final status without
@@ -378,7 +380,8 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                 # Production-style pinned method selection for a topup and
                 # lost invoice creation response recovered by original signed IPN.
                 sql("DELETE FROM setting WHERE type='BOT_STATES'; INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"nowPaymentWallet\":\"on\"}')")
-                pid=seed(mode+'-signed-recovery')
+                sql("DELETE FROM setting WHERE type='PAYMENT_KEYS'; INSERT INTO setting(type,value) VALUES ('PAYMENT_KEYS','{\"nowpayment\":\"np-original\",\"manualUsdtRateToman\":100}')")
+                pid=seed(mode+'-signed-recovery',price=205)
                 ref=mode+'-recovered-invoice';child=mode+'-recovered-child'
                 responses['/np/issue']=(503,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
                 b=bal();start=len(calls)
@@ -399,9 +402,9 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                 sql("UPDATE payment_transactions SET merchant_checked_at=NOW()")
                 sql(f"UPDATE payment_transactions SET merchant_checked_at=NULL WHERE payment_id='{child}'")
                 r=result(mode,'maintain')
-                assert r['completed']==1 and bal()==b+100 and calls[-1][3]=='np-original',r
+                assert r['completed']==1 and bal()==b+205 and calls[-1][3]=='np-original',r
                 assert sql(f"SELECT merchant_verified_at IS NOT NULL FROM payment_transactions WHERE payment_id='{child}'")=='1'
-                assert result(mode,'maintain')['completed']==0 and bal()==b+100
+                assert result(mode,'maintain')['completed']==0 and bal()==b+205
                 case('actual_admission_lost_creation_original_secret_ipn_recovery_and_poll_once')
                 # Source-real public checkout and browser return controllers.
                 sql("DELETE FROM setting WHERE type IN ('BOT_STATES','PAYMENT_KEYS'); INSERT INTO setting(type,value) VALUES ('BOT_STATES','{\"nowPaymentWallet\":\"on\",\"nextpay\":\"on\",\"zarinpal\":\"on\"}'),('PAYMENT_KEYS','{\"nextpay\":\"next-original\",\"zarinpal\":\"zarin-original\",\"nowpayment\":\"np-original\",\"manualUsdtRateToman\":100}')")
@@ -479,6 +482,33 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                 assert sql(f"SELECT quote_amount,settlement_currency,minimum_settlement_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}").split('\t')==original
                 assert len(calls)==start+1 and bal()==before
                 case('actual_browser_nowpayments_local_policy_validation_and_original_reopen')
+                # HTTP entry and locked issuer must not disagree on method
+                # flags or merchant credentials due to cached request state.
+                name=mode+'-browser-current-config';pid=seed(name,price=205)
+                ref=name+'-ref';responses['/np/issue']=(200,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
+                start=len(calls);before=bal()
+                r=result(mode,'browser_issue',flag='nowpayment',hash=name,
+                    stale_state={'nowPaymentWallet':'off'},stale_keys={'nowpayment':'old','manualUsdtRateToman':1000})
+                assert r['status']==302 and len(calls)==start+1 and calls[-1][3]=='np-original',r
+                assert Decimal(sql(f"SELECT quote_amount FROM payment_attempts WHERE pay_row_id={pid}"))==Decimal('2.05')
+                # An existing pin can reopen without a current credential,
+                # but disabling its link remains independent of recovery.
+                sql("UPDATE setting SET value='{}' WHERE type='PAYMENT_KEYS'")
+                assert result(mode,'browser_issue',flag='nowpayment',hash=name)['status']==302
+                assert len(calls)==start+1 and bal()==before
+                sql("UPDATE setting SET value=JSON_SET(value,'$.nowPaymentWallet','off') WHERE type='BOT_STATES'")
+                assert result(mode,'browser_issue',flag='nowpayment',hash=name,stale_state={'nowPaymentWallet':'on'})['status']!=302
+                assert len(calls)==start+1
+                name=mode+'-browser-disabled-current';pid=seed(name,price=205)
+                assert result(mode,'browser_issue',flag='nowpayment',hash=name,stale_state={'nowPaymentWallet':'on'})['status']!=302
+                assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
+                sql("UPDATE setting SET value=JSON_SET(value,'$.nowPaymentWallet','on') WHERE type='BOT_STATES'")
+                assert result(mode,'browser_issue',flag='nowpayment',hash=name,
+                    stale_keys={'nowpayment':'np-original','manualUsdtRateToman':100})['status']!=302
+                assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
+                assert len(calls)==start+1 and bal()==before
+                case('actual_browser_current_config_not_request_snapshot_and_original_receipt')
+
 
             assert not errors,errors
         finally:server.shutdown();server.server_close();thread.join(timeout=5)

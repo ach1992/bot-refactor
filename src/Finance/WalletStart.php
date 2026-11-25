@@ -79,17 +79,25 @@ function achbotWalletTopupAdvance(mysqli $db, int $actorId, ?string $expected,
     }
 }
 
+/** Approved top-up amount policy, shared by validation and draft creation. */
+function achbotWalletTopupAmountProblem($amount): ?string {
+    if (!is_int($amount)) return \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.label.7fab54f38e');
+    if ($amount < 100000) return \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.label.a5b8f4d84e');
+    if ($amount > 10000000) return \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.label.2ee8d817fc');
+    if ($amount % 50000 !== 0) return \achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.label.9185f287a6');
+    return null;
+}
+
 /**
  * Exactly one authorized amount submission creates a draft. Keep the user
  * stage claim, unclaimed-draft cleanup and INSERT inside ONE transaction.
  * Telegram messages are sent only after a verified COMMIT, never inside locks.
  */
-function startWalletPayment(mysqli $connection, $botState, $botUrl,
-                            $from_id, $removeKeyboard, $amount,
+function startWalletPayment(mysqli $connection, $botUrl,
+                            $from_id, $amount,
                             string $expectedStep, int $updateId, int $sourceMessageId): string {
     $actor = (int)$from_id;
-    if (!is_int($amount) || $amount < 100000 || $amount > 10000000 ||
-        $amount % 50000 !== 0 || $actor <= 0 || $updateId <= 0 ||
+    if (achbotWalletTopupAmountProblem($amount)!==null || $actor <= 0 || $updateId <= 0 ||
         $sourceMessageId <= 0 ||
         !preg_match('/\AachbotWalletTopup:(?:choose|amount):[1-9][0-9]*:[1-9][0-9]*:[1-9][0-9]*\z/D',
                     $expectedStep)) {
@@ -146,20 +154,9 @@ function startWalletPayment(mysqli $connection, $botState, $botUrl,
         return 'review';
     }
 
-    $methods=achbotCheckoutDraftPaymentMethods($connection,$draftId,$actor);
-    $keyboard = [];
-    if (in_array('bank_transfer',$methods,true))
-        $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cart_to_cart'), 'callback_data' => "payIncreaseWalletWithCartToCart$hash_id"]];
-    if (in_array('gift_card',$methods,true))
-        $keyboard[] = [['text' => \achbotMessage('legacy_buttons.gift_card'), 'callback_data' => "payIncreaseWalletWithGiftCard$hash_id"]];
-    if (in_array('manual_usdt',$methods,true) || in_array('manual_trx',$methods,true))
-        $keyboard[] = [['text' => \achbotMessage('wallet.wallet_start.start_wallet_payment.button.e729457ba2'), 'callback_data' => "mcm_$hash_id"]];
-    if (in_array('nowpayments',$methods,true))
-        $keyboard[] = [['text' => \achbotMessage('legacy_buttons.now_payment_gateway'), 'url' => $botUrl . 'pay/checkout.php?nowpayment&hash_id=' . $hash_id]];
-    if (in_array('zarinpal',$methods,true))
-        $keyboard[] = [['text' => \achbotMessage('legacy_buttons.zarinpal_gateway'), 'url' => $botUrl . 'pay/checkout.php?zarinpal&hash_id=' . $hash_id]];
-    if (in_array('nextpay',$methods,true))
-        $keyboard[] = [['text' => \achbotMessage('legacy_buttons.nextpay_gateway'), 'url' => $botUrl . 'pay/checkout.php?nextpay&hash_id=' . $hash_id]];
+    require_once __DIR__.'/../Purchase/CheckoutPresentation.php';
+    $methods=array_keys(achbotCheckoutDraftPaymentOptions($connection,$draftId,$actor));
+    $keyboard=achbotCheckoutPaymentKeyboard('topup',$hash_id,$amount,$methods,$botUrl);
     $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cancel'), 'callback_data' => 'mainMenu']];
     $keys = json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);
     try {

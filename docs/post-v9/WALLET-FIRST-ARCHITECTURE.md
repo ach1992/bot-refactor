@@ -1465,15 +1465,28 @@ audience remains distinct from gateway active-entitlement classification.
   payment configuration. A positive residual without any eligible method
   leaves price, context, counters and usage unchanged; the existing code
   button is retained for retry with the approved explanation. A zero
-  residual bypasses the monetary-method test. Positive time/volume add-ons
-  and Wallet recharge read the same locked list from the committed draft;
-  recharge keeps its own NOWPayments flag and never offers Wallet payment
-  for itself. The existing hosted USD quote input and pure validation
-  (including an explicitly configured optional payout policy) are shared
-  with initial NOWPayments issuance; no network or payment effect is
-  needed to discover eligibility. Original issued attempts retain their
-  pinned quote. A locally eligible method is not a claim of merchant
-  acceptance or sufficient Wallet balance.
+  residual bypasses the monetary-method test. Positive time/volume add-ons,
+  Wallet recharge, manual crypto network selection and new renewal gateway
+  navigation read the same locked options from the committed draft.
+  The shared unclaimed-draft guard excludes issued attempts and prior
+  service effects. A single payment keyboard builder covers standard,
+  custom, renewal, day/volume and recharge modes without changing their
+  approved labels, order or callbacks. Recharge keeps its own NOWPayments
+  flag and never offers Wallet payment for itself.
+  Method discovery returns only method identifiers and available network
+  names. First customer invoice issuance uses current persisted method
+  configuration under the admission transaction, rather than request
+  snapshots. Manual destination validation and hosted checkout input/quote
+  validation (including an explicitly configured optional NOWPayments
+  payout policy) are shared with discovery. No network or payment effect
+  is needed to discover eligibility. Original issued attempts retain
+  their pinned quote and independent settlement/recovery path. A locally
+  eligible method is not a claim of merchant acceptance or sufficient
+  Wallet balance.
+  Existing payment expiry/review/cooldown policy definitions are shared
+  between admin settings and the runtime; the top-up amount validator is
+  shared between input and admission. Existing configured ranges and
+  business rules are unchanged.
 - The retired shared-inbound availability menu and settings toggle have
   no supported Native saleable-plan meaning. Individual capacity and
   purchase selection share the current provider-validated active

@@ -23,7 +23,6 @@ function achbotManualReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
             achbotCheckoutRequireSchema($db);
             if ($expectedMode!==null && !achbotCheckoutModeMatchesRequest($pay,$expectedMode))
                 throw new DomainException('checkout_draft_unavailable');
-            if ($a===null && !achbotManualEnabled($method)) throw new DomainException('manual_method_unavailable');
             $operationId=achbotCheckoutAdmitDraftLocked($db,$pay,$a,$method,$draftStates);
             // Read back the exact committed-in-this-transaction binding.
             $pay=achbotCheckoutPayLocked($db,$payId,$userId);
@@ -45,7 +44,12 @@ function achbotManualReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
                 (int)$pay['price']<=0 || $pay['hash_id']==='')
                 throw new DomainException('manual_draft_unavailable');
             achbotCheckoutValidateOriginalLocked($db,$pay,$userId,$operationId);
-            $money=($def['manual_quote'])($db,$userId,(int)$pay['price'],$method,$network);
+            // New customer admission reads the current persisted document
+            // under the same transaction. Prepared internal commands supply
+            // their trusted configuration; an existing pin reads neither.
+            $keys=$draftStates!==null?(achbotPayUxCurrentDocumentLocked($db,'PAYMENT_KEYS')??[]):
+                (array)($GLOBALS['paymentKeys']??[]);
+            $money=($def['manual_quote'])((int)$pay['price'],$method,$network,$keys);
             $s=achbotProviderStatement($db,"INSERT INTO payment_attempts
                 (pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,
                 settlement_currency,checkout_url,stage,wallet_invoice_sha256,service_operation_id)

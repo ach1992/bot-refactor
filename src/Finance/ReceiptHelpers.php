@@ -79,30 +79,6 @@ function achbotUsdtRate(?array $keys=null): ?float {
     return achbotUsdtRateValue($keys['manualUsdtRateToman']??null);
 }
 
-/** Same local input for NOWPayments eligibility and first invoice issuance.
- * An explicitly configured invalid payout policy must not become the default. */
-function achbotNowpaymentsQuoteInput(int $price,array $keys,array $configuration): array {
-    $rate=achbotUsdtRate($keys);
-    if ($rate===null) throw new DomainException('checkout_exchange_rate_unavailable');
-    $quote=['local_price'=>$price,'usd'=>number_format(round($price/$rate,2),2,'.','')];
-    if (array_key_exists('nowpaymentsSettlementPolicy',$configuration))
-        $quote['settlement_policy']=$configuration['nowpaymentsSettlementPolicy'];
-    return $quote;
-}
-
-/** Preserve unique account lookup for quote/menu eligibility, without role pricing. */
-function achbotUsdtRateForUser(mysqli $db,int $userId): ?float {
-    if ($userId<=0) return null;
-    try {
-        $stmt=$db->prepare('SELECT userid FROM users WHERE userid=? LIMIT 2');
-        if (!$stmt) return null;
-        $stmt->bind_param('i',$userId);
-        if (!$stmt->execute()) { $stmt->close(); return null; }
-        $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
-        return count($rows)===1 ? achbotUsdtRate() : null;
-    } catch (Throwable $ignored) { return null; }
-}
-
 /**
  * All available manual-crypto destinations are independent. Read only the
  * current per-network configuration, with no retired setting fallback.
@@ -110,15 +86,9 @@ function achbotUsdtRateForUser(mysqli $db,int $userId): ?float {
  * A rate and destination are required before an option appears. Neither a
  * screenshot nor an operator click is automatic blockchain settlement proof.
  */
-function achbotManualUsdtConfiguration(?string $network = null,?array $keys=null): ?array {
+function achbotManualUsdtConfiguration(string $network,?array $keys=null): ?array {
     global $paymentKeys;
     $keys ??= is_array($paymentKeys ?? null) ? $paymentKeys : [];
-    if ($network === null) {
-        $available=[];
-        foreach (['BEP20','TRC20','ERC20'] as $candidate)
-            if (($config=achbotManualUsdtConfiguration($candidate,$keys))!==null) $available[]=$config;
-        return count($available)===1?$available[0]:null;
-    }
     if (!in_array($network, ['BEP20','TRC20','ERC20'], true)) return null;
     $field = 'manualUsdtWallet' . $network;
     $rawWallet=$keys[$field]??null;
@@ -144,29 +114,47 @@ function achbotManualTrxConfiguration(?array $keys=null): ?array {
     $rate = (float)$rawRate;
     if (!is_finite($rate) || $rate <= 0) return null;
     return ['network'=>'TRON', 'wallet'=>$wallet,
-            'rate'=>$rate, 'agent_rate'=>$rate];
+            'rate'=>$rate];
 }
 
-/**
- * Selection is per order, not per runtime-global wallet. All four options
- * share the existing manual photo/approval pipeline. A claimed quote is
- * permanent even when admin settings change later.
- */
-function achbotManualCryptoOptions(?int $userId=null): array {
-    global $botState, $connection;
-    if (($botState['manualUsdtState'] ?? 'off') !== 'on') return [];
-    $available = [];
-    $rateUsable=$userId===null || achbotUsdtRateForUser($connection,$userId)!==null;
-    foreach (['BEP20'=>'b','TRC20'=>'c','ERC20'=>'e'] as $network=>$tag) {
-        if (achbotManualUsdtConfiguration($network) !== null &&
-            $rateUsable) {
-            $available[$tag] = ['provider'=>'manual_usdt','network'=>$network,
-                                'label'=>\achbotMessage('manual_payment.receipt_helpers.manual_crypto_options.u_s_d_t.1974a6095a').$network];
-        }
+/** One configured destination list, shared by the menu and actual quote.
+ * Never return these destination details to the method-menu snapshot. */
+function achbotManualConfigurations(string $method,array $keys): array {
+    if ($method==='bank_transfer') {
+        $value=achbotManualBankIdentity($keys);
+        return $value===null?[]:[''=>$value];
     }
-    if (achbotManualTrxConfiguration() !== null) {
-        $available['t']=['provider'=>'manual_trx','network'=>'TRON',
-                          'label'=>\achbotMessage('manual_payment.receipt_helpers.manual_crypto_options.t_r_x__t_r_o_n.e3a2653517')];
+    if ($method==='gift_card') {
+        $value=achbotManualSellerUrl($keys);
+        return $value===null?[]:[''=>['seller_url'=>$value]];
+    }
+    if ($method==='manual_trx') {
+        $value=achbotManualTrxConfiguration($keys);
+        return $value===null?[]:['TRON'=>$value];
+    }
+    $available=[];
+    if ($method==='manual_usdt') {
+        foreach (['BEP20','TRC20','ERC20'] as $network)
+            if (($value=achbotManualUsdtConfiguration($network,$keys))!==null)
+                $available[$network]=$value;
+    }
+    return $available;
+}
+
+function achbotManualCryptoTag(string $network): ?string {
+    return match($network) {'BEP20'=>'b','TRC20'=>'c','ERC20'=>'e','TRON'=>'t',default=>null};
+}
+/** Input is the safe current method/network snapshot, not request globals. */
+function achbotManualCryptoOptions(array $methods): array {
+    $available=[];
+    foreach (['manual_usdt','manual_trx'] as $method) {
+        foreach ($methods[$method]??[] as $network) {
+            $tag=achbotManualCryptoTag($network);
+            if ($tag===null) continue;
+            $available[$tag]=['provider'=>$method,'network'=>$network,
+                'label'=>$method==='manual_trx'?\achbotMessage('manual_payment.receipt_helpers.manual_crypto_options.t_r_x__t_r_o_n.e3a2653517'):
+                    \achbotMessage('manual_payment.receipt_helpers.manual_crypto_options.u_s_d_t.1974a6095a').$network];
+        }
     }
     return $available;
 }
@@ -202,22 +190,6 @@ function achbotManualSellerUrl(?array $keys=null): ?string {
     if (!is_string($rawUrl)) return null;
     $url = trim($rawUrl);
     return achbotManualGiftSellerUrlValid($url) ? $url : null;
-}
-
-/** This JSON is a manual-only immutable destination intent, not a gateway URL. */
-function achbotManualEnabled(string $method,?array $states=null,?array $keys=null): bool {
-    $states ??= (array)($GLOBALS['botState']??[]);
-    if ($method === 'gift_card') return ($states['giftCardState'] ?? 'off') === 'on' &&
-        achbotManualSellerUrl($keys) !== null;
-    if ($method === 'manual_usdt' || $method === 'manual_trx') {
-        if (($states['manualUsdtState'] ?? 'off') !== 'on') return false;
-        if ($method==='manual_trx') return achbotManualTrxConfiguration($keys)!==null;
-        foreach (['BEP20','TRC20','ERC20'] as $network)
-            if (achbotManualUsdtConfiguration($network,$keys)!==null) return true;
-        return false;
-    }
-    return $method === 'bank_transfer' && ($states['cartToCartState'] ?? 'off') === 'on' &&
-        achbotManualBankIdentity($keys) !== null;
 }
 
 /** Method inquiry for customer/status only; never use null as bank auto-eligibility. */
@@ -809,10 +781,10 @@ function duplicateReceiptGuard(mysqli $connection, array $payInfo, int $nowTs): 
     $type=(string)$payInfo['type'];
     $special=in_array($type,['BUY_SUB','INCREASE_WALLET'],true);
     $approved=60*($special
-        ? achbotPayUxPolicyNumber('receiptApprovedMinutes',10,1,1440)
-        : achbotPayUxPolicyNumber('receiptApprovedOtherMinutes',60,1,1440));
-    $review=60*achbotPayUxPolicyNumber('receiptReviewMinutes',360,1,1440);
-    $declined=60*achbotPayUxPolicyNumber('receiptDeclinedMinutes',3,1,1440);
+        ? achbotPayUxPolicyNumber('receiptApprovedMinutes')
+        : achbotPayUxPolicyNumber('receiptApprovedOtherMinutes'));
+    $review=60*achbotPayUxPolicyNumber('receiptReviewMinutes');
+    $declined=60*achbotPayUxPolicyNumber('receiptDeclinedMinutes');
     $minTs=$nowTs-max($approved,$review,$declined);
     $methods=achbotCreditMethodSqlList('manual_quote');
     // Preserve configured cooldowns using current pinned receipt facts,

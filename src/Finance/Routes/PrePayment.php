@@ -81,6 +81,7 @@ if (preg_match('/^renewPay_(nowpayment|zarinpal|nextpay)_([A-Za-z0-9_-]{1,50})$/
     $payMethod=$match[1];$hash_id=$match[2];
     $method=$payMethod==='nowpayment'?'nowpayments':$payMethod;
     try {
+        require_once __DIR__.'/../CheckoutAdmission.php';
         $s=achbotProviderStatement($connection,"SELECT p.*,a.provider AS attempt_provider,
             a.stage AS attempt_stage
             FROM pays p LEFT JOIN payment_attempts a ON a.pay_row_id=p.id
@@ -90,8 +91,7 @@ if (preg_match('/^renewPay_(nowpayment|zarinpal|nextpay)_([A-Za-z0-9_-]{1,50})$/
         if (!$payInfo || !achbotPayUxCurrentDraft($payInfo) || $payInfo['type']!=='RENEW_ACCOUNT' ||
             !in_array($payInfo['state'],['pending','send'],true) ||
             ($payInfo['attempt_provider']===null
-                ? (!achbotPayUxUnclaimedDraftUsable($connection,$payInfo) ||
-                   !achbotPayUxAudienceAllowed($connection,$method,(int)$from_id))
+                ? !array_key_exists($method,achbotCheckoutDraftPaymentOptions($connection,(int)$payInfo['id'],(int)$from_id))
                 : ($payInfo['attempt_provider']!==$method ||
                    !in_array($payInfo['attempt_stage'],['creating','pending','checking'],true)))) {
             prepareStartFallback();
