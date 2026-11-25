@@ -1341,6 +1341,7 @@ return [
         'config.get_user_info_keys.button.ceb490f817' => '💰 ارزش سرویس ها',
         'config.get_user_info_keys.button.3c25eb15a8' => '💳 تعداد پرداخت ها',
         'config.get_user_info_keys.button.513b143e10' => '💰 جمع کل پرداخت ها',
+        'config.get_user_info_keys.button.agent_label' => 'همکار',
         'config.get_user_info_keys.button.88bf6cf5c6' => '💰 موجودی کیف پول',
         'config.get_user_info_keys.button.05b7dda9cc' => '⛔️ مسدود',
         // config.handle_channel_exemption

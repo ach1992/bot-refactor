@@ -2108,7 +2108,7 @@ function getUserInfoKeys($userId) {
                 ],
                 [
                     ['text' => $agentStatus, 'callback_data' => $canManageAgents ? "toggleAgent_{$userId}" : "wizwizch"],
-                    ['text' => \achbotMessage('admin_settings.config.get_bot_setting_keys.text.62c92fb90c'), 'callback_data' => "wizwizch"]
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.agent_label'), 'callback_data' => "wizwizch"]
                 ],
                 ...($canManageAgents ? [[
                     ['text' => $agentPercent, 'callback_data' => "editAgentDiscountNormal{$userId}_userinfo"],
