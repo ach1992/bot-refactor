@@ -23,6 +23,7 @@ $_SERVER['SCRIPT_FILENAME']='owned-payment-ux.php';
 error_reporting(E_ALL & ~E_DEPRECATED);
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $botState=$spec['states']??[];
+$telegramWebhookSecret='owned_receipt_projection_secret_2026';
 $botUrl='https://bot.fixture.invalid/';
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
@@ -74,6 +75,20 @@ if ($action==='expire') {
 } elseif ($action==='pin') {
     require_once $argv[1].'/src/Finance/PaymentCredit.php';
     $connection->begin_transaction();
+    if (!empty($spec['api'])) {
+        [$pay,$attempt]=achbotCreditInvoiceLocked($connection,$id,(int)$spec['actor']);
+        $keys=[
+            'smsApiUrl'=>'https://fixture.invalid/wp-json/ach-pay-manager/v1',
+            'smsApiToken'=>achbotPaymentEvidenceProtect('setting:smsApiToken',['value'=>'owned-sms-token']),
+            'giftApiUrl'=>'https://fixture.invalid/wp-json/ach-gcw/v2',
+            'giftApiKeyId'=>'owned-key','giftApiAmountUnit'=>'toman',
+            'giftApiSecret'=>achbotPaymentEvidenceProtect('setting:giftApiSecret',['value'=>'owned-gift-secret'])
+        ];
+        $profile=achbotPaymentEvidenceProfile($attempt['provider'],$keys,
+            ['smsApiVerifyState'=>'on','giftApiVerifyState'=>'on']);
+        if (!$profile || !achbotPaymentEvidencePinLocked($connection,$pay,$attempt,$profile))
+            throw new RuntimeException('owned_profile_pin_failed');
+    }
     achbotCreditPinIssuedLocked($connection,$id,(int)$spec['actor']);
     $before=$connection->commit();
 } elseif ($action==='manual_start') {
@@ -105,6 +120,29 @@ if ($action==='expire') {
 } elseif ($action==='failure_category') {
     $reply=isset($spec['reply'])?(object)$spec['reply']:null;
     $before=achbotPayUxEditFailureCategory($reply);
+} elseif ($action==='manual_projection') {
+    require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
+    $pay=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=?','i',[$id]);
+    $attempt=achbotProviderRow($connection,'SELECT * FROM payment_attempts WHERE pay_row_id=?','i',[$id]);
+    $method=$attempt['provider'];$hash=$pay['hash_id'];
+    $code='AG2-FIXTURE-'.str_repeat('A',84);
+    $photo=(object)['message'=>(object)['photo'=>[(object)['file_id'=>'owned-original-photo']]]];
+    $text=(object)['message'=>(object)['text'=>$code]];
+    $before=[
+        'initial'=>json_decode(achbotManualInvoiceKeyboard($connection,$pay),true),
+        'status'=>json_decode(achbotPayUxStatusKeyboard($hash,$pay,$attempt),true),
+        'cancel'=>json_decode(kbOnlyCancel($pay),true),
+        'prompt'=>achbotManualEvidencePrompt($connection,$pay,$method),
+        'photo'=>achbotManualEvidenceInput($photo,$connection,$pay,$method),
+        'code'=>achbotManualEvidenceInput($text,$connection,$pay,$method),
+        'owner'=>achbotManualReceiptAllowed($connection,$pay,$method,(int)$pay['user_id'],$spec['mode']),
+        'foreign'=>achbotManualReceiptAllowed($connection,$pay,$method,9002,$spec['mode']),
+        'wrong_family'=>achbotManualReceiptAllowed($connection,$pay,$method,(int)$pay['user_id'],
+            $spec['mode']==='topup'?'standard':'topup'),
+        'other_hash'=>json_decode(achbotPayUxStatusKeyboard('unrelated',$pay,$attempt),true),
+        'changed_original'=>achbotManualReceiptAction(array_replace($pay,['user_id'=>9002]),$attempt),
+        'broken_pin'=>achbotManualReceiptAction($pay,array_replace($attempt,['wallet_invoice_sha256'=>str_repeat('f',64)])),
+    ];
 } elseif ($action==='state') {
     $stmt=$connection->prepare('SELECT * FROM pays WHERE id=?');
     $stmt->bind_param('i',$id);$stmt->execute();
@@ -206,12 +244,14 @@ def main():
             view=dict(pay=dict(hash_id='literal-checkout',user_id=1001,price=100,id=0,agent_bought=int(bool(agents)),agent_count=agents),
                       quote=dict(server_id=2,quantity=2,days=30,volume=3),plan=dict(title='<b>PRICE &</b>',descr='سلام <tag> DESCRIPTION &'),
                       category=dict(title='🔥 PLAN-NAME'),mode=checkout_mode,payment_methods=['wallet'],context=dict(category_id=1))
-            result=run(w,e,dict(action='render_checkout',view=view,states=dict(instanceMessages=dict(purchase_note=dict(format='html',text='<b>یادداشت</b>')))))
+            note='<a href="https://t.me/PRICE_support?x=PLAN-NAME&amp;y=DESCRIPTION">SUPPORTID</a> <b>PRICE VOLUME DAYS ACCOUNT-COUNT TOTAL-PRICE</b> userid'
+            result=run(w,e,dict(action='render_checkout',view=view,
+                states=dict(supportID='@PRICE_support',instanceMessages=dict(purchase_note=dict(format='html',text=note)))))
             rendered=result['events'][0]
             assert rendered['mode']=='HTML'
             assert '🔥 PLAN-NAME &lt;b&gt;PRICE &amp;&lt;/b&gt;' in rendered['text'],rendered
             assert 'سلام &lt;tag&gt; DESCRIPTION &amp;' in rendered['text'],rendered
-            assert '<b>یادداشت</b>' in rendered['text'],rendered
+            assert rendered['text'].endswith('\n\n<a href="https://t.me/PRICE_support?x=PLAN-NAME&amp;y=DESCRIPTION">@PRICE_support</a> <b>PRICE VOLUME DAYS ACCOUNT-COUNT TOTAL-PRICE</b> 1001'),rendered
         cases.append('actual_checkout_literal_data_one_pass_trusted_instance_html')
         older=add(w,e,'original-draft')
         newer=add(w,e,'replacement-draft',old=1700000020)
@@ -431,8 +471,10 @@ def main():
         }
         for who in (9431,9432,9444,9455,9466,9467,9499):
             sql(w,e,f"INSERT INTO users(userid,name,username,refcode,date) VALUES ({who},'Fixture','fixture','0','1700000000')")
-        def quote(key,provider,who,age=0):
-            pay_id=add(w,e,key,who=who,kind='INCREASE_WALLET',old=int(time.time()))
+        def quote(key,provider,who,age=0,kind='INCREASE_WALLET',custom=False,api=False):
+            pay_id=add(w,e,key,who=who,kind=kind,old=int(time.time()))
+            if custom:
+                sql(w,e,f"UPDATE pays SET day=30,volume=2 WHERE id={pay_id}")
             manual=provider in valid_intents
             intent=json.dumps(valid_intents[provider],separators=(',',':')) if manual else 'https://example.org/fixture'
             literal="'"+intent.replace("'","''")+"'"
@@ -442,10 +484,70 @@ def main():
             sql(w,e,f"INSERT INTO payment_attempts "
                 f"(pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,checkout_url,provider_reference,stage,wallet_invoice_sha256,created_at) "
                 f"VALUES ({pay_id},'{provider}','{key}',100,'toman',100,{literal},{ref},'pending','',DATE_SUB(NOW(),INTERVAL {age} SECOND))")
-            assert run(w,e,dict(action='pin',id=pay_id,actor=who))['result'] is True
+            assert run(w,e,dict(action='pin',id=pay_id,actor=who,api=api))['result'] is True
             return pay_id
         def deadline(pid):
             return int(sql(w,e,f"SELECT invoice_expires_at FROM payment_attempts WHERE pay_row_id={pid}"))
+        # Six real checkout-family contracts, independently enumerated. Both
+        # initial and status projections must retain the original evidence
+        # type and callback even when current API settings are the opposite.
+        families=[
+            ('standard','BUY_SUB',False,'Buy','Cart'),
+            ('custom','BUY_SUB',True,'Custom','Cart'),
+            ('renew','RENEW_ACCOUNT',False,'Renew','Cart'),
+            ('day','INCREASE_DAY_1_1',False,'IncreaseDay',''),
+            ('volume','INCREASE_VOLUME_1_1',False,'IncreaseVolume',''),
+            ('topup','INCREASE_WALLET',False,'IncreaseWallet',''),
+        ]
+        methods=[
+            ('bank_transfer',False,'📤 ارسال رسید بانکی',None),
+            ('bank_transfer',True,'📤 ارسال رسید بانکی',None),
+            ('gift_card',False,'📤 ارسال گیفت کارت','Gift'),
+            ('gift_card',True,'📤 ارسال کد گیفت کارت','Gift'),
+            ('manual_usdt',False,'📤 ارسال رسید تتر','Usdt'),
+            ('manual_trx',False,'📤 ارسال رسید TRX','Usdt'),
+        ]
+        for mode,kind,custom,family,bank in families:
+            for method,api,label,suffix in methods:
+                h=f'ui-{mode}-{method}-{int(api)}'
+                pid=quote(h,method,9431,age=21300,kind=kind,custom=custom,api=api)
+                spec=dict(action='manual_projection',id=pid,mode=mode,
+                          states=dict(giftApiVerifyState='off' if api else 'on',
+                                      smsApiVerifyState='off' if api else 'on'))
+                result=run(w,e,spec)['result']
+                callback='send'+family+(bank if suffix is None else suffix)+'Receipt'+h
+                cancel='cancel'+family+bank+'Receipt'+h
+                expected=dict(text=label,callback_data=callback)
+                initial=result['initial']['inline_keyboard']
+                status=result['status']['inline_keyboard']
+                assert initial[0][0]==status[0][0]==expected,result
+                assert initial[-1][0]['callback_data']==result['cancel']['inline_keyboard'][0][0]['callback_data']==cancel,result
+                if method=='gift_card':
+                    assert initial[0][1]['url']=='https://example.org/gift-card'
+                else:
+                    assert len(initial[0])==1
+                typed=method=='gift_card' and api
+                assert result['photo']==(None if typed else 'owned-original-photo')
+                assert result['code']==('AG2-FIXTURE-'+'A'*84 if typed else None)
+                assert ('فقط کد بفرستید' if typed else 'تصویر') in result['prompt']
+                assert result['owner'] is True and result['foreign'] is False and result['wrong_family'] is False
+                assert result['changed_original'] is None and result['broken_pin'] is None
+                assert all(not b.get('callback_data','').startswith('send') for row in result['other_hash']['inline_keyboard'] for b in row)
+                # The issued deadline is not modified: start a real receipt
+                # grace then simulate expiration through the current clock.
+                assert run(w,e,dict(action='manual_start',id=pid,provider=method,actor=9431))['result'] is True
+                issued=deadline(pid)
+                started=int(sql(w,e,f"SELECT receipt_started_at FROM payment_attempts WHERE pay_row_id={pid}"))
+                assert started<issued<started+900
+                assert run(w,e,dict(action='invoice_expire',id=pid,clock=issued))['result'] is False
+                assert run(w,e,dict(action='invoice_expire',id=pid,clock=started+899))['result'] is False
+                assert run(w,e,dict(action='invoice_expire',id=pid,clock=started+900))['result'] is True
+                late=run(w,e,spec)['result']
+                assert late['initial']==late['status']
+                assert late['status']['inline_keyboard'][0][0]==dict(text='🔎 بررسی پرداخت قبلی',callback_data=callback),late
+                assert late['photo']==result['photo'] and late['code']==result['code'] and late['owner'] is True
+                assert not any('url' in b for row in late['status']['inline_keyboard'] for b in row)
+                cases.append(f'original_receipt_{mode}_{method}_{int(api)}_initial_status_and_late')
         for method in valid_intents:
             late=quote('idle-'+method,method,9431,age=21660)
             assert run(w,e,dict(action='track',id=late,chat_id=9431,

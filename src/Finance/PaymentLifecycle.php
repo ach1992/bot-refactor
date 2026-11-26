@@ -448,13 +448,7 @@ function achbotPayUxStartManualReceipt(mysqli $db,int $payId,string $method,int 
         if (!$db->begin_transaction()) return false;
         [$pay,$a]=achbotCreditInvoiceLocked($db,$payId,$actor);
         if (($expectedMode!==null && !achbotCheckoutModeMatchesRequest($pay,$expectedMode)) ||
-            !in_array($pay['state'],['pending','expired','service_superseded'],true) ||
-            (string)($pay['payid']??'')!=='' || !achbotCurrentReceiptPin($a) ||
-             $a['provider']!==$method ||
-            !in_array($a['stage'],['pending','receiving'],true) ||
-            !achbotManualIntentDecode((string)$a['checkout_url'],$method) ||
-            !hash_equals($a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$a)) ||
-            ($a['evidence_profile']!==null && !achbotPaymentEvidenceSnapshot($a))) {
+            !achbotManualReceiptEligible($pay,$a,$method)) {
             $db->rollback();return false;
         }
         $now=time();
@@ -840,15 +834,9 @@ function achbotPayUxDeadlineText(array $attempt): string {
 function achbotPayUxStatusKeyboard(string $hash,?array $pay=null,?array $attempt=null): string {
     $rows = [];
     if (preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)) {
-        if ($pay && $attempt && achbotCurrentReceiptPin($attempt) &&
-            in_array($pay['state'],['pending','expired','service_superseded'],true) &&
-            in_array($attempt['stage'],['pending','receiving'],true) &&
-            ($prefixes=achbotPayUxReceiptPrefixes($pay,(string)$attempt['provider']))) {
-            $late=$pay['state']!=='pending' || !achbotPayUxInvoiceOpen($attempt);
-            $rows[]=[['text'=>achbotMessage($late?'payment.payment_lifecycle.previous_payment_review':
-                ($attempt['provider']==='gift_card'?'payment.api_payment.code':'telegram.markup.receipt_and_cancel.button.ae15b282fd')),
-                'callback_data'=>$prefixes[0].$hash]];
-        }
+        require_once __DIR__.'/ReceiptHelpers.php';
+        if ($pay && $attempt && (string)$pay['hash_id']===$hash &&
+            ($action=achbotManualReceiptAction($pay,$attempt))) $rows[]=[$action['button']];
         $hosted=$pay && $attempt && achbotCurrentReceiptPin($attempt) &&
             achbotPayUxHostedProvider((string)($attempt['provider']??''));
         if ($hosted && achbotPayUxHostedLinkOpen($pay,$attempt)) {

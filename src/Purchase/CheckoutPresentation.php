@@ -2,6 +2,7 @@
 declare(strict_types=1);
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/../Finance/CheckoutAdmission.php';
+require_once __DIR__.'/../Admin/InstanceContent.php';
 
 /** Shared payment rows for every current checkout. Only established
  * mode-specific labels and navigation differ; eligibility is decided once
@@ -89,16 +90,17 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $o
         $safe=static fn($v)=>htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
         $values=['PLAN-NAME'=>$safe($view['category']['title'].' '.$plan['title']),
             'DESCRIPTION'=>$safe($plan['descr']),'PRICE'=>$price];
-        $template=achbotCurrentMessage('buy_subscription_detail');
+        $template=achbotMessage('legacy_messages.buy_subscription_detail');
         if ($mode==='standard' && (int)$pay['agent_count']>0) {
-            $template=achbotCurrentMessage('buy_much_subscription_detail');
+            $template=achbotMessage('legacy_messages.buy_much_subscription_detail');
             $values['ACCOUNT-COUNT']=(string)$q['quantity'];
             $values['TOTAL-PRICE']=$price;
             $values['PRICE']=number_format($amount/$q['quantity']).achbotMessage('purchase.select_plan.text.2cc98f7f7c');
         } elseif ($mode==='custom') {
             $values['VOLUME']=(string)$q['volume'];$values['DAYS']=(string)$q['days'];
         }
-        $msg=strtr($template,$values);
+        $msg=rtrim(strtr($template,$values))."\n\n".
+            achbotInstanceMessage((array)($GLOBALS['botState']??[]),'purchase_note',$actor);
     }
     if (($noMethod && !$renew) || ($discountRejectedNoMethod && !$noMethod)) $msg.="\n\n".$notice;
     $sent=sendMessage($msg,json_encode(['inline_keyboard'=>$keyboard]),'HTML');

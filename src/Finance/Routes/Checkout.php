@@ -91,7 +91,7 @@ if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbo
         alert(\achbotMessage('payment.checkout.alert.07ee06b4bc'), true);
         return;
     }
-    $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendCustomUsdtReceipt" : ($method === 'gift_card' ? "sendCustomGiftReceipt" : "sendCustomCartReceipt"), "cancelCustomCartReceipt", $match[1], $method);
+    $keyboard = achbotManualInvoiceKeyboard($connection,$payInfo);
 
     $delivered = sendMessage($msg, $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
@@ -137,7 +137,7 @@ if (preg_match('/\Asend(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>[A-Z
     delMessage();
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitCustomUsdtReceipt" : ($method === 'gift_card' ? "waitCustomGiftReceipt" : "waitCustomCartReceipt")) . $match['hashId']);
 
-    $keyboard = kbOnlyCancel("cancelCustomCartReceipt", $match['hashId']);
+    $keyboard = kbOnlyCancel($payInfo);
     $sent=sendMessage(achbotManualEvidencePrompt($connection,$payInfo,$method), $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
@@ -160,7 +160,7 @@ if (preg_match('/\Await(?:CustomCart|CustomGift|CustomUsdt)Receipt([A-Za-z0-9_-]
     }
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
     if ($fileid === null) {
-        $keyboard = kbOnlyCancel("cancelCustomCartReceipt", $match[1]);
+        $keyboard = kbOnlyCancel($receiptPay);
         sendMessage(achbotManualEvidencePrompt($connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
@@ -183,7 +183,7 @@ if (preg_match('/\Await(?:CustomCart|CustomGift|CustomUsdt)Receipt([A-Za-z0-9_-]
     $giftScreen=achbotManualGiftSubmissionPreflight($connection,$receiptPay,$method,$fileid);
     if (!$giftScreen['accepted']) {
         sendMessage(achbotManualGiftRetryMessage((string)$giftScreen['reason']),
-            kbOnlyCancel('cancelCustomCartReceipt', $match[1]), 'HTML');
+            kbOnlyCancel($receiptPay), 'HTML');
         exit;
     }
     if(achbotManualTypedGift($connection,$receiptPay,$method) &&
@@ -252,7 +252,7 @@ if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbo
         alert(\achbotMessage('payment.checkout.alert.07ee06b4bc'), true);
         return;
     }
-    $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendBuyUsdtReceipt" : ($method === 'gift_card' ? "sendBuyGiftReceipt" : "sendBuyCartReceipt"), "cancelBuyCartReceipt", $match[1], $method);
+    $keyboard = achbotManualInvoiceKeyboard($connection,$payInfo);
 
     $delivered = sendMessage($msg, $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
@@ -298,7 +298,7 @@ if (preg_match('/\Asend(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>[A-Za-z0-9_-]
     delMessage();
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitBuyUsdtReceipt" : ($method === 'gift_card' ? "waitBuyGiftReceipt" : "waitBuyCartReceipt")) . $match['hashId']);
 
-    $keyboard = kbOnlyCancel("cancelBuyCartReceipt", $match['hashId']);
+    $keyboard = kbOnlyCancel($payInfo);
     $sent=sendMessage(achbotManualEvidencePrompt($connection,$payInfo,$method), $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
@@ -321,7 +321,7 @@ if (preg_match('/\Await(?:BuyCart|BuyGift|BuyUsdt)Receipt([A-Za-z0-9_-]{1,50})\z
     }
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
     if ($fileid === null) {
-        $keyboard = kbOnlyCancel("cancelBuyCartReceipt", $match[1]);
+        $keyboard = kbOnlyCancel($receiptPay);
         sendMessage(achbotManualEvidencePrompt($connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
@@ -354,7 +354,7 @@ if (preg_match('/\Await(?:BuyCart|BuyGift|BuyUsdt)Receipt([A-Za-z0-9_-]{1,50})\z
     $giftScreen=achbotManualGiftSubmissionPreflight($connection,$receiptPay,$method,$fileid);
     if (!$giftScreen['accepted']) {
         sendMessage(achbotManualGiftRetryMessage((string)$giftScreen['reason']),
-            kbOnlyCancel('cancelBuyCartReceipt', $match[1]), 'HTML');
+            kbOnlyCancel($receiptPay), 'HTML');
         exit;
     }
     if(achbotManualTypedGift($connection,$receiptPay,$method) &&

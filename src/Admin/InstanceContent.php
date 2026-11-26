@@ -74,8 +74,6 @@ function achbotInstanceContextMessage(string $key): string {
     $formatted=\AchBot\Presentation\Text\replacePlaceholders(
         [$key=>$text],$state,$actor,$modes)[$key];
 
-    if (in_array($key,['buy_subscription_detail','buy_much_subscription_detail'],true))
-        return rtrim($formatted)."\n\n".achbotInstanceMessage($state,'purchase_note',$actor);
     return $formatted;
 }
 

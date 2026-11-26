@@ -47,11 +47,23 @@ def main():
     )
     driver=driver.replace("} elseif ($kind==='menu') {", """} elseif ($kind==='manual_ui') {
     require_once $root.'/src/Finance/ReceiptHelpers.php';
+    require_once $root.'/src/Finance/PaymentCredit.php';
+    $pay=['id'=>42,'user_id'=>1001,'hash_id'=>'owned-quote','type'=>'BUY_SUB',
+        'day'=>0,'volume'=>0,'price'=>100,'state'=>'pending','payid'=>null];
+    $keyboards=[];
+    foreach (['bank_transfer','gift_card'] as $method) {
+        $attempt=['id'=>43,'pay_row_id'=>42,'order_hash'=>'owned-quote',
+            'provider'=>$method,'local_amount_toman'=>100,'quote_amount'=>'100',
+            'quote_currency'=>'toman','stage'=>'pending','evidence_profile'=>null,
+            'invoice_expires_at'=>time()+1000,'receipt_grace_seconds'=>900,
+            'checkout_url'=>achbotManualIntentEncode(['method'=>$method,
+                'account'=>'fixture-bank','holder'=>'Fixture','seller_url'=>'https://fixture.invalid/gift'])];
+        $attempt['wallet_invoice_sha256']=achbotCreditInvoiceFingerprint($pay,$attempt);
+        $keyboards[]=achbotManualReceiptKeyboard($pay,$attempt);
+    }
     $GLOBALS['events'][]=['manual',
         achbotManualReceiptPrompt('bank_transfer'),
-        achbotManualReceiptPrompt('gift_card'),
-        kbSendReceiptAndCancel('sendBuyCartReceipt','cancelBuyCartReceipt','owned-quote','bank_transfer'),
-        kbSendReceiptAndCancel('sendBuyGiftReceipt','cancelBuyCartReceipt','owned-quote','gift_card')];
+        achbotManualReceiptPrompt('gift_card'), ...$keyboards];
 } elseif ($kind==='menu') {""")
     with owned.owned_database() as (w,env):
         keys.setup(w,env)

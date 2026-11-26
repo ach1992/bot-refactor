@@ -21,7 +21,10 @@ take and restore-test a full backup, snapshot every user's exact integer
 balance and active Native identity/entitlement, preserve configuration,
 orders, receipts, and pending/unknown/terminal evidence. Close old
 interactive workflows, stale requests and unissued drafts. They must not
-become executable current commands. Reconcile actual funds, already charged
+become executable current commands. Before activation, verify that historical
+unfinished broadcast/forward (`send_list`) and message-action (`bc_jobs`) jobs
+are not executable in the replacement; retain history in the protected archive.
+Reconcile actual funds, already charged
 orders, reserved capacity and uncertain Native effects explicitly in the
 separate manual transfer; retain the evidence in the protected source archive.
 Never invent proof, replay a terminal operation, or charge an already

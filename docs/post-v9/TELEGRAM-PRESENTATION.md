@@ -84,6 +84,9 @@ bytes are not HTML. Intentionally authored instance templates retain their
 HTML contract. Stored checkout plan/category titles and descriptions are
 literal data; the renderer escapes them exactly once and replaces template
 tokens in one pass without interpreting tokens inside dynamic values.
+Render the purchase template and the instance purchase note separately; append
+the rendered note only after substituting checkout-owned tokens, preserving
+literal token-like strings in the note and its HTML attributes.
 Broadcast jobs store raw text for history and rendered HTML
 for execution; edit jobs do the same. Historical pending jobs are not replayed.
 The broadcast worker reserves each recipient in the existing durable cursor

@@ -64,19 +64,6 @@ function achbotApiPaymentContext(mysqli $db,string $hash,int $actor=0): ?array {
 function achbotApiPaymentTerminal(array $pay): bool {
     return in_array((string)($pay['state']??''),['approved','paid','auto_cart_approved','paid_with_wallet'],true);
 }
-function achbotApiPaymentKeyboard(array $context,?string $sendPrefix=null,?string $cancelPrefix=null): string {
-    $pay=$context['pay'];$hash=(string)$pay['hash_id'];
-    if (achbotApiPaymentTerminal($pay) || !in_array($pay['state'],['pending','have_sent'],true))
-        return achbotPayUxStatusKeyboard($hash,$pay,$context['attempt']);
-    if ($pay['state']==='have_sent' || !achbotPayUxInvoiceOpen($context['attempt'])) return achbotPayUxStatusKeyboard($hash,$pay,$context['attempt']);
-    [$send,$cancel]=achbotPayUxReceiptPrefixes($pay,(string)$context['attempt']['provider']);
-    $send=$sendPrefix??$send;$cancel=$cancelPrefix??$cancel;
-    $gift=$context['attempt']['provider']==='gift_card';
-    $rows=[[['text'=>$gift?achbotMessage('payment.api_payment.code'):achbotMessage('telegram.markup.receipt_and_cancel.button.ae15b282fd'),'callback_data'=>$send.$hash]]];
-    if($gift){$intent=achbotManualIntentDecode((string)$context['attempt']['checkout_url'],'gift_card');$url=$intent['seller_url']??null;if(is_string($url)&&achbotManualGiftSellerUrlValid($url))$rows[0][]=['text'=>achbotMessage('telegram.markup.receipt_and_cancel.button.4595a70ab5'),'url'=>$url];}
-    $rows[]=[['text'=>achbotMessage('telegram.markup.receipt_and_cancel.button.cc357a4c9f'),'callback_data'=>$cancel.$hash]];
-    return inlineKeyboard($rows);
-}
 function achbotApiPaymentInvoiceText(array $c): string {
     $p=$c['pay'];
     if ($p['state']==='have_sent') return achbotManualAcknowledgement($p,(string)$c['attempt']['provider']);
@@ -118,7 +105,7 @@ function achbotApiPaymentSyncInvoiceLocked(mysqli $db,array $c): bool {
         $body=achbotApiPaymentInvoiceText($c);
         if ($body==='') return false;
     }
-    $keys=achbotApiPaymentKeyboard($c);$digest=hash('sha256',$body."\n".$keys);
+    $keys=achbotManualReceiptKeyboard($p,$a);$digest=hash('sha256',$body."\n".$keys);
     if (($a['evidence_invoice_digest']??null)===$digest) return true;
     try {
         $response=bot('editMessageText',['chat_id'=>$chat,'message_id'=>$message,'text'=>$body,'parse_mode'=>'HTML','reply_markup'=>$keys,'disable_web_page_preview'=>true]);

@@ -126,15 +126,15 @@
       "before_count": 15,
       "after_count": 12,
       "before_sha256": "87aa9564ac301428ae9513a81af203cb095982481a24171f13b81af88ab939fc",
-      "after_sha256": "ad08c9838a2cd71fc9ce7413bbaeec9d9af120d88befd2f86e4fd1c1fff29c0b",
-      "reason": "Success delivery owned by shared command; remove obsolete inline wallet notices. Current manual and wallet admission own all validation; duplicate pre-admission branches removed."
+      "after_sha256": "fcc4ce5529b5054d70dfa409523ab19f5f80b6e57604e7f408b76c6ec8a64d47",
+      "reason": "Success delivery owned by shared command; remove obsolete inline wallet notices. Current manual and wallet admission own all validation; duplicate pre-admission branches removed. Independent review F03: gift retry cancellation uses the original persisted checkout family through the shared receipt callback mapping; the actual callback and message are unchanged."
     },
     "src/Finance/Routes/Extensions.php": {
       "before_count": 25,
       "after_count": 19,
       "before_sha256": "9ba80f3c2290c756f396e7171ad030eb5d5cf4f60009600ddce7d058b6fc32b7",
-      "after_sha256": "26b0f9c43b0e99799d61516724d0123a5db06589c32ff6816d6a8bd18b5a9659",
-      "reason": "Same shared command and delivery for day and volume.; Owner-approved zero-value confirmation prompt; positive copy and send parameters unchanged."
+      "after_sha256": "66783dc5e5ebd89068f6ecde6a86cf1c7e875c693c8c4683dc446f4431c69c82",
+      "reason": "Same shared command and delivery for day and volume.; Owner-approved zero-value confirmation prompt; positive copy and send parameters unchanged. Independent review F03: gift retry cancellation uses the original persisted checkout family through the shared receipt callback mapping; the actual callback and message are unchanged."
     },
     "src/Finance/Routes/ManualApproval.php": {
       "before_count": 2,
@@ -154,8 +154,8 @@
       "before_count": 24,
       "after_count": 9,
       "before_sha256": "9ed2ba8682b3d73714fdb16169453d6e192042357453cba395fa3733c4398809",
-      "after_sha256": "49738582bc69f7bacb8c1b5b69fb3716f91979e32920351a1daa00801fb34047",
-      "reason": "F5 use shared original renewal draft presentation; remove obsolete receipt age/current-plan rejection and return-to-menu sends; genuine original receipt remains wallet-creditable."
+      "after_sha256": "264c05309ce4e19dfabd50c7eebd292ab21fb2a729af0b2b4895613459505727",
+      "reason": "F5 use shared original renewal draft presentation; remove obsolete receipt age/current-plan rejection and return-to-menu sends; genuine original receipt remains wallet-creditable. Independent review F03: gift retry cancellation uses the original persisted checkout family through the shared receipt callback mapping; the actual callback and message are unchanged."
     },
     "src/Finance/Routes/RenewalPlan.php": {
       "before_count": 1,
@@ -294,8 +294,8 @@
       "before_count": 16,
       "after_count": 16,
       "before_sha256": "8bbd74be8991a5d14cb9afd554126fd0ad9aa7c7085f87e7d88b7c443f31d056",
-      "after_sha256": "8d6bc237a154edf3dd6c87dcef76f4485a60497f76e1d1c828158e275b30293b",
-      "reason": "#209: 2 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged."
+      "after_sha256": "ac9b6308122d9841700c2f71e68ac019d5ace9a59ff788c9c4822245bc97a2f9",
+      "reason": "#209: 2 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged. Independent review F03: gift retry cancellation uses the original persisted checkout family through the shared receipt callback mapping; the actual callback and message are unchanged."
     },
     "src/Finance/Routes/WalletTransfer.php": {
       "before_count": 16,

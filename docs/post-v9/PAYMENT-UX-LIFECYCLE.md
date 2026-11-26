@@ -12,6 +12,11 @@ checkout/message projection and the merchant configuration workflow.
   approved labels and order; recharge never offers Wallet self-payment.
   A legitimately zero-priced commercial command has its own free
   confirmation and needs no monetary method or external invoice.
+- Initial and status receipt actions share the original checkout family,
+  callback mapping and admitted receipt type. The pinned invoice evidence
+  profile, not later method settings, determines gift image versus API gift
+  code input. Bank and crypto retain their own approved labels; closed
+  invoices offer original-payment review without a new payment link.
 - Owned gateway initiation URLs re-check the original payment and
   authoritative current draft; public Return and authenticated merchant
   evidence are separate. Raw historical external links cannot be revoked

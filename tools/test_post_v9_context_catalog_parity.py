@@ -42,7 +42,8 @@ $states=[
 $context=['start_message','user_welcome_message','reached_main_menu',
           'banned','join_channel_message','send_config_uuid',
           'agency_request_declined','new_member_joined',
-          'buy_subscription_detail','buy_much_subscription_detail'];
+          ];
+$checkout=['buy_subscription_detail','buy_much_subscription_detail'];
 $cases=0;
 foreach($states as $state){
     foreach(['',1001,'نام🙌'] as $actor){
@@ -69,7 +70,12 @@ foreach($states as $state){
             $cases++;
         }
         foreach($source as $key=>$original){
-            if(!in_array($key,$context,true)){
+            if(in_array($key,$checkout,true)){
+                if($original!==achbotCurrentMessage($key) ||
+                    $old[$key]!==rtrim($original)."\n\n".achbotInstanceMessage($state,'purchase_note',$actor))
+                    throw new RuntimeException('separate_checkout_template_changed:'.$key);
+                $cases++;
+            } elseif(!in_array($key,$context,true)){
                 if($old[$key]!==$original)
                     throw new RuntimeException('unexpected_context_template:'.$key);
                 if(achbotMessage('legacy_messages.'.$key)!==$original)
