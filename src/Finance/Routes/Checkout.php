@@ -9,18 +9,7 @@ require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__ . '/../../Admin/Access.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
-
 require_once __DIR__ . '/../PaymentLifecycle.php';
-
-if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayCustomWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
-    setUser();
-
-    $hashId = trim($match[1] ?? '');
-    require_once __DIR__.'/../CheckoutRoutes.php';
-    achbotCheckoutWalletCallback($connection,$hashId,(int)$from_id,'custom',$botState);
-    return;
-}
-
 if (is_string($data) && strlen($data)<=64 &&
     preg_match('/^showQr(Sub|Config)([1-9][0-9]{0,9})$/D', $data, $match)) {
     $qrSetting=$match[1]==='Sub'?'qrSubState':'qrConfigState';
@@ -69,20 +58,3 @@ if (is_string($data) && strlen($data)<=64 &&
 
     }
 }
-
-if (preg_match('/^accCustom(.+)$/D', $data, $match) && $text != \achbotMessage('legacy_buttons.cancel')) {
-    require_once __DIR__.'/../CheckoutRoutes.php';
-    achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'custom');
-    return;
-}
-
-if (is_string($data) && strlen($data) <= 64 && preg_match('/\ApayBuyWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)) {
-
-    setUser();
-
-    $hashId = trim($match[1] ?? '');
-    require_once __DIR__.'/../CheckoutRoutes.php';
-    achbotCheckoutWalletCallback($connection,$hashId,(int)$from_id,'standard',$botState);
-    return;
-}
-

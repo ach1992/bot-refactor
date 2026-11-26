@@ -471,6 +471,13 @@ and no completed original purchase.
 
 ## Source boundaries and validation
 
+Wallet funding (`pw_`) and staff approval (`pa_`) each use one original-invoice callback.
+The locked persisted invoice determines its subject; authorization and idempotency
+are enforced at the business boundary. Customer Wallet actions never reset an
+unrelated conversation before admission. Old subject-specific callbacks are not
+accepted. Existing actionable receipt buttons must be reprojected or reopened
+through the current operator inbox during installed reconciliation.
+
 No legacy compatibility executor or old callback replay. Only current
 fresh-schema journals and registered adapters authorize effects. The
 consolidated schema and numbered SQL are described in [fresh installation](FRESH-INSTALL.md).

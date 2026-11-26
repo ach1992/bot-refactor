@@ -155,27 +155,27 @@ function achbotCheckoutReceiptOutcomeText(string $status): string {
 }
 
 /** Consume the original Wallet callback when the command schema is present.
- * Keep its original callback family, existing alerts and receipt reference. */
-function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,string $mode,array $states): void {
+ * Keep the existing alerts and exact receipt reference. */
+function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,array $states): void {
     try {
         achbotCheckoutRequireSchema($db);
         $original=achbotPayUxOwnedReference($db,$hash,$actor);
         $frame=\AchBot\Telegram\Conversation\source($GLOBALS['update']??null,$actor,true);
         if (!$original || !$frame || $frame->message_id!==(int)($GLOBALS['message_id']??0)) return;
         $payId=(int)$original['id'];$message=$frame->message_id;
-        $r=achbotPayUxWithLease($db,$payId,static function() use ($db,$payId,$actor,$message,$hash,$mode,$states): ?array {
+        $r=achbotPayUxWithLease($db,$payId,static function() use ($db,$payId,$actor,$message,$hash,$states): ?array {
             $ref=achbotPayUxRef($db,$payId,$actor,$message);
             if ($ref && $ref['purpose']==='status' && $ref['retired_reason']===null) {
                 // Only an already-funded original may replay a stale wallet click.
                 $pay=achbotProviderRow($db,'SELECT state FROM pays WHERE id=?','i',[$payId]);
                 if (($pay['state']??null)!=='paid_with_wallet') return null;
             } elseif (!achbotPayUxSelectorRef($db,$payId,$actor,$message,$GLOBALS['update']??null)) return null;
-            return achbotCheckoutWallet($db,$hash,$actor,$mode,$states);
+            return achbotCheckoutWallet($db,$hash,$actor,$states);
         });
         if ($r===null) {alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);return;}
         if ($r['status']==='insufficient_funds') {
             $wallet=$r['wallet'];$need=$r['price']-$wallet;
-            if (in_array($mode,['standard','custom'],true))
+            if (in_array($r['mode'],['standard','custom'],true))
                 alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.ae55877021').
                     achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.4092b19ef1').number_format($wallet).
                     achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.81a62ff6c6').
@@ -194,7 +194,7 @@ function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,string 
         } else alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
     } catch (Throwable $e) {
         achbotDiagnosticEvent('achbot.finance.checkout_wallet_deferred',[
-            'actor_id'=>$actor,'mode'=>$mode]+achbotDiagnosticLocalFailure($e),'warning');
+            'actor_id'=>$actor]+achbotDiagnosticLocalFailure($e),'warning');
         alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
     }
 }
@@ -259,9 +259,9 @@ function achbotCheckoutRejectUnfundedLocked(mysqli $db,array $pay,array $attempt
     return $pay;
 }
 
-/** Human approval must use the exact persisted receipt and matching old
- * approval callback, not a price or order carried in Telegram data. */
-function achbotCheckoutApproveReceipt(mysqli $db,string $hash,int $actor,int $primary,string $mode): array {
+/** Human approval must use the exact persisted receipt, not a subject,
+ * price or order carried in Telegram data. */
+function achbotCheckoutApproveReceipt(mysqli $db,string $hash,int $actor,int $primary): array {
     if (!preg_match('/\A[A-Za-z0-9_-]{1,50}\z/D',$hash) ||
         !achbotAdminCanFor($db,$actor,$primary,'payments')) throw new DomainException('manual_receipt_actor_invalid');
     $s=achbotProviderStatement($db,'SELECT id,user_id FROM pays WHERE hash_id=? LIMIT 2','s',[$hash]);
@@ -277,7 +277,7 @@ function achbotCheckoutApproveReceipt(mysqli $db,string $hash,int $actor,int $pr
             [$pay,$a]=achbotCreditInvoiceLocked($db,$id,$uid);
             if (!achbotAdminCanLocked($db,$actor,$primary,'payments'))
                 throw new DomainException('manual_receipt_actor_invalid');
-            $valid=achbotCheckoutModeMatchesRequest($pay,$mode);
+            $valid=achbotCheckoutMode($pay)!==null;
             if (!$valid || $pay['hash_id']!==$hash || !in_array($pay['state'],['have_sent','service_superseded','paid'],true) ||
                 !achbotPayUxManualProvider($a['provider']) ||
                 !is_string($a['wallet_invoice_sha256']??null) || $a['wallet_invoice_sha256']==='')
@@ -289,14 +289,14 @@ function achbotCheckoutApproveReceipt(mysqli $db,string $hash,int $actor,int $pr
     } finally {achbotOriginalDispatchLeaseEnd($db,$id,$lease);}
 }
 
-function achbotCheckoutApprovalCallback(mysqli $db,string $hash,int $actor,int $primary,string $mode): void {
+function achbotCheckoutApprovalCallback(mysqli $db,string $hash,int $actor,int $primary): void {
     try {
         achbotCheckoutRequireSchema($db);
-        $r=achbotCheckoutApproveReceipt($db,$hash,$actor,$primary,$mode);
+        $r=achbotCheckoutApproveReceipt($db,$hash,$actor,$primary);
         achbotCheckoutAdvance($db,$r['operation'],(int)$r['pay_id']);
     } catch (Throwable $e) {
         achbotDiagnosticEvent('achbot.finance.checkout_approval_deferred',[
-            'actor_id'=>$actor,'mode'=>$mode]+achbotDiagnosticLocalFailure($e),'warning');
+            'actor_id'=>$actor]+achbotDiagnosticLocalFailure($e),'warning');
         alert(achbotMessage('manual_payment.manual_receipts.alert.2d252fd96f'),true);
     }
 }

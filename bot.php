@@ -336,6 +336,7 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == \achbotMessage('legacy_butt
 }
 
 if ((require __DIR__.'/src/Finance/Routes/ManualCheckout.php') === null) return;
+if ((require __DIR__.'/src/Finance/Routes/PaymentActions.php') === null) return;
 
 if(preg_match('/^sendMessageToUser(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     editText($message_id,\achbotMessage('bot.bot.webhook_ingress_authenticated.message.305cb98154'));
@@ -1248,7 +1249,6 @@ if($data=="availableServers2" && ($botState['individualExistence']??'off')==='on
     return;
 }
 require __DIR__ . '/src/Agent/Applications.php';
-if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/ManualApproval.php') === null) return;
 require __DIR__ . '/src/Support/Entry.php';
 if ((require __DIR__ . '/src/Plans/Intervals.php') === null) return;
 require __DIR__ . '/src/Support/CreateTicket.php';

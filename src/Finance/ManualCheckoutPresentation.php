@@ -200,11 +200,7 @@ function achbotReceiptSubmit(mysqli $db,array $pay,int $actor,array $profile,str
     $token=achbotManualBeginEvidence($db,$pay,$method,$actor,$evidence,$mode,$expected);
     if ($token===null) {sendMessage(achbotMessage('payment.checkout.alert.795c4bddb8'),null,'HTML',$actor);return;}
     $hash=(string)$pay['hash_id'];
-    $approve=match($mode) {
-        'standard'=>'accept','custom'=>'accCustom','renew'=>'approveRenewAcc',
-        'day'=>'approveIncreaseDay','volume'=>'approveIncreaseVolume','topup'=>'approvePayment'
-    };
-    $keys=buildAdminKeyboardWithStats($db,$approve.$hash,'declineAction_'.$hash,$hash,$actor);
+    $keys=buildAdminKeyboardWithStats($db,achbotManualApprovalCallbackData($pay),'declineAction_'.$hash,$hash,$actor);
     if (sendReceiptToAdminsAndUpdatePay($db,$evidence,$caption,$keys,(int)$GLOBALS['admin'],$hash,$token,$screen)) {
         if (achbotReceiptStepChange($db,$actor,$expected,'none') && ($step['prompt']??0)>0)
             delMessage($step['prompt'],$actor);

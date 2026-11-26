@@ -523,14 +523,6 @@ function achbotCheckoutAdmitDraftLocked(mysqli $db,array $pay,?array $attempt,
     return $operation;
 }
 
-/** Exact persisted callback family; no external renewal route. */
-function achbotCheckoutCallbackPrefix(string $mode): ?string {
-    return match($mode) {
-        'standard'=>'payBuy','custom'=>'payCustom','renew'=>'payRenew',
-        'day'=>'payIncreaseDay','volume'=>'payIncrease','topup'=>'payIncreaseWallet',
-        default=>null
-    };
-}
 function achbotCheckoutMode(array $pay): ?string {
     foreach (['standard','custom','renew','day','volume','topup'] as $mode)
         if (achbotCheckoutModeMatchesRequest($pay,$mode)) return $mode;
@@ -550,10 +542,19 @@ function achbotCheckoutModeMatchesRequest(array $pay,string $mode): bool {
     };
 }
 
-/** The actual customer wallet callback: exact owner/hash/family, no remote
+/** Staff actions address the same persisted invoice, never a subject encoded
+ * in a button. Invalid or retired invoice types cannot generate approvals. */
+function achbotManualApprovalCallbackData(array $pay): string {
+    $hash=(string)($pay['hash_id']??'');
+    if (achbotCheckoutMode($pay)===null || !preg_match('/\A[A-Za-z0-9_-]{1,50}\z/D',$hash))
+        throw new DomainException('manual_review_subject_invalid');
+    return 'pa_'.$hash;
+}
+
+/** The actual customer wallet callback: exact owner and original invoice, no remote
  * calls, one debit and capacity reservation. Replaying the callback reads
  * the original funded command rather than executing old service handlers. */
-function achbotCheckoutWallet(mysqli $db,string $hash,int $actor,string $mode,array $states): array {
+function achbotCheckoutWallet(mysqli $db,string $hash,int $actor,array $states): array {
     achbotPaymentEvidenceRequireAutocommit($db);
     achbotCheckoutRequireSchema($db);
     if (!$db->begin_transaction()) throw new RuntimeException('checkout_wallet_begin');
@@ -562,8 +563,8 @@ function achbotCheckoutWallet(mysqli $db,string $hash,int $actor,string $mode,ar
         $s=achbotProviderStatement($db,'SELECT * FROM pays WHERE hash_id=? AND user_id=? LIMIT 2 FOR UPDATE','si',[$hash,$actor]);
         $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
         $pay=count($rows)===1?$rows[0]:null;
-        if (!$pay || !achbotCheckoutModeMatchesRequest($pay,$mode) || !in_array($mode,['standard','custom','renew','day','volume'],true) ||
-            ($mode==='standard' && $pay['type']!=='BUY_SUB'))
+        $mode=$pay?achbotCheckoutMode($pay):null;
+        if ($mode===null || $mode==='topup')
             throw new DomainException('checkout_draft_unavailable');
         $id=(int)$pay['id'];
         $attempt=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$id]);
@@ -584,7 +585,7 @@ function achbotCheckoutWallet(mysqli $db,string $hash,int $actor,string $mode,ar
         $fund=achbotServiceFundLocked($db,$actor,$operation);
         if ($fund!=='funded') {
             $db->rollback(); // decline is not a claim on another method
-            return ['status'=>$fund,'wallet'=>$owner['wallet'],'price'=>(int)$pay['price']];
+            return ['status'=>$fund,'wallet'=>$owner['wallet'],'price'=>(int)$pay['price'],'mode'=>$mode];
         }
         $s=achbotProviderStatement($db,"UPDATE pays SET state='paid_with_wallet' WHERE id=? AND checkout_operation_id=?",'ii',[$id,$operation]);
         $n=$s->affected_rows;$s->close();

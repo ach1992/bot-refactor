@@ -27,6 +27,12 @@ DYNAMIC_PREFIXES = {
     "legacy_messages.",
     "legacy_buttons.",
 }
+RETIRED_PAYMENT_ACTIONS = (
+    "payBuyWithWallet", "payCustomWithWallet", "payRenewWithWallet",
+    "payIncreaseDayWithWallet", "payIncreaseWithWallet", "accCustom",
+    "approveRenewAcc", "approveIncreaseDay", "approveIncreaseVolume", "approvePayment",
+    "achbotCheckoutCallbackPrefix", "achbotManualApprovalPrefix", "Routes/ManualApproval.php",
+)
 RETIRED = (
     "renewPay_", "achbotPayUxReceiptPrefixes", "achbotManualCryptoVerifiedDispatch",
     "achbotManualCryptoChoice", "apiGiftCode_", "payBuyWithCartToCart", "payBuyWithManualUsdt",
@@ -111,6 +117,8 @@ def classify_unowned_copy(tokens: list[dict]) -> tuple[list[str], int]:
 
 def assert_retired_absent(sources: dict[str, str]) -> None:
     for path,content in sources.items():
+        for marker in RETIRED_PAYMENT_ACTIONS:
+            check(marker not in content, "retired_payment_action:" + path + ":" + marker)
         for marker in ('achbotApiPaymentTrackInvoice','achbotApiPaymentSyncInvoice',
                        'achbotApiPaymentInvoiceText','evidence_invoice_chat_id',
                        'evidence_invoice_message_id','evidence_invoice_digest',

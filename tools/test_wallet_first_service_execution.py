@@ -37,7 +37,7 @@ require_once $argv[1].'/src/Finance/FundingCheckout.php';
 $data='';
 require_once $argv[1].'/src/Subscription/AccountDeletion.php';
 $GLOBALS['telegramWebhookSecret']='SyntheticServiceDeliveryKey_2026';
-function setUser(...$args) {}
+function setUser(...$args) {if (($GLOBALS['x']['op']??null)==='telegram_wallet') throw new RuntimeException('unexpected_wallet_wizard_reset');}
 function RandomString(...$args) {return bin2hex(random_bytes(10));}
 function getServerListKeys() {return '{}';}
 function alert(...$args) {$GLOBALS['fixtureAlerts'][]=$args;}
@@ -244,25 +244,23 @@ try {
             'legacy_reserve'=>fixtureLegacyReserve($db,$x['pay'])
         };
     }
-    elseif ($x['op']==='telegram_wallet') {
-        $from_id=(int)($x['sender']??1001);$chat_id=$from_id;$callbackId='fixture-callback';
+    elseif (in_array($x['op'],['telegram_wallet','telegram_approval'],true)) {
+        $from_id=(int)($x['sender']??($x['op']==='telegram_approval'?9001:1001));$chat_id=$from_id;$callbackId='fixture-callback';
         $userInfo=achbotProviderRow($db,'SELECT * FROM users WHERE userid=?','i',[$from_id]);
         $text='';$botUrl='https://bot.fixture.invalid/';$botUsername='fixture_bot';$botToken='999999:fixture-only';
         $botState=$GLOBALS['botState']+['walletState'=>'on','remark'=>'digits'];
         $data=$x['callback'];$GLOBALS['fixtureAlerts']=[];$GLOBALS['fixtureWalletProjection']=[];
         // Each synthetic draft has its own bot-authored selector, exactly as
         // Telegram sends it. Replay retains that message identity.
-        preg_match('/\Apay(?:Buy|Custom|Renew|IncreaseDay|Increase)WithWallet([A-Za-z0-9_-]{1,50})\z/D',$data,$match);
+        preg_match('/\A(?:pw|pa)_([A-Za-z0-9_-]{1,50})\z/D',$data,$match);
         $p=achbotProviderRow($db,'SELECT id FROM pays WHERE hash_id=?','s',[$match[1]??'']);
         $message_id=100000+(int)($p['id']??0);
         $update=(object)['update_id'=>123456,'callback_query'=>(object)['id'=>$callbackId,'from'=>(object)['id'=>$from_id],
-            'data'=>$data,'message'=>(object)['message_id'=>$message_id,'chat'=>(object)['id'=>$chat_id,'type'=>'private'],
+            'data'=>$data,'message'=>(object)['message_id'=>$message_id,'chat'=>(object)['id'=>$chat_id,'type'=>($x['group']??false)?'group':'private'],
                 'from'=>(object)['id'=>999999,'is_bot'=>true],
                 'reply_markup'=>(object)['inline_keyboard'=>[[(object)['callback_data'=>$data]]]]]]];
         if ($x['missing_key']??false) $GLOBALS['telegramWebhookSecret']=null;
-        $route=match($x['route']) {'buy','custom'=>'Checkout','renew'=>'RenewalCheckout','day','volume'=>'Extensions',
-            default=>throw new RuntimeException('fixture_invalid_route')};
-        require $argv[1].'/src/Finance/Routes/'.$route.'.php';
+        require $argv[1].'/src/Finance/Routes/PaymentActions.php';
         $r=['alerts'=>$GLOBALS['fixtureAlerts'],'projection'=>$GLOBALS['fixtureWalletProjection']];
     }
     elseif ($x['op']==='commercial_plan') {
@@ -306,7 +304,7 @@ try {
     }
     elseif ($x['op']==='checkout_insert') {
         require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
-        $h=$x['hash'];$uid=(int)($x['actor']??1001);$type=$x['type'];$price=$x['price'];$sid=2;$plan=7;
+        $h=$x['hash'];$uid=(int)($x['actor']??1001);$type=$x['type'];$price=$x['price'];$sid=$type==='INCREASE_WALLET'?0:2;$plan=$type==='INCREASE_WALLET'?0:7;
         $order=(int)($x['order']??0);$days=(int)($x['days']??0);$volume=(int)($x['volume']??0);
         $count=(int)($x['quantity']??1);$description=(string)($x['description']??'fixture');$agent=(int)($x['agent_bought']??0);
         $snapshot=null;$scoped=false;
@@ -321,7 +319,7 @@ try {
         $stmt=$db->prepare("INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id,order_id,day,volume,agent_count,description,addon_scope_snapshot,agent_bought)
             VALUES (?,?,?,?,UNIX_TIMESTAMP(),'pending',?,?,?,?,?,?,?,?,?)");
         $stmt->bind_param('sisiiiiiiissi',$h,$uid,$type,$price,$sid,$plan,$order,$days,$volume,$count,$description,$snapshot,$agent);
-        $display=achbotProviderRow($db,'SELECT days,volume FROM server_plans WHERE id=?','i',[$plan]);
+        $display=$plan?achbotProviderRow($db,'SELECT days,volume FROM server_plans WHERE id=?','i',[$plan]):[];
         $pricingUser=achbotProviderRow($db,'SELECT is_agent,discount_percent FROM users WHERE userid=?','i',[$uid]);
         $pricingStates=json_decode(achbotProviderRow($db,"SELECT value FROM setting WHERE type='BOT_STATES'")['value'],true);
         $pricing=$x['pricing_policy']??achbotAgencyQuotePolicy($pricingUser,$pricingStates,$plan,$sid);
@@ -351,8 +349,7 @@ try {
     }
     elseif ($x['op']==='checkout_wallet') {
         require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
-        $r=achbotCheckoutWallet($db,$x['hash'],(int)($x['actor']??1001),$x['mode']??'standard',
-            ['remark'=>'digits']);
+        $r=achbotCheckoutWallet($db,$x['hash'],(int)($x['actor']??1001),['remark'=>'digits']);
     }
     elseif ($x['op']==='checkout_manual') {
         require_once $argv[1].'/src/Finance/ManualReceipt.php';
@@ -367,7 +364,7 @@ try {
     }
     elseif ($x['op']==='checkout_approve') {
         require_once $argv[1].'/src/Finance/CheckoutRoutes.php';
-        $r=achbotCheckoutApproveReceipt($db,$x['hash'],(int)($x['actor']??9001),9001,$x['mode']??'standard');
+        $r=achbotCheckoutApproveReceipt($db,$x['hash'],(int)($x['actor']??9001),9001);
     }
     elseif ($x['op']==='checkout_reject') {
         require_once $argv[1].'/src/Finance/CheckoutRoutes.php';
@@ -483,6 +480,7 @@ def main():
     focus.add_argument('--zero-commercial-only',action='store_true',help='Run zero-price commercial execution proof')
     focus.add_argument('--name-collision-only',action='store_true',help='Run physical generated-name collision proof')
     focus.add_argument('--report-revisions-only',action='store_true',help='Run real report revision and retry proof')
+    focus.add_argument('--payment-actions-only',action='store_true',help='Unified actual Wallet and staff approval route matrix')
     focus.add_argument('--delivery-identity-only',action='store_true',help='Run original customer message identity and due queue proof')
     args=ap.parse_args()
     cases=[]
@@ -727,7 +725,7 @@ def main():
                     if line.startswith('[AChBot] '):
                         diagnostics.append(json.loads(line[len('[AChBot] '):]))
                     else:
-                        assert line.startswith(('achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_','achbot_plan_correction_')) or (op=='telegram_wallet' and line.startswith('achbot_admin_')) or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
+                        assert line.startswith(('achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_','achbot_plan_correction_')) or (op in ('telegram_wallet','telegram_approval') and line.startswith('achbot_admin_')) or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
                 last_diagnostics[:]=diagnostics
                 if 'expect_diagnostic' in kw:
                     expected=kw['expect_diagnostic']
@@ -1260,12 +1258,12 @@ def main():
             before=finance();n=len(requests)
             for mode,pid in historical.items():
                 ref=mode+'-prepaid-custom'
-                assert php(mode,'checkout_wallet',hash=ref,mode='custom',expect_error='checkout_draft_unavailable')
+                assert php(mode,'checkout_wallet',hash=ref,expect_error='checkout_draft_unavailable')
                 assert sql(f"SELECT CONCAT(state,':',checkout_operation_id IS NULL) FROM pays WHERE id={pid}")=='processing_wallet:1'
                 assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={pid}")=='reserved'
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_historical_prepaid_claim_no_adoption_or_new_effect')
-            for mode in (() if args.delivery_identity_only or args.report_revisions_only or args.resolution_only or args.referral_agent_only or args.plan_recovery_only or args.bulk_report_only or args.zero_commercial_only or args.name_collision_only else ('strict','off')):
+            for mode in (() if args.payment_actions_only or args.delivery_identity_only or args.report_revisions_only or args.resolution_only or args.referral_agent_only or args.plan_recovery_only or args.bulk_report_only or args.zero_commercial_only or args.name_collision_only else ('strict','off')):
                 # Isolate each test mode's scheduler from previously deferred
                 # conflict fixtures; no terminal evidence is changed.
                 sql("UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE stage IN ('funded','prepared','dispatching','applied')")
@@ -2375,7 +2373,7 @@ DELIMITER ;
                 sql('UPDATE server_plans SET days=30 WHERE id=7')
                 cases.append(mode+'_actual_long_checkout_and_auto_renew_storage_bound')
                 h,pid=insert_checkout('custom','BUY_SUB',days=10,volume=3,description=mode+'-custom-checkout')
-                r=php(mode,'checkout_wallet',hash=h,mode='custom')
+                r=php(mode,'checkout_wallet',hash=h)
                 assert r['status']=='funded',r
                 op=r['operation']
                 # Wallet-funded service checkout has no external receipt.
@@ -2456,7 +2454,7 @@ DELIMITER ;
                 cases.append(mode+'_actual_partial_checkout_sale_uses_exact_original_refund')
 
                 h,pid=insert_checkout('renew','RENEW_ACCOUNT',order=order)
-                r=php(mode,'checkout_wallet',hash=h,mode='renew')
+                r=php(mode,'checkout_wallet',hash=h)
                 assert r['status']=='funded',r
                 op=r['operation']
                 for stage in ('progressed','progressed','applied','completed'):step(mode,op,stage)
@@ -2481,11 +2479,11 @@ DELIMITER ;
                 assert sql(f"SELECT state FROM pays WHERE hash_id='{mode}-historical-bound'")=='processing'
                 r=php(mode,'plan',order=order,plan=7);assert r['success'],r
                 assert finance()==before
-                r=php(mode,'checkout_approve',hash=h,mode='renew')
+                r=php(mode,'checkout_approve',hash=h)
                 assert r['funding']=='request_invalidated',r
                 assert sql(f"SELECT stage FROM service_operations WHERE id={prior}")=='cancelled'
                 assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{prior}'")=='0'
-                assert php(mode,'checkout_approve',hash=h,mode='renew')['credit']['replayed']
+                assert php(mode,'checkout_approve',hash=h)['credit']['replayed']
                 cases.append(mode+'_physical_change_retires_current_draft_not_historical_receipt')
                 for kind,table in [('day','increase_day'),('volume','increase_plan')]:
                     sql(f"INSERT INTO {table}(volume,price) VALUES (97,100) ON DUPLICATE KEY UPDATE price=100")
@@ -2494,25 +2492,25 @@ DELIMITER ;
                     h,pid=insert_checkout(kind,typ,order=order,days=97 if kind=='day' else 0,
                         volume=97 if kind=='volume' else 0,addon_kind=kind,offer=offer)
                     assert php(mode,'checkout_manual',pay=pid,submit=True)
-                    r=php(mode,'checkout_approve',hash=h,mode=kind)
+                    r=php(mode,'checkout_approve',hash=h)
                     assert r['funding']=='funded',r
                     op=r['operation']
                     for stage in ('progressed','applied','completed'):step(mode,op,stage)
-                    assert php(mode,'checkout_approve',hash=h,mode=kind)['credit']['replayed']
+                    assert php(mode,'checkout_approve',hash=h)['credit']['replayed']
                     cases.append(mode+'_actual_scoped_'+kind+'_manual_checkout_draft')
                 # Real Telegram callbacks through the current dispatch files,
                 # not direct service-function-only evidence.
-                def callback(suffix,typ,kind,prefix,**kw):
+                def callback(suffix,typ,kind,**kw):
                     h,pid=insert_checkout(suffix,typ,**kw)
                     before=finance();wire=len(requests)
                     # Wrong customer and missing outbox key must fail without
                     # reserving the command, wallet or Native capacity.
-                    php(mode,'telegram_wallet',route=kind,callback=prefix+h,sender=9002)
+                    php(mode,'telegram_wallet',callback='pw_'+h,sender=9002)
                     assert finance()==before and len(requests)==wire
-                    php(mode,'telegram_wallet',route=kind,callback=prefix+h,missing_key=True)
+                    php(mode,'telegram_wallet',callback='pw_'+h,missing_key=True)
                     assert finance()==before and len(requests)==wire
                     assert sql(f"SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}")=='1'
-                    result=php(mode,'telegram_wallet',route=kind,callback=prefix+h)
+                    result=php(mode,'telegram_wallet',callback='pw_'+h)
                     assert result['projection'],(result,last_diagnostics)
                     assert sql(f"SELECT CONCAT(purpose,':',synced_digest IS NOT NULL) FROM payment_message_refs WHERE pay_row_id={pid} AND chat_id=1001")=='status:1'
                     op=int(sql(f"SELECT checkout_operation_id FROM pays WHERE id={pid}"))
@@ -2520,16 +2518,16 @@ DELIMITER ;
                     assert sql(f"SELECT stage FROM service_operations WHERE id={op}")=='completed'
                     assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{op}'")=='1'
                     after=finance();native=posts()
-                    php(mode,'telegram_wallet',route=kind,callback=prefix+h)
+                    php(mode,'telegram_wallet',callback='pw_'+h)
                     assert finance()==after and posts()==native
                     return op
-                op=callback('cb-buy','BUY_SUB','buy','payBuyWithWallet')
+                op=callback('cb-buy','BUY_SUB','buy')
                 order_cb=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}'"))
-                callback('cb-custom','BUY_SUB','custom','payCustomWithWallet',days=10,volume=3,description=mode+'-actual-custom')
-                callback('cb-renew','RENEW_ACCOUNT','renew','payRenewWithWallet',order=order_cb)
-                for kind,table,prefix in [('day','increase_day','payIncreaseDayWithWallet'),('volume','increase_plan','payIncreaseWithWallet')]:
+                callback('cb-custom','BUY_SUB','custom',days=10,volume=3,description=mode+'-actual-custom')
+                callback('cb-renew','RENEW_ACCOUNT','renew',order=order_cb)
+                for kind,table in [('day','increase_day'),('volume','increase_plan')]:
                     offer=int(sql(f"SELECT id FROM {table} WHERE volume=97 AND server_id IS NULL"))
-                    callback('cb-'+kind,f"INCREASE_{kind.upper()}_{order_cb}_{offer}",kind,prefix,order=order_cb,
+                    callback('cb-'+kind,f"INCREASE_{kind.upper()}_{order_cb}_{offer}",kind,order=order_cb,
                         days=97 if kind=='day' else 0,volume=97 if kind=='volume' else 0,addon_kind=kind,offer=offer)
                 cases.append(mode+'_five_real_wallet_callbacks_owner_schema_and_replay_fences')
                 # New insufficient funds leave the actual draft usable.
@@ -2537,7 +2535,7 @@ DELIMITER ;
                 wallet=int(sql('SELECT wallet FROM users WHERE userid=1001'))
                 sql('UPDATE users SET wallet=0 WHERE userid=1001')
                 before=finance();wire=len(requests)
-                php(mode,'telegram_wallet',route='buy',callback='payBuyWithWallet'+h)
+                php(mode,'telegram_wallet',callback='pw_'+h)
                 assert finance()==before and len(requests)==wire
                 assert sql(f"SELECT CONCAT(state,':',checkout_operation_id IS NULL) FROM pays WHERE id={pid}")=='pending:1'
                 assert php(mode,'checkout_manual',pay=pid,submit=True)
@@ -2551,7 +2549,7 @@ DELIMITER ;
                 for i,name in enumerate(['x','ab','a--b','a__b','a-_b','a'*101]):
                     h,pid=insert_checkout('bad-name-'+str(i),'BUY_SUB',days=10,volume=3,description=name)
                     before=finance();wire=len(requests)
-                    php(mode,'telegram_wallet',route='custom',callback='payCustomWithWallet'+h)
+                    php(mode,'telegram_wallet',callback='pw_'+h)
                     assert finance()==before and len(requests)==wire
                     assert sql(f"SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}")=='1'
                 cases.append(mode+'_invalid_native_names_never_debit_or_allocate')
@@ -2561,8 +2559,7 @@ DELIMITER ;
                 pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{mode}-retired'"))
                 before=finance();wire=len(requests)
                 assert php(mode,'retired_callback',pay=pid)==dict(modes=[False]*6,provider=False,subject=None)
-                for kind,prefix in [('buy','payBuyWithWallet'),('custom','payCustomWithWallet'),('renew','payRenewWithWallet'),('day','payIncreaseDayWithWallet'),('volume','payIncreaseWithWallet')]:
-                    php(mode,'telegram_wallet',route=kind,callback=prefix+mode+'-retired')
+                php(mode,'telegram_wallet',callback='pw_'+mode+'-retired')
                 assert finance()==before and len(requests)==wire
                 assert sql(f"SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}")=='1'
                 cases.append(mode+'_retired_external_renewal_and_provider_denied')
@@ -2591,7 +2588,7 @@ DELIMITER ;
                 # Source-real operator confirmation and unknown delivery
                 # recovery. Never construct an independent finance command.
                 h,pid=insert_checkout('operator-redrive','BUY_SUB')
-                php(mode,'telegram_wallet',route='buy',callback='payBuyWithWallet'+h,unknown_ack=True)
+                php(mode,'telegram_wallet',callback='pw_'+h,unknown_ack=True)
                 op=int(sql(f"SELECT checkout_operation_id FROM pays WHERE id={pid}"))
                 assert sql(f"SELECT stage FROM service_operations WHERE id={op}")=='completed'
                 d=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={op}"))
@@ -2643,7 +2640,7 @@ DELIMITER ;
                 agent_referral_cases(mode)
 
                 assert not faults and not errors,(faults,errors)
-            if not (args.delivery_identity_only or args.report_revisions_only or args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.bulk_report_only or args.name_collision_only):
+            if not (args.payment_actions_only or args.delivery_identity_only or args.report_revisions_only or args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.bulk_report_only or args.name_collision_only):
                 # Original zero-price commercial checkout, through actual
                 # reservation, Native execution, order, delivery and reports.
                 for mode in ('strict','off'):
@@ -2847,7 +2844,7 @@ DELIMITER ;
                         saved=sql("SELECT value FROM setting WHERE type='BOT_STATES'")
                         sql("UPDATE setting SET value=JSON_SET(value,'$."+flag+"','off') WHERE type='BOT_STATES'")
                         before=finance();requests_before=len(requests)
-                        php(mode,'checkout_wallet',hash=h,actor=9002,mode=kind,expect_error='checkout_managed_service_unavailable')
+                        php(mode,'checkout_wallet',hash=h,actor=9002,expect_error='checkout_managed_service_unavailable')
                         assert finance()==before and len(requests)==requests_before
                         assert sql(f"SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}")=='1'
                         sql("UPDATE setting SET value='"+saved+"' WHERE type='BOT_STATES'")
@@ -2873,7 +2870,7 @@ DELIMITER ;
                         # Current agency price must still authorize a raw
                         # zero; loss of agency discount is not a free grant.
                         sql("""UPDATE users SET discount_percent='{"normal":50}' WHERE userid=9002""")
-                        php(mode,'checkout_wallet',hash=h,actor=9002,mode=kind,expect_error='checkout_zero_managed_changed')
+                        php(mode,'checkout_wallet',hash=h,actor=9002,expect_error='checkout_zero_managed_changed')
                         assert finance()==before and len(requests)==request_count
                         sql("""UPDATE users SET discount_percent='{"normal":100}' WHERE userid=9002""")
                         # External zero attempt cannot be created even if a
@@ -2882,9 +2879,9 @@ DELIMITER ;
                         assert not php(mode,'checkout_manual',pay=int(pid),actor=9002)
                         assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
                         sql("UPDATE setting SET value=JSON_SET(value,'$.cartToCartState','off') WHERE type='BOT_STATES'")
-                        result=php(mode,'checkout_wallet',hash=h,actor=9002,mode=kind)
+                        result=php(mode,'checkout_wallet',hash=h,actor=9002)
                         assert result['status']=='funded' and finance()==before,result
-                        assert php(mode,'checkout_wallet',hash=h,actor=9002,mode=kind)['status']=='already_funded'
+                        assert php(mode,'checkout_wallet',hash=h,actor=9002)['status']=='already_funded'
                         assert sql(f"SELECT debit_entry_id IS NULL FROM service_operations WHERE id={result['operation']}")=='1'
                         assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
                         for stage in (('progressed','progressed','applied','completed') if kind=='renew' else ('progressed','applied','completed')):step(mode,result['operation'],stage)
@@ -2918,7 +2915,7 @@ DELIMITER ;
 
                     assert not faults and not errors,(faults,errors)
                 sql("UPDATE users SET is_agent=0,discount_percent=NULL WHERE userid=9002")
-            if not (args.delivery_identity_only or args.report_revisions_only or args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.bulk_report_only or args.zero_commercial_only):
+            if not (args.payment_actions_only or args.delivery_identity_only or args.report_revisions_only or args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.bulk_report_only or args.zero_commercial_only):
                 # Two independent claims on the same physical panel must not
                 # strand a valid generated-name purchase. Cover single,
                 # bulk, explicit-name refusal and uncertain-write replay.
@@ -3115,7 +3112,7 @@ DELIMITER ;
                     assert rows(op)[0]==pinned and posts()==n and finance()==before and not faults and not errors
                     sql(f"UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE id={op}")
                     cases.append(mode+'_import_create_physical_lock_read_committed_and_original_fence')
-            if not (args.delivery_identity_only or args.report_revisions_only or args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.zero_commercial_only or args.name_collision_only):
+            if not (args.payment_actions_only or args.delivery_identity_only or args.report_revisions_only or args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.zero_commercial_only or args.name_collision_only):
                 # Actual large BUY: every Native name and original order ID
                 # is present in exactly one bounded report per recipient.
                 mode='strict'
@@ -3166,7 +3163,67 @@ DELIMITER ;
                 for mode in ('strict','off'):
                     resolution_cases(mode)
                     assert not faults and not errors,(faults,errors)
-            if args.delivery_identity_only or not any((args.report_revisions_only,args.resolution_only,args.referral_agent_only,args.plan_recovery_only,args.bulk_report_only,args.zero_commercial_only,args.name_collision_only)):
+            if args.payment_actions_only or not any((args.delivery_identity_only,args.report_revisions_only,args.resolution_only,args.referral_agent_only,args.plan_recovery_only,args.bulk_report_only,args.zero_commercial_only,args.name_collision_only)):
+                sql("""UPDATE users SET wallet=50000,refered_by=0,step='none',is_agent=0 WHERE userid=1001;
+                    UPDATE server_info SET ucount=100,state=1,active=1 WHERE id=2;
+                    UPDATE server_plans SET days=30,volume=2,price=100,active=1 WHERE id=7;
+                    DELETE FROM setting WHERE type='BOT_STATES'; INSERT INTO setting(type,value) VALUES ('BOT_STATES','{"sellState":"on","walletState":"on","cartToCartState":"on","renewAccountState":"on","increaseTimeState":"on","increaseVolumeState":"on","plandelkhahState":"on","gbPrice":10,"dayPrice":20}')""")
+                for mode in ('strict','off'):
+                    def new_invoice(label,typ,**kw):
+                        h=mode+'-action-'+label
+                        p=php(mode,'checkout_insert',hash=h,type=typ,price=100,**kw)
+                        assert p>0,(label,p,last_diagnostics)
+                        return h,p
+                    def check_action(h,p,staff=False,legacy=None):
+                        op='telegram_approval' if staff else 'telegram_wallet'
+                        action=('pa_' if staff else 'pw_')+h
+                        before=finance();n=len(requests)
+                        if legacy:
+                            php(mode,op,callback=legacy+h)
+                        php(mode,op,callback=action,sender=1001 if staff else 9002)
+                        php(mode,op,callback=action,group=True)
+                        assert finance()==before and len(requests)==n
+                        if staff:
+                            assert sql(f"SELECT state FROM pays WHERE id={p}")=='have_sent'
+                        else:
+                            assert sql(f"SELECT checkout_operation_id IS NULL FROM pays WHERE id={p}")=='1'
+                        php(mode,op,callback=action)
+                        row=sql(f"SELECT state,COALESCE(checkout_operation_id,0) FROM pays WHERE id={p}").split('\t')
+                        assert row[0]==('paid' if staff else 'paid_with_wallet'),(h,row,last_diagnostics)
+                        sid=int(row[1])
+                        if staff:
+                            assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='payment_credit' AND source_ref='{p}'")=='1'
+                        if sid:
+                            assert sql(f"SELECT stage FROM service_operations WHERE id={sid}")=='completed'
+                            assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{sid}'")=='1'
+                        after=finance();writes=[r for r in requests if r[0] in ('POST','PUT','PLAN_PUT','RESET','DELETE')]
+                        php(mode,op,callback=action)
+                        assert finance()==after and [r for r in requests if r[0] in ('POST','PUT','PLAN_PUT','RESET','DELETE')]==writes
+                        return sid
+                    h,p=new_invoice('wallet-buy','BUY_SUB')
+                    sid=check_action(h,p,legacy='payBuyWithWallet')
+                    order=int(sql(f"SELECT order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{sid}'"))
+                    assert order>0
+                    sql("INSERT INTO increase_day(volume,price) VALUES (5,100) ON DUPLICATE KEY UPDATE price=VALUES(price); INSERT INTO increase_plan(volume,price) VALUES (5,100) ON DUPLICATE KEY UPDATE price=VALUES(price)")
+                    day=int(sql("SELECT MAX(id) FROM increase_day WHERE volume=5 AND server_id IS NULL"))
+                    vol=int(sql("SELECT MAX(id) FROM increase_plan WHERE volume=5 AND server_id IS NULL"))
+                    subjects=[
+                        ('buy','BUY_SUB',{},'payBuyWithWallet','accept'),
+                        ('custom','BUY_SUB',dict(days=4,volume=4,description=mode+'-action-custom'),'payCustomWithWallet','accCustom'),
+                        ('renew','RENEW_ACCOUNT',dict(order=order),'payRenewWithWallet','approveRenewAcc'),
+                        ('day',f'INCREASE_DAY_{order}_{day}',dict(order=order,days=5,addon_kind='day',offer=day),'payIncreaseDayWithWallet','approveIncreaseDay'),
+                        ('volume',f'INCREASE_VOLUME_{order}_{vol}',dict(order=order,volume=5,addon_kind='volume',offer=vol),'payIncreaseWithWallet','approveIncreaseVolume'),
+                        ('topup','INCREASE_WALLET',{},None,'approvePayment')]
+                    for label,typ,kw,old_wallet,old_approve in subjects:
+                        if old_wallet and label!='buy':
+                            h,p=new_invoice('wallet-'+label,typ,**kw)
+                            check_action(h,p,legacy=old_wallet)
+                        if label=='custom':kw=dict(kw,description=mode+'-approval-custom')
+                        h,p=new_invoice('staff-'+label,typ,**kw)
+                        assert php(mode,'checkout_manual',pay=p,submit=True),(label,last_diagnostics)
+                        check_action(h,p,staff=True,legacy=old_approve)
+                    cases.append(mode+'_single_wallet_and_staff_dispatch_all_original_subjects')
+            if args.delivery_identity_only or not any((args.payment_actions_only,args.report_revisions_only,args.resolution_only,args.referral_agent_only,args.plan_recovery_only,args.bulk_report_only,args.zero_commercial_only,args.name_collision_only)):
                 for mode in ('strict','off'):
                     # Isolate scheduling without modifying historical packets or attempts.
                     sql("UPDATE payment_delivery_intents SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 HOUR) WHERE state IN ('pending','dispatching')")
@@ -3199,7 +3256,7 @@ DELIMITER ;
                         assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={did}")=='2'
                         assert finance()==before and len(requests)==n
                     cases.append(mode+'_customer_photo_text_ack_identity_and_independent_sibling')
-            if args.report_revisions_only or not any((args.delivery_identity_only,args.resolution_only,args.referral_agent_only,args.plan_recovery_only,args.bulk_report_only,args.zero_commercial_only,args.name_collision_only)):
+            if args.report_revisions_only or not any((args.payment_actions_only,args.delivery_identity_only,args.resolution_only,args.referral_agent_only,args.plan_recovery_only,args.bulk_report_only,args.zero_commercial_only,args.name_collision_only)):
                 sql("UPDATE users SET wallet=50000,refered_by=0 WHERE userid=1001; UPDATE server_info SET ucount=100 WHERE id=2")
                 for mode in ('strict','off'):
                     report_revision_cases(mode)

@@ -15,6 +15,7 @@
     "src/Finance/PaymentCredit.php",
     "src/Finance/ReceiptMethods.php",
     "src/Finance/ReceiptReports.php",
+    "src/Finance/Routes/PaymentActions.php",
     "src/Finance/ServiceDelivery.php",
     "src/Finance/ServiceHistory.php",
     "src/Finance/ServicePurchaseReferral.php",
@@ -43,6 +44,7 @@
     "src/Finance/RecoveryInspection.php",
     "src/Finance/RecoveryTransport.php",
     "src/Finance/RenewalHelper.php",
+    "src/Finance/Routes/ManualApproval.php",
     "src/Finance/Routes/ManualCrypto.php",
     "src/Finance/Routes/RenewalPlan.php",
     "src/Finance/Routes/RenewalSelection.php",
@@ -144,7 +146,7 @@
       "after_count": 0,
       "before_sha256": "64b8a4d1b9ebd51d1264852c588531f7cc4ddf54f3028e6e0a65cefd2fbbe152",
       "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "reason": "Manual approval credits receipt, then advances same shared service command."
+      "reason": "Manual approval credits receipt, then advances same shared service command. Issue #236: all approval dispatch is now owned by PaymentActions.php."
     },
     "src/Finance/Routes/ManualReceipts.php": {
       "reason": "Retire obsolete API execution and override callbacks; result projection uses current credit and service delivery journals.",

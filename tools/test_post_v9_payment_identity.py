@@ -53,13 +53,12 @@ output = json.loads(result.stdout)
 
 # All rendered Telegram Callback strings with an original merchant hash must
 # fit 64 BYTES, not 64 Unicode characters. The longest supported event is the
-# current Wallet selector; manual actions use compact ASCII prefixes.
+# decline action; all current references have compact ASCII prefixes.
 prefixes = (
     "pm_b_", "pm_g_", "mc_b_", "mc_c_", "mc_e_", "mc_t_", "mcm_", "rs_", "rc_", "dc_", "ps_", "ph_",
-    "payBuyWithWallet", "payCustomWithWallet", "payRenewWithWallet",
-    "payIncreaseDayWithWallet", "payIncreaseWithWallet",
+    "pw_", "pa_", "declineAction_", "apiReview_",
 )
-if max(len((prefix + "A" * output["default_length"]).encode("ascii"))
+if max(len((prefix + "A" * 50).encode("ascii"))
        for prefix in prefixes) > 64:
     raise RuntimeError("New payment references exceed Telegram callback_data limit")
 if output.get("complete") is not True or output["default_length"] != 20:

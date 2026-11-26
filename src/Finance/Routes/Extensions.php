@@ -133,18 +133,6 @@ if(preg_match('/\AselectPlanDayIncrease(?<orderId>[1-9][0-9]{0,9})_(?<dayId>[1-9
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent,'selector');
 }
 
-if (preg_match('/^approveIncreaseDay(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
-    require_once __DIR__.'/../CheckoutRoutes.php';
-    achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'day');
-    return;
-}
-
-if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseDayWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
-    require_once __DIR__.'/../CheckoutRoutes.php';
-    achbotCheckoutWalletCallback($connection,(string)$match[1],(int)$from_id,'day',$botState);
-    return;
-}
-
 if (is_string($data) && preg_match('/^changePlan_([1-9][0-9]{0,9})$/D', $data, $match)) {
     require_once __DIR__.'/../../Subscription/AccountDetails.php';
     $orderId=(int)$match[1];
@@ -347,16 +335,4 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
         json_encode(['inline_keyboard'=>$keyboard]),'HTML',$from_id);
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent,'selector');
-}
-
-if (preg_match('/^approveIncreaseVolume(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
-    require_once __DIR__.'/../CheckoutRoutes.php';
-    achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'volume');
-    return;
-}
-
-if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayIncreaseWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
-    require_once __DIR__.'/../CheckoutRoutes.php';
-    achbotCheckoutWalletCallback($connection,(string)$match[1],(int)$from_id,'volume',$botState);
-    return;
 }

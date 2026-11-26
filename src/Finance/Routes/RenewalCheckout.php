@@ -97,15 +97,3 @@ if (
         alert(achbotMessage('renewal.renewal_checkout.alert.201380d8bf'),true);
     return;
 }
-
-if(preg_match('/^approveRenewAcc(.*)/',$data,$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')){
-    require_once __DIR__.'/../CheckoutRoutes.php';
-    achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'renew');
-    return;
-}
-
-if(is_string($data) && strlen($data) <= 64 && preg_match('/\ApayRenewWithWallet([A-Za-z0-9_-]{1,50})\z/D', $data, $match)){
-    require_once __DIR__.'/../CheckoutRoutes.php';
-    achbotCheckoutWalletCallback($connection,(string)$match[1],(int)$from_id,'renew',$botState);
-    return;
-}

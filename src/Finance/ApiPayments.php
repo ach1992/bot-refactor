@@ -6,6 +6,7 @@ require_once __DIR__.'/ReceiptHelpers.php';
 require_once __DIR__.'/PaymentLifecycle.php';
 require_once __DIR__.'/ApiPaymentPresentation.php';
 require_once __DIR__.'/PaymentEvidence.php';
+require_once __DIR__.'/CheckoutAdmission.php';
 
 /** Protect each original API payment throughout evidence redemption,
  * settlement and invoice projection. Human decisions share the same
@@ -462,27 +463,14 @@ function achbotApiPaymentCheckGift(mysqli $db,array $claim,callable $settle): st
     $proof=$consumed['proof']??achbotPaymentEvidenceGetProof($db,$id);
     return is_array($proof)?$settle($db,$id,$proof):'review';
 }
-/** The approval callback identifies only the original invoice and subject. */
-function achbotManualApprovalPrefix(array $pay): string {
-    $t=(string)$pay['type'];
-    return match(true) {
-        $t==='INCREASE_WALLET'=>'approvePayment',
-        $t==='RENEW_ACCOUNT'=>'approveRenewAcc',
-        str_starts_with($t,'INCREASE_DAY_')=>'approveIncreaseDay',
-        str_starts_with($t,'INCREASE_VOLUME_')=>'approveIncreaseVolume',
-        $t==='BUY_SUB' && ((int)$pay['day']>0 || (int)$pay['volume']>0)=>'accCustom',
-        $t==='BUY_SUB'=>'accept',
-        default=>throw new DomainException('manual_review_subject_invalid'),
-    };
-}
 function achbotApiPaymentReviewKeyboard(array $pay): string {
     if($pay['state']!=='have_sent')return achbotPayUxStatusKeyboard((string)$pay['hash_id']);
-    $hash=(string)$pay['hash_id'];$prefix=achbotManualApprovalPrefix($pay);
+    $hash=(string)$pay['hash_id'];$approval=achbotManualApprovalCallbackData($pay);
     $db=$GLOBALS['connection']??null;
-    if($db instanceof mysqli)return buildAdminKeyboardWithStats($db,$prefix.$hash,'declineAction_'.$hash,$hash,(int)$pay['user_id']);
+    if($db instanceof mysqli)return buildAdminKeyboardWithStats($db,$approval,'declineAction_'.$hash,$hash,(int)$pay['user_id']);
     return inlineKeyboard([
         [['text'=>achbotMessage('manual_payment.api_payment.view_code'),'callback_data'=>'apiReview_'.$hash]],
-        [['text'=>achbotMessage('legacy_buttons.approve'),'callback_data'=>$prefix.$hash],
+        [['text'=>achbotMessage('legacy_buttons.approve'),'callback_data'=>$approval],
          ['text'=>achbotMessage('legacy_buttons.decline'),'callback_data'=>'declineAction_'.$hash]]
     ]);
 }

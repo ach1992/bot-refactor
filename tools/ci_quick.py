@@ -102,6 +102,7 @@ REQUIRED_CURRENT_CASES = {
         "new_delivery_due_immediately_and_failed_preflight_yields",
         "customer_photo_text_ack_identity_and_independent_sibling",
         "five_real_wallet_callbacks_owner_schema_and_replay_fences",
+        "single_wallet_and_staff_dispatch_all_original_subjects",
         "actual_low_wallet_callback_switch_to_manual",
         "invalid_native_names_never_debit_or_allocate",
         "retired_external_renewal_and_provider_denied",

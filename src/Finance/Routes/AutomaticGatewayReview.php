@@ -114,7 +114,7 @@ if (preg_match('/^attentionReceipt_([1-9][0-9]{0,17})$/D',(string)($data??''),$r
             achbotMessageHtml('automatic_gateway_review.reference',['hash'=>$pay['hash_id']])."\n".
             achbotMessageHtml('automatic_gateway_review.api_quote',['amount'=>$a['quote_amount'],'currency'=>$a['quote_currency']]);
         $actions=[['text'=>achbotMessage('legacy_buttons.approve'),
-            'callback_data'=>achbotManualApprovalPrefix($pay).$pay['hash_id']]];
+            'callback_data'=>achbotManualApprovalCallbackData($pay)]];
         array_unshift($actions,['text'=>achbotMessage('legacy_buttons.decline'),'callback_data'=>'declineAction_'.$pay['hash_id']]);
         $keys=inlineKeyboard([$actions,[['text'=>achbotMessage('automatic_gateway_review.open_case'),
             'callback_data'=>'attentionCase_'.$payId]]]);
@@ -571,7 +571,7 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 in_array($item['state'],['have_sent','service_superseded'],true) && $item['stage']==='review' &&
                 (!$apiCase || !achbotPaymentEvidenceGetProof($connection,$payId))) {
                 $actions[]=['text'=>achbotMessage('legacy_buttons.approve'),
-                    'callback_data'=>achbotManualApprovalPrefix($item).$item['hash_id']];
+                    'callback_data'=>achbotManualApprovalCallbackData($item)];
                 $actions[]=['text'=>achbotMessage('legacy_buttons.decline'),'callback_data'=>'declineAction_'.$item['hash_id']];
             }
             if ($manualCase && (int)$item['financial_review']===1 &&

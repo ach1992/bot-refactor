@@ -8,8 +8,7 @@ require_once __DIR__.'/../Admin/InstanceContent.php';
  * mode-specific labels and navigation differ; eligibility is decided once
  * by CheckoutAdmission. No transport or monetary effect is owned here. */
 function achbotCheckoutPaymentKeyboard(string $mode,string $hash,int $amount,array $methods,string $botUrl): array {
-    $prefix=achbotCheckoutCallbackPrefix($mode);
-    if ($prefix===null) throw new InvalidArgumentException('checkout_mode_invalid');
+    if (!in_array($mode,['standard','custom','renew','day','volume','topup'],true)) throw new InvalidArgumentException('checkout_mode_invalid');
     if ($amount===0 && $mode!=='topup') {
         $label=match($mode) {
             'standard','custom'=>achbotMessage('purchase.select_plan.button.8719396e1e'),
@@ -17,7 +16,7 @@ function achbotCheckoutPaymentKeyboard(string $mode,string $hash,int $amount,arr
             'day'=>achbotMessage('renewal.free_confirmation.day'),
             'volume'=>achbotMessage('renewal.free_confirmation.volume')
         };
-        return [[['text'=>$label,'callback_data'=>$prefix.'WithWallet'.$hash]]];
+        return [[['text'=>$label,'callback_data'=>'pw_'.$hash]]];
     }
     if ($amount<=0) return [];
     $keyboard=[];
@@ -39,7 +38,7 @@ function achbotCheckoutPaymentKeyboard(string $mode,string $hash,int $amount,arr
     }
     if ($mode!=='topup' && in_array('wallet',$methods,true)) {
         $label=achbotMessage('legacy_buttons.pay_with_wallet');
-        $keyboard[]=[['text'=>$label,'callback_data'=>$prefix.'WithWallet'.$hash]];
+        $keyboard[]=[['text'=>$label,'callback_data'=>'pw_'.$hash]];
     }
     return $keyboard;
 }

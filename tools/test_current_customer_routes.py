@@ -167,7 +167,7 @@ case 'renew':
 case 'discount':
     require $root.'/src/Finance/Routes/DiscountEntry.php';break;
 case 'wallet':
-    try {$events[]=['wallet',achbotCheckoutWallet($connection,$spec['hash'],$from_id,$spec['mode'], $botState)];}
+    try {$events[]=['wallet',achbotCheckoutWallet($connection,$spec['hash'],$from_id, $botState)];}
     catch (DomainException $e) {if (empty($spec['expect_denied'])) throw $e; $events[]=['denied',$e->getMessage()];}
     catch (mysqli_sql_exception $e) {
         // MariaDB snapshot isolation may refuse a locking CURRENT read of
@@ -324,7 +324,7 @@ def main():
             # A replayed button cannot reopen a second redemption.
             rr=run('discount',actor=uid,callback='haveDiscountCheckout_'+pid)
             assert rr['user']['step']=='none' and sql(f"SELECT expire_count FROM discounts WHERE hash_id='{code}'")=='1',rr
-            funded=run('wallet',actor=uid,hash=h,mode=mode)['events'][0][1]
+            funded=run('wallet',actor=uid,hash=h)['events'][0][1]
             assert funded['status']=='funded',funded
             before=sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{funded['operation']}'")
             progress=run('projection',actor=uid,pay=int(pid))
@@ -360,7 +360,7 @@ def main():
         r=run('standard',callback='selectPlan7_1_none');pid,h,_,_=latest(2001)
         run('discount',callback='haveDiscountCheckout_'+pid)
         r=run('discount',text='missing-code')
-        assert 'payBuyWithWallet'+h in callbacks(r) and latest(2001)[2]=='100',r
+        assert 'pw_'+h in callbacks(r) and latest(2001)[2]=='100',r
         r=run('standard',callback='selectPlan7_1_none');pid,h,_,_=latest(2001)
         run('discount',callback='haveDiscountCheckout_'+pid)
         sql("INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('stale','percent',20,0,2,-1)")
@@ -408,11 +408,11 @@ def main():
         state()
         r=run('renew',callback=f'renewAccount{oid}')
         pid,h,*_=latest(2001)
-        assert 'payRenewWithWallet'+h in callbacks(r),r
+        assert 'pw_'+h in callbacks(r),r
         state(renewAccountState='off')
         before_wallet=sql("SELECT wallet FROM users WHERE userid=2001")
         before_ops=sql("SELECT COUNT(*) FROM service_operations")
-        r=run('wallet',hash=h,mode='renew',expect_denied=True)
+        r=run('wallet',hash=h,expect_denied=True)
         assert any(e[0]=='denied' for e in r['events']),r
         assert sql("SELECT wallet FROM users WHERE userid=2001")==before_wallet and sql("SELECT COUNT(*) FROM service_operations")==before_ops
         state()
@@ -490,7 +490,7 @@ def main():
             queries=['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM service_effects','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet,freetrial FROM users WHERE userid=2001','SELECT COUNT(*) FROM orders_list']
             snapshot=tuple(sql(q) for q in queries)
             sql('UPDATE server_plans SET price=0 WHERE id=7')
-            denied=run('wallet',hash=h,mode=mode,expect_denied=True)
+            denied=run('wallet',hash=h,expect_denied=True)
             assert denied['events'][0]==['denied','service_plan_unavailable'],denied
             assert tuple(sql(q) for q in queries)==snapshot
             sql('UPDATE server_plans SET price=100 WHERE id=7')
@@ -514,18 +514,18 @@ def main():
         def free_checkout(uid,r,count):
             pid,h,price,qty=latest(uid)
             assert int(price)==0 and max(1,int(qty))==count,r
-            assert 'payBuyWithWallet'+h in callbacks(r),r
+            assert 'pw_'+h in callbacks(r),r
             assert not any(x.startswith('freeTrial') for x in callbacks(r)),r
             before=sql(f'SELECT wallet,freetrial FROM users WHERE userid={uid}')
             debit_count=sql('SELECT COUNT(*) FROM wallet_entries')
-            funded=run('wallet',actor=uid,hash=h,mode='standard')['events'][0][1]
+            funded=run('wallet',actor=uid,hash=h)['events'][0][1]
             assert funded['status']=='funded',funded
             quote=json.loads(sql(f"SELECT quote_payload FROM service_operations WHERE id={funded['operation']}"))['request']
             assert quote['price']==0 and quote['quantity']==count and quote['plan_id']==7,quote
             assert sql(f'SELECT debit_entry_id IS NULL FROM service_operations WHERE id={funded["operation"]}')=='1'
             assert sql('SELECT COUNT(*) FROM wallet_entries')==debit_count
             assert sql(f'SELECT wallet,freetrial FROM users WHERE userid={uid}')==before
-            assert run('wallet',actor=uid,hash=h,mode='standard')['events'][0][1]['status']=='already_funded'
+            assert run('wallet',actor=uid,hash=h)['events'][0][1]['status']=='already_funded'
         free_checkout(2002,run('standard',actor=2002,callback='selectPlan7_1_one'),1)
         free_checkout(2002,run('standard',actor=2002,callback='selectPlan7_1_none'),1)
         run('standard',actor=2002,callback='selectPlan7_1_much')
@@ -536,11 +536,11 @@ def main():
         # its configured agency entitlement changes before reservation.
         r=run('standard',actor=2002,callback='selectPlan7_1_one')
         _,h,price,_=latest(2002)
-        assert int(price)==0 and 'payBuyWithWallet'+h in callbacks(r),r
+        assert int(price)==0 and 'pw_'+h in callbacks(r),r
         before=tuple(sql(q) for q in ['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM service_effects','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet,freetrial FROM users WHERE userid=2002'])
         for value in [50,"100junk"]:
             sql("UPDATE users SET discount_percent='"+json.dumps({'normal':value})+"' WHERE userid=2002")
-            denied=run('wallet',actor=2002,hash=h,mode='standard',expect_denied=True)
+            denied=run('wallet',actor=2002,hash=h,expect_denied=True)
             assert denied['events'][0]==['denied','checkout_zero_commercial_changed'],denied
             assert before==tuple(sql(q) for q in ['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM service_effects','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet,freetrial FROM users WHERE userid=2002'])
         cases.append('zero_commercial_current_agency_authorization_rechecked_before_reservation')
@@ -563,7 +563,7 @@ def main():
                 holder.stdin.write("START TRANSACTION; "+revoke+"; SELECT 'locked';\n");holder.stdin.flush()
                 assert holder.stdout.readline().strip()=='locked'
                 with ThreadPoolExecutor(max_workers=1) as pool:
-                    waiting=pool.submit(run,'wallet',actor=2002,hash=h,mode='standard',expect_denied=True,expect_conflict=True)
+                    waiting=pool.submit(run,'wallet',actor=2002,hash=h,expect_denied=True,expect_conflict=True)
                     try:
                         end=time.monotonic()+5
                         while time.monotonic()<end:
@@ -579,7 +579,7 @@ def main():
                     denied=waiting.result(timeout=15)
                     assert denied['events'][0] in (['denied','checkout_zero_commercial_changed'],['snapshot_conflict',1020]),denied
                     assert before==tuple(sql(q) for q in ['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM service_effects','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet,freetrial FROM users WHERE userid=2002'])
-                    fresh=run('wallet',actor=2002,hash=h,mode='standard',expect_denied=True)
+                    fresh=run('wallet',actor=2002,hash=h,expect_denied=True)
                     assert fresh['events'][0]==['denied','checkout_zero_commercial_changed'],fresh
                 assert before==tuple(sql(q) for q in ['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM service_effects','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet,freetrial FROM users WHERE userid=2002'])
             finally:
@@ -596,19 +596,19 @@ def main():
         sql("UPDATE users SET step='enterCustomPlanName7_1_2_3_one' WHERE userid=2002")
         r=run('catalogue',actor=2002,text='agencyzero12345')
         pid,h,price,_=latest(2002)
-        assert int(price)==0 and 'payCustomWithWallet'+h in callbacks(r),r
+        assert int(price)==0 and 'pw_'+h in callbacks(r),r
         assert json.loads(sql(f"SELECT checkout_draft_context FROM pays WHERE id={pid}"))['zero_custom']=='agency'
         state(agencyState='off')
-        denied=run('wallet',actor=2002,hash=h,mode='custom',expect_denied=True)
+        denied=run('wallet',actor=2002,hash=h,expect_denied=True)
         assert denied['events'][0]==['denied','checkout_zero_custom_changed'],denied
         state()
         sql("""UPDATE users SET discount_percent='{"normal":50}' WHERE userid=2002""")
-        denied=run('wallet',actor=2002,hash=h,mode='custom',expect_denied=True)
+        denied=run('wallet',actor=2002,hash=h,expect_denied=True)
         assert denied['events'][0]==['denied','checkout_zero_custom_changed'],denied
         sql("""UPDATE users SET discount_percent='{"normal":100}' WHERE userid=2002""")
         before=sql("SELECT wallet,freetrial FROM users WHERE userid=2002")
         ledger=sql("SELECT COUNT(*) FROM wallet_entries")
-        funded=run('wallet',actor=2002,hash=h,mode='custom')['events'][0][1]
+        funded=run('wallet',actor=2002,hash=h)['events'][0][1]
         assert funded['status']=='funded',funded
         assert sql(f"SELECT debit_entry_id IS NULL FROM service_operations WHERE id={funded['operation']}")=='1'
         assert sql("SELECT wallet,freetrial FROM users WHERE userid=2002")==before
@@ -617,19 +617,19 @@ def main():
         sql("UPDATE users SET step='enterCustomPlanName7_1_2_3_none' WHERE userid=2001")
         r=run('catalogue',text='configzero12345')
         pid,h,price,_=latest(2001)
-        assert int(price)==0 and 'payCustomWithWallet'+h in callbacks(r),r
+        assert int(price)==0 and 'pw_'+h in callbacks(r),r
         assert json.loads(sql(f"SELECT checkout_draft_context FROM pays WHERE id={pid}"))['zero_custom']=='configured_rates'
         state(gbPrice=1,dayPrice=0)
-        denied=run('wallet',hash=h,mode='custom',expect_denied=True)
+        denied=run('wallet',hash=h,expect_denied=True)
         assert denied['events'][0]==['denied','checkout_zero_custom_changed'],denied
         state(gbPrice=0,dayPrice=0,walletState='off')
         assert 'selectServer2_none' in callbacks(run('entry',callback='buySubscription'))
         assert 'selectCustomPlan1_2_none' in callbacks(run('catalogue',callback='selectCategory1_2_none'))
         assert 'selectPlan7_1_none' in callbacks(run('catalogue',callback='selectCategory1_2_none'))
-        funded=run('wallet',hash=h,mode='custom')['events'][0][1]
+        funded=run('wallet',hash=h)['events'][0][1]
         assert funded['status']=='funded',funded
         assert sql(f"SELECT debit_entry_id IS NULL FROM service_operations WHERE id={funded['operation']}")=='1'
-        assert run('wallet',hash=h,mode='custom')['events'][0][1]['status']=='already_funded'
+        assert run('wallet',hash=h)['events'][0][1]['status']=='already_funded'
         state()
         sql("UPDATE users SET step='selectCustomPlanGB7_1_none' WHERE userid=2001")
         assert run('catalogue',text='1e2')['user']['step']=='selectCustomPlanGB7_1_none'
@@ -639,11 +639,11 @@ def main():
         state(testAccount='on',renewAutoState='on')
         r=run('standard',callback='selectPlan7_1_none')
         pid,h,price,_=latest(2001)
-        assert int(price)>0 and 'payBuyWithWallet'+h in callbacks(r),r
+        assert int(price)>0 and 'pw_'+h in callbacks(r),r
         before=tuple(sql(q) for q in ['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet FROM users WHERE userid=2001'])
         sql('UPDATE server_plans SET active=1,price=0 WHERE id=14')
         state(sellState='off',testAccount='on',renewAutoState='on')
-        denied=run('wallet',hash=h,mode='standard',expect_denied=True)
+        denied=run('wallet',hash=h,expect_denied=True)
         assert denied['events'][0]==['denied','checkout_sales_disabled'],denied
         assert tuple(sql(q) for q in ['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet FROM users WHERE userid=2001'])==before
         assert 'buySubscription' not in callbacks(run('menu'))
@@ -669,11 +669,11 @@ def main():
         state(walletState='off')
         run('discount',callback=f'haveDiscountCheckout_{pid}')
         r=run('discount',text='nomoneyfull')
-        assert 'payBuyWithWallet'+h in callbacks(r),r
+        assert 'pw_'+h in callbacks(r),r
         assert any(b.get('text')=='📥 دریافت رایگان' for e in r['events'] if e[0]=='send' and e[2] for row in json.loads(e[2])['inline_keyboard'] for b in row),r
         assert sql(f"SELECT price FROM pays WHERE id={pid}")=='0'
         before=sql("SELECT COUNT(*) FROM wallet_entries")
-        op=run('wallet',hash=h,mode='standard')['events'][0][1]
+        op=run('wallet',hash=h)['events'][0][1]
         assert op['status']=='funded' and sql("SELECT COUNT(*) FROM wallet_entries")==before
         assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
         cases.append('full_discount_zero_confirmation_without_wallet_or_gateway')
@@ -739,7 +739,7 @@ def main():
             assert sql(f"SELECT wallet,freetrial FROM users WHERE userid={uid}")==before
             assert sql("SELECT COUNT(*) FROM wallet_entries")==ledger
             assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
-            assert run('wallet',actor=uid,hash=h,mode=mode)['events'][0][1]['status']=='already_funded'
+            assert run('wallet',actor=uid,hash=h)['events'][0][1]['status']=='already_funded'
         cases.append('fresh_ordinary_agent_bulk_custom_discount_only_routes_atomic_partial_refusal')
         # A configured but audience-denied method is not available.
         state(gatewayAudience={'wallet':'agents'})
@@ -763,7 +763,7 @@ def main():
         r=run('renew',callback=f'renewAccount{oid}')
         pid,h,price,_=latest(2001)
         assert int(price)>0 and 'haveDiscountCheckout_'+pid in callbacks(r),r
-        assert 'payRenewWithWallet'+h not in callbacks(r),r
+        assert 'pw_'+h not in callbacks(r),r
         r=reject_partial(2001,r,'nomoneyrenewpartial')
         before=sql("SELECT COUNT(*) FROM wallet_entries")
         before_wallet=sql("SELECT wallet FROM users WHERE userid=2001")
@@ -772,7 +772,7 @@ def main():
         assert sql("SELECT COUNT(*) FROM wallet_entries")==before
         assert sql("SELECT wallet FROM users WHERE userid=2001")==before_wallet
         assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
-        op=run('wallet',hash=h,mode='renew')['events'][0][1]
+        op=run('wallet',hash=h)['events'][0][1]
         assert op['status']=='already_funded' and sql(f"SELECT debit_entry_id IS NULL FROM service_operations WHERE id={op['operation']}")=='1'
         cases.append('fresh_renewal_full_discount_without_monetary_methods')
         state()
@@ -809,7 +809,7 @@ def main():
         cases.append('actual_current_agency_discount_standard_bulk_custom_and_renewal')
         base_keys={'bankAccount':'fixture-bank','holderName':'fixture-holder','private':'PRIVATE_SYNTHETIC'}
         methods=[
-            ('walletState','wallet',{},'payBuyWithWallet'),
+            ('walletState','wallet',{},'pw_'),
             ('cartToCartState','bank_transfer',{},'pm_b_'),
             ('giftCardState','gift_card',{'giftCardUrl':'https://fixture.invalid/gift'},'pm_g_'),
             ('manualUsdtState','manual_usdt',{'manualUsdtWalletBEP20':'0x'+'a'*40,'manualUsdtRateToman':'1000'},'mcm_'),

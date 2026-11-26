@@ -92,12 +92,6 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',
     return;
 }
 
-if (preg_match('/^approvePayment(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
-    require_once __DIR__.'/../CheckoutRoutes.php';
-    achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'topup');
-    return;
-}
-
 // Decline Cart To Cart by ACh
 
 if (preg_match('/^noop_(.+)$/', $data, $m)) {
