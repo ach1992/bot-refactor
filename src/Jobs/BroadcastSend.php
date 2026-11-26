@@ -9,17 +9,6 @@ require_once __DIR__ . '/../Telegram/Response.php';
 
 require_once __DIR__.'/../Broadcast/Storage.php';
 
-/** Notifications cannot stop or restart the actual dispatch job. */
-function achbotBroadcastNotice(int $id,string $phase,string $text): void {
-    try {
-        achbotNotifyAdmins('sendMessage',['text'=>$text],
-            ['report_channel'=>null,'report_ref'=>'broadcast:'.$id.':'.$phase]);
-    } catch (Throwable $error) {
-        error_log('achbot_broadcast_notice_failed broadcast_id='.$id.' phase='.$phase.
-            ' class='.get_class($error).' code='.(int)$error->getCode());
-    }
-}
-
 function achbotBroadcastSend(mysqli $connection,string $botUsername): void {
     $batchLimit=400;
     $sleepUs=80000;
@@ -32,34 +21,10 @@ function achbotBroadcastSend(mysqli $connection,string $botUsername): void {
     $claimed=false;
     $claim=null;
     try {
-        // The canonical Cron lease excludes a living previous dispatcher.
-        // Running state therefore recovers immediately after process death.
-        // For paused state, updated_at is the durable eligible-at checkpoint:
-        // ordinarily NOW(), or the future time requested by Telegram 429.
-        $list=achbotBroadcastQuery($connection,"
-            SELECT id,`offset`,updated_at,
-                (state=2 OR updated_at IS NULL OR updated_at<=NOW()) AS ready
-            FROM send_list WHERE (type='forwardall' OR text_html IS NOT NULL)
-              AND state IN (1,2)
-            ORDER BY id LIMIT 1");
-        $candidate=$list->fetch_assoc();
-        $list->free();
-        // Preserve FIFO across queued broadcasts during an upstream wait.
-        if (!$candidate || !(int)$candidate['ready']) return;
-        $sendId=(int)$candidate['id'];
-        $offset=(int)$candidate['offset'];
-        achbotBroadcastQuery($connection,"UPDATE send_list SET state=2,updated_at=NOW()
-            WHERE id=? AND `offset`=?
-              AND (state=2 OR (state=1 AND (updated_at IS NULL OR updated_at<=NOW())))",
-            [$sendId,$offset]);
-        // A recovered state=2 row may already have the same second timestamp.
-        // Use the actual guarded read below, not changed-row semantics, for
-        // that case; cancellation is never converted back into running.
-        $list=achbotBroadcastQuery($connection,"SELECT * FROM send_list
-            WHERE id=? AND state=2 AND `offset`=?",[$sendId,$offset]);
-        $info=$list->fetch_assoc();
-        $list->free();
+        $info=achbotJobTake($connection,'send_list');
         if (!$info) return;
+        $sendId=(int)$info['id'];
+        $offset=(int)$info['offset'];
         $claimed=true;
 
         $type=$info['type'];
@@ -68,10 +33,10 @@ function achbotBroadcastSend(mysqli $connection,string $botUsername): void {
         $text=$info['text_html'];
         $message_id=$info['message_id'];
         $group=$info['target_group']??'all';
-        if ($offset===0 && $candidate['updated_at']===null) {
+        if ($offset===0 && $info['first_updated_at']===null) {
             $msg=$type==='forwardall'?achbotMessage('jobs.broadcast_send.text.5168e99d1c'):
                 achbotMessage('jobs.broadcast_send.text.afcd1bb579');
-            achbotBroadcastNotice($sendId,'started',$msg);
+            achbotJobNotice('broadcast',$sendId,'started',$msg);
         }
 
         $keys=json_encode(['inline_keyboard'=>[[[
@@ -96,28 +61,24 @@ function achbotBroadcastSend(mysqli $connection,string $botUsername): void {
             // wins if already recorded, and a report failure cannot reopen it.
             $completed=markFinished($connection,'send_list',$sendId,$offset);
             $claimed=false;
-            if ($completed) achbotBroadcastNotice($sendId,'completed',$msg);
+            if ($completed) achbotJobNotice('broadcast',$sendId,'completed',$msg);
             return;
         }
 
         // Claim each recipient durably BEFORE any possible external send.
         // The cursor is not proof of ACK. Never replay an uncertain dispatch.
-        $claim=$connection->prepare("UPDATE send_list SET `offset`=?,updated_at=NOW()
-            WHERE id=? AND state=2 AND `offset`=?");
-        if (!$claim) throw new RuntimeException('broadcast_claim_prepare_failed',$connection->errno);
         $next=0;
-        $claim->bind_param('iii',$next,$sendId,$offset);
+        $claim=achbotJobClaimStatement($connection,'send_list',$next,$sendId,$offset);
         $needsSample=(int)($info['sample_message_id']??0)<=0;
-        $sliceUntil=hrtime(true)+45_000_000_000;
+        $sliceUntil=achbotJobSliceDeadline();
         while ($user=$usersList->fetch_assoc()) {
             if (hrtime(true)>=$sliceUntil) break;
             $next=(int)$user['id'];
             $uid=(int)$user['userid'];
-            if (!$claim->execute()) throw new RuntimeException('broadcast_claim_write_failed',$claim->errno);
-            if ($claim->affected_rows!==1) {
+            if (!achbotJobClaim($claim)) {
                 if (isCancelled($connection,'send_list',$sendId)) {
                     $claimed=false;
-                    achbotBroadcastNotice($sendId,'cancelled',
+                    achbotJobNotice('broadcast',$sendId,'cancelled',
                         achbotMessage('jobs.broadcast_send.button.488a04a1e0',['offset'=>$offset]));
                 } else error_log('achbot_broadcast_claim_not_acquired broadcast_id='.$sendId.' user_id='.$uid);
                 return;
@@ -151,12 +112,10 @@ function achbotBroadcastSend(mysqli $connection,string $botUsername): void {
                 $code=$outcome['code'];
                 error_log('achbot_broadcast_delivery_rejected code='.$code.
                     ' user_id='.$uid.' broadcast_id='.$sendId);
-                if ($code===403) {
+                if ($code===403 && (str_contains(strtolower($sendRes->description),'bot was blocked by the user') ||
+                    str_contains(strtolower($sendRes->description),'user is deactivated'))) {
                     try {
-                        achbotBroadcastQuery($connection,"UPDATE users SET step='Bot_Blocked'
-                            WHERE userid=? AND (step IS NULL OR
-                                (step NOT IN ('banned','Bot_Blocked')
-                                AND step NOT LIKE 'achbotDirectGift%' AND step NOT LIKE 'achbotExempt:%'))",[$uid]);
+                        achbotBroadcastMarkBlocked($connection,$uid);
                     } catch (Throwable $error) {
                         error_log('achbot_broadcast_block_marker_failed broadcast_id='.$sendId.
                             ' user_id='.$uid.' code='.(int)$error->getCode());
@@ -215,19 +174,7 @@ function achbotBroadcastSend(mysqli $connection,string $botUsername): void {
         throw new RuntimeException('broadcast_worker_deferred',(int)$error->getCode());
     } finally {
         safeClose($claim);
-        if ($claimed) {
-            // Guarded state transition: no rewind, no revival of completed
-            // or cancelled work. If SQL is unavailable, state=2 is
-            // recoverable at the next admitted Cron invocation.
-            try {
-                if (!markPaused($connection,'send_list',$sendId,$offset,$delay))
-                    throw new RuntimeException('broadcast_checkpoint_write_failed',$connection->errno);
-            } catch (Throwable $error) {
-                error_log('achbot_broadcast_checkpoint_deferred broadcast_id='.$sendId.' offset='.$offset.
-                    ' class='.get_class($error).' code='.(int)$error->getCode());
-                throw new RuntimeException('broadcast_checkpoint_deferred',(int)$error->getCode());
-            }
-        }
+        if ($claimed) achbotJobPause($connection,'send_list','broadcast',$sendId,$offset,$delay);
     }
 }
 

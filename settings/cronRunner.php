@@ -189,11 +189,20 @@ $inlineStartKey = json_encode([
     ]
 ], JSON_UNESCAPED_UNICODE);
 
-require __DIR__ . '/../src/Jobs/MessageActions.php';
-
-
-require __DIR__ . '/../src/Jobs/BroadcastSend.php';
-        exit(0);
+$broadcastFailed=false;
+try {
+    require __DIR__ . '/../src/Jobs/MessageActions.php';
+} catch (Throwable $error) {
+    $broadcastFailed=true;
+    error_log('achbot_message_action_worker_failed class='.get_class($error).' code='.(int)$error->getCode());
+}
+try {
+    require __DIR__ . '/../src/Jobs/BroadcastSend.php';
+} catch (Throwable $error) {
+    $broadcastFailed=true;
+    error_log('achbot_broadcast_worker_failed class='.get_class($error).' code='.(int)$error->getCode());
+}
+        exit($broadcastFailed?1:0);
     }
     if ($workerMode==='services') {
 

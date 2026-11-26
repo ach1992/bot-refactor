@@ -123,11 +123,6 @@ function stateFa($s){
     return \AchBot\Presentation\Labels\broadcastState($s);
 }
 // ✅ Helpers for Broadcast Pin/Unpin/Delete
-function apiOk($res){
-    require_once __DIR__ . '/src/Telegram/Response.php';
-    return \AchBot\Telegram\Response\isSuccessful($res);
-}
-
 function pinOne($chatId, $messageId){
     require_once __DIR__ . '/src/Telegram/Messages.php';
     return \AchBot\Telegram\Messages\pinOne('bot', $chatId, $messageId);

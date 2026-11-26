@@ -11,6 +11,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/../Diagnostics/EventLog.php';
+require_once __DIR__.'/../Telegram/Response.php';
 
 function achbotPayUxTable(mysqli $db, string $name): bool {
     if (!in_array($name, ['payment_attempts','payment_transactions',
@@ -424,9 +425,9 @@ function achbotPayUxCloseInvoiceLocked(mysqli $db,array &$pay,array $a,?int $clo
 function achbotPayUxExpireInvoice(mysqli $db,int $payId,?int $clock=null): bool {
     require_once __DIR__.'/FundingCheckout.php';
     require_once __DIR__.'/ReceiptHelpers.php';
-    $owner=achbotProviderRow($db,'SELECT user_id FROM pays WHERE id=?','i',[$payId]);
-    if (!$owner) return false;
     try {
+        $owner=achbotProviderRow($db,'SELECT user_id FROM pays WHERE id=?','i',[$payId]);
+        if (!$owner) return false;
         if (!$db->begin_transaction()) return false;
         [$pay,$a]=achbotCreditInvoiceLocked($db,$payId,(int)$owner['user_id']);
         $changed=achbotPayUxCloseInvoiceLocked($db,$pay,$a,$clock);
@@ -434,7 +435,8 @@ function achbotPayUxExpireInvoice(mysqli $db,int $payId,?int $clock=null): bool 
         return $changed;
     } catch (Throwable $error) {
         try {$db->rollback();} catch (Throwable $ignored) {}
-        error_log('achbot_invoice_expiry_deferred pay_id='.$payId.' reason='.$error->getMessage());
+        achbotDiagnosticEvent('achbot.finance.invoice_expiry_deferred',
+            ['pay_id'=>$payId]+achbotDiagnosticLocalFailure($error),'warning');
         return false;
     }
 }
@@ -857,9 +859,7 @@ function achbotPayUxStatusKeyboard(string $hash,?array $pay=null,?array $attempt
  */
 function achbotPayUxEditAccepted($reply): bool {
     return is_object($reply) && (($reply->ok ?? false) === true ||
-        ((int)($reply->error_code ?? 0) === 400 &&
-         is_string($reply->description ?? null) &&
-         str_contains(strtolower($reply->description), 'message is not modified')));
+        \AchBot\Telegram\Response\isEditNoop($reply));
 }
 
 /** Stable, non-sensitive Telegram failure categories. Missing originals

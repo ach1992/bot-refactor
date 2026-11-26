@@ -121,6 +121,23 @@ IDs for that broadcast only, independent of current audience. Persist
 completion before the optional approved admin report; distinguish processing
 completion from Telegram acceptance and exclude unconfirmed sends. Cancellation
 cannot be reopened and failure of a report cannot restart customer sends.
+
+Pin/unpin/delete/edit jobs use the same lease, claim and pause/finish
+checkpoints, independently of the send queue. They also continue past a
+recipient-specific failure and resume from the next unclaimed message
+after interruption. Each queue gets its own dispatch slice. A worker-level
+exception is reported to the coordinator but cannot suppress the other
+queue or the remaining Cron jobs. Confirmed pin/unpin/delete outcomes
+update the corresponding exact message flags and existing action counter
+in one local transaction; an edit ACK must identify the original message
+or confirm the identical edit via the shared Telegram no-op classifier.
+Unconfirmed actions are not blindly replayed. An unpin always contains
+the original message ID (never the latest-pin fallback); delete directly
+targets that same message. No unrelated message, new schema or new
+worker is required. Historical raw edit jobs and jobs without an eligible
+completed source are not executable and cannot starve valid queued work. Explicit blocked/deactivated user responses may
+update the ordinary user step, preserving bans and protected admin
+workflows; other 403 responses do not label a user as blocked.
 A contradictory HTTP/Bot API acknowledgement or rejection cannot authorize
 a formatting retry in ordinary or multipart sends.
 Support history stores original literal content, and live sends render

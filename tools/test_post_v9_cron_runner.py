@@ -130,8 +130,15 @@ def setup(root: Path) -> tuple[Path, Path]:
     for rel in ['src/Jobs','src/Notifications','src/Finance']:
         (root/rel).mkdir(parents=True,exist_ok=True)
     (root/'src/Jobs/Checkpoint.php').write_text('<?php /* owned fixture */')
-    (root/'src/Jobs/MessageActions.php').write_text(CHILD_PHP.replace('$name = basename(__FILE__);',"$name = 'broadcast';"))
-    (root/'src/Jobs/BroadcastSend.php').write_text('<?php /* owned fixture */')
+    action=CHILD_PHP.replace('$name = basename(__FILE__);',"$name = 'broadcast';")
+    action=action.replace('echo "owned fixture success',r'''if (is_file(getenv('ACHBOT_TEST_ONLY_TRACE').'.action-failure'))
+    throw new RuntimeException('owned private action failure');
+echo "owned fixture success''')
+    (root/'src/Jobs/MessageActions.php').write_text(action)
+    (root/'src/Jobs/BroadcastSend.php').write_text(r'''<?php
+$trace=getenv('ACHBOT_TEST_ONLY_TRACE');
+if (is_file($trace.'.action-failure')) file_put_contents($trace.'.broadcast-continued',"yes");
+''')
     (root/'src/Notifications/Warnings.php').write_text(CHILD_PHP.replace('$name = basename(__FILE__);',"$name = 'services';"))
     (root/'src/Finance/AutomaticRenewal.php').write_text('<?php /* owned fixture */')
     (root/'src/Finance/PaymentLifecycle.php').write_text(PAYUX_MAINTENANCE_PHP)
@@ -847,6 +854,18 @@ def main() -> None:
               and (JOBS[1] + " exited with status 23") in failing.stderr)
         check("no_child_exception_details_emitted_by_runner",
               "Throwable" not in failing.stderr and "Traceback" not in failing.stderr)
+        trace.unlink()
+        env["ACHBOT_TEST_ONLY_FAIL"] = ""
+        Path(str(trace)+'.action-failure').touch()
+        failed_action=cmd(php,entrypoint,work,env)
+        check('message_action_exception_does_not_stop_broadcast_or_later_cron_jobs',
+              failed_action.returncode==1 and
+              [line.split("|")[0] for line in trace.read_text().splitlines()]==list(JOBS) and
+              Path(str(trace)+'.broadcast-continued').read_text()=='yes' and
+              'achbot_message_action_worker_failed' in failed_action.stderr and
+              'owned private action failure' not in failed_action.stderr)
+        Path(str(trace)+'.action-failure').unlink()
+        Path(str(trace)+'.broadcast-continued').unlink()
         trace.unlink()
 
         (entrypoint.parent / JOBS[2]).unlink()

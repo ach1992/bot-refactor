@@ -23,17 +23,21 @@ if (str_starts_with($mode,'off:')) {
     mysqli_report(MYSQLI_REPORT_OFF);
     $mode=substr($mode,4);
 }
+$actionMode=str_starts_with($mode,'action:');
+if ($actionMode) $mode=substr($mode,7);
 $botUsername='fixture';
 require $root.'/src/Jobs/Checkpoint.php';
-require_once $root.'/src/Telegram/Response.php';
+require_once $root.'/src/Telegram/Messages.php';
 function achbotNotifyAdmins($method,$payload,$options) {
     $phase=substr($options['report_ref'],strrpos($options['report_ref'],':')+1);
+    $target=$GLOBALS['actionMode']?'bc_jobs':'send_list';
+    $id=$GLOBALS['actionMode']?18:8;
     file_put_contents($GLOBALS['trace'].'.notices',json_encode([
         'method'=>$method,'phase'=>$phase,'text'=>$payload['text'],
-        'state'=>(int)$GLOBALS['connection']->query('SELECT state FROM send_list WHERE id=8')->fetch_row()[0]
+        'state'=>(int)$GLOBALS['connection']->query("SELECT state FROM $target WHERE id=$id")->fetch_row()[0]
     ],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)."\n",FILE_APPEND|LOCK_EX);
     if ($GLOBALS['mode']==='cancel_before_claim' && $phase==='started')
-        $GLOBALS['connection']->query('UPDATE send_list SET state=4 WHERE id=8 AND state=2');
+        $GLOBALS['connection']->query("UPDATE $target SET state=4 WHERE id=$id AND state=2");
     if ($GLOBALS['mode']==='notice_exception')
         throw new RuntimeException('private fixture notification error');
 }
@@ -43,8 +47,13 @@ function bot($method,$payload) {
     file_put_contents($GLOBALS['trace'],json_encode(['method'=>$method,'uid'=>$uid,'payload'=>$payload],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)."\n",FILE_APPEND|LOCK_EX);
     if ($GLOBALS['mode']==='lost_after_dispatch') sleep(60);
     $mode=$GLOBALS['mode'];
-    if ($mode==='cancel_during_send' && $uid===1001)
-        $GLOBALS['connection']->query('UPDATE send_list SET state=4 WHERE id=8 AND state=2');
+    if ($mode==='cancel_during_send' && $uid===1001) {
+        $target=$GLOBALS['actionMode']?'bc_jobs':'send_list';
+        $id=$GLOBALS['actionMode']?18:8;
+        $GLOBALS['connection']->query("UPDATE $target SET state=4 WHERE id=$id AND state=2");
+    }
+    if ($mode==='other_forbidden' && $uid===1001)
+        return (object)['ok'=>false,'error_code'=>403,'description'=>'Forbidden: bot is not a member of the chat'];
     if ($mode==='unknown' && $uid===1001) return null;
     if ($mode==='malformed_ack' && $uid===1001) return (object)['ok'=>true];
     if ($mode==='malformed_id' && $uid===1001)
@@ -55,6 +64,8 @@ function bot($method,$payload) {
         return (object)['ok'=>false,'error_code'=>403,'description'=>'Forbidden: bot was blocked by the user'];
     if ($mode==='mixed' && $uid===9001)
         return (object)['ok'=>false,'error_code'=>400,'description'=>'Bad Request: chat not found'];
+    if ($mode==='edit_noop' && $uid===1001)
+        return (object)['ok'=>false,'error_code'=>400,'description'=>'Bad Request: message is not modified'];
     if ($mode==='all_rejected')
         return (object)['ok'=>false,'error_code'=>400,'description'=>'Bad Request: fixture rejection'];
     if ($mode==='rate_limited' && $uid===1001)
@@ -62,8 +73,17 @@ function bot($method,$payload) {
             'parameters'=>(object)['retry_after'=>120]];
     if ($mode==='rate_without_wait' && $uid===1001)
         return (object)['ok'=>false,'error_code'=>429,'description'=>'Too Many Requests'];
+    if ($GLOBALS['actionMode']) {
+        if ($mode==='wrong_edit_ack' && $uid===1001)
+            return (object)['ok'=>true,'result'=>(object)['message_id'=>123]];
+        return (object)['ok'=>true,'result'=>str_starts_with($method,'editMessage')
+            ?(object)['message_id'=>$payload['message_id']]:true];
+    }
     return (object)['ok'=>true,'result'=>(object)['message_id'=>$uid+10000]];
 }
+function pinOne($uid,$mid) {return \AchBot\Telegram\Messages\pinOne('bot',$uid,$mid);}
+function unpinOne($uid,$mid) {return \AchBot\Telegram\Messages\unpinOne('bot',$uid,$mid);}
+function deleteOne($uid,$mid) {return \AchBot\Telegram\Messages\deleteOne('bot',$uid,$mid);}
 function sendMessage($text,$keys,$mode,$uid) {return bot('sendMessage',['chat_id'=>$uid,'text'=>$text,'parse_mode'=>$mode,'reply_markup'=>$keys]);}
 function forwardmessage($uid,$chat,$mid) {return bot('forwardMessage',['chat_id'=>$uid,'from_chat_id'=>$chat,'message_id'=>$mid]);}
 if ($mode==='progress') {
@@ -74,7 +94,10 @@ if ($mode==='progress') {
     return;
 }
 if ($mode==='monotonic_pause') {markPaused($connection,'send_list',8,0);return;}
-require $root.'/src/Jobs/BroadcastSend.php';
+if ($actionMode) {
+    $inlineStartKey='{"inline_keyboard":[]}';
+    require $root.'/src/Jobs/MessageActions.php';
+} else require $root.'/src/Jobs/BroadcastSend.php';
 '''
 
 
@@ -94,10 +117,24 @@ def main():
         def seed(kind='text'):
             trace.write_text('')
             notices.write_text('')
-            sql("DELETE FROM bc_messages; DELETE FROM send_list; UPDATE users SET step='none'; "
+            sql("DELETE FROM bc_jobs; DELETE FROM bc_messages; DELETE FROM send_list; UPDATE users SET step='none'; "
                 "INSERT INTO send_list(id,type,state,text,text_html,file_id,chat_id,message_id) VALUES "
                 "(7,'text',1,'historical pending',NULL,NULL,NULL,NULL),"
                 f"(8,'{kind}',1,'literal <b> &','<b>سلام</b> &amp; &lt;tag&gt;','fixture-photo',9001,42)")
+        def seed_action(action,kind='text'):
+            seed(kind)
+            sql("UPDATE send_list SET state=3 WHERE id=8; "
+                "INSERT INTO bc_messages(broadcast_id,userid,message_id,pinned) VALUES "+
+                ','.join(f"(8,{uid},{uid+10000},{int(action=='unpin')})" for uid in (1001,9001,9002))+
+                "; INSERT INTO bc_jobs(id,broadcast_id,action,state,new_text,new_html) VALUES "
+                "(17,8,'edit',1,'historical raw edit',NULL),"
+                f"(18,8,'{action}',1,'raw edit &','<b>ویرایش</b> &amp;')")
+        def action_result(state,ok,fail):
+            assert sql("SELECT CONCAT(state,':',ok_cnt,':',fail_cnt) FROM bc_jobs WHERE id=18")==f'{state}:{ok}:{fail}'
+            assert sql('SELECT state FROM bc_jobs WHERE id=17')=='1'
+            reports=[json.loads(line) for line in notices.read_text().splitlines() if json.loads(line)['phase']=='completed']
+            assert len(reports)==int(state==3),reports
+            if reports:assert reports[0]['state']==3
         def command(mode):
             return ['php', '-n', '-d', 'extension=mysqlnd', '-d', 'extension=mysqli',
                     str(driver), str(ROOT), str(work/'mysql.sock'), DB, mode, str(trace)]
@@ -189,6 +226,21 @@ def main():
         assert 'delivery_rejected code=400 user_id=9001' in log
         assert sql('SELECT step FROM users WHERE userid=1001')=='Bot_Blocked'
         cases.append('recipient_rejections_continue_with_only_recorded_ack_count')
+        seed()
+        sql("UPDATE users SET step='achbotDirectGift:test' WHERE userid=1001")
+        run('mixed');run()
+        assert sql('SELECT step FROM users WHERE userid=1001')=='achbotDirectGift:test'
+        completed(1)
+        seed()
+        sql("UPDATE users SET step='achbotExempt:fixture' WHERE userid=1001")
+        run('mixed');run()
+        assert sql('SELECT step FROM users WHERE userid=1001')=='achbotExempt:fixture'
+        completed(1)
+        seed()
+        run('other_forbidden');run()
+        assert sql('SELECT step FROM users WHERE userid=1001')=='none'
+        completed(2)
+        cases.append('only_actual_blocked_user_marked_without_erasing_protected_steps')
         for mode in ('exception','malformed_ack','malformed_id'):
             seed()
             log=run(mode);run()
@@ -244,7 +296,7 @@ def main():
         cases.append('explicit_rate_limit_without_wait_yields_one_tick_not_entire_job')
         for mode in ('normal','off:normal'):
             seed()
-            # SQL-local ACK write fails for one recipient. The REAL config
+            # SQL-local ACK write fails for one recipient. The REAL storage
             # helper must detect both strict and nonthrowing MySQLi errors.
             sql("CREATE TRIGGER owned_fail_ack BEFORE INSERT ON bc_messages FOR EACH ROW "
                 "SET NEW.message_id=IF(NEW.userid=1001,NULL,NEW.message_id)")
@@ -318,6 +370,116 @@ def main():
             assert progress()=={'total':len(expected),'left':0,'ack':len(expected)}
             run();completed(len(expected))
         cases.append('shared_current_audience_progress_and_dispatch_all_groups')
+        # Real pin, unpin, delete and edit paths share the durable cursor.
+        # Every wire target remains the original chat and message, never
+        # the latest pinned message. Do not run historical raw edit jobs.
+        for action,kind,method in [
+                ('pin','text','pinChatMessage'),('unpin','text','unpinChatMessage'),
+                ('delete','text','deleteMessage'),('edit','text','editMessageText'),
+                ('edit','photo','editMessageCaption')]:
+            seed_action(action,kind)
+            run('action:normal');run('action:normal')
+            action_result(3,3,0)
+            assert [e['uid'] for e in events()]==users
+            assert all(e['method']==method and e['payload']['message_id']==e['uid']+10000 for e in events()),events()
+            if action=='edit':
+                field='text' if kind=='text' else 'caption'
+                assert all(e['payload'][field]=='<b>ویرایش</b> &amp;' and e['payload']['parse_mode']=='HTML' for e in events())
+            if action=='pin':assert sql('SELECT SUM(pinned) FROM bc_messages')=='3'
+            if action=='unpin':assert sql('SELECT SUM(pinned) FROM bc_messages')=='0'
+            if action=='delete':assert sql('SELECT SUM(deleted) FROM bc_messages')=='3'
+        cases.append('all_current_message_actions_use_exact_original_target_and_html')
+        seed_action('pin')
+        # Neither a missing/uncompleted broadcast nor a forward-only edit
+        # is admitted work; an invalid earlier row cannot starve a valid job.
+        sql("INSERT INTO send_list(id,type,state) VALUES (10,'forwardall',3); "
+            "INSERT INTO bc_jobs(id,broadcast_id,action,state,new_html) VALUES "
+            "(14,99999,'pin',1,NULL),(15,7,'delete',1,NULL),(16,10,'edit',1,'new')")
+        run('action:normal');run('action:normal')
+        action_result(3,3,0)
+        assert [e['uid'] for e in events()]==users
+        assert sql('SELECT SUM(state=1) FROM bc_jobs WHERE id IN (14,15,16)')=='3'
+        cases.append('invalid_or_historical_action_does_not_execute_or_starve_current_job')
+        for mode in ('unknown','exception','malformed_ack','edit_noop'):
+            seed_action('unpin')
+            run('action:'+mode);run('action:normal')
+            action_result(3,2,1)
+            assert [e['uid'] for e in events()]==users
+            assert all(e['method']=='unpinChatMessage' and e['payload']['message_id']==e['uid']+10000 for e in events()),events()
+            assert sql('SELECT pinned FROM bc_messages WHERE userid=1001')=='1'
+        cases.append('failed_unpin_never_falls_back_to_latest_message_and_continues')
+        seed_action('edit')
+        run('action:wrong_edit_ack');run('action:normal')
+        action_result(3,2,1)
+        cases.append('edit_ack_must_identify_original_message')
+        seed_action('edit')
+        run('action:edit_noop');run('action:normal')
+        action_result(3,3,0)
+        assert [e['uid'] for e in events()]==users
+        cases.append('confirmed_identical_edit_is_not_a_failure_or_a_resend')
+        seed_action('pin')
+        proc=subprocess.Popen(command('action:lost_after_dispatch'),env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        try:
+            deadline=time.monotonic()+10
+            while not trace.stat().st_size and proc.poll() is None and time.monotonic()<deadline:
+                time.sleep(.025)
+            assert [e['uid'] for e in events()]==[1001]
+            row_id=sql('SELECT id FROM bc_messages WHERE broadcast_id=8 AND userid=1001')
+            assert sql("SELECT CONCAT(state,':',`offset`) FROM bc_jobs WHERE id=18")==f'2:{row_id}'
+        finally:
+            if proc.poll() is None:proc.kill()
+            proc.communicate(timeout=5)
+        run('action:normal');run('action:normal')
+        action_result(3,2,0)
+        assert [e['uid'] for e in events()]==users
+        cases.append('message_action_killed_after_claim_recovers_next_without_replay')
+        for mode in ('cancel_before_claim','cancel_during_send'):
+            seed_action('pin')
+            run('action:'+mode);run('action:normal')
+            assert [e['uid'] for e in events()]==([] if mode=='cancel_before_claim' else [1001])
+            action_result(4,0 if mode=='cancel_before_claim' else 1,0)
+        cases.append('message_action_cancellation_fences_every_recipient')
+        seed_action('pin')
+        run('action:rate_limited')
+        action_result(1,0,1)
+        assert int(sql('SELECT TIMESTAMPDIFF(SECOND,NOW(),updated_at) FROM bc_jobs WHERE id=18'))>100
+        sql("INSERT INTO bc_jobs(id,broadcast_id,action,state) VALUES (19,8,'delete',1)")
+        run('action:normal')
+        assert [e['uid'] for e in events()]==[1001]
+        assert sql('SELECT `offset` FROM bc_jobs WHERE id=19')=='0'
+        sql('UPDATE bc_jobs SET updated_at=NOW() WHERE id=18')
+        run('action:normal');run('action:normal')
+        action_result(3,2,1)
+        assert [e['uid'] for e in events()]==users
+        cases.append('message_action_rate_limit_durable_pause_and_fifo_recovery')
+        for mode in ('action:normal','off:action:normal'):
+            seed_action('pin')
+            sql("CREATE TRIGGER owned_fail_action BEFORE UPDATE ON bc_messages FOR EACH ROW "
+                "SET NEW.pinned=IF(NEW.userid=1001,NULL,NEW.pinned)")
+            try:
+                log=run(mode)
+                assert 'message_action_record_failed job_id=18' in log
+            finally:
+                sql('DROP TRIGGER owned_fail_action')
+            run('action:normal')
+            action_result(3,2,0)
+            assert [e['uid'] for e in events()]==users
+            assert sql('SELECT SUM(pinned) FROM bc_messages')=='2'
+            cases.append('message_action_failed_local_projection_isolated_'+('nonthrowing' if mode.startswith('off:') else 'strict'))
+            seed_action('pin')
+            sql('RENAME TABLE bc_messages TO owned_saved_bc_messages')
+            try:
+                log=run(mode,failed=True)
+                no_completion()
+                assert sql('SELECT state FROM bc_jobs WHERE id=18')=='1'
+                assert not events()
+                assert 'message_action_worker_deferred job_id=18' in log
+            finally:
+                sql('RENAME TABLE owned_saved_bc_messages TO bc_messages')
+            run('action:normal');run('action:normal')
+            action_result(3,3,0)
+            assert [e['uid'] for e in events()]==users
+            cases.append('message_action_failed_audience_read_recovers_'+('nonthrowing' if mode.startswith('off:') else 'strict'))
         # Cross the actual production page boundary without changing the
         # batch size or pacing. Every eligible user must be reached once.
         seed()

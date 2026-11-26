@@ -50,3 +50,13 @@ function achbotBroadcastRecordAck(mysqli $db,int $id,int $uid,int $messageId): v
         VALUES (?,?,?) ON DUPLICATE KEY UPDATE message_id=VALUES(message_id),
         deleted=0,deleted_at=NULL",[$id,$uid,$messageId]);
 }
+
+
+/** Only explicit blocked-user evidence may mark the ordinary user step.
+ * Preserve protected in-progress admin workflows and intentional bans. */
+function achbotBroadcastMarkBlocked(mysqli $db,int $uid): void {
+    achbotBroadcastQuery($db,"UPDATE users SET step='Bot_Blocked'
+        WHERE userid=? AND (step IS NULL OR
+            (step NOT IN ('banned','Bot_Blocked')
+            AND step NOT LIKE 'achbotDirectGift%' AND step NOT LIKE 'achbotExempt:%'))",[$uid]);
+}

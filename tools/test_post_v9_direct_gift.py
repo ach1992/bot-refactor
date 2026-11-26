@@ -248,8 +248,8 @@ if (!achbotWebhookIngressAuthenticated()) {
 } elseif (($spec['route']??'gift')==='legacy_receipt_ban') {
     require __DIR__.'/legacy-receipt-ban.php';
 } elseif (($spec['route']??'gift')==='broadcast') {
-    $user=['userid'=>(int)($spec['target']??9001)];
-    require __DIR__.'/broadcast-guard.php';
+    require_once __DIR__.'/src/Broadcast/Storage.php';
+    achbotBroadcastMarkBlocked($connection,(int)($spec['target']??9001));
 } else {
     require __DIR__.'/legacy-set-user.php';
     if (($spec['mode']??'')==='stale_legacy_set_user')
@@ -353,11 +353,6 @@ def setup(work: Path, env: dict) -> Path:
     receipt_end=receipt.index('// END Decline Cart To Cart by ACh',receipt_start)
     (stage/'legacy-receipt-ban.php').write_text(
         '<?php\n'+receipt[receipt_start:receipt_end])
-    broadcast=(ROOT/'src/Jobs/BroadcastSend.php').read_text()
-    blocked=re.search(r'\$u = \$connection->prepare\("UPDATE `users`[^\"]+"\);\s*if \(\$u\) \{.*?\$u->close\(\);\s*\}',broadcast,re.S)
-    ensure(blocked is not None and "NOT LIKE 'achbotDirectGift%'" in blocked.group(),
-           'Automated broadcast-source step guard absent')
-    (stage/'broadcast-guard.php').write_text('<?php\n'+blocked.group())
     (stage/'gift-route.php').write_text('<?php\n'+route+'\n'+fallback+'\n')
     (stage/'driver.php').write_text(PHP)
     return stage

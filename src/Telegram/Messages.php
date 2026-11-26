@@ -119,16 +119,11 @@ function pinOne(callable $request, $chatId, $messageId){
 }
 
 function unpinOne(callable $request, $chatId, $messageId){
-    $res = $request('unpinChatMessage', [
+    // Telegram's omitted message_id unpins the latest pinned message,
+    // potentially an unrelated one. Never broaden the exact target.
+    return $request('unpinChatMessage', [
         'chat_id' => $chatId,
         'message_id' => $messageId
-    ]);
-
-    if(\AchBot\Telegram\Response\isSuccessful($res)) return $res;
-
-    // fallback: unpin آخرین پین
-    return $request('unpinChatMessage', [
-        'chat_id' => $chatId
     ]);
 }
 
