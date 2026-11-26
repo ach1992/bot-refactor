@@ -388,7 +388,13 @@ staff recipients. Automatic confirmation has no fabricated human actor. A
 report identifies the original receipt/operation and ledger entry, method,
 amount, before/after and disposition. A credit used immediately for a service
 does not become a misleading top-up notification. The sealed service-completion
-report remains independent of customer delivery.
+report remains independent of customer delivery. Newly staged followup
+intents are immediately due; actual retry deadlines and recipient
+eligibility still govern dispatch. Presentation of Wallet ledger time is
+Asia/Tehran; stored UTC evidence and fingerprints remain unchanged.
+Issue #236 owns the remaining logical-report consolidation work; a change
+in presentation must not conflate independent financial, service and
+Telegram delivery evidence.
 
 Verified trial, administrator bulk, import, direct/scheduled gift, plan change,
 transfer and deletion use the same operational followup source, not fake

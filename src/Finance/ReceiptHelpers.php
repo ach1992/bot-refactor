@@ -712,12 +712,13 @@ function buildCartToCartInfoMessage(array $paymentKeys, int $priceToman,
         $template = \achbotMessage('legacy_messages.'.($method === 'gift_card' ?
             'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail'));
         return strtr($template, [
+            'PAYMENT-DEADLINE' => ltrim(achbotPayUxDeadlineText($attempt),"\n"),
             'PRICE-TOMAN-ROUND' => number_format($priceToman),
             'PRICE-TOMAN' => number_format($amount),
             'PRICE-RIAL' => number_format($amount * 10),
             'ACCOUNT-NUMBER' => htmlspecialchars((string)($intent['account'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
             'HOLDER-NAME' => htmlspecialchars((string)($intent['holder'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8'),
-        ]).achbotPayUxDeadlineText($attempt);
+        ]).($method==='bank_transfer'?'':achbotPayUxDeadlineText($attempt));
     } catch (Throwable $error) {
         return '';
     }
@@ -772,7 +773,8 @@ function kbOnlyCancel(array $pay): string {
 }
 
 function handleCancelFlow($removeKeyboard) {
-    delMessage();
+    // The cancel button is shared by invoice evidence and receipt prompts.
+    // It cannot prove that its source is disposable.
     setUser();
     sendMessage(\achbotMessage('legacy_messages.operation_canceled'), $removeKeyboard, "HTML");
     sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');

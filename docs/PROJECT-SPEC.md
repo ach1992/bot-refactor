@@ -73,7 +73,8 @@ authentic funds/evidence or treating a migrated PasarGuard account as retired.
   Without one, retain the exact original draft and usage counters and
   show the approved discount-only explanation. Shared current method
   eligibility and one payment keyboard govern checkout, add-ons, renewal,
-  manual crypto and recharge; Wallet cannot fund its own recharge.
+  manual crypto and recharge; Wallet cannot fund its own recharge. Show the
+  amount in the message, not in payment-method labels.
   First invoice issuance revalidates actual persisted configuration and
   local quote rules, without a merchant probe. Issued quotes retain their
   original terms. Eligibility is not a guarantee of funds or external
@@ -122,10 +123,13 @@ authentic funds/evidence or treating a migrated PasarGuard account as retired.
   capabilities. Only primary Owner ID belongs in private configuration;
   manage other staff in the bot. Report receiving does not grant authority.
   All genuinely authorized staff retain approved manual receipt review.
-  Preserve incoming administrator-authored Telegram messages.
+  Preserve incoming human-authored Telegram messages, regardless of role,
+  and retain issued invoices, receipts, reports and valuable history.
 - Two [audience catalogs](../messages/README.md) own static Persian copy;
   per-instance branding, welcome, purchase text, channels and settings
-  remain persisted. Preserve literal/copyable subscription URLs, IDs
+  remain persisted. First-start welcome and menu are one message when they
+  fit Telegram's limit; otherwise retain both texts and only one menu.
+  Preserve literal/copyable subscription URLs, IDs
   and credentials. Per-server purchase and order display/QR policies are
   independent; see [subscription presentation](post-v9/SUBSCRIPTION-PRESENTATION.md).
 - Every actual Wallet movement and completed service report identifies

@@ -266,14 +266,7 @@ if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
         }
 
         // ارسال پیام موفقیت با HTML
-        $successMessage = \achbotMessage('subscription.customer_routes.cancel_search_keyboard.success_message.6d1ad0af39')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.02845d07de')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.672ff8ac41')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.caaf926e2a')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.0aa0ee1c1f')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.1ed8d0a6cf')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.47dcd18697')
-			. \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.0bd7d3c032');
+        $successMessage = \achbotMessage('subscription.customer_routes.cancel_search_keyboard.success_message.6d1ad0af39') . "\n\n" . \achbotMessage('subscription.customer_routes.link_update_advice');
         
         // استفاده از parse_mode: "HTML" برای نمایش متن بولد شده
         sendMessage($successMessage, null, "HTML");
@@ -343,14 +336,7 @@ if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){
     $stmt->close(); 
 
     // ✅ ارسال پیام به کاربر بعد از تغییر لینک
-    $successMessage = \achbotMessage('subscription.customer_routes.cancel_search_keyboard.success_message.eb1ae135ff')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.36244c21e0')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.f82d5bd5ad')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.97f8afa554')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.f3bed97abc')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.4267d2ca77')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.30d20d2a47')
-        . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.3c4d2c9dc6');
+    $successMessage = \achbotMessage('subscription.customer_routes.cancel_search_keyboard.success_message.eb1ae135ff') . "\n\n" . \achbotMessage('subscription.customer_routes.link_update_advice');
 
     sendMessage($successMessage, null, "HTML"); 
  

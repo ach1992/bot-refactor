@@ -48,6 +48,13 @@ if (preg_match('/^ps_([A-Za-z0-9_-]{1,50})$/D', $data, $statusMatch)) {
     // one-minute maintenance tick. Keep any issued provider claim intact.
     try { $pay['superseded']=achbotPayUxHasNewer($connection,$pay); }
     catch (Throwable $ignored) { $pay['superseded']=true; }
+    $pay['unadmitted_closed']=achbotPayUxUnadmittedClosed($connection,$pay,$attempt);
+    if ($pay['unadmitted_closed']) {
+        answerCallbackQuery($callbackId);
+        editText($message_id,achbotPayUxStatusText($pay,$attempt),
+            achbotPayUxStatusKeyboard($hashId,$pay,$attempt),'HTML',$from_id);
+        return;
+    }
     $body = achbotPayUxStatusText($pay,$attempt) .
         \achbotMessage('payment.pre_payment.text.c8886e46d5') . htmlspecialchars($methodName,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     if (in_array((string)$pay['state'],['approved','auto_cart_approved'],true) &&

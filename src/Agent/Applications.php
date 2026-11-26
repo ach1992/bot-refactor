@@ -21,6 +21,26 @@ if($data=="requestAgency"){
     if($userInfo['is_agent'] == 2){
         alert(\achbotMessage('legacy_messages.agency_request_already_sent'));
     }elseif($userInfo['is_agent'] == 0){
+        // A durable single-row claim precedes notification. Concurrent clicks
+        // cannot send another request or overwrite a later approval/decline.
+        $stmt=$connection->prepare("SELECT id FROM users WHERE userid=? LIMIT 2");
+        $stmt->bind_param('i',$from_id);
+        $stmt->execute();
+        $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+        $stmt->close();
+        if (count($rows)!==1) {
+            alert(\achbotMessage('legacy_messages.config_not_found'));
+            return;
+        }
+        $id=(int)$rows[0]['id'];
+        $stmt=$connection->prepare("UPDATE users SET is_agent=2 WHERE id=? AND userid=? AND is_agent=0");
+        $stmt->bind_param('ii',$id,$from_id);
+        $claimed=$stmt->execute() && $stmt->affected_rows===1;
+        $stmt->close();
+        if (!$claimed) {
+            alert(\achbotMessage('legacy_messages.config_not_found'));
+            return;
+        }
         $msg = str_replace(["USERNAME", "NAME", "USERID"],[$username, $first_name, $from_id],\achbotMessage('legacy_messages.request_agency_message'));
 			$keys = json_encode([
 				'inline_keyboard' => [
@@ -31,7 +51,6 @@ if($data=="requestAgency"){
 				]
 			]);
 			achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
-        setUser(2, 'is_agent');
         alert(\achbotMessage('legacy_messages.agency_request_sent'));
     }elseif($userInfo['is_agent'] == -1) alert(\achbotCurrentMessage('agency_request_declined'));
     elseif($userInfo['is_agent'] == 1) editText($message_id,\achbotMessage('agent.applications.request_agency.message.b059640ccc'),getMainKeys());

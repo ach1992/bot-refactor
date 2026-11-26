@@ -21,21 +21,14 @@ function achbotCheckoutPaymentKeyboard(string $mode,string $hash,int $amount,arr
     }
     if ($amount<=0) return [];
     $renew=$mode==='renew';
-    $price=($renew?(string)$amount:' '.number_format($amount)).achbotMessage('renewal.extensions.text.2cc98f7f7c');
     $keyboard=[];
     if (in_array('bank_transfer',$methods,true))
-        $keyboard[]=[['text'=>$renew?achbotMessage('renewal.renewal_checkout.button.5b3252c790',['price'=>$price]):
-            achbotMessage('legacy_buttons.cart_to_cart').($mode==='volume'?$price:''),'callback_data'=>$prefix.'WithCartToCart'.$hash]];
+        $keyboard[]=[['text'=>achbotMessage('legacy_buttons.cart_to_cart'),'callback_data'=>$prefix.'WithCartToCart'.$hash]];
     if (in_array('gift_card',$methods,true))
-        $keyboard[]=[['text'=>$renew?achbotMessage('renewal.renewal_checkout.button.cf580700a3',['price'=>$price]):achbotMessage('legacy_buttons.gift_card'),
+        $keyboard[]=[['text'=>achbotMessage('legacy_buttons.gift_card'),
             'callback_data'=>$prefix.'WithGiftCard'.$hash]];
     if (in_array('manual_usdt',$methods,true) || in_array('manual_trx',$methods,true)) {
-        $label=match($mode) {
-            'renew'=>achbotMessage('renewal.renewal_checkout.button.73f7c8deeb',['price'=>$price]),
-            'day','volume'=>achbotMessage('renewal.extensions.button.e729457ba2'),
-            'topup'=>achbotMessage('wallet.wallet_start.start_wallet_payment.button.e729457ba2'),
-            default=>achbotMessage('purchase.catalogue.button.e729457ba2')
-        };
+        $label=achbotMessage('purchase.catalogue.button.e729457ba2');
         $keyboard[]=[['text'=>$label,'callback_data'=>'mcm_'.$hash]];
     }
     foreach (['nowpayment'=>['nowpayments',achbotMessage('legacy_buttons.now_payment_gateway')],
@@ -52,11 +45,7 @@ function achbotCheckoutPaymentKeyboard(string $mode,string $hash,int $amount,arr
         $keyboard[]=[$button];
     }
     if ($mode!=='topup' && in_array('wallet',$methods,true)) {
-        $label=match($mode) {
-            'renew'=>achbotMessage('renewal.renewal_checkout.button.0eed1dd8e8',['price'=>$price]),
-            'volume'=>achbotMessage('renewal.extensions.button.5adbd64a32').$price,
-            default=>achbotMessage('legacy_buttons.pay_with_wallet')
-        };
+        $label=achbotMessage('legacy_buttons.pay_with_wallet');
         $keyboard[]=[['text'=>$label,'callback_data'=>$prefix.'WithWallet'.$hash]];
     }
     return $keyboard;
@@ -67,12 +56,12 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $o
     $hash_id=$pay['hash_id'];$actor=(int)$pay['user_id'];$amount=(int)$pay['price'];
     $renew=$mode==='renew';
     $price=$amount===0?($renew?achbotMessage('renewal.extensions.price.dda7ff2974'):achbotMessage('purchase.catalogue.text.dda7ff2974')):
-        ($renew?(string)$amount:number_format($amount)).($renew?achbotMessage('renewal.extensions.text.2cc98f7f7c'):achbotMessage('purchase.catalogue.text.bfb7221456'));
+        number_format($amount).($renew?achbotMessage('renewal.extensions.text.2cc98f7f7c'):achbotMessage('purchase.catalogue.text.bfb7221456'));
     $methods=$view['payment_methods'];
     $noMethod=$amount>0 && !$methods;
     $keyboard=achbotCheckoutPaymentKeyboard($mode,$hash_id,$amount,$methods,$botUrl);
     if (($offerDiscount || $noMethod || $discountRejectedNoMethod) && $amount>0 && empty($view['context']['discount_applied']))
-        $keyboard[]=[['text'=>($renew?achbotMessage('renewal.renewal_checkout.button.05c3a1e3f4'):achbotMessage('purchase.catalogue.button.05c3a1e3f4')),'callback_data'=>'haveDiscountCheckout_'.$pay['id']]];
+        $keyboard[]=[['text'=>achbotMessage('purchase.catalogue.button.05c3a1e3f4'),'callback_data'=>'haveDiscountCheckout_'.$pay['id']]];
     if ($mode==='standard') {
         $buyType=(int)$pay['agent_bought']===1?((int)$pay['agent_count']>0?'much':'one'):'none';
         $back='selectCategory'.$view['context']['category_id'].'_'.$q['server_id'].'_'.$buyType;
@@ -82,7 +71,7 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $o
     }
     $notice=achbotMessage('payment.discounts.no_monetary_method');
     if ($renew) $msg=$amount===0?achbotMessage('renewal.free_confirmation.prompt'):
-        ($noMethod?$notice:achbotMessage('renewal.renewal_checkout.message.24ae8c4399'));
+        (achbotMessageHtml('renewal.renewal_checkout.message.24ae8c4399',['amount'=>number_format($amount)]) . ($noMethod?"\n\n".$notice:''));
     else {
         // Catalog titles and descriptions are literal stored data, not HTML
         // templates. Preserve the separately authored instance note and

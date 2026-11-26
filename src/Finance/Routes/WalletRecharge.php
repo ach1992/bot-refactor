@@ -331,7 +331,7 @@ if (preg_match('/\Asend(?:IncreaseWallet|IncreaseWalletGift|IncreaseWalletUsdt)R
         return;
     }
 
-    delMessage();
+    // Retain the original issued invoice and its payment evidence.
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitIncreaseWalletUsdtReceipt" : ($method === 'gift_card' ? "waitIncreaseWalletGiftReceipt" : "waitIncreaseWalletReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel($payInfo);

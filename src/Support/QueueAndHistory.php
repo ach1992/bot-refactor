@@ -73,7 +73,7 @@ if(($data=="openTickets" || $data=="newTickets" || $data == "allTickets") && ach
             sendMessage(\achbotMessageHtml('support.queue_and_history.all_tickets.message.abf3f55cac', ['admin' => $ticketUserId, 'username' => $username, 'category' => $category, 'rate' => $rate, 'title' => $title, 'sentType' => $sentType, 'lastmsg' => $lastmsg]),
                 json_encode(['inline_keyboard'=>$keys]),"html");
 
-			if($current>=$cont){
+			if($current>=5){
 			    break;
 			}
         }
@@ -143,7 +143,7 @@ if(preg_match('/^moreTicket_(2|0|all)_([0-9]+)$/D',$data, $match)){
                     json_encode(['inline_keyboard'=>$keys]),"html");
 
 
-    			if($current>=$cont){
+                if($current>=5){
     			    break;
     			}
             }

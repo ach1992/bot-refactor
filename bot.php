@@ -266,8 +266,6 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == \achbotMessage('legacy_butt
     setUser();
     setUser("", "temp");
 
-    $canBuy=achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin);
-
     if ($customerShortcut===null && isset($data) && ($data == "mainMenu" || $data == "evidenceHome" || $paymentHome)) {
         // Legacy Home buttons can be on untracked financial/support evidence.
         // Always send the actor's own menu; never edit/delete the source or
@@ -318,29 +316,18 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == \achbotMessage('legacy_butt
             achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
         }
 
-        if ($customerShortcut===null || $isFirstStart) sendMessage(\achbotCurrentMessage('start_message'), getMainKeys(), 'HTML');
-
-        if ($isFirstStart) {
-
-            $userMessage = \achbotCurrentMessage('user_welcome_message');
-
-            $secondButton = $canBuy
-                ? ['text' => \achbotMessage('legacy_buttons.buy_subscriptions'), 'callback_data' => 'buySubscription']
-                : ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => 'mainMenu'];
-
-            $keyboard = [
-                [
-                    ['text' => \achbotMessage('legacy_buttons.my_subscriptions'), 'callback_data' => 'mySubscriptions'],
-                    $secondButton
-                ]
-            ];
-
-            sendMessage(
-                $userMessage,
-                json_encode(['inline_keyboard' => $keyboard]),
-                "html",
-                $from_id
-            );
+        if ($customerShortcut===null || $isFirstStart) {
+            $home=\achbotCurrentMessage('start_message');
+            if ($isFirstStart) {
+                require_once __DIR__.'/src/Subscription/Presentation.php';
+                $welcome=\achbotCurrentMessage('user_welcome_message');
+                $combined=$welcome."\n\n".$home;
+                // Preserve both configured texts if their combined length exceeds
+                // Telegram's per-message limit. Ordinary onboarding is one message.
+                if (\AchBot\Subscription\Presentation\textLength($combined)<=4096) $home=$combined;
+                else sendMessage($welcome,null,'HTML');
+            }
+            sendMessage($home,getMainKeys(),'HTML');
         }
     }
 

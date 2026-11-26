@@ -162,7 +162,7 @@ if (preg_match('/\Asend(?:RenewCart|RenewGift|RenewUsdt)Receipt(?<hashId>[A-Za-z
         return;
     }
 
-    delMessage();
+    // Retain the original issued invoice and its payment evidence.
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitRenewUsdtReceipt" : ($method === 'gift_card' ? "waitRenewGiftReceipt" : "waitRenewCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel($payInfo);

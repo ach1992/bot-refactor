@@ -197,7 +197,7 @@ if (preg_match('/\Asend(?:IncreaseDay|IncreaseDayGift|IncreaseDayUsdt)Receipt(?<
         return;
     }
 
-    delMessage();
+    // Retain the original issued invoice and its payment evidence.
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitIncreaseDayUsdtReceipt" : ($method === 'gift_card' ? "waitIncreaseDayGiftReceipt" : "waitIncreaseDayReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel($payInfo);
@@ -557,7 +557,7 @@ if (preg_match('/\Asend(?:IncreaseVolume|IncreaseVolumeGift|IncreaseVolumeUsdt)R
         return;
     }
 
-    delMessage();
+    // Retain the original issued invoice and its payment evidence.
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitIncreaseVolumeUsdtReceipt" : ($method === 'gift_card' ? "waitIncreaseVolumeGiftReceipt" : "waitIncreaseVolumeReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel($payInfo);

@@ -17,7 +17,8 @@ function achbotWalletReportFacts(array $e): string {
     return achbotMessageHtml('operational_reports.wallet_facts',[
         'user'=>$e['userid'],'amount'=>number_format(abs((int)$e['delta_toman'])),
         'before'=>number_format((int)$e['balance_before']),'after'=>number_format((int)$e['balance_after']),
-        'entry'=>$e['id'],'date'=>$e['created_at']
+        'entry'=>$e['id'],'date'=>(new DateTimeImmutable((string)$e['created_at'],new DateTimeZone('UTC')))
+            ->setTimezone(new DateTimeZone('Asia/Tehran'))->format('Y-m-d H:i:s')
     ]);
 }
 function achbotWalletReportFingerprint(array $e): string {

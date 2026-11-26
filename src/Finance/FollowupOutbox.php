@@ -144,16 +144,14 @@ function achbotFollowupStoreLocked(mysqli $db,?int $payId,?int $serviceId,string
         achbotFollowupPurpose($payId,$stage,$key)));
     $sealed=achbotPaymentEvidenceProtect($purpose,$body);
     $sha=hash('sha256',$sealed);
-    // One insertion path for all original source types. Preserve the
-    // existing immediate wallet/operational retry schedule.
-    $immediate=$walletId!==null || $event!==null?1:0;
+    // A newly queued original is immediately eligible for its first attempt.
     $q=$db->prepare("INSERT INTO payment_followup_intents
         (pay_row_id,service_operation_id,wallet_entry_id,operational_ref,intent_key,stage,kind,role,
          recipient,message_id,pay_fingerprint,sealed_payload,payload_sha256,state,next_attempt_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',IF(?=1,NOW(6),NULL))");
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',NOW(6))");
     if (!$q) throw new RuntimeException('followup_insert_prepare');
-    $q->bind_param('iiissssssisssi',$payId,$serviceId,$walletId,$ref,$key,$stage,$kind,$role,
-        $recipient,$messageId,$fingerprint,$sealed,$sha,$immediate);
+    $q->bind_param('iiissssssisss',$payId,$serviceId,$walletId,$ref,$key,$stage,$kind,$role,
+        $recipient,$messageId,$fingerprint,$sealed,$sha);
     if (!$q->execute() || $q->affected_rows!==1)
         throw new RuntimeException('followup_insert_unconfirmed');
     $q->close();
@@ -547,8 +545,7 @@ function achbotFollowupMaintainOriginalPending(mysqli $db,int $limit,float $budg
     $s=achbotProviderStatement($db,"SELECT f.id FROM payment_followup_intents f
         WHERE (f.service_operation_id IS NOT NULL OR f.wallet_entry_id IS NOT NULL OR f.operational_ref IS NOT NULL OR f.stage IN ('wallet_credit','manual_reject'))
           AND f.state IN ('pending','dispatching')
-          AND ((f.next_attempt_at IS NULL AND f.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE))
-               OR f.next_attempt_at<=NOW(6))
+          AND (f.next_attempt_at IS NULL OR f.next_attempt_at<=NOW(6))
           AND (f.state='dispatching' OR f.stage<>'service_delivered' OR NOT EXISTS (
               SELECT 1 FROM payment_delivery_intents d WHERE d.service_operation_id=f.service_operation_id
               AND d.state<>'acknowledged'))
@@ -564,7 +561,7 @@ function achbotFollowupMaintainOriginalPending(mysqli $db,int $limit,float $budg
             // Defer an unavailable already-due retry behind healthy peers;
             // do not shorten or rewrite a newly committed Telegram wait.
             $s=achbotProviderStatement($db,"UPDATE payment_followup_intents SET updated_at=NOW(),
-                next_attempt_at=CASE WHEN next_attempt_at<=NOW(6)
+                next_attempt_at=CASE WHEN next_attempt_at IS NULL OR next_attempt_at<=NOW(6)
                     THEN DATE_ADD(NOW(6),INTERVAL 2 MINUTE) ELSE next_attempt_at END
                 WHERE id=? AND state IN ('pending','dispatching')",'i',[$id]);$s->close();
         } catch (Throwable $e) {

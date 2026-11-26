@@ -9,7 +9,8 @@ checkout/message projection and the merchant configuration workflow.
 - All registered methods use the same original owned draft, current
   eligibility and immutable issued quote. Checkout, recharge and renewal
   do not depend on a second executor. The common keyboard preserves the
-  approved labels and order; recharge never offers Wallet self-payment.
+  approved labels and order without amount suffixes. Show the amount in
+  the checkout body; recharge never offers Wallet self-payment.
   A legitimately zero-priced commercial command has its own free
   confirmation and needs no monetary method or external invoice.
 - Initial and status receipt actions share the original checkout family,
@@ -17,6 +18,9 @@ checkout/message projection and the merchant configuration workflow.
   profile, not later method settings, determines gift image versus API gift
   code input. Bank and crypto retain their own approved labels; closed
   invoices offer original-payment review without a new payment link.
+  Starting a manual receipt flow must not delete the original invoice.
+  A durable funding admission receives a non-modal acceptance notice,
+  without implying service or delivery completion.
 - Owned gateway initiation URLs re-check the original payment and
   authoritative current draft; public Return and authenticated merchant
   evidence are separate. Raw historical external links cannot be revoked
@@ -53,7 +57,11 @@ it never cancels an external payment or declares it unsuccessful. Issued
 hosted links use the original guarded checkout route and expose the pinned
 deadline. An expired or superseded link cannot initiate another merchant
 invoice; the original authenticated reconciliation and staff review remain
-available. The API invoice owns its own first registered projection; other
+available. A closed current draft positively proven never admitted into
+payment or service execution is different: show a closed selection notice
+and Home, not order review. Missing or inconsistent evidence cannot prove
+nonadmission. Bank instructions use the persisted invoice deadline once,
+not a hardcoded duration. The API invoice owns its own first registered projection; other
 tracked references use the common lifecycle status.
 
 Late evidence is admitted against the same immutable issued invoice.

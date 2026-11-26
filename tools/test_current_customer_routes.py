@@ -972,6 +972,22 @@ def main():
         rr=run('renew_link',callback=cb,stale_keys={'nextpay':'stale'})
         assert not any('?nextpay&hash_id='+h in b.get('url','') for b in buttons(rr)),rr
         cases.append('actual_renewal_hosted_navigation_current_method_configuration')
+        # Actual current-schema checkout draft, without any issuance/claim.
+        sql(f"UPDATE pays SET draft_expires_at=UNIX_TIMESTAMP()-1 WHERE id={pid}")
+        before=sql(f"SELECT state,COALESCE(checkout_operation_id,0),COALESCE(payid,'') FROM pays WHERE id={pid}")
+        r=run('renew_link',callback='ps_'+h)
+        edits=[e for e in r['events'] if e[0]=='edit']
+        assert len(edits)==1 and 'مهلت انتخاب روش پرداخت پایان یافت' in edits[0][1],r
+        assert callbacks(r)==['mainMenu'],r
+        assert sql(f"SELECT state,COALESCE(checkout_operation_id,0),COALESCE(payid,'') FROM pays WHERE id={pid}")==before
+        r=run('renew_link',actor=2002,callback='ps_'+h)
+        assert not any(e[0]=='edit' for e in r['events']),r
+        # A contradictory original provider locator must retain recovery.
+        sql(f"UPDATE pays SET payid='fixture-unknown-provider' WHERE id={pid}")
+        r=run('renew_link',callback='ps_'+h)
+        assert 'ps_'+h in callbacks(r),r
+        cases.append('expired_unadmitted_current_draft_only_home_and_uncertain_retains_recovery')
+
 
         sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
         state()

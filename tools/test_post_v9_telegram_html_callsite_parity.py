@@ -118,7 +118,7 @@ AUDITED = {
     'config.php': (10, '21109c7827c494aba3e73602bac6d30ebc27001282c2bf3bb54d582f5de1c2d7'),
     'src/Subscription/CustomerRoutes.php': (12, '484e08a51eebc501a8788043f8694397b69bd0b9a4bea60dc22be2a5695ee5b2'),
     'src/Purchase/Catalogue.php': (10, 'b913c025e7247e4c27d41b5b17ebf0940c884c6983e786b0f36c84db58d344cd'),
-    'src/Purchase/EntryAndBulk.php': (14, '3ebeb7d52771d606e0e5e2133ab497cfaaee5768bda8284c35da98b213ab8a53'),
+    'src/Purchase/EntryAndBulk.php': (13, 'dc86806c4025cf9eb6d716891167552fcae264dc1b90f8bf3169c047684d1a59'),
     'src/Purchase/SelectPlan.php': (4, '840035bdcc4a375f4fbabe2b3191f237aae348dcb2589f270f77de177e635c9f'),
     'src/Admin/Bans.php': (6, '94e714bce831aef60ac5881763be6fb57917f2c81423dde4e4ecc4b254f22b66'),
     'src/Admin/Roles.php': (3, '41d4da0e04b854679c6207828052bb6a1f019bacc13d8cb429332e179cafa1f0'),

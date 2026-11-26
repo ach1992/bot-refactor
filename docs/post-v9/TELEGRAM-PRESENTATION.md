@@ -74,6 +74,19 @@ HTTP 429, 5xx) is **never retried by this layer**: a previous send may have
 been accepted, and the existing financial delivery journal remains authoritative.
 Fallback does not mutate saved content, nor retroactively edit messages.
 
+## Message ownership
+
+The transport renderer is not authority to delete history. Preserve all
+human-authored input and retained evidence, including issued invoices,
+receipts, subscription information, support conversations and reports.
+Transient bot-owned navigation must be retired only by verified identity;
+a successful send, a successful edit, a definite missing target, and an
+unknown delivery are distinct outcomes. First-start welcome and normal
+menu share one message when within the Telegram text limit; an oversized
+configured welcome is preserved separately, without a duplicate menu.
+The approved shared refresh/link-change advice retains both auxiliary-link
+and QR instructions unconditionally.
+
 ## Canonical HTML ownership
 
 Use HTML templates and escape untrusted dynamic text exactly once with

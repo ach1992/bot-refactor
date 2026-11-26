@@ -704,6 +704,44 @@ function achbotPayUxTrackClicked(mysqli $db, int $payId, int $chatId, int $messa
     } catch (Throwable $ignored) {}
 }
 
+/** Positive read-only proof that a closed current checkout never acquired
+ * an invoice, receipt or service command. Missing schema/read failures,
+ * inconsistent pointers and historical rows must keep recovery available.
+ * A single SELECT observes the persisted closure and admission evidence
+ * together; a null result from another lookup is never sufficient. */
+function achbotPayUxUnadmittedClosed(mysqli $db,array $pay,?array $attempt): bool {
+    if ($attempt!==null || !achbotPayUxCurrentDraft($pay) ||
+        (int)($pay['id']??0)<=0 || (int)($pay['user_id']??0)<=0) return false;
+    try {
+        $id=(int)$pay['id'];$actor=(int)$pay['user_id'];
+        $stmt=$db->prepare("SELECT p.id FROM pays p WHERE p.id=? AND p.user_id=?
+            AND JSON_VALUE(p.checkout_draft_context,'$.version')='1'
+            AND p.checkout_operation_id IS NULL
+            AND (p.payid IS NULL OR p.payid='')
+            AND COALESCE(p.message_id,0)=0 AND COALESCE(p.chat_id,'')=''
+            AND COALESCE(p.admins_messages,'') IN ('','[]')
+            AND COALESCE(p.approved_by,0)=0
+            AND (p.state='expired' OR (p.state='pending' AND (
+                (p.draft_expires_at IS NOT NULL AND p.draft_expires_at<=UNIX_TIMESTAMP())
+                OR EXISTS (SELECT 1 FROM pays newer WHERE newer.user_id=p.user_id
+                    AND newer.id>p.id AND SUBSTRING_INDEX(newer.type,'_',2)=SUBSTRING_INDEX(p.type,'_',2)
+                    AND COALESCE(newer.order_id,0)=COALESCE(p.order_id,0)))))
+            AND NOT EXISTS (SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id)
+            AND NOT EXISTS (SELECT 1 FROM service_effects e WHERE e.pay_row_id=p.id)
+            AND NOT EXISTS (SELECT 1 FROM service_operations o
+                WHERE o.command_kind='checkout' AND o.command_ref=CAST(p.id AS CHAR))");
+        if (!$stmt) return false;
+        $stmt->bind_param('ii',$id,$actor);
+        $ok=$stmt->execute();
+        $row=$ok?$stmt->get_result()->fetch_assoc():null;
+        $stmt->close();
+        return $row!==null;
+    } catch (Throwable $error) {
+        error_log('achbot_checkout_closed_evidence_unavailable pay_id='.(int)$pay['id']);
+        return false;
+    }
+}
+
 /**
  * Conservative semantic projection from durable local facts. 'paid' by itself
  * NEVER proves that Marzban delivery or a top-up effect was completed.
@@ -711,6 +749,7 @@ function achbotPayUxTrackClicked(mysqli $db, int $payId, int $chatId, int $messa
 function achbotPayUxState(array $pay, ?array $attempt): string {
     $state = (string)($pay['state'] ?? '');
     $stage = (string)($attempt['stage'] ?? '');
+    if ($attempt===null && ($pay['unadmitted_closed']??false)===true) return 'draft_closed';
     // A service-change intent invalidates the old invoice's product claim
     // without asserting its external funds were unpaid or refunded.
     if ($state === 'declined') return 'declined';
@@ -776,6 +815,7 @@ function achbotPayUxOwnedReference(mysqli $db, string $hash, int $actor): ?array
 /** Public-facing messages cannot include a raw provider link or secret. */
 function achbotPayUxStatusText(array $pay, ?array $attempt): string {
     $state = achbotPayUxState($pay,$attempt);
+    if ($state==='draft_closed') return achbotMessage('payment.payment_lifecycle.draft_closed');
     $subject = function_exists('payTypeToDescription')
         ? (string)payTypeToDescription((string)$pay['type'])
         : \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.df83eb82dd');
@@ -835,7 +875,8 @@ function achbotPayUxDeadlineText(array $attempt): string {
 
 function achbotPayUxStatusKeyboard(string $hash,?array $pay=null,?array $attempt=null): string {
     $rows = [];
-    if (preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)) {
+    $draftClosed=$pay!==null && achbotPayUxState($pay,$attempt)==='draft_closed';
+    if (!$draftClosed && preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)) {
         require_once __DIR__.'/ReceiptHelpers.php';
         if ($pay && $attempt && (string)$pay['hash_id']===$hash &&
             ($action=achbotManualReceiptAction($pay,$attempt))) $rows[]=[$action['button']];
@@ -849,7 +890,7 @@ function achbotPayUxStatusKeyboard(string $hash,?array $pay=null,?array $attempt
         $rows[] = [['text'=>achbotMessage($previous?'payment.payment_lifecycle.previous_payment_review':
             'payment.payment_lifecycle.pay_ux_status_keyboard.button.9e25b02e86'),'callback_data'=>'ps_'.$hash]];
     }
-    $rows[] = [['text'=>\achbotMessage('payment.payment_lifecycle.pay_ux_status_keyboard.button.1121ffbf88'),'callback_data'=>preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)?'ph_'.$hash:'mainMenu']];
+    $rows[] = [['text'=>\achbotMessage('payment.payment_lifecycle.pay_ux_status_keyboard.button.1121ffbf88'),'callback_data'=>!$draftClosed && preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)?'ph_'.$hash:'mainMenu']];
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
 }
 
@@ -914,6 +955,7 @@ function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
         }
         try { $pay['superseded']=achbotPayUxHasNewer($db,$pay); }
         catch (Throwable $ignored) { $pay['superseded']=true; }
+        $pay['unadmitted_closed']=achbotPayUxUnadmittedClosed($db,$pay,$attempt);
         $state=achbotPayUxState($pay,$attempt);
         // Still-live payment CTAs must not be needlessly removed.
         if ($state==='awaiting_payment' &&

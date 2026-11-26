@@ -164,7 +164,7 @@ def write_runtime(w: Path) -> None:
             "if(preg_match('/^sendMessageToUser"),
     }
     for file,body in files.items():
-        (w/file).write_text(body.replace('achbotCurrentMessage(', 'fixtureCurrentMessage(').replace("__DIR__ . '/src/Telegram/UserProfile.php'","$root . '/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Telegram/UserProfile.php'","$root.'/src/Telegram/UserProfile.php'"),encoding="utf-8")
+        (w/file).write_text(body.replace('achbotCurrentMessage(', 'fixtureCurrentMessage(').replace("__DIR__ . '/src/Telegram/UserProfile.php'","$root . '/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Telegram/UserProfile.php'","$root.'/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Subscription/Presentation.php'","$root.'/src/Subscription/Presentation.php'"),encoding="utf-8")
     for f in ("src/Telegram/UserProfile.php","src/Presentation/Text.php","src/Wallet/Ledger.php"):
         to=w/f;to.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(ROOT/f,to)
@@ -263,25 +263,24 @@ def main() -> None:
         yes(not r['rows'],"forbidden_wallet_set_cannot_create_user")
         r=run(actor=2401)
         yes(len(r['rows'])==1 and
-            [e['text'] for e in r['events'] if e['kind']=='send']==['HOME','WELCOME'],
+            [e['text'] for e in r['events'] if e['kind']=='send']==['WELCOME\n\nHOME'],
             "plain_first_start_registers_and_displays_menu")
-        home=next(e for e in r['events'] if e['kind']=='send' and e['text']=='HOME')
+        home=next(e for e in r['events'] if e['kind']=='send' and e['text']=='WELCOME\n\nHOME')
         buttons=[b for row in json.loads(home['markup'])['inline_keyboard'] for b in row]
         yes(sum(b.get('url')=='https://t.me/fixture_support' for b in buttons)==1,
             "home_single_support_destination_no_duplicate_button")
-        welcome=next(e for e in r['events'] if e['kind']=='send' and e['text']=='WELCOME')
-        yes(all(any(b.get('callback_data')=='buySubscription' for row in json.loads(e['markup'])['inline_keyboard'] for b in row) for e in (home,welcome)),
+        yes(any(b.get('callback_data')=='buySubscription' for b in buttons),
             "open_sales_home_and_welcome_offer_purchase")
         r=run(actor=2498,sales_off=True)
-        yes(len(r['rows'])==1 and [e['text'] for e in r['events'] if e['kind']=='send']==['HOME','WELCOME'],
+        yes(len(r['rows'])==1 and [e['text'] for e in r['events'] if e['kind']=='send']==['WELCOME\n\nHOME'],
             "closed_sales_onboarding_still_registers_and_welcomes")
         menus={e['text']:{b.get('callback_data') for row in json.loads(e['markup'])['inline_keyboard'] for b in row}
                for e in r['events'] if e['kind']=='send'}
         yes(all('buySubscription' not in callbacks for callbacks in menus.values()) and
-            'increaseMyWallet' in menus['HOME'] and 'mainMenu' in menus['WELCOME'],
+            'increaseMyWallet' in menus['WELCOME\n\nHOME'],
             "closed_sales_home_and_welcome_hide_purchase_keep_navigation")
         r=run(actor=2423,missing_optional_flags=True)
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
+        yes(len(r['rows'])==1 and any(e['text'] in ('HOME','WELCOME\n\nHOME') for e in r['events'] if e['kind']=='send'),
             "unset_optional_feature_flags_do_not_break_new_user_menu")
         r=run(actor=2401)
         yes(len(r['rows'])==1 and r['registered'] is False and
@@ -304,7 +303,7 @@ def main() -> None:
         yes(r['rows']==[] and any(e['text']=='JOIN_PROMPT' for e in r['events'] if e['kind']=='send'),
             "unverified_getChatMember_does_not_bypass_join")
         r=run(actor=2404,forced=True,membership='member')
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send') and
+        yes(len(r['rows'])==1 and any(e['text'] in ('HOME','WELCOME\n\nHOME') for e in r['events'] if e['kind']=='send') and
             all(e['text']!='JOIN_PROMPT' for e in r['events'] if e['kind']=='send'),
             "already_member_goes_direct_to_menu")
         r=run(actor=2405,forced=True,membership='left',callback='haveJoined/start')
@@ -312,11 +311,11 @@ def main() -> None:
             "premature_join_button_denied_no_registration")
         r=run(actor=2405,forced=True,membership='member',callback='haveJoined/start')
         yes(len(r['rows'])==1 and
-            [e['kind'] for e in r['events']]==['delete','admin','send','send'] and
-            any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
+            [e['kind'] for e in r['events']]==['delete','admin','send'] and
+            any(e['text'] in ('HOME','WELCOME\n\nHOME') for e in r['events'] if e['kind']=='send'),
             "joined_button_registers_then_shows_menu")
         r=run(actor=2406,forced=True,membership='restricted',is_member=True)
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
+        yes(len(r['rows'])==1 and any(e['text'] in ('HOME','WELCOME\n\nHOME') for e in r['events'] if e['kind']=='send'),
             "restricted_actual_member_accepted")
         r=run(actor=2407,forced=True,membership='restricted',is_member=False)
         yes(r['rows']==[] and any(e['text']=='JOIN_PROMPT' for e in r['events'] if e['kind']=='send'),
@@ -328,7 +327,7 @@ def main() -> None:
               callback='haveJoined/start 1001',reward=150)
         yes(len(r['rows'])==1 and int(r['inviter_wallet'])==50150 and
             int(r['rows'][0]['refered_by'])==1001 and
-            any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
+            any(e['text'] in ('HOME','WELCOME\n\nHOME') for e in r['events'] if e['kind']=='send'),
             "joined_referral_awarded_once_after_registration")
         r=run(actor=2408,forced=True,membership='member',
               callback='haveJoined/start 1001',reward=150)
@@ -361,7 +360,7 @@ def main() -> None:
                        "(2414,'prior','prior','0',0,'1700000000')",DB)
         native.sql(w,env,"DELETE FROM users WHERE userid=2414",DB)
         r=run(actor=2414)
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
+        yes(len(r['rows'])==1 and any(e['text'] in ('HOME','WELCOME\n\nHOME') for e in r['events'] if e['kind']=='send'),
             "controlled_deleted_account_rejoin_recovers_menu")
         with ThreadPoolExecutor(max_workers=2) as pool:
             jobs=[pool.submit(run,actor=2415,text='/start 1001',reward=150) for _ in range(2)]
@@ -392,20 +391,20 @@ def main() -> None:
         with ThreadPoolExecutor(max_workers=2) as pool:
             jobs=[pool.submit(run,actor=2421) for _ in range(2)]
             greetings=[x.result(timeout=25) for x in jobs]
-        yes(sum(e['text']=='WELCOME' for x in greetings for e in x['events']
+        yes(sum(e['text']=='WELCOME\n\nHOME' for x in greetings for e in x['events']
                 if e['kind']=='send')==1 and
             sum(e['kind']=='admin' for x in greetings for e in x['events'])==1 and
             sum(e['text']=='HOME' for x in greetings for e in x['events']
-                if e['kind']=='send')==2,
+                if e['kind']=='send')==1,
             "concurrent_first_start_single_welcome_and_admin_notice")
         r=run(actor=2416,forced=False,callback='haveJoined')
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
+        yes(len(r['rows'])==1 and any(e['text'] in ('HOME','WELCOME\n\nHOME') for e in r['events'] if e['kind']=='send'),
             "old_join_button_after_lock_disabled_shows_menu")
         r=run(actor=2417,forced=True,membership='administrator')
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
+        yes(len(r['rows'])==1 and any(e['text'] in ('HOME','WELCOME\n\nHOME') for e in r['events'] if e['kind']=='send'),
             "channel_administrator_status_accepted")
         r=run(actor=2418,forced=True,membership='creator')
-        yes(len(r['rows'])==1 and any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
+        yes(len(r['rows'])==1 and any(e['text'] in ('HOME','WELCOME\n\nHOME') for e in r['events'] if e['kind']=='send'),
             "channel_creator_status_accepted")
         r=run(actor=2419,mode='helper',text='/start',chat_id=1)
         yes(r['rows']==[] and r['registered'] is None,
@@ -425,7 +424,7 @@ def main() -> None:
         yes(len(r['rows'])==1 and r['registered'] is True and
             int(r['rows'][0]['refered_by'])==1001 and
             int(r['inviter_wallet'])==150 and
-            any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
+            any(e['text'] in ('HOME','WELCOME\n\nHOME') for e in r['events'] if e['kind']=='send'),
             "negative_inviter_balance_credits_debt_and_registers")
         r=run(actor=2440,text='/start 1001',reward=250)
         yes(r['registered'] is False and int(r['inviter_wallet'])==150,
@@ -439,7 +438,7 @@ def main() -> None:
               callback='haveJoined/start 1001',reward=250)
         yes(len(r['rows'])==1 and r['registered'] is True and
             int(r['inviter_wallet'])==150 and
-            any(e['text']=='HOME' for e in r['events'] if e['kind']=='send'),
+            any(e['text'] in ('HOME','WELCOME\n\nHOME') for e in r['events'] if e['kind']=='send'),
             "negative_debt_referral_after_join_verification")
         r=run(actor=2441,forced=True,membership='member',
               callback='haveJoined/start 1001',reward=250)
@@ -481,7 +480,7 @@ def main() -> None:
                 "home_callback_preserves_unsent_first_start_"+callback_name)
             r=run(actor=user)
             yes(len(r['rows'])==1 and r['rows'][0]['first_start']=='sent' and
-                [e['text'] for e in r['events'] if e['kind']=='send']==['HOME','WELCOME'] and
+                [e['text'] for e in r['events'] if e['kind']=='send']==['WELCOME\n\nHOME'] and
                 sum(e['kind']=='admin' for e in r['events'])==1,
                 "start_after_home_delivers_welcome_and_admin_"+callback_name)
             r=run(actor=user)
@@ -495,11 +494,11 @@ def main() -> None:
         with ThreadPoolExecutor(max_workers=2) as pool:
             tasks=[pool.submit(run,actor=2455) for _ in range(2)]
             concurrent=[job.result(timeout=25) for job in tasks]
-        yes(sum(e['text']=='WELCOME' for x in concurrent for e in x['events']
+        yes(sum(e['text']=='WELCOME\n\nHOME' for x in concurrent for e in x['events']
                 if e['kind']=='send')==1 and
             sum(e['kind']=='admin' for x in concurrent for e in x['events'])==1 and
             sum(e['text']=='HOME' for x in concurrent for e in x['events']
-                if e['kind']=='send')==2,
+                if e['kind']=='send')==1,
             "concurrent_start_after_existing_unsent_user_notifies_once")
 
     proof={'complete':True,'cases':len(checks),'checks':checks,

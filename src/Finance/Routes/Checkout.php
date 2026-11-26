@@ -134,7 +134,7 @@ if (preg_match('/\Asend(?:CustomCart|CustomGift|CustomUsdt)Receipt(?<hashId>[A-Z
         return;
     }
 
-    delMessage();
+    // Retain the original issued invoice and its payment evidence.
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitCustomUsdtReceipt" : ($method === 'gift_card' ? "waitCustomGiftReceipt" : "waitCustomCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel($payInfo);
@@ -295,7 +295,7 @@ if (preg_match('/\Asend(?:BuyCart|BuyGift|BuyUsdt)Receipt(?<hashId>[A-Za-z0-9_-]
         return;
     }
 
-    delMessage();
+    // Retain the original issued invoice and its payment evidence.
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitBuyUsdtReceipt" : ($method === 'gift_card' ? "waitBuyGiftReceipt" : "waitBuyCartReceipt")) . $match['hashId']);
 
     $keyboard = kbOnlyCancel($payInfo);

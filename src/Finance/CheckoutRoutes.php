@@ -35,7 +35,8 @@ function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null,bool 
             $s=achbotProviderStatement($db,"SELECT id FROM payment_followup_intents
                 WHERE ((service_operation_id IS NOT NULL AND service_operation_id=?) OR
                     (pay_row_id IS NOT NULL AND pay_row_id=? AND stage='wallet_credit'))
-                AND state IN ('pending','dispatching') ORDER BY id LIMIT 8",
+                AND state IN ('pending','dispatching')
+                AND (next_attempt_at IS NULL OR next_attempt_at<=NOW(6)) ORDER BY id",
                 'ii',[$operation,$payId]);
             $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
             foreach ($rows as $row) {
@@ -125,9 +126,9 @@ function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,string 
         } elseif ($r['status']==='capacity_unavailable') {
             alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.0b74ab3f2e'),true);
         } elseif (in_array($r['status'],['funded','already_funded'],true)) {
-            // Do not announce success while the durable service is pending.
-            if (($r['stage']??null)!=='completed')
-                alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
+            // Funding is durable; acknowledge the accepted request without
+            // implying that Native execution or Telegram delivery succeeded.
+            alert(achbotMessage('payment.payment_lifecycle.request_accepted'),false);
             achbotCheckoutAdvance($db,(int)$r['operation']);
         } else alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
     } catch (Throwable $e) {
