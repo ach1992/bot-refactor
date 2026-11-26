@@ -116,16 +116,27 @@ function achbotPayUxWithLease(mysqli $db,int $payId,callable $action,$busy=null)
  * until an actual admission exists. Recover the committed invoice/status
  * rather than losing its last projection on a stale Back/Cancel. */
 function achbotPayUxRetireNavigation(mysqli $db,array $ref): bool {
-    $pay=(int)$ref['pay_row_id'];
-    $source=achbotProviderRow($db,'SELECT checkout_operation_id,
-        EXISTS(SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id) AS admitted
-        FROM pays p WHERE id=?','i',[$pay]);
-    if (!$source) return false;
-    if ($source['checkout_operation_id']!==null || (int)$source['admitted']!==0) {
-        achbotPayUxSyncMessages($db,$pay);
-        return false;
+    $pay=(int)$ref['pay_row_id'];$actor=(int)$ref['chat_id'];
+    if ($ref['purpose']!=='selector' || $ref['retired_reason']!==null) return false;
+    // Browser admission uses the original pay row lock, even without a
+    // Telegram session lease. Classify and retire atomically against it.
+    if (!$db->begin_transaction()) return false;
+    try {
+        $locked=achbotProviderRow($db,'SELECT id FROM pays WHERE id=? AND user_id=? FOR UPDATE','ii',[$pay,$actor]);
+        if (!$locked || !achbotPayUxDraftWithoutEvidence($db,$pay,$actor)) {
+            $db->rollback();
+            achbotPayUxSyncMessages($db,$pay);
+            return false;
+        }
+        if (!achbotPayUxRetire($db,$ref,'navigation')) {
+            $db->rollback();return false;
+        }
+        if (!$db->commit()) throw new RuntimeException('payment_navigation_commit_unknown');
+        return true;
+    } catch (Throwable $error) {
+        try {$db->rollback();} catch (Throwable $ignored) {}
+        throw $error;
     }
-    return achbotPayUxRetire($db,$ref,'navigation');
 }
 
 function achbotPayUxRetire(mysqli $db,array $ref,string $reason): bool {
@@ -229,7 +240,29 @@ function achbotPayUxProjectionSource(mysqli $db,int $payId): ?array {
         $pay['projection_unknown']=true;
         error_log('achbot_payment_projection_source_unavailable pay_id='.$payId.' class='.get_class($error));
     }
-    $pay['unadmitted_closed']=empty($pay['projection_unknown']) && achbotPayUxUnadmittedClosed($db,$pay,$attempt);
+    $pay['unadmitted_closed']=false;
+    if (empty($pay['projection_unknown']) && $attempt===null &&
+        ($pay['state']==='expired' || ($pay['state']==='pending' &&
+            ((!empty($pay['draft_expires_at']) && (int)$pay['draft_expires_at']<=time()) ||
+             !empty($pay['superseded']))))) {
+        try {
+            $pay['unadmitted_closed']=achbotPayUxUnadmittedClosed($db,$pay,$attempt);
+            $pay['closure_unverified']=!$pay['unadmitted_closed'];
+        } catch (Throwable $error) {
+            $pay['projection_unknown']=true;
+            error_log('achbot_checkout_closed_evidence_unavailable pay_id='.$payId.' class='.get_class($error));
+        }
+    } elseif (empty($pay['projection_unknown']) && $attempt===null &&
+        $pay['state']==='pending' && achbotPayUxCurrentDraft($pay)) {
+        try {
+            // A still-visible selector must not invite another payment
+            // when the original journal contradicts an unissued draft.
+            $pay['projection_unknown']=!achbotPayUxDraftWithoutEvidence($db,$payId,(int)$pay['user_id']);
+        } catch (Throwable $error) {
+            $pay['projection_unknown']=true;
+            error_log('achbot_checkout_draft_evidence_unavailable pay_id='.$payId.' class='.get_class($error));
+        }
+    }
     if (empty($pay['projection_unknown']) && in_array($pay['state'],['paid','paid_with_wallet','approved','auto_cart_approved'],true)) {
         require_once __DIR__.'/CheckoutRoutes.php';
         $pay['projection_outcome']='unknown';

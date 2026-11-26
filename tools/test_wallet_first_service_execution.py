@@ -110,7 +110,9 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
     }
     if ($x['op']==='telegram_addon_quote') {
         $GLOBALS['fixtureQuoteMessages'][]=['text'=>$text,'keys'=>json_decode($keys??'null',true)];
-        return (object)['ok'=>true,'result'=>(object)['message_id'=>722]];
+        $actor=(int)$GLOBALS['from_id'];
+        $latest=achbotProviderRow($db,'SELECT MAX(id) AS id FROM pays WHERE user_id=?','i',[$actor]);
+        return (object)['ok'=>true,'result'=>(object)['message_id'=>200000+(int)$latest['id'],'chat'=>(object)['id'=>$actor]]];
     }
     if (in_array($x['op'],['checkout_discount','rotate_key'],true)) return (object)['ok'=>true];
     return fixtureDeliverySend('text',$uid,$text,$keys,$mode);
@@ -2616,20 +2618,22 @@ DELIMITER ;
                             assert rr['messages'] and int(sql("SELECT COUNT(*) FROM pays"))==count+1,rr
                             h,price=sql("SELECT hash_id,price FROM pays WHERE user_id=9002 ORDER BY id DESC LIMIT 1").split('\t')
                             assert price=='100',rr
+                            assert 'مبلغ: 100 تومان' in rr['messages'][-1]['text'],rr
                             actual=set();cancel=False
                             for row in rr['messages'][-1]['keys']['inline_keyboard']:
                                 for b in row:
                                     cb=b.get('callback_data','');url=b.get('url','')
-                                    if cb=='mainMenu':cancel=True
+                                    if cb=='dc_'+h:cancel=True
                                     elif cb==prefix+'WithWallet'+h:actual.add('wallet')
-                                    elif cb==prefix+'WithCartToCart'+h:actual.add('bank_transfer')
-                                    elif cb==prefix+'WithGiftCard'+h:actual.add('gift_card')
+                                    elif cb=='pm_b_'+h:actual.add('bank_transfer')
+                                    elif cb=='pm_g_'+h:actual.add('gift_card')
                                     elif cb=='mcm_'+h:actual.add('crypto')
                                     else:
                                         urls={f'https://bot.fixture.invalid/pay/checkout.php?{flag}&hash_id={h}':m for flag,m in [('nowpayment','nowpayments'),('zarinpal','zarinpal'),('nextpay','nextpay')]}
                                         assert url in urls,(b,rr)
                                         actual.add(urls[url])
                             assert cancel and actual==expected,(mode,route,expected,actual,rr)
+                            assert sql(f"SELECT COUNT(*) FROM payment_message_refs r JOIN pays p ON p.id=r.pay_row_id WHERE p.hash_id='{h}' AND r.chat_id=9002 AND r.purpose='selector' AND r.retired_reason IS NULL")=='1'
                             assert finance()==before
                             assert sql("SELECT COUNT(*) FROM payment_attempts")==attempts and sql("SELECT COUNT(*) FROM service_operations")==operations
                     for flag,method,keys in methods:
@@ -2723,7 +2727,7 @@ DELIMITER ;
                         assert price=='0'
                         buttons=[b for row in r['messages'][-1]['keys']['inline_keyboard'] for b in row]
                         assert buttons[0]==dict(text=label,callback_data=prefix+'WithWallet'+h),buttons
-                        assert len(buttons)==2 and buttons[1]['callback_data']=='mainMenu',buttons
+                        assert len(buttons)==2 and buttons[1]['callback_data']=='dc_'+h,buttons
                         assert r['messages'][-1]['text']=='🧾 مبلغ نهایی این سفارش صفر تومان است. برای انجام عملیات، تأیید کنید.',r
                         before=finance();request_count=len(requests)
                         # Current agency price must still authorize a raw

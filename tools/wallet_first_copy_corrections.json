@@ -730,6 +730,15 @@
     "after": "⚠️ عددی بزرگ‌تر از صفر وارد کنید.",
     "before": "مقداری بزرگتر از 0 وارد کن"
   },
+  "renewal.extensions.message.48930749a9": {
+    "after": {
+      "parameters": [
+        "amount"
+      ],
+      "text": "<b>🧾 روش پرداخت سفارش را انتخاب کنید.</b>\n💵 مبلغ: {amount} تومان"
+    },
+    "before": "🧾 روش پرداخت سفارش را انتخاب کنید."
+  },
   "renewal.free_confirmation.day": {
     "after": "✅ افزایش زمان رایگان",
     "before": null

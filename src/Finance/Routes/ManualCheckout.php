@@ -59,85 +59,63 @@ $isPick = preg_match('/^mc_([bcet])_([A-Za-z0-9_-]{1,50})$/D', $action, $pickMat
 if ($isMenu || $isPick) {
     $hashId = $isMenu ? $menuMatch[1] : $pickMatch[2];
     try {
-        $stmt=$connection->prepare('SELECT * FROM pays
-            WHERE hash_id=? LIMIT 1');
-        $stmt->bind_param('s',$hashId);$stmt->execute();
-        $selectedPay=$stmt->get_result()->fetch_assoc();$stmt->close();
-        if (!$selectedPay || (int)$selectedPay['user_id'] !== (int)$from_id ||
-            $selectedPay['state'] !== 'pending' || (string)($selectedPay['payid'] ?? '') !== '') {
-            answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.d0d07ef447'), true);
+        $actor=(int)$from_id;$messageId=(int)$message_id;
+        $locator=achbotPayUxOwnedReference($connection,$hashId,$actor);
+        if (!$locator) {
+            answerCallbackQuery($callbackId,achbotMessage('manual_payment.manual_crypto.alert.d0d07ef447'),true);
             return;
         }
-        if (!achbotPayUxCurrentDraft($selectedPay)) {
-            alert(achbotMessage('manual_payment.manual_crypto.alert.d0d07ef447'),true);
-            return;
-        }
-        $stmt=$connection->prepare('SELECT provider,stage,checkout_url,wallet_invoice_sha256,invoice_expires_at FROM payment_attempts
-            WHERE pay_row_id=? LIMIT 1');
-        $payId=(int)$selectedPay['id'];
-        $stmt->bind_param('i',$payId);$stmt->execute();
-        $previous=$stmt->get_result()->fetch_assoc();$stmt->close();
-        if ($previous && (!achbotCurrentReceiptPin($previous) || !in_array((string)$previous['provider'],
-                                   ['manual_usdt','manual_trx'],true) ||
-                          (string)$previous['stage']!=='pending')) {
-            answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.4d788a75be'), true);
-            return;
-        }
-        require_once __DIR__.'/../CheckoutAdmission.php';
-        $options=$previous?[]:achbotManualCryptoOptions(
-            achbotCheckoutDraftPaymentOptions($connection,$payId,(int)$from_id));
-        if ($previous) {
-            $intent=achbotManualIntentDecode((string)$previous['checkout_url'],
-                                             (string)$previous['provider']);
-            if (!$intent) {
-                answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.5ce97176e4'), true);
-                return;
+        $payId=(int)$locator['id'];
+        $done=achbotPayUxWithLease($connection,$payId,static function() use ($connection,$payId,$actor,$messageId,$update,$isMenu,$hashId,$pickMatch,$callbackId): bool {
+            $ref=achbotPayUxRef($connection,$payId,$actor,$messageId);
+            if ($ref && $ref['retired_reason']===null && in_array($ref['purpose'],['invoice','status'],true)) {
+                achbotPayUxSyncMessages($connection,$payId);
+                answerCallbackQuery($callbackId);
+                return true;
             }
-            // Do not substitute a newly configured wallet for a pinned one.
-            $originalNetwork=(string)($intent['network'] ?? '');
-            $tag=achbotManualCryptoTag($originalNetwork);
-            if ($tag===null) {
-                answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.5ce97176e4'), true);
-                return;
+            $ref=achbotPayUxSelectorRef($connection,$payId,$actor,$messageId,$update);
+            if (!$ref) return false;
+            $facts=achbotPayUxProjectionSource($connection,$payId);
+            if (!$facts) return false;
+            [$pay,$attempt]=$facts;
+            if ($attempt!==null || (int)($pay['checkout_operation_id']??0)>0 ||
+                achbotPayUxState($pay,$attempt)!=='awaiting_payment') {
+                achbotPayUxSyncMessages($connection,$payId);
+                answerCallbackQuery($callbackId);
+                return true;
             }
-            $options=[$tag=>['provider'=>(string)$previous['provider'],
-                             'network'=>$originalNetwork,
-                             'label'=>($tag==='t'?\achbotMessage('manual_payment.manual_crypto.t_r_x.a23d6fad8d'):\achbotMessage('manual_payment.receipt_helpers.manual_crypto_options.u_s_d_t.1974a6095a')).$originalNetwork]];
-        }
-        if ($isMenu) {
+            if (!achbotPayUxCurrentDraft($pay)) return false;
+            $options=achbotManualCryptoOptions(achbotCheckoutDraftPaymentOptions($connection,$payId,$actor));
+            if (!$isMenu) {
+                $option=$options[$pickMatch[1]]??null;
+                if (!$option) {
+                    answerCallbackQuery($callbackId,achbotMessage('manual_payment.manual_crypto.alert.93decba032'),true);
+                    return true;
+                }
+                achbotManualPresentInvoice($connection,$pay,$actor,$option['provider'],$option['network'],$messageId);
+                return true;
+            }
             if (!$options) {
-                answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.26fc4467a8'), true);
-                return;
+                answerCallbackQuery($callbackId,achbotMessage('manual_payment.manual_crypto.alert.26fc4467a8'),true);
+                return true;
             }
             $keyboard=[];
-            foreach ($options as $tag=>$option) {
-                $keyboard[]=[['text'=>$option['label'],
-                              'callback_data'=>'mc_'.$tag.'_'.$hashId]];
+            foreach ($options as $tag=>$option)
+                $keyboard[]=[['text'=>$option['label'],'callback_data'=>'mc_'.$tag.'_'.$hashId]];
+            $keyboard[]=[['text'=>achbotMessage('manual_payment.manual_crypto.button.1121ffbf88'),'callback_data'=>'dc_'.$hashId]];
+            $body=achbotMessage('manual_payment.manual_crypto.message.d05b7cfc7d').
+                achbotMessage('manual_payment.manual_crypto.text.0a49531de8').
+                achbotMessage('manual_payment.manual_crypto.text.ee4ae4b0c7');
+            $keys=json_encode(['inline_keyboard'=>$keyboard],JSON_UNESCAPED_UNICODE);
+            $result=achbotPayUxApplyProjection($connection,$ref,$body,$keys);
+            if ($result==='retired') {
+                $sent=sendMessage($body,$keys,'HTML',$actor);
+                achbotPayUxTrackMessage($connection,$payId,$actor,$sent,'selector');
             }
-            $keyboard[]=[['text'=>\achbotMessage('manual_payment.manual_crypto.button.1121ffbf88'),'callback_data'=>'dc_'.$hashId]];
-            $message=\achbotMessage('manual_payment.manual_crypto.message.d05b7cfc7d').
-                \achbotMessage('manual_payment.manual_crypto.text.0a49531de8').
-                \achbotMessage('manual_payment.manual_crypto.text.ee4ae4b0c7');
-            $done=achbotPayUxWithLease($connection,$payId,static function() use ($connection,$payId,$from_id,$message_id,$update,$message,$keyboard): bool {
-                $ref=achbotPayUxSelectorRef($connection,$payId,(int)$from_id,(int)$message_id,$update);
-                if (!$ref) return false;
-                $keys=json_encode(['inline_keyboard'=>$keyboard],JSON_UNESCAPED_UNICODE);
-                $result=achbotPayUxApplyProjection($connection,$ref,$message,$keys);
-                if ($result==='retired') {
-                    $sent=sendMessage($message,$keys,'HTML',(int)$from_id);
-                    achbotPayUxTrackMessage($connection,$payId,(int)$from_id,$sent,'selector');
-                }
-                return true;
-            },false);
-            if ($done) answerCallbackQuery($callbackId);
-            return;
-        }
-        $option=$options[$pickMatch[1]] ?? null;
-        if (!$option) {
-            answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.93decba032'), true);
-            return;
-        }
-        achbotManualPresentInvoice($connection,$selectedPay,(int)$from_id,$option['provider'],$option['network'],(int)$message_id);
+            answerCallbackQuery($callbackId);
+            return true;
+        },false);
+        if (!$done) answerCallbackQuery($callbackId,achbotMessage('manual_payment.manual_crypto.alert.d0d07ef447'),true);
         return;
     } catch (Throwable $error) {
         answerCallbackQuery($callbackId, \achbotMessage('manual_payment.manual_crypto.alert.5216f25f85'), true);

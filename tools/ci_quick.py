@@ -312,6 +312,8 @@ REQUIRED_SCENARIOS = {
         "rate_limit_respected_by_cron_and_explicit_status_replay",
         "ambiguous_home_edit_cannot_revive_selector_or_admit_stale_payment",
         "status_send_unknown_replay_fenced_and_new_click_recovers",
+        "contradictory_credit_keeps_original_recovery_and_never_reissues",
+        "navigation_orders_after_concurrent_browser_admission",
     ),
     "current_customer_routes": (
         "actual_public_content_namespace_exact_and_no_private_values",

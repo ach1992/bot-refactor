@@ -10,7 +10,8 @@ checkout/message projection and the merchant configuration workflow.
   eligibility and immutable issued quote. Checkout, recharge and renewal
   do not depend on a second executor. The common keyboard preserves the
   approved labels and order without amount suffixes. Show the amount in
-  the checkout body; recharge never offers Wallet self-payment.
+  the checkout body, including time and volume add-ons; recharge never
+  offers Wallet self-payment.
   A legitimately zero-priced commercial command has its own free
   confirmation and needs no monetary method or external invoice.
 - One manual checkout route handles all six payment subjects. Method selection
@@ -56,11 +57,16 @@ checkout/message projection and the merchant configuration workflow.
 semantic purpose (`selector`, `invoice`, `status`, `receipt`) and exact
 owned chat/message identity. The existing payment session lease serializes
 message promotion, navigation retirement and projection. No database
-transaction is held across a Telegram edit.
+transaction is held across a Telegram edit. Selector retirement checks
+positive absence of original financial evidence and commits under the same
+original pay row lock as browser admission. Navigation does not cancel
+an external invoice or change the payment state.
 
 Manual issuance promotes the existing selector to the invoice in place.
 A committed original whose selector was not promoted is recovered by the
-same projector. Other selectors are status views, not additional invoices.
+same projector. A stale method or crypto network click reconciles an
+already admitted original rather than reviving its selection keyboard.
+Other selectors are status views, not additional invoices.
 Receipt acknowledgements retain their original text; their keyboard alone
 may be updated. Closed manual invoices retain pinned amount and destination
 as historical facts, without new payment instructions. Hosted gateways
@@ -117,7 +123,11 @@ invoice; the original authenticated reconciliation and staff review remain
 available. A closed current draft positively proven never admitted into
 payment or service execution is different: show a closed selection notice
 and Home, not order review. Missing or inconsistent evidence cannot prove
-nonadmission. Bank instructions use the persisted invoice deadline once,
+nonadmission. The shared absence predicate checks original payment/receipt
+fields, attempts, service commands and effects, Wallet credit, referral
+and follow-up journals. It also guards new admission and draft expiry;
+contradictory facts keep the recovery action and do not promise a credit
+without an identified invoice. Bank instructions use the persisted invoice deadline once,
 not a hardcoded duration. All customer invoice and status references use
 the same projection owner, including API-assisted invoices.
 

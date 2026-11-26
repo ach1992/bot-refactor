@@ -441,7 +441,7 @@ return [
         'extensions.alert.ae271a2d1d' => '⚠️ ثبت پیش‌نویس به‌طور قطعی تأیید نشد؛ از ایجاد پرداخت مجدد پرهیز کنید.',
         // extensions.button
         // extensions.message
-        'extensions.message.48930749a9' => '🧾 روش پرداخت سفارش را انتخاب کنید.',
+        'extensions.message.48930749a9' => ['text'=>"<b>🧾 روش پرداخت سفارش را انتخاب کنید.</b>\n💵 مبلغ: {amount} تومان",'parameters'=>['amount']],
         // extensions.alert
         // extensions.text
         'extensions.text.9699c34220' => 'زمان',
@@ -636,10 +636,6 @@ return [
         'receipt_helpers.send_with_start_button.button.dcb9c20928' => '🔄 بررسی وضعیت',
         // manual_crypto.alert
         'manual_crypto.alert.d0d07ef447' => 'این سفارش در انتظار پرداخت نیست یا متعلق به شما نیست.',
-        'manual_crypto.alert.4d788a75be' => 'این سفارش قبلاً با روشی دیگر ثبت یا وارد بررسی شده است.',
-        'manual_crypto.alert.5ce97176e4' => 'اطلاعات پرداخت قبلی نیازمند بررسی است.',
-        // manual_crypto.t_r_x
-        'manual_crypto.t_r_x.a23d6fad8d' => '🔴 ترون (TRX) — ',
         // manual_crypto.alert
         'manual_crypto.alert.26fc4467a8' => 'هیچ شبکه‌ای با آدرس و نرخ معتبر فعال نیست.',
         // manual_crypto.button

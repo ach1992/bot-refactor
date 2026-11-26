@@ -969,7 +969,11 @@ def main():
         sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
         state(walletState='off',manualUsdtState='off')
         rr=run('manual_checkout',callback='mcm_'+h,message_id=mid)
-        assert callbacks(rr)==['mc_b_'+h,'dc_'+h],rr
+        assert 'rs_'+h in callbacks(rr) and not any(cb.startswith('mc_') for cb in callbacks(rr)),rr
+        assert sql(f"SELECT purpose FROM payment_message_refs WHERE pay_row_id={pid} AND message_id={mid}")=='invoice'
+        assert not any(e[0]=='send' for e in rr['events']),rr
+        rr=run('manual_checkout',callback='mc_e_'+h,message_id=mid)
+        assert not any(e[0] in ('send','edit','delete') for e in rr['events']),rr
         rr=run('manual_claim',pay=int(pid),method='manual_usdt',network='BEP20')
         assert ['claim',True] in rr['events'],rr
         assert sql(f"SELECT checkout_url,quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}").split('\t')==issued
@@ -1010,6 +1014,7 @@ def main():
         sql(f"UPDATE pays SET payid='fixture-unknown-provider' WHERE id={pid}")
         r=run('payment_status',callback='ps_'+h,message_id=mid)
         assert 'ps_'+h in callbacks(r),r
+        assert not any('مهلت انتخاب روش پرداخت پایان یافت' in e[1] for e in r['events'] if e[0]=='edit'),r
         cases.append('expired_unadmitted_current_draft_only_home_and_uncertain_retains_recovery')
 
 

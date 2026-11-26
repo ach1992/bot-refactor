@@ -171,6 +171,67 @@ def main():
         r=run('payment_status',actor=2002,callback='ps_'+h5,message_id=251,update_id=3001)
         assert not any(e[0]=='send' for e in r['events']),r
         cases.append('status_send_unknown_replay_fenced_and_new_click_recovers')
+        # An orphaned credit proves financial evidence even without an
+        # attempt FK. Neither fresh method selection nor cancellation may
+        # discard it. Keep the original journal and a recovery path.
+        p6,h6=draft(260)
+        sql(f"INSERT INTO wallet_entries(source_kind,source_ref,leg,user_row_id,userid,delta_toman,balance_before,balance_after,actor_userid,created_at) SELECT 'payment_credit','{p6}',0,id,userid,260,0,260,9001,UTC_TIMESTAMP(6) FROM users WHERE userid=2002")
+        original=sql(f"SELECT id,delta_toman,balance_after FROM wallet_entries WHERE source_kind='payment_credit' AND source_ref='{p6}'")
+        r=run(actor=2002,callback='pm_b_'+h6,message_id=260)
+        assert not any(e[0] in ('send','delete') for e in r['events']),r
+        assert any(e[0]=='edit' and 'نیازمند بررسی' in e[1] for e in r['events']),r
+        assert 'ps_'+h6 in callbacks(r),r
+        assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={p6}")=='0'
+        assert ['claim',False] in run('manual_claim',actor=2002,pay=int(p6),method='bank_transfer',mode='topup')['events']
+        r=run(actor=2002,callback='dc_'+h6,message_id=260)
+        assert not any(e[0] in ('send','delete') for e in r['events']),r
+        assert sql(f"SELECT retired_reason IS NULL FROM payment_message_refs WHERE pay_row_id={p6}")=='1'
+        sql(f"UPDATE pays SET draft_expires_at=UNIX_TIMESTAMP()-1 WHERE id={p6}")
+        sql(f"UPDATE payment_message_refs SET synced_digest=NULL WHERE pay_row_id={p6}")
+        r=run('payment_status',actor=2002,callback='ps_'+h6,message_id=260)
+        edits=[e for e in r['events'] if e[0]=='edit']
+        assert edits and 'نیازمند بررسی' in edits[-1][1] and 'ps_'+h6 in callbacks(r),r
+        assert 'مهلت انتخاب روش پرداخت پایان یافت' not in edits[-1][1] and 'اضافه می‌شود' not in edits[-1][1],r
+        assert sql(f"SELECT id,delta_toman,balance_after FROM wallet_entries WHERE source_kind='payment_credit' AND source_ref='{p6}'")==original
+        cases.append('contradictory_credit_keeps_original_recovery_and_never_reissues')
+
+        # A browser writer need not hold the Telegram session lease. The
+        # original pay row lock must order cancellation after its commit.
+        p7,h7=draft(270)
+        client=['mariadb','--no-defaults','--protocol=SOCKET','--socket='+str(w/'mysql.sock'),
+                '-uroot','--batch','--skip-column-names','--unbuffered',DB]
+        with subprocess.Popen(client,stdin=subprocess.PIPE,stdout=subprocess.PIPE,
+                              stderr=subprocess.PIPE,text=True,env=env,bufsize=1) as writer:
+            try:
+                writer.stdin.write(f"START TRANSACTION; SELECT id FROM pays WHERE id={p7} FOR UPDATE;\n")
+                writer.stdin.flush()
+                assert writer.stdout.readline().strip()==p7
+                with ThreadPoolExecutor(max_workers=1) as pool:
+                    pending=pool.submit(run,actor=2002,callback='dc_'+h7,message_id=270)
+                    try:
+                        deadline=time.monotonic()+5
+                        while time.monotonic()<deadline and not pending.done():
+                            if int(sql("SELECT COUNT(*) FROM information_schema.INNODB_LOCK_WAITS")):
+                                break
+                            time.sleep(.05)
+                        else:
+                            raise AssertionError('navigation did not await original pay lock')
+                        writer.stdin.write(f"UPDATE pays SET payid='browser-reserved-fixture' WHERE id={p7}; COMMIT; SELECT 'committed';\n")
+                        writer.stdin.flush()
+                        assert writer.stdout.readline().strip()=='committed'
+                    finally:
+                        writer.stdin.write("ROLLBACK;\n")
+                        writer.stdin.flush()
+                    r=pending.result(timeout=15)
+                assert sql(f"SELECT retired_reason IS NULL FROM payment_message_refs WHERE pay_row_id={p7}")=='1'
+                assert sql(f"SELECT payid FROM pays WHERE id={p7}")=='browser-reserved-fixture'
+                assert not any(e[0] in ('send','delete') for e in r['events']),r
+                assert 'ps_'+h7 in callbacks(r),r
+            finally:
+                writer.stdin.close()
+                writer.wait(timeout=5)
+        cases.append('navigation_orders_after_concurrent_browser_admission')
+
 
     result={'complete':True,'status':'PASS','cases':len(cases),'scenarios':cases,'production_mutations':0,'external_requests':0}
     if args.report:args.report.write_text(json.dumps(result))

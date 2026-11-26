@@ -45,15 +45,22 @@ function achbotReceiptStep(string $step): ?array {
  * of issuing another Telegram send. */
 function achbotManualPresentInvoice(mysqli $db,array $pay,int $actor,string $method,?string $network,int $source): void {
     $id=(int)$pay['id'];
-    $done=achbotPayUxWithLease($db,$id,static function() use ($db,$pay,$actor,$method,$network,$source,$id): bool {
+    $done=achbotPayUxWithLease($db,$id,static function() use ($db,$actor,$method,$network,$source,$id): bool {
         $ref=achbotPayUxRef($db,$id,$actor,$source);
-        if ($ref && $ref['purpose']==='invoice' && $ref['retired_reason']===null) {
+        if ($ref && in_array($ref['purpose'],['invoice','status'],true) && $ref['retired_reason']===null) {
             achbotPayUxSyncMessages($db,$id);return true;
         }
         $ref=achbotPayUxSelectorRef($db,$id,$actor,$source,$GLOBALS['update']??null);
         if (!$ref) return false;
-        $mode=achbotCheckoutMode($pay);
-        if ($mode===null || !achbotManualClaim($db,$pay,$method,$actor,$network,$mode)) return false;
+        $facts=achbotPayUxProjectionSource($db,$id);
+        if (!$facts) return false;
+        [$current,$attempt]=$facts;
+        if ($attempt!==null || (int)($current['checkout_operation_id']??0)>0 ||
+            achbotPayUxState($current,$attempt)!=='awaiting_payment') {
+            achbotPayUxSyncMessages($db,$id);return true;
+        }
+        $mode=achbotCheckoutMode($current);
+        if ($mode===null || !achbotManualClaim($db,$current,$method,$actor,$network,$mode)) return false;
         $facts=achbotPayUxProjectionSource($db,$id);
         if (!$facts) return false;
         [$current,$attempt]=$facts;

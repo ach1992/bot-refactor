@@ -375,8 +375,7 @@ function achbotCheckoutUnclaimedViewLocked(mysqli $db,array $pay,int $actor): vo
     $id=(int)$pay['id'];
     if ((int)$pay['user_id']!==$actor || $pay['checkout_operation_id']!==null ||
         !achbotPayUxCurrentDraft($pay) || !achbotPayUxUnclaimedDraftUsable($db,$pay,true) ||
-        achbotProviderRow($db,'SELECT id FROM payment_attempts WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]) ||
-        achbotProviderRow($db,'SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]))
+        !achbotPayUxDraftWithoutEvidence($db,$id,$actor))
         throw new DomainException('checkout_view_closed');
 }
 
@@ -480,6 +479,11 @@ function achbotCheckoutAdmitDraftLocked(mysqli $db,array $pay,?array $attempt,
         throw new DomainException('checkout_method_unavailable');
     if (achbotProviderRow($db,'SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]))
         throw new DomainException('checkout_historical_effect_pending');
+    // The owner and original pay row are already locked. A missing attempt
+    // alone cannot authorize new funding when an orphaned credit/receipt/
+    // service/report journal still identifies this payment.
+    if ($pay['checkout_operation_id']===null && !achbotPayUxDraftWithoutEvidence($db,$id,$uid))
+        throw new DomainException('checkout_draft_unavailable');
     if ($pay['type']==='INCREASE_WALLET') {
         if ($method==='wallet' || $pay['checkout_operation_id']!==null)
             throw new DomainException('checkout_topup_method_invalid');

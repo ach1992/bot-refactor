@@ -162,7 +162,9 @@ function achbotPayUxExpireDraft(mysqli $db, int $payId, ?int $clock = null): boo
         if (!$stmt->execute()) throw new RuntimeException('draft_attempt_unavailable');
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if ($attempt) { $db->rollback(); return false; }
+        if ($attempt || !achbotPayUxDraftWithoutEvidence($db,$payId,(int)$pay['user_id'])) {
+            $db->rollback(); return false;
+        }
 
         $overdue = (int)($pay['draft_expires_at']??0)>0 && $now >= (int)$pay['draft_expires_at'];
 
@@ -643,42 +645,49 @@ function achbotPayUxAudienceAllowedInState(mysqli $db,string $method,int $userId
 
 require_once __DIR__.'/PaymentMessages.php';
 
-/** Positive read-only proof that a closed current checkout never acquired
- * an invoice, receipt or service command. Missing schema/read failures,
- * inconsistent pointers and historical rows must keep recovery available.
- * A single SELECT observes the persisted closure and admission evidence
- * together; a null result from another lookup is never sufficient. */
+/** One positive absence predicate for an unissued draft. The owner row
+ * and original payment coordinate financial admission; presentation must
+ * not treat contradictory journal/receipt evidence as a disposable screen.
+ * The fixed alias p is the original pays row in the caller's SQL statement. */
+function achbotPayUxDraftWithoutEvidenceSql(): string {
+    return "p.state IN ('pending','send','expired')
+        AND p.checkout_operation_id IS NULL
+        AND (p.payid IS NULL OR p.payid='')
+        AND COALESCE(p.message_id,0)=0 AND COALESCE(p.chat_id,'')=''
+        AND COALESCE(p.admins_messages,'') IN ('','[]')
+        AND COALESCE(p.approved_by,0)=0
+        AND NOT EXISTS (SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id)
+        AND NOT EXISTS (SELECT 1 FROM service_effects e WHERE e.pay_row_id=p.id)
+        AND NOT EXISTS (SELECT 1 FROM service_operations o
+            WHERE o.command_kind='checkout' AND o.command_ref=CAST(p.id AS CHAR))
+        AND NOT EXISTS (SELECT 1 FROM wallet_entries w
+            WHERE w.source_kind='payment_credit' AND w.source_ref=CAST(p.id AS CHAR))
+        AND NOT EXISTS (SELECT 1 FROM referral_awards r WHERE r.pay_row_id=p.id)
+        AND NOT EXISTS (SELECT 1 FROM payment_followup_intents f WHERE f.pay_row_id=p.id)";
+}
+
+/** An absent row is not proof. Read errors propagate to the caller's
+ * recovery boundary; never turn a failed query into a successful absence. */
+function achbotPayUxDraftWithoutEvidence(mysqli $db,int $id,int $actor): bool {
+    if ($id<=0 || $actor<=0) return false;
+    $row=achbotProviderRow($db,"SELECT p.id FROM pays p WHERE p.id=? AND p.user_id=? AND ".
+        achbotPayUxDraftWithoutEvidenceSql(),'ii',[$id,$actor]);
+    return $row!==null;
+}
+
+/** Observe closure and admission evidence in one SQL statement. */
 function achbotPayUxUnadmittedClosed(mysqli $db,array $pay,?array $attempt): bool {
     if ($attempt!==null || !achbotPayUxCurrentDraft($pay) ||
         (int)($pay['id']??0)<=0 || (int)($pay['user_id']??0)<=0) return false;
-    try {
-        $id=(int)$pay['id'];$actor=(int)$pay['user_id'];
-        $stmt=$db->prepare("SELECT p.id FROM pays p WHERE p.id=? AND p.user_id=?
-            AND JSON_VALUE(p.checkout_draft_context,'$.version')='1'
-            AND p.checkout_operation_id IS NULL
-            AND (p.payid IS NULL OR p.payid='')
-            AND COALESCE(p.message_id,0)=0 AND COALESCE(p.chat_id,'')=''
-            AND COALESCE(p.admins_messages,'') IN ('','[]')
-            AND COALESCE(p.approved_by,0)=0
-            AND (p.state='expired' OR (p.state='pending' AND (
-                (p.draft_expires_at IS NOT NULL AND p.draft_expires_at<=UNIX_TIMESTAMP())
-                OR EXISTS (SELECT 1 FROM pays newer WHERE newer.user_id=p.user_id
-                    AND newer.id>p.id AND SUBSTRING_INDEX(newer.type,'_',2)=SUBSTRING_INDEX(p.type,'_',2)
-                    AND COALESCE(newer.order_id,0)=COALESCE(p.order_id,0)))))
-            AND NOT EXISTS (SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id)
-            AND NOT EXISTS (SELECT 1 FROM service_effects e WHERE e.pay_row_id=p.id)
-            AND NOT EXISTS (SELECT 1 FROM service_operations o
-                WHERE o.command_kind='checkout' AND o.command_ref=CAST(p.id AS CHAR))");
-        if (!$stmt) return false;
-        $stmt->bind_param('ii',$id,$actor);
-        $ok=$stmt->execute();
-        $row=$ok?$stmt->get_result()->fetch_assoc():null;
-        $stmt->close();
-        return $row!==null;
-    } catch (Throwable $error) {
-        error_log('achbot_checkout_closed_evidence_unavailable pay_id='.(int)$pay['id']);
-        return false;
-    }
+    $row=achbotProviderRow($db,"SELECT p.id FROM pays p WHERE p.id=? AND p.user_id=?
+        AND JSON_VALUE(p.checkout_draft_context,'$.version')='1'
+        AND (p.state='expired' OR (p.state='pending' AND (
+            (p.draft_expires_at IS NOT NULL AND p.draft_expires_at<=UNIX_TIMESTAMP())
+            OR EXISTS (SELECT 1 FROM pays newer WHERE newer.user_id=p.user_id
+                AND newer.id>p.id AND SUBSTRING_INDEX(newer.type,'_',2)=SUBSTRING_INDEX(p.type,'_',2)
+                AND COALESCE(newer.order_id,0)=COALESCE(p.order_id,0)))))
+        AND ".achbotPayUxDraftWithoutEvidenceSql(),'ii',[(int)$pay['id'],(int)$pay['user_id']]);
+    return $row!==null;
 }
 
 /**
@@ -690,6 +699,7 @@ function achbotPayUxState(array $pay, ?array $attempt): string {
     $state = (string)($pay['state'] ?? '');
     $stage = (string)($attempt['stage'] ?? '');
     if ($attempt===null && ($pay['unadmitted_closed']??false)===true) return 'draft_closed';
+    if ($attempt===null && ($pay['closure_unverified']??false)===true) return 'needs_review';
     // A service-change intent invalidates the old invoice's product claim
     // without asserting its external funds were unpaid or refunded.
     if ($state === 'declined') return 'declined';
@@ -804,7 +814,7 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
     if ($state==='awaiting_payment' && achbotPayUxHostedProvider((string)($attempt['provider']??'')))
         $next=achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.0c4a9612f7').
             achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.0a2e0bc7bc');
-    if (in_array($state,['receipt_review','needs_review'],true) &&
+    if ($attempt!==null && in_array($state,['receipt_review','needs_review'],true) &&
         in_array($pay['state']??null,['expired','service_superseded'],true))
         $next.="\n".achbotMessage('payment.payment_lifecycle.pay_ux_status_text.service_superseded_next');
     return "<b>".$safe($title)."</b>\n".achbotPayUxReference($pay)
