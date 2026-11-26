@@ -128,14 +128,16 @@ equal(AchBot\Subscription\Presentation\subscriptionUrl("https://bad.invalid/\xFF
 try {messageParts("invalid\xFF");$denied=false;}catch(UnexpectedValueException $e){$denied=true;}
 verify($denied,'invalid_UTF8_text_never_certifies_empty_delivery');
 // Actual canonical output boundaries compose/split without touching global transport.
-$effects=[];$failAt=0;
+$effects=[];$failAt=0;$from_id=1001;$editReply=null;$sendReply=null;
 function sendMessage($text,$keys=null,...$rest){
     $GLOBALS['effects'][]=['kind'=>'send','text'=>$text,'keys'=>$keys];
     if($GLOBALS['failAt']===count($GLOBALS['effects'])) throw new RuntimeException('owned_text_unknown');
+    if($GLOBALS['sendReply']!==null) return $GLOBALS['sendReply'];
     return(object)['ok'=>true,'result'=>(object)['message_id'=>count($GLOBALS['effects']),'chat'=>(object)['id'=>(int)($rest[1]??1001)]]];
 }
 function editText($id,$text,$keys=null,...$rest){
-    $GLOBALS['effects'][]=['kind'=>'edit','id'=>$id,'text'=>$text,'keys'=>$keys];return(object)['ok'=>true];
+    $GLOBALS['effects'][]=['kind'=>'edit','id'=>$id,'text'=>$text,'keys'=>$keys];
+    return $GLOBALS['editReply']??(object)['ok'=>true,'result'=>(object)['message_id'=>$id,'chat'=>(object)['id'=>(int)($rest[1]??1001)]]];
 }
 require_once $root.'/src/Subscription/Delivery.php';
 require_once $root.'/src/Subscription/AccountDetails.php';
@@ -148,6 +150,26 @@ equal(array_column($effects,'text'),$parts,'actual_order_output_parts_preserve_m
 equal($effects[0]['kind'],'edit','order_refresh_edits_existing_first_message');
 equal($effects[0]['id'],77,'order_refresh_preserves_original_message_identity');
 equal(count(array_filter($effects,static fn($s)=>$s['kind']==='edit')),1,'order_refresh_sends_only_overflow_parts');
+$effects=[];$editReply=(object)['ok'=>false,'error_code'=>400,'description'=>'Bad Request: message to edit not found'];
+verify(AchBot\Subscription\AccountDetails\showMessage(['msg'=>'<b>Exact</b>','keyboard'=>'navigation'],77),'missing_detail_recovers_once');
+equal(array_column($effects,'kind'),['edit','send'],'missing_detail_new_copy_only_after_definite_rejection');
+equal(array_column($effects,'text'),['<b>Exact</b>','<b>Exact</b>'],'replacement_preserves_source_content');
+$effects=[];$editReply=(object)['ok'=>false,'error_code'=>400,'description'=>'Bad Request: message is not modified'];
+verify(AchBot\Subscription\AccountDetails\showMessage(['msg'=>'Exact','keyboard'=>'navigation'],77),'unchanged_exact_detail_is_acknowledged');
+equal(array_column($effects,'kind'),['edit'],'unchanged_detail_no_new_copy');
+foreach ([(object)['ok'=>true],(object)['ok'=>true,'result'=>(object)['message_id'=>77,'chat'=>(object)['id'=>9002]]],
+    (object)['ok'=>false,'error_code'=>429,'description'=>'Too Many Requests']] as $editReply) {
+    $effects=[];
+    verify(!AchBot\Subscription\AccountDetails\showMessage(['msg'=>'Exact','keyboard'=>'navigation'],77),'unknown_foreign_or_rate_limited_detail_not_acknowledged');
+    equal(array_column($effects,'kind'),['edit'],'unknown_or_rate_limited_detail_not_replayed');
+}
+$editReply=null;$effects=[];$failAt=2;
+verify(!AchBot\Subscription\AccountDetails\showMessage(['msg'=>$protected,'keyboard'=>'navigation'],77),'failed_overflow_part_not_certified');
+equal(count($effects),count($parts),'presentation_failure_does_not_abort_independent_parts');
+$failAt=0;$effects=[];$sendReply=(object)['ok'=>true,'result'=>(object)['message_id'=>4,'chat'=>(object)['id'=>9002]]];
+verify(!AchBot\Subscription\AccountDetails\showMessage(['msg'=>'Exact','keyboard'=>'navigation']),'foreign_recipient_view_not_certified');
+equal(count($effects),1,'foreign_ack_not_replayed');
+$sendReply=null;
 $effects=[];$failAt=1;
 verify(!sendQrFromLink('',$protected,'navigation','',1001),'ambiguous_first_text_part_never_certifies_delivery');
 equal(count($effects),1,'ambiguous_text_exception_not_retried');
