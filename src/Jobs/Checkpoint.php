@@ -25,14 +25,14 @@ function achbotJobTake(mysqli $db,string $table): ?array {
         FROM `$table` WHERE state IN (1,2) AND $eligible ORDER BY id LIMIT 1");
     $candidate=$result->fetch_assoc();$result->free();
     if (!$candidate || !(int)$candidate['ready']) return null;
-    $id=(int)$candidate['id'];$offset=(int)$candidate['offset'];
+    $id=(int)$candidate['id'];$offset=(string)$candidate['offset'];
     achbotBroadcastQuery($db,"UPDATE `$table` SET state=2,updated_at=NOW()
-        WHERE id=? AND `offset`=?
+        WHERE id=? AND `offset`=CAST(? AS UNSIGNED)
         AND (state=2 OR (state=1 AND (updated_at IS NULL OR updated_at<=NOW())))",[$id,$offset]);
     // Recovered state=2 may already have the same timestamp. Read its
     // guarded state rather than treating zero changed rows as failure.
     $result=achbotBroadcastQuery($db,"SELECT * FROM `$table`
-        WHERE id=? AND state=2 AND `offset`=?",[$id,$offset]);
+        WHERE id=? AND state=2 AND `offset`=CAST(? AS UNSIGNED)",[$id,$offset]);
     $job=$result->fetch_assoc();$result->free();
     if (!$job) return null;
     $job['first_state']=(int)$candidate['state'];
@@ -41,24 +41,32 @@ function achbotJobTake(mysqli $db,string $table): ?array {
 }
 
 /** A durable compare-and-set claim is required before any external effect. */
-function achbotJobClaimStatement(mysqli $db,string $table,int &$next,int $id,int &$offset): mysqli_stmt {
-    $stmt=$db->prepare("UPDATE `$table` SET `offset`=?,updated_at=NOW()
-        WHERE id=? AND state=2 AND `offset`=?");
+function achbotJobClaimStatement(mysqli $db,string $table,int|string &$next,int $id,int|string &$offset): mysqli_stmt {
+    $stmt=$db->prepare("UPDATE `$table` SET `offset`=CAST(? AS UNSIGNED),updated_at=NOW()
+        WHERE id=? AND state=2 AND `offset`=CAST(? AS UNSIGNED)");
     if (!$stmt) throw new RuntimeException('job_claim_prepare_failed',$db->errno);
-    if (!$stmt->bind_param('iii',$next,$id,$offset)) {
+    if (!$stmt->bind_param('sis',$next,$id,$offset)) {
         $errno=$stmt->errno;safeClose($stmt);
         throw new RuntimeException('job_claim_bind_failed',$errno);
     }
     return $stmt;
 }
-function achbotJobClaim(mysqli_stmt $stmt): bool {
+function achbotJobClaim(mysqli $db,mysqli_stmt $stmt): bool {
     if (!$stmt->execute()) throw new RuntimeException('job_claim_write_failed',$stmt->errno);
+    // Nonstrict SQL can report a successful UPDATE while narrowing its
+    // value. Never authorize an external effect from a warned claim.
+    if ($db->warning_count!==0) {
+        $warning=$stmt->get_warnings();
+        throw new RuntimeException('job_claim_write_warning',$warning?$warning->errno:0);
+    }
     return $stmt->affected_rows===1;
 }
 
-function markPaused(mysqli $db,string $table,int $id,int $offset,int $delaySeconds=0): void {
-    achbotBroadcastQuery($db,"UPDATE `$table` SET `offset`=GREATEST(`offset`,?),state=1,
-        updated_at=DATE_ADD(NOW(),INTERVAL ? SECOND) WHERE id=? AND state=2",[$offset,$delaySeconds,$id]);
+// The claim is the sole cursor writer. State transitions preserve its
+// exact persisted value rather than writing a process-local copy back.
+function markPaused(mysqli $db,string $table,int $id,int $delaySeconds=0): void {
+    achbotBroadcastQuery($db,"UPDATE `$table` SET state=1,
+        updated_at=DATE_ADD(NOW(),INTERVAL ? SECOND) WHERE id=? AND state=2",[$delaySeconds,$id]);
 }
 
 function isCancelled(mysqli $db,string $table,int $id): bool {
@@ -67,9 +75,9 @@ function isCancelled(mysqli $db,string $table,int $id): bool {
     return $row && (int)$row['state']===4;
 }
 
-function markFinished(mysqli $db,string $table,int $id,int $offset): bool {
-    achbotBroadcastQuery($db,"UPDATE `$table` SET `offset`=GREATEST(`offset`,?),state=3,
-        updated_at=NOW() WHERE id=? AND state=2",[$offset,$id]);
+function markFinished(mysqli $db,string $table,int $id): bool {
+    achbotBroadcastQuery($db,"UPDATE `$table` SET state=3,
+        updated_at=NOW() WHERE id=? AND state=2",[$id]);
     return $db->affected_rows===1;
 }
 
@@ -86,9 +94,9 @@ function achbotJobNotice(string $kind,int $id,string $phase,string $text): void 
 
 /** Pause cannot rewind or revive cancelled/completed work. If persistence
  * fails, the running state is still recoverable under the next Cron lease. */
-function achbotJobPause(mysqli $db,string $table,string $kind,int $id,int $offset,int $delay): void {
+function achbotJobPause(mysqli $db,string $table,string $kind,int $id,int|string $offset,int $delay): void {
     try {
-        markPaused($db,$table,$id,$offset,$delay);
+        markPaused($db,$table,$id,$delay);
     } catch (Throwable $error) {
         error_log('achbot_'.$kind.'_checkpoint_deferred '.$kind.'_id='.$id.' offset='.$offset.
             ' class='.get_class($error).' code='.(int)$error->getCode());

@@ -31,7 +31,7 @@ CREATE TABLE `bc_jobs` (
   `new_html` mediumtext DEFAULT NULL,
   `ok_cnt` int(11) NOT NULL DEFAULT 0,
   `fail_cnt` int(11) NOT NULL DEFAULT 0,
-  `offset` int(11) NOT NULL DEFAULT 0,
+  `offset` bigint(20) unsigned NOT NULL DEFAULT 0,
   `state` tinyint(4) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime DEFAULT NULL,

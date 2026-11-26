@@ -19,6 +19,10 @@ DRIVER = r'''<?php
 $root=$argv[1];$mode=$argv[4];$trace=$argv[5];
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
+if (str_starts_with($mode,'strictsql:') || str_starts_with($mode,'loosesql:')) {
+    $connection->query("SET SESSION sql_mode='".(str_starts_with($mode,'strictsql:')?'STRICT_TRANS_TABLES':'')."'");
+    $mode=substr($mode,strpos($mode,':')+1);
+}
 if (str_starts_with($mode,'off:')) {
     mysqli_report(MYSQLI_REPORT_OFF);
     $mode=substr($mode,4);
@@ -44,7 +48,19 @@ function achbotNotifyAdmins($method,$payload,$options) {
 require_once $root.'/src/Broadcast/Storage.php';
 function bot($method,$payload) {
     $uid=(int)$payload['chat_id'];
-    file_put_contents($GLOBALS['trace'],json_encode(['method'=>$method,'uid'=>$uid,'payload'=>$payload],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)."\n",FILE_APPEND|LOCK_EX);
+    $event=['method'=>$method,'uid'=>$uid,'payload'=>$payload];
+    if ($GLOBALS['actionMode']) {
+        // Read from a second connection before the fake external effect:
+        // the claim must already be visible as an exact committed identity.
+        $probe=new mysqli('localhost','root','',$GLOBALS['argv'][3],0,$GLOBALS['argv'][2]);
+        $mid=(int)$payload['message_id'];
+        $row=$probe->query("SELECT j.id,j.`offset`,m.id AS row_id FROM bc_jobs j
+            JOIN bc_messages m ON m.broadcast_id=j.broadcast_id
+            WHERE j.state=2 AND m.userid=$uid AND m.message_id=$mid")->fetch_assoc();
+        $event['claim']=['job'=>(int)$row['id'],'cursor'=>(string)$row['offset'],'row'=>(string)$row['row_id']];
+        $probe->close();
+    }
+    file_put_contents($GLOBALS['trace'],json_encode($event,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)."\n",FILE_APPEND|LOCK_EX);
     if ($GLOBALS['mode']==='lost_after_dispatch') sleep(60);
     $mode=$GLOBALS['mode'];
     if ($mode==='cancel_during_send' && $uid===1001) {
@@ -84,7 +100,7 @@ function bot($method,$payload) {
 function pinOne($uid,$mid) {return \AchBot\Telegram\Messages\pinOne('bot',$uid,$mid);}
 function unpinOne($uid,$mid) {return \AchBot\Telegram\Messages\unpinOne('bot',$uid,$mid);}
 function deleteOne($uid,$mid) {return \AchBot\Telegram\Messages\deleteOne('bot',$uid,$mid);}
-function sendMessage($text,$keys,$mode,$uid) {return bot('sendMessage',['chat_id'=>$uid,'text'=>$text,'parse_mode'=>$mode,'reply_markup'=>$keys]);}
+function sendMessage($text,$keys,$mode,$uid=9001) {return bot('sendMessage',['chat_id'=>$uid,'text'=>$text,'parse_mode'=>$mode,'reply_markup'=>$keys]);}
 function forwardmessage($uid,$chat,$mid) {return bot('forwardMessage',['chat_id'=>$uid,'from_chat_id'=>$chat,'message_id'=>$mid]);}
 if ($mode==='progress') {
     $row=$connection->query('SELECT target_group,`offset` FROM send_list WHERE id=8')->fetch_assoc();
@@ -93,7 +109,14 @@ if ($mode==='progress') {
         'ack'=>achbotBroadcastAckCount($connection,8)],JSON_THROW_ON_ERROR);
     return;
 }
-if ($mode==='monotonic_pause') {markPaused($connection,'send_list',8,0);return;}
+if ($mode==='monotonic_pause') {markPaused($connection,'send_list',8);return;}
+if (str_starts_with($mode,'jobsStatus')) {
+    $data=$mode;$text='';$from_id=$admin=9001;$userInfo=['step'=>'none','isAdmin'=>true];
+    require_once $root.'/src/Presentation/Labels.php';
+    function groupFa($g) {return \AchBot\Presentation\Labels\audience($g);}
+    require $root.'/src/Broadcast/Routes.php';
+    return;
+}
 if ($actionMode) {
     $inlineStartKey='{"inline_keyboard":[]}';
     require $root.'/src/Jobs/MessageActions.php';
@@ -121,11 +144,12 @@ def main():
                 "INSERT INTO send_list(id,type,state,text,text_html,file_id,chat_id,message_id) VALUES "
                 "(7,'text',1,'historical pending',NULL,NULL,NULL,NULL),"
                 f"(8,'{kind}',1,'literal <b> &','<b>سلام</b> &amp; &lt;tag&gt;','fixture-photo',9001,42)")
-        def seed_action(action,kind='text'):
+        def seed_action(action,kind='text',identities=None):
             seed(kind)
             sql("UPDATE send_list SET state=3 WHERE id=8; "
-                "INSERT INTO bc_messages(broadcast_id,userid,message_id,pinned) VALUES "+
-                ','.join(f"(8,{uid},{uid+10000},{int(action=='unpin')})" for uid in (1001,9001,9002))+
+                "INSERT INTO bc_messages(" + ("id," if identities else "") + "broadcast_id,userid,message_id,pinned) VALUES "+
+                ','.join(f"({str(identities[i])+',' if identities else ''}8,{uid},{uid+10000},{int(action=='unpin')})"
+                         for i,uid in enumerate((1001,9001,9002)))+
                 "; INSERT INTO bc_jobs(id,broadcast_id,action,state,new_text,new_html) VALUES "
                 "(17,8,'edit',1,'historical raw edit',NULL),"
                 f"(18,8,'{action}',1,'raw edit &','<b>ویرایش</b> &amp;')")
@@ -497,6 +521,92 @@ def main():
         assert [e['uid'] for e in events()]==expected_users
         completed(405)
         cases.append('actual_batch_boundary_resumes_all_405_recipients_once')
+        # Exercise real unsigned identity boundaries, not audience size.
+        # Explicit IDs let this fixture reach the actual schema maximum
+        # without allocating billions of unrelated messages.
+        def exact_claims(expected_ids,job=18,start=0):
+            assert [e['claim'] for e in events()[start:]]==[
+                dict(job=job,cursor=str(v),row=str(v)) for v in expected_ids],events()
+        def cursor(job=18):
+            return sql(f'SELECT `offset` FROM bc_jobs WHERE id={job}')
+        def flags():
+            return sql('SELECT pinned,deleted FROM bc_messages ORDER BY id').splitlines()
+        for sql_mode in ('strictsql','loosesql'):
+            for reporting in ('','off:'):
+                mode=sql_mode+':'+reporting+'action:'
+                label=sql_mode+'_'+('nonthrowing' if reporting else 'throwing')
+                # First demonstrate that conversion errors/warnings cannot
+                # authorize an action even if an incompatible local schema
+                # is accidentally present. Only disposable fixture DDL.
+                ids=(2147483648,2147483649,2147483650)
+                seed_action('pin',identities=ids)
+                sql('ALTER TABLE bc_jobs MODIFY COLUMN `offset` INT NOT NULL DEFAULT 0')
+                try:
+                    log=run(mode+'normal',failed=True)
+                    assert not events() and cursor()==('0' if sql_mode=='strictsql' else '2147483647')
+                    assert 'worker_deferred job_id=18 offset=0' in log and 'code=1264' in log,log
+                    action_result(1,0,0)
+                finally:
+                    sql('ALTER TABLE bc_jobs MODIFY COLUMN `offset` BIGINT UNSIGNED NOT NULL DEFAULT 0')
+                run(mode+'normal');run(mode+'normal')
+                action_result(3,3,0)
+                exact_claims(ids)
+                assert cursor()==str(ids[-1]) and flags()==['1\t0']*3
+                cases.append('message_action_inexact_claim_never_dispatches_'+label)
+                # Adjacent IDs at signed INT, exact-double, signed BIGINT
+                # and maximum unsigned BIGINT boundaries exercise claim,
+                # selection, pause, completion and exact row projection.
+                for ids in ((2**31-1,2**31,2**31+1),
+                            (2**53-1,2**53,2**53+1),
+                            (2**63-1,2**63,2**63+1),
+                            (2**64-3,2**64-2,2**64-1)):
+                    seed_action('pin',identities=ids)
+                    run(mode+'rate_limited')
+                    action_result(1,0,1)
+                    exact_claims(ids[:1])
+                    assert cursor()==str(ids[0]) and flags()==['0\t0']*3
+                    assert int(sql('SELECT TIMESTAMPDIFF(SECOND,NOW(),updated_at) FROM bc_jobs WHERE id=18'))>100
+                    sql("INSERT INTO bc_jobs(id,broadcast_id,action,state) VALUES (19,8,'delete',1)")
+                    run(mode+'normal')
+                    assert len(events())==1 and cursor(19)=='0'
+                    sql('UPDATE bc_jobs SET updated_at=NOW() WHERE id=18')
+                    run(mode+'normal');run(mode+'normal')
+                    action_result(3,2,1)
+                    exact_claims(ids)
+                    assert cursor()==str(ids[-1]) and flags()==['0\t0','1\t0','1\t0']
+                    assert [e['uid'] for e in events()]==users
+                    run(mode+'normal');run(mode+'normal')
+                    assert sql("SELECT CONCAT(state,':',ok_cnt,':',fail_cnt) FROM bc_jobs WHERE id=19")=='3:3:0'
+                    exact_claims(ids,job=19,start=3)
+                    assert cursor(19)==str(ids[-1]) and flags()==['0\t1']*3
+                cases.append('message_action_full_unsigned_cursor_pause_finish_fifo_'+label)
+                # Kill after an already claimed ID above PHP_INT_MAX.
+                # Recovery must compare adjacent unsigned values exactly.
+                ids=(2**64-3,2**64-2,2**64-1)
+                seed_action('pin',identities=ids)
+                proc=subprocess.Popen(command(mode+'lost_after_dispatch'),env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+                try:
+                    deadline=time.monotonic()+10
+                    while not trace.stat().st_size and proc.poll() is None and time.monotonic()<deadline:
+                        time.sleep(.025)
+                    exact_claims(ids[:1])
+                    assert cursor()==str(ids[0]) and sql('SELECT state FROM bc_jobs WHERE id=18')=='2'
+                finally:
+                    if proc.poll() is None:proc.kill()
+                    proc.communicate(timeout=5)
+                run(mode+'normal');run(mode+'normal')
+                action_result(3,2,0)
+                exact_claims(ids)
+                assert cursor()==str(ids[-1]) and flags()==['0\t0','1\t0','1\t0']
+                cases.append('message_action_unsigned_kill_recovery_no_replay_'+label)
+        # Both actual admin progress routes must preserve the same exact
+        # unsigned decimal identity in the existing approved wording.
+        for callback in ('jobsStatus_0','jobsStatusBid_8_0'):
+            trace.write_text('')
+            run(callback)
+            assert len(events())==1 and events()[0]['method']=='sendMessage'
+            assert 'پردازش:18446744073709551615' in events()[0]['payload']['text'],events()
+        cases.append('message_action_unsigned_progress_routes_preserve_exact_identity')
     result={'complete':True,'cases':len(cases),'scenarios':cases,'network_requests':0,'production_mutations':0,'source_real_php':True}
     if args.report: args.report.write_text(json.dumps(result, indent=2)+'\n')
     print(json.dumps(result))

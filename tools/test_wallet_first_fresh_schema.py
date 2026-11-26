@@ -139,6 +139,10 @@ def main():
         new=set(sql('fresh_single','SHOW TABLES').splitlines())
         assert RETIRED<=old and new==old-RETIRED,(old-new,new-old)
         checks.append('only_retired_tables_omitted')
+        for db in ('fresh_chain','fresh_single'):
+            assert sql(db,"SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND ((TABLE_NAME='bc_jobs' AND COLUMN_NAME='offset') OR (TABLE_NAME='bc_messages' AND COLUMN_NAME='id')) ORDER BY TABLE_NAME").splitlines()==['bigint(20) unsigned']*2
+            assert sql(db,"SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND ((TABLE_NAME='send_list' AND COLUMN_NAME='offset') OR (TABLE_NAME='users' AND COLUMN_NAME='id')) ORDER BY TABLE_NAME").splitlines()==['int(11)']*2
+        checks.append('message_action_cursor_matches_full_unsigned_message_identity')
         for table in sorted(new):
             def definition(db):
                 return re.sub(r' AUTO_INCREMENT=[0-9]+','',sql(db,'SHOW CREATE TABLE `'+table+'`'))

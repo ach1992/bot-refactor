@@ -133,7 +133,12 @@ in one local transaction; an edit ACK must identify the original message
 or confirm the identical edit via the shared Telegram no-op classifier.
 Unconfirmed actions are not blindly replayed. An unpin always contains
 the original message ID (never the latest-pin fallback); delete directly
-targets that same message. No unrelated message, new schema or new
+targets that same message. The existing `bc_jobs.offset` uses the full
+unsigned BIGINT domain of `bc_messages.id`; PHP preserves decimal strings
+and SQL compares unsigned integers exactly. A claim with SQL conversion
+warnings cannot authorize dispatch. Pause and completion change state
+without rewriting the persisted cursor. `send_list.offset` continues to
+match `users.id` without a schema change. No unrelated message or new
 worker is required. Historical raw edit jobs and jobs without an eligible
 completed source are not executable and cannot starve valid queued work. Explicit blocked/deactivated user responses may
 update the ordinary user step, preserving bans and protected admin

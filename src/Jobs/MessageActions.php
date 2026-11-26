@@ -9,7 +9,7 @@ require_once __DIR__ . '/../Telegram/Response.php';
 
 /** Only confirmed actions update local message flags. Record the existing
  * per-job success/failure counter in the same short local transaction. */
-function achbotMessageActionRecord(mysqli $db,int $jobId,int $rowId,string $action,bool $ok): void {
+function achbotMessageActionRecord(mysqli $db,int $jobId,string $rowId,string $action,bool $ok): void {
     if (!$db->begin_transaction()) throw new RuntimeException('message_action_record_begin',$db->errno);
     try {
         $set=$ok?match($action) {
@@ -18,7 +18,7 @@ function achbotMessageActionRecord(mysqli $db,int $jobId,int $rowId,string $acti
             'delete'=>'deleted=1,deleted_at=NOW(),pinned=0,pinned_at=NULL',
             'edit'=>null,
         }:null;
-        if ($set!==null) achbotBroadcastQuery($db,"UPDATE bc_messages SET $set WHERE id=?",[$rowId]);
+        if ($set!==null) achbotBroadcastQuery($db,"UPDATE bc_messages SET $set WHERE id=CAST(? AS UNSIGNED)",[$rowId]);
         $counter=$ok?'ok_cnt':'fail_cnt';
         achbotBroadcastQuery($db,"UPDATE bc_jobs SET $counter=$counter+1 WHERE id=?",[$jobId]);
         if (!$db->commit()) throw new RuntimeException('message_action_record_commit',$db->errno);
@@ -32,7 +32,7 @@ function achbotMessageActions(mysqli $connection,string $inlineStartKey): void {
     $limit=200;
     $sleepUs=40000;
     $jobId=0;
-    $offset=0;
+    $offset='0';
     $delay=0;
     $claimed=false;
     $claim=null;
@@ -42,9 +42,9 @@ function achbotMessageActions(mysqli $connection,string $inlineStartKey): void {
         $jobId=(int)$job['id'];
         $broadcastId=(int)$job['broadcast_id'];
         $action=(string)$job['action'];
-        $offset=(int)$job['offset'];
+        $offset=(string)$job['offset'];
         $claimed=true;
-        if ($offset===0 && $job['first_state']===1)
+        if ($offset==='0' && $job['first_state']===1)
             achbotJobNotice('message_action',$jobId,'started',achbotMessage('jobs.message_actions.button.5d55dfe1f8',
                 ['bc_jobId'=>$jobId,'action'=>$action,'broadcastId'=>$broadcastId]));
 
@@ -62,24 +62,24 @@ function achbotMessageActions(mysqli $connection,string $inlineStartKey): void {
             default=>'',
         };
         $rows=achbotBroadcastQuery($connection,"SELECT id,userid,message_id FROM bc_messages
-            WHERE broadcast_id=? AND deleted=0 AND message_id>0 AND id>? $filter
+            WHERE broadcast_id=? AND deleted=0 AND message_id>0 AND id>CAST(? AS UNSIGNED) $filter
             ORDER BY id LIMIT $limit",[$broadcastId,$offset]);
         if ($rows->num_rows===0) {
             $rows->free();
-            $completed=markFinished($connection,'bc_jobs',$jobId,$offset);
+            $completed=markFinished($connection,'bc_jobs',$jobId);
             $claimed=false;
             if ($completed) achbotJobNotice('message_action',$jobId,'completed',
                 achbotMessage('jobs.message_actions.button.8ece62920c',
                     ['bc_jobId'=>$jobId,'action'=>$action,'broadcastId'=>$broadcastId]));
             return;
         }
-        $next=0;
+        $next='0';
         $claim=achbotJobClaimStatement($connection,'bc_jobs',$next,$jobId,$offset);
         $sliceUntil=achbotJobSliceDeadline();
         while ($row=$rows->fetch_assoc()) {
             if (hrtime(true)>=$sliceUntil) break;
-            $next=(int)$row['id'];$uid=(int)$row['userid'];$mid=(int)$row['message_id'];
-            if (!achbotJobClaim($claim)) {
+            $next=(string)$row['id'];$uid=(int)$row['userid'];$mid=(int)$row['message_id'];
+            if (!achbotJobClaim($connection,$claim)) {
                 if (isCancelled($connection,'bc_jobs',$jobId)) {
                     $claimed=false;
                     achbotJobNotice('message_action',$jobId,'cancelled',

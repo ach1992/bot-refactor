@@ -59,7 +59,7 @@ function achbotBroadcastSend(mysqli $connection,string $botUsername): void {
                 achbotMessage('jobs.broadcast_send.text.2e434e30b2');
             // Commit the state before the optional notification. Cancellation
             // wins if already recorded, and a report failure cannot reopen it.
-            $completed=markFinished($connection,'send_list',$sendId,$offset);
+            $completed=markFinished($connection,'send_list',$sendId);
             $claimed=false;
             if ($completed) achbotJobNotice('broadcast',$sendId,'completed',$msg);
             return;
@@ -75,7 +75,7 @@ function achbotBroadcastSend(mysqli $connection,string $botUsername): void {
             if (hrtime(true)>=$sliceUntil) break;
             $next=(int)$user['id'];
             $uid=(int)$user['userid'];
-            if (!achbotJobClaim($claim)) {
+            if (!achbotJobClaim($connection,$claim)) {
                 if (isCancelled($connection,'send_list',$sendId)) {
                     $claimed=false;
                     achbotJobNotice('broadcast',$sendId,'cancelled',

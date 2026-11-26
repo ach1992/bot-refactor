@@ -536,7 +536,7 @@ if(preg_match('/^jobsStatusBid_(\d+)_(\d+)$/', $data, $m) && ($from_id == $admin
         $st  = (int)$row['state']; 
         $stFa = ($st==1?\achbotMessage('broadcast.routes.pm_noop.text.1ebfb10a5f'):($st==2?\achbotMessage('broadcast.routes.pm_noop.text.ba31fd7d85'):($st==3?\achbotMessage('broadcast.routes.pm_noop.text.98a2718667'):\achbotMessage('broadcast.routes.pm_noop.text.1704c602b4'))));
  
-        $offx = (int)$row['offset'];
+        $offx = (string)$row['offset'];
 		$okc   = (int)($row['ok_cnt'] ?? 0);
 		$failc = (int)($row['fail_cnt'] ?? 0);
         $title = $row['title'] ?: \achbotMessage('broadcast.routes.broadcast_start.text.bddb5c40d4');
@@ -839,7 +839,7 @@ if(preg_match('/^jobsStatus_(\d+)$/', $data, $m) && ($from_id == $admin || $user
         $st  = (int)$row['state'];
         $stFa = ($st==1?\achbotMessage('broadcast.routes.pm_noop.text.1ebfb10a5f'):($st==2?\achbotMessage('broadcast.routes.pm_noop.text.ba31fd7d85'):($st==3?\achbotMessage('broadcast.routes.pm_noop.text.98a2718667'):\achbotMessage('broadcast.routes.pm_noop.text.1704c602b4'))));
 
-        $offx = (int)$row['offset'];
+        $offx = (string)$row['offset'];
 		$okc   = (int)($row['ok_cnt'] ?? 0);
 		$failc = (int)($row['fail_cnt'] ?? 0);
         $title = $row['title'] ?: \achbotMessage('broadcast.routes.broadcast_start.text.bddb5c40d4');
