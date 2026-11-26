@@ -159,6 +159,16 @@ def main():
                 assert all(sql('fresh_chain','SHOW CREATE TABLE '+table)==definition for table,definition in before_defs.items())
                 checks.append('construction_refuses_historical_invoice_references_without_mutation')
                 sql('fresh_chain','DELETE FROM payment_message_refs; DELETE FROM payment_attempts; DELETE FROM pays')
+            if migration.name=='053_logical_report_attempts.sql':
+                sql('fresh_chain',"INSERT INTO payment_followup_intents(operational_ref,intent_key,stage,kind,role,recipient,pay_fingerprint,sealed_payload,payload_sha256,state) VALUES ('fixture:1',REPEAT('a',64),'operational_report','send','service_admin','9001',REPEAT('b',64),'fixture',REPEAT('c',64),'pending')")
+                before=sql('fresh_chain','SELECT * FROM payment_followup_intents')
+                defs={table:sql('fresh_chain','SHOW CREATE TABLE '+table) for table in ('payment_followup_intents','payment_followup_attempts')}
+                rejected=subprocess.run(cli+['fresh_chain'],input=migration.read_text(),text=True,env=env,capture_output=True,timeout=30)
+                assert rejected.returncode!=0 and 'existing followup evidence requires explicit transfer' in rejected.stderr,rejected.stderr
+                assert sql('fresh_chain','SELECT * FROM payment_followup_intents')==before
+                assert all(sql('fresh_chain','SHOW CREATE TABLE '+table)==definition for table,definition in defs.items())
+                sql('fresh_chain','DELETE FROM payment_followup_intents')
+                checks.append('construction_refuses_existing_report_evidence_without_mutation')
             try:
                 sql('fresh_chain',migration.read_text())
             except subprocess.CalledProcessError as error:
@@ -247,6 +257,12 @@ def main():
                 assert p.returncode==0 and p.stdout=='REJECTED' and not p.stderr,(p.stdout,p.stderr)
                 checks.append(mode+':missing_'+key+'_denied')
             sql('fresh_single',f'ALTER TABLE {table} ADD UNIQUE INDEX {key} ({columns}); ALTER TABLE {table} DROP INDEX fixture_fk')
+        sql('fresh_single','ALTER TABLE payment_followup_attempts DROP CONSTRAINT ck_followup_attempt_wire')
+        for mode in ('strict','off'):
+            p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode,'missing_followup_index'],
+                env=env,capture_output=True,text=True,timeout=20)
+            assert p.returncode==0 and p.stdout=='REJECTED' and not p.stderr,(p.stdout,p.stderr)
+            checks.append(mode+':missing_followup_wire_constraint_denied')
         sql('fresh_single','ALTER TABLE payment_followup_attempts DROP CONSTRAINT ck_followup_attempt_ack_identity')
         for mode in ('strict','off'):
             p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode,'missing_followup_index'],

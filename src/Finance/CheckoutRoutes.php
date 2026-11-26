@@ -10,29 +10,45 @@ function achbotCheckoutPresentation(): array {
         'bot_username'=>(string)($GLOBALS['botUsername']??'')];
 }
 
+/** Isolate every fast-path stage and its diagnostics. A presentation
+ * exception cannot abort an already committed financial command. */
+function achbotCheckoutAdvanceStage(?int $operation,?int $payId,string $stage,callable $work): void {
+    try {$work();}
+    catch (Throwable $e) {
+        achbotDiagnosticEvent('achbot.finance.checkout_progress_deferred',[
+            'service_operation_id'=>(int)$operation,'pay_id'=>(int)$payId,'stage'=>$stage
+        ]+achbotDiagnosticLocalFailure($e),'warning');
+    }
+}
+
 /** Fast-path only. The durable worker owns progress after this request ends.
  * Never interpret an exhausted budget or failed Telegram call as a refund. */
 function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null,bool $force=false): void {
     require_once __DIR__.'/../Services/Execution.php';
     require_once __DIR__.'/ServiceDelivery.php';
     require_once __DIR__.'/FollowupOutbox.php';
-    if ($payId!==null) achbotPayUxSyncMessages($db,$payId);
+    if ($payId!==null)
+        achbotCheckoutAdvanceStage($operation,$payId,'projection',fn()=>achbotPayUxSyncMessages($db,$payId));
     $deadline=hrtime(true)/1000000000+8.0;
-    try {
-        if ($operation!==null) {
+    if ($operation!==null) {
+        achbotCheckoutAdvanceStage($operation,$payId,'service',function() use ($db,$operation,$deadline,$force) {
             for ($i=0;$i<16 && hrtime(true)/1000000000<$deadline;$i++) {
                 $r=achbotServiceExecuteStep($db,$operation,achbotCheckoutPresentation(),$force && $i===0);
                 if (!in_array($r['status'],['progressed','applied'],true)) break;
             }
+        });
+        achbotCheckoutAdvanceStage($operation,$payId,'delivery',function() use ($db,$operation,$payId,$deadline) {
             $s=achbotProviderStatement($db,"SELECT id FROM payment_delivery_intents
                 WHERE service_operation_id=? AND state IN ('pending','dispatching') ORDER BY ordinal LIMIT 8",'i',[$operation]);
             $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
             foreach ($rows as $row) {
                 if (hrtime(true)/1000000000>=$deadline) break;
-                achbotServiceDeliveryDispatch($db,(int)$row['id']);
+                achbotCheckoutAdvanceStage($operation,$payId,'delivery',fn()=>achbotServiceDeliveryDispatch($db,(int)$row['id']));
             }
-        }
-        if ($operation!==null || $payId!==null) {
+        });
+    }
+    if ($operation!==null || $payId!==null) {
+        achbotCheckoutAdvanceStage($operation,$payId,'report',function() use ($db,$operation,$payId,$deadline) {
             $s=achbotProviderStatement($db,"SELECT id FROM payment_followup_intents
                 WHERE ((service_operation_id IS NOT NULL AND service_operation_id=?) OR
                     (pay_row_id IS NOT NULL AND pay_row_id=? AND stage='wallet_credit'))
@@ -42,16 +58,12 @@ function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null,bool 
             $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
             foreach ($rows as $row) {
                 if (hrtime(true)/1000000000>=$deadline) break;
-                achbotFollowupDispatchOne($db,(int)$row['id']);
+                achbotCheckoutAdvanceStage($operation,$payId,'report',fn()=>achbotFollowupDispatchOne($db,(int)$row['id']));
             }
-        }
-    } catch (Throwable $e) {
-        achbotDiagnosticEvent('achbot.finance.checkout_progress_deferred',[
-            'service_operation_id'=>(int)$operation,'pay_id'=>(int)$payId
-        ]+achbotDiagnosticLocalFailure($e),'warning');
-    } finally {
-        if ($payId!==null) achbotPayUxSyncMessages($db,$payId);
+        });
     }
+    if ($payId!==null)
+        achbotCheckoutAdvanceStage($operation,$payId,'projection',fn()=>achbotPayUxSyncMessages($db,$payId));
 }
 
 /** One outcome projection for every verified receipt. It never infers

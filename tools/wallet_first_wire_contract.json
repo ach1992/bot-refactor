@@ -439,6 +439,13 @@
       "before_sha256": "b78a6ca60bfbc6a80eecf1eda29338b5af563d0d0ebf64e6fe2bb83da017f393",
       "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "reason": "Remove obsolete duplicate crypto route; shared manual checkout and projector own transitions; #236."
+    },
+    "src/Finance/FollowupOutbox.php": {
+      "after_count": 2,
+      "after_sha256": "222d33dc46622a5c7dbb0e25396a24fb6a0b2bf158629f4f3eaffb1680302b0d",
+      "before_count": 1,
+      "before_sha256": "965ba962458246adc7d9b5a433f681af54df442552b93a0cf4cdb116783d2c1a",
+      "reason": "Original logical report selects a proven numeric message edit or safe first/replacement send, with committed attempt wire identity."
     }
   },
   "added_with_direct_send": [

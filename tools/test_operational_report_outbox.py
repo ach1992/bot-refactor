@@ -122,6 +122,43 @@ $botState['rewardChannel']='@OtherReport';
 ensure(achbotFollowupDispatchOne($connection,$id)==='unavailable' && count($events)===$n &&
     reportRow('server:106','@fixturereport')['state']==='pending','tampered_envelope_not_mislabeled_as_skipped');
 $botState['rewardChannel']='@FixtureReport';
+// Known nonapplication across shared transport and outbox scheduling.
+require_once $root.'/src/Telegram/Transport.php';
+$pre=\AchBot\Telegram\Transport\knownPreSendFailure(6,0,0,0.0);
+ensure($pre instanceof \AchBot\Telegram\Response\PreSendFailure &&
+    \AchBot\Telegram\Response\deliveryOutcome($pre)['result']==='local_failed' &&
+    \AchBot\Telegram\Transport\knownPreSendFailure(6,0,false,0.0)===null &&
+    \AchBot\Telegram\Transport\knownPreSendFailure(35,0,12,0.0)===null &&
+    \AchBot\Telegram\Transport\knownPreSendFailure(7,0,0,1.0)===null &&
+    \AchBot\Telegram\Transport\knownPreSendFailure(6,200,0,0.0)===null &&
+    \AchBot\Telegram\Transport\knownPreSendFailure(28,0,0,0.0)===null,
+    'presend_requires_actual_zero_wire_evidence');
+foreach ([$pre,(object)['ok'=>false,'error_code'=>429,'description'=>'Too Many Requests'],
+    (object)['ok'=>false,'error_code'=>403,'description'=>'Forbidden'],
+    (object)['ok'=>false,'error_code'=>401,'description'=>'Unauthorized'],
+    (object)['ok'=>false,'error_code'=>409,'description'=>'Conflict']] as $i=>$failed) {
+    $ref='retry:'.(110+$i);
+    $connection->begin_transaction();stage($ref);$connection->commit();
+    $id=(int)reportRow($ref,'9001')['id'];
+    $reply=$failed;
+    ensure(achbotFollowupDispatchOne($connection,$id)==='pending' &&
+        achbotFollowupDispatchOne($connection,$id)==='not_due','automatic_retry_scheduled_'.$i);
+    if ($i===0) ensure(row('SELECT failure_reason FROM payment_followup_attempts WHERE intent_id='.$id)['failure_reason']==='transport_not_sent','presend_reason_preserved');
+    $reply='ack';
+    $peer=(int)reportRow($ref,'@fixturereport')['id'];
+    // Same operation, separate report destination.
+    $other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+    $lease=achbotFollowupLeaseName($other,reportRow($ref,'9001'));
+    $held=achbotProviderRow($other,'SELECT GET_LOCK(?,0) AS owned','s',[$lease]);
+    ensure((int)$held['owned']===1 && achbotFollowupDispatchOne($connection,$peer)==='acknowledged',
+        'peer_destination_independent_'.$i);
+    $other->close();
+    query('UPDATE payment_followup_intents SET next_attempt_at=NOW(6) WHERE id='.$id);
+    $recovered=achbotFollowupDispatchOne($connection,$id);
+    if ($recovered!=='acknowledged') throw new RuntimeException('fixture_recovery:'.$recovered.':'.json_encode(row('SELECT id,state,attempt_count,last_result,next_attempt_at,NOW(6) AS now_at FROM payment_followup_intents WHERE id='.$id)));
+    ensure($recovered==='acknowledged','automatic_retry_recovers_'.$i);
+}
+$n=count($events);
 // A transient NOWAIT permission read must defer, not permanently skip.
 query("UPDATE setting SET value='on' WHERE type='ADMIN_NOTIFY_9002'");
 query("INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','manager')");

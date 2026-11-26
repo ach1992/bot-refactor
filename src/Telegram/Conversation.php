@@ -48,11 +48,5 @@ function replaceTransient(int $actor,int $message,string $text,string $keys): ?i
 /** Only target-specific rejection warrants a new transient screen.
  * A malformed text/markup, 429, or ambiguous transport cannot. */
 function canReplaceRejectedEdit($response): bool {
-    $outcome=\AchBot\Telegram\Response\deliveryOutcome($response);
-    if ($outcome['result']!=='rejected' || $outcome['code']!==400) return false;
-    $description=strtolower((string)((array)$response)['description']);
-    foreach (['message to edit not found',"message can't be edited",'message can not be edited',
-              'there is no text in the message to edit'] as $reason)
-        if (str_contains($description,$reason)) return true;
-    return false;
+    return \AchBot\Telegram\Response\editTargetFailure($response)!==null;
 }

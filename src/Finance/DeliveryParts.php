@@ -43,7 +43,7 @@ function achbotDeliveryPartHistoryLocked(mysqli $db,array $d,array $p): ?array {
     if ($state==='pending') {
         $valid=$last===null ? $p['next_attempt_at']===null :
             ($p['next_attempt_at']!==null && (int)$last['retry_after_seconds']>0 &&
-                (($last['result']==='rejected' && (int)$last['telegram_error_code']===429) ||
+                (($last['result']==='rejected' && in_array((int)$last['telegram_error_code'],[401,403,404,409,429],true)) ||
                  ($last['result']==='local_failed' && $last['telegram_error_code']===null)));
     } else {
         $valid=$last!==null && $last['result']===$state && $p['next_attempt_at']===null;
@@ -145,6 +145,8 @@ function achbotDeliveryPartFinishLocked(mysqli $db,int $id,string $token,array $
         default=>false
     };
     if (!$valid) throw new RuntimeException('delivery_part_outcome_invalid');
+    if ($result==='rejected')
+        $delay=\AchBot\Telegram\Response\rejectedRetryDelay($code,$delay,(int)$a['attempt_no']);
     $state=$delay!==null?'pending':$result;
     $s=achbotProviderStatement($db,"UPDATE payment_delivery_attempts SET result=?,telegram_error_code=?,
         retry_after_seconds=?,finished_at=NOW() WHERE id=? AND result='dispatching'",

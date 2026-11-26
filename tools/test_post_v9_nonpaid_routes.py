@@ -166,7 +166,6 @@ if (($spec['route']??'trial')==='import_occupancy') {
         'pg_long_prefix'=>achbotAdminBulkAccountRemark(str_repeat('x',96).'-12345','bulk:9001:987811',1,2,'pasarguard','digits'),
         'batch_tokens'=>array_map(static fn($i)=>achbotAccountNumericToken('bulk:9001:987811',$i),range(1,500)),
         'plan_copy'=>achbotMessage('renewal.extensions.message.143c7f81f1'),
-        'purchase_report'=>achbotMessages('legacy_messages')['sent_config_to_user'],
         'pasarguard_base'=>$first];
 } elseif ($spec['route']==='attention') {
     require $root.'/src/Finance/Routes/AutomaticGatewayReview.php';
@@ -326,15 +325,6 @@ def check():
             '🎲 لطفاً یکی از پلن‌های زیر را انتخاب کنید.\n'
             '♻️ بعد از تغییر پلن می‌توانید اشتراک خودتان را مطابق پلن جدید تمدید کنید.\n'
             '⚠️ در صورت تغییر پلن پرداخت های در دست بررسی یا نیمه تمام شما برای این اشتراک نامعتبر می شوند.'
-        )
-        assert evidence['purchase_report']==(
-            '✅ اشتراک برای کاربر ارسال شد.\n\n'
-            '🎫 شناسه عددی: USERID\n'
-            '🔄 نام کاربری اشتراک: REMARK\n'
-            '📦 حجم اشتراک: VOLUME گیگ\n'
-            '📅 مدت زمان اشتراک: DAYS روز\n'
-            '💰 هزینه پرداختی: PRICE تومان\n'
-            '🔖 شناسه پرداخت: HASHID\n'
         )
         assert __import__('re').fullmatch(r'someserver-1001-[0-9]{5}',evidence['admin_default'])
         assert evidence['admin_manual'].startswith('batch_custom_') and (

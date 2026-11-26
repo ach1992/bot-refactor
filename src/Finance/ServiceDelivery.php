@@ -405,7 +405,7 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
                 'service_operation_id'=>$serviceId,'delivery_id'=>$id,'ordinal'=>(int)$d['ordinal'],
                 'delivery_part'=>$cursor,'actor_id'=>$actor,'request_attempt'=>$claim['attempt'],
                 'state'=>$r['state'],'result'=>$outcome['result'],'telegram_error_code'=>$outcome['code'],
-                'retry_after'=>$outcome['retry_after']],$outcome['result']==='acknowledged'?'info':'warning');
+                'retry_after'=>$outcome['retry_after'],'curl_errno'=>$outcome['curl_errno']??null],$outcome['result']==='acknowledged'?'info':'warning');
             if ($actor>0) return $r['part_state'];
             if ($r['state']!=='pending') return $r['state'];
             // Scan each part at most once during this invocation, even if

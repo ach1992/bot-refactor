@@ -217,7 +217,7 @@ if (
         $connection,$count,$uid,$bulkSource,$serverInfo,$server_id,
         $plan,$fidFromStep,$days,$volume): array {
         require_once __DIR__.'/BulkReport.php';
-        $proof=achbotBulkRecordedAccounts($connection,$count,$uid,null,$bulkSource);
+        $proof=achbotBulkRecordedAccounts($connection,$count,$uid,$bulkSource);
         $base=achbotMessageHtml('bulk_reporting.admin_created',[
             'actor'=>$uid,'source'=>$bulkSource,
             'server'=>(string)($serverInfo['title']??$server_id),

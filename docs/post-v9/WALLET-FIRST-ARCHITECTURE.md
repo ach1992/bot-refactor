@@ -382,19 +382,31 @@ completed purchase/credit exactly once with existing eligibility policy.
 
 ## Reporting and sales projections
 
-All original positive Wallet movements stage primary owner, configured report
-channel and actual human actor notices, deduplicated with optional authorized
-staff recipients. Automatic confirmation has no fabricated human actor. A
-report identifies the original receipt/operation and ledger entry, method,
-amount, before/after and disposition. A credit used immediately for a service
-does not become a misleading top-up notification. The sealed service-completion
-report remains independent of customer delivery. Newly staged followup
-intents are immediately due; actual retry deadlines and recipient
-eligibility still govern dispatch. Presentation of Wallet ledger time is
-Asia/Tehran; stored UTC evidence and fingerprints remain unchanged.
-Issue #236 owns the remaining logical-report consolidation work; a change
-in presentation must not conflate independent financial, service and
-Telegram delivery evidence.
+Original Wallet movements and actual service operations stage reports for
+the primary owner, configured report channel and actual authorized human actors.
+A receipt funding a service belongs to the logical service report; retained
+credit or a standalone Wallet movement remains a separate report. Each
+service/destination summary has immutable funded, completed, delivered or
+resolved revisions. Before first dispatch, the latest eligible revision
+supersedes untouched or proven-rejected older summaries without deleting
+their evidence. When a summary was acknowledged, update that exact numeric
+chat/message; only a definite missing/uneditable target permits replacement
+in the pinned chat. Customer delivery acknowledgement is independent of local
+completion. Never claim delivery from an aggregate projection alone. Original
+receipt markup is a separate retained record; a missing receipt is skipped,
+not recreated. Bulk continuation pages retain all original account names and
+order IDs without dropping the summary's financial facts. All money amounts,
+ledger IDs, receipt basis, original actors and local Tehran presentation dates
+derive from frozen source evidence.
+
+Each logical summary/destination has its own transport lease, rather than
+holding a payment or Native service lease across Telegram I/O. Ordinary
+operational report destinations use independent intent leases; batch compaction
+is protected by its source lease and locks/validates every affected SQL row.
+SQL claim/finish transactions are separate from the external call. A failing
+projection, service step, customer delivery or report in the request fast path
+does not abort another independent stage; the durable worker continues work
+outside the fast-path budget.
 
 Verified trial, administrator bulk, import, direct/scheduled gift, plan change,
 transfer and deletion use the same operational followup source, not fake
@@ -410,9 +422,15 @@ pinning its numeric identity. A success without matching message identity is
 unknown, not an automatic resend. An explicit identical-edit rejection can
 acknowledge only an exact numeric chat/message target. The sealed intent
 target and previous attempt evidence remain unchanged. During installed-data
-transfer, preserve prior acknowledgement evidence but leave both identity
-fields null if the original identity is not provable; such historical rows
-cannot authorize a guessed message edit or resend. Large bulk and
+transfer, preserve old intents, attempts and original ACK evidence in an
+explicit, separately authorized transfer/reconciliation. Map proven fixed
+wire actions/targets from original intents; never guess missing message IDs
+or replay historical delivery. Superseded legacy funded-credit/separate
+delivery-notice presentations are not active runtime alternatives. A verified
+prior logical summary ACK may anchor a current revision only after exact source,
+recipient and message reconciliation; otherwise retain audit evidence without
+inventing a target. The fresh construction script 053 refuses any existing
+followup evidence before DDL. Large bulk and
 partial-retained reports use bounded sealed continuation pages; compaction can
 only replace untouched packets, never an attempted message. Interrupted
 compaction leaves the individual verified creation reports deliverable.
@@ -422,8 +440,17 @@ The configured rewardChannel is resolved to the actual chat; no redirect of
 sealed packets after settings/permission changes. A definitively ineligible
 recipient is terminally skipped, without invented acknowledgement or later
 automatic reactivation. An incomplete authorization read defers; other
-recipients continue. Unknown/rejected deliveries retain attempt evidence;
-explicit redrive revalidates the original recipient. No report exposes private
+recipients continue. A known pre-request cURL failure with actual zero request/upload bytes
+is safe to retry. Both report and customer delivery workers honor explicit
+429 hints, use bounded exponential backoff if absent, and retry definite
+401/403/404/409 rejections (permission/configuration can recover). Exact
+idempotent report edits retry on unknown outcomes; an unknown first send
+remains isolated, with explicit authorized recovery when needed. There is
+no retry-count cutoff. Other malformed/permanent request rejections retain
+diagnostics; a valid newer report can supersede a rejected body. Attempts
+record actual wire action, recipient, edit target, failure reason and verified
+ACK identity. Customer delivery parts retain their existing independent
+journal, so only the failed due part is retried. No report exposes private
 receipt images, credentials or subscription links in public summaries.
 
 `src/Finance/ServiceHistory.php` owns completed commercial sales and buyer

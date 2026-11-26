@@ -398,10 +398,6 @@
     },
     "before": null
   },
-  "operational_reports.funded": {
-    "after": "مبلغ برای عملیات اصلی از کیف پول کسر شد؛ اجرای سرویس جداگانه پیگیری می‌شود.",
-    "before": null
-  },
   "operational_reports.funded_title": {
     "after": "<b>💳 ثبت پرداخت و تأمین مالی سرویس</b>",
     "before": null
@@ -444,6 +440,10 @@
       ],
       "text": "روش پرداخت: {method}\nنوع تأیید: {basis}\nشناسهٔ پرداخت: <code>{payment}</code>\nعملیات سرویس: <code>{service}</code>\nشناسهٔ اشتراک: <code>{order}</code>\nنتیجه: {result}"
     },
+    "before": null
+  },
+  "operational_reports.receipt_credit": {
+    "after": "<b>💳 اعتبار پرداخت ثبت‌شده</b>",
     "before": null
   },
   "operational_reports.request_invalidated": {
@@ -502,6 +502,18 @@
     "after": "📅 افزایش زمان اشتراک تکمیل شد",
     "before": null
   },
+  "operational_reports.service_delivery_confirmed": {
+    "after": "✅ ارسال همه پیام‌های اشتراک به کاربر توسط Telegram تأیید شد.",
+    "before": null
+  },
+  "operational_reports.service_delivery_pending": {
+    "after": "📨 تأیید کامل ارسال پیام‌های اشتراک به کاربر هنوز ثبت نشده است.",
+    "before": null
+  },
+  "operational_reports.service_funding_pending": {
+    "after": "⏳ تأمین مالی انجام شد؛ نتیجه اجرای سرویس جداگانه بررسی می‌شود.",
+    "before": null
+  },
   "operational_reports.service_order": {
     "after": {
       "parameters": [
@@ -538,10 +550,19 @@
       "parameters": [
         "entry",
         "before",
-        "after"
+        "after",
+        "date"
       ],
-      "text": "شناسهٔ کسر از کیف پول: <code>W{entry}</code>\nموجودی پیش از کسر: {before} تومان\nموجودی پس از کسر: {after} تومان"
+      "text": "شناسهٔ کسر از کیف پول: <code>W{entry}</code>\nموجودی پیش از کسر: {before} تومان\nموجودی پس از کسر: {after} تومان\n📅 تاریخ ثبت کسر (ایران): {date}"
     },
+    "before": null
+  },
+  "operational_reports.service_zero_pending": {
+    "after": "⏳ درخواست بدون هزینه ثبت شد؛ نتیجه اجرای سرویس جداگانه بررسی می‌شود.",
+    "before": null
+  },
+  "operational_reports.service_zero_title": {
+    "after": "<b>🧾 ثبت درخواست سرویس</b>",
     "before": null
   },
   "operational_reports.source_adjustment": {

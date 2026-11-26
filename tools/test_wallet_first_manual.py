@@ -179,6 +179,7 @@ def main():
                 for label,response,expected in (
                     ('exact',{'ok':True,'result':{'chat':{'id':9001},'message_id':222}},'acknowledged'),
                     ('no_op',{'ok':False,'error_code':400,'description':'Bad Request: message is not modified'},'acknowledged'),
+                    ('deleted_receipt',{'ok':False,'error_code':400,'description':'Bad Request: message to edit not found'},'skipped'),
                     ('foreign_message',{'ok':True,'result':{'chat':{'id':9001},'message_id':223}},'unknown'),
                     ('foreign_chat',{'ok':True,'result':{'chat':{'id':9002},'message_id':222}},'unknown'),
                 ):
@@ -189,11 +190,16 @@ def main():
                     rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND role='receipt_primary' AND kind='edit'"))
                     b=balance()
                     report=result(mode,'report',pid,report=rid,response=response)
-                    assert report['status']==expected and len(report['sends'])==1,report
+                    assert report['status']==('pending' if expected=='unknown' else expected) and len(report['sends'])==1,report
                     assert report['sends'][0]['kind']=='edit_keys' and report['sends'][0]['args'][1:]==[222,9001],report
                     identity=sql(f"SELECT CONCAT(result,':',COALESCE(ack_chat_id,'null'),':',COALESCE(ack_message_id,'null')) FROM payment_followup_attempts WHERE intent_id={rid}")
-                    assert identity==(expected+(':9001:222' if expected=='acknowledged' else ':null:null')),identity
+                    assert identity==(('rejected' if expected=='skipped' else expected)+(':9001:222' if expected=='acknowledged' else ':null:null')),identity
                     assert result(mode,'report',pid,report=rid)['sends']==[] and balance()==b
+                    if expected=='unknown':
+                        sql(f"UPDATE payment_followup_intents SET next_attempt_at=NOW(6) WHERE id={rid}")
+                        recovered=result(mode,'report',pid,report=rid)
+                        assert recovered['status']=='acknowledged' and recovered['sends'][0]['args'][1:]==[222,9001],recovered
+                        assert balance()==b
                     case('original_receipt_edit_identity_'+label)
                 # The approving operator receives a standalone report even
                 # when general unsolicited notifications are disabled.

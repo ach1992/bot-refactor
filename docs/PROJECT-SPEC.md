@@ -145,9 +145,15 @@ authentic funds/evidence or treating a migrated PasarGuard account as retired.
   and actual human actor receive the applicable auditable report without
   duplicate destinations; optional notification preferences do not suppress
   the acting operator. Automatic confirmation has no invented actor.
-  Delivery recovery reuses original packets and never repeats money or
-  Native changes. See the architecture for durable reporting and sales
-  metric ownership.
+  Each service/destination report uses the latest eligible immutable revision,
+  updating its proven prior message rather than sending separate funding,
+  completion and delivery notices. Standalone Wallet credit, original receipt
+  records and necessary continuation pages remain distinct. Delivery recovery
+  reuses original packets and never repeats money or Native changes. Known
+  nonapplication and exact idempotent edits recover automatically with
+  rate-aware backoff; uncertain first sends are isolated. Transport leases
+  do not hold financial or service-execution locks during report I/O.
+  See the architecture for durable reporting and sales metric ownership.
 - Broadcast/forward processing continues past individual recipient failures
   and resumes after interruption using the original durable cursor. Do not
   replay uncertain sends or treat processing completion as universal Telegram

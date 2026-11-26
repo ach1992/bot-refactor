@@ -75,32 +75,35 @@ function achbotReceiptReportBasis(array $attempt): string {
     });
 }
 
-/** Report every final receipt credit, including a credit immediately used
- * by its original service. Customer top-up copy is only for retained money.
- * The sealed financial report is independent from the later Native result. */
+/** A funded receipt joins its original service report. Only money retained
+ * in Wallet has an independent credit report and customer top-up notice. */
 function achbotReceiptReportStageLocked(mysqli $db,int $payId,int $userId,string $originalState): void {
     require_once __DIR__.'/WalletReports.php';
     $source=achbotReceiptCreditEvidenceLocked($db,$payId,$userId);
     $pay=$source['pay'];$a=$source['attempt'];$entry=$source['entry'];
     $funded=$a['wallet_funding_result']==='funded';
     $stage='wallet_credit';$fingerprint=$source['fingerprint'];
+    if ($funded) {
+        require_once __DIR__.'/ServiceReports.php';
+        [$op,$quote]=achbotServiceReadLocked($db,$userId,(int)$a['service_operation_id']);
+        achbotServiceStageFundingReportLocked($db,$op,$quote,$source);
+        return;
+    }
     $hosted=achbotReceiptIsHosted($a);
     $amount=number_format((int)$pay['price']);
-    if (!$funded) {
-        $support=['supportID'=>(string)($GLOBALS['supportID']??'')];
-        $mode='HTML';
-        if ($hosted) {
-            $text=achbotMessage('gateway.gateway_return.perform_payment_effect.message.a5b15e454e').$amount.
-                achbotMessageHtml('gateway.gateway_return.perform_payment_effect.message.dd866497c7',$support);
-        } else {
-            $text=achbotMessage('manual_payment.manual_receipts.message.f568baa065').$amount.
-                achbotMessageHtml('manual_payment.manual_receipts.message.f6331b33af',$support);
-        }
-        achbotFollowupStoreLocked($db,$payId,null,$stage,'customer','send',(string)$userId,null,
-            $fingerprint,['text'=>$text,'keys'=>null,'mode'=>$mode]);
-        achbotReceiptReportStageEditsLocked($db,$source,$payId,null,$stage,$fingerprint,
-            payTypeToDescription('INCREASE_WALLET'),true);
+    $support=['supportID'=>(string)($GLOBALS['supportID']??'')];
+    $mode='HTML';
+    if ($hosted) {
+        $text=achbotMessage('gateway.gateway_return.perform_payment_effect.message.a5b15e454e').$amount.
+            achbotMessageHtml('gateway.gateway_return.perform_payment_effect.message.dd866497c7',$support);
+    } else {
+        $text=achbotMessage('manual_payment.manual_receipts.message.f568baa065').$amount.
+            achbotMessageHtml('manual_payment.manual_receipts.message.f6331b33af',$support);
     }
+    achbotFollowupStoreLocked($db,$payId,null,$stage,'customer','send',(string)$userId,null,
+        $fingerprint,['text'=>$text,'keys'=>null,'mode'=>$mode]);
+    achbotReceiptReportStageEditsLocked($db,$source,$payId,null,$stage,$fingerprint,
+        payTypeToDescription('INCREASE_WALLET'),true);
     $wallet=achbotWalletReportEntryLocked($db,$entry['id']);
     $result=$a['wallet_funding_result'];
     if ($result==='request_invalidated' && $originalState==='service_superseded') $result='service_superseded';
@@ -109,7 +112,7 @@ function achbotReceiptReportStageLocked(mysqli $db,int $payId,int $userId,string
         $op=achbotProviderRow($db,'SELECT subject_order_id FROM service_operations WHERE id=?','i',[(int)$a['service_operation_id']]);
         $orderId=(int)($op['subject_order_id']??$orderId);
     }
-    $report=achbotMessage($funded?'operational_reports.funded_title':'operational_reports.credit_title')."\n\n".
+    $report=achbotMessage('operational_reports.credit_title')."\n\n".
         achbotWalletReportFacts($wallet)."\n".
         achbotMessageHtml('operational_reports.payment_context',[
             'method'=>achbotReceiptReportMethod($a),'basis'=>achbotReceiptReportBasis($a),
@@ -125,7 +128,6 @@ function achbotReceiptReportStageLocked(mysqli $db,int $payId,int $userId,string
 }
 function achbotReceiptFundingResultLabel(string $result): string {
     return achbotMessage(match($result) {
-        'funded'=>'operational_reports.funded',
         'wallet_only'=>'operational_reports.wallet_only',
         'already_funded'=>'operational_reports.already_funded',
         'request_invalidated'=>'operational_reports.request_invalidated',
@@ -138,12 +140,12 @@ function achbotReceiptFundingResultLabel(string $result): string {
 function achbotReceiptReportValidateLocked(mysqli $db,array $pay,array $r): ?array {
     if (isset($r['service_operation_id']) || $r['stage']!=='wallet_credit') return null;
     $source=achbotReceiptCreditEvidenceLocked($db,(int)$pay['id'],(int)$pay['user_id']);
-    $funded=$source['attempt']['wallet_funding_result']==='funded';
+    if ($source['attempt']['wallet_funding_result']==='funded') return null;
     if ($r['role']==='customer') {
-        if ($funded || $r['kind']!=='send' || $r['message_id']!==null ||
+        if ($r['kind']!=='send' || $r['message_id']!==null ||
             $r['recipient']!==(string)(int)$pay['user_id']) return null;
     } elseif ($r['kind']==='edit') {
-        if ($funded || !achbotReceiptReportEditAllowed($db,$source,$r)) return null;
+        if (!achbotReceiptReportEditAllowed($db,$source,$r)) return null;
     } elseif (!achbotFollowupAdminReportAllowed($db,$r,$source['entry']['actor'])) return null;
     return achbotFollowupDecodePacket($pay,$r,$source['fingerprint']);
 }

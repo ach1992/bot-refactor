@@ -588,7 +588,11 @@ function achbotCheckoutWallet(mysqli $db,string $hash,int $actor,string $mode,ar
         }
         $s=achbotProviderStatement($db,"UPDATE pays SET state='paid_with_wallet' WHERE id=? AND checkout_operation_id=?",'ii',[$id,$operation]);
         $n=$s->affected_rows;$s->close();
-        if ($n!==1 || !$db->commit()) throw new RuntimeException('checkout_wallet_commit');
+        if ($n!==1) throw new RuntimeException('checkout_wallet_projection_write');
+        require_once __DIR__.'/ServiceReports.php';
+        [$op,$quote]=achbotServiceReadLocked($db,$actor,$operation);
+        achbotServiceStageFundingReportLocked($db,$op,$quote,null);
+        if (!$db->commit()) throw new RuntimeException('checkout_wallet_commit');
         return ['status'=>'funded','operation'=>$operation,'stage'=>'funded'];
     } catch (Throwable $e) {$db->rollback();throw $e;}
 }

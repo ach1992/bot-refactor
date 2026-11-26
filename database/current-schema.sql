@@ -342,9 +342,13 @@ CREATE TABLE `payment_followup_attempts` (
   `dispatch_token` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `actor_userid` bigint(20) NOT NULL DEFAULT 0,
   `claim_state` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `wire_action` varchar(12) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `wire_recipient` varchar(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `wire_message_id` bigint(20) unsigned DEFAULT NULL,
   `result` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'dispatching',
   `telegram_error_code` smallint(5) unsigned DEFAULT NULL,
   `retry_after_seconds` int(10) unsigned DEFAULT NULL,
+  `failure_reason` varchar(48) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
   `ack_chat_id` bigint(20) DEFAULT NULL,
   `ack_message_id` bigint(20) unsigned DEFAULT NULL,
   `started_at` datetime(6) NOT NULL DEFAULT current_timestamp(6),
@@ -353,7 +357,8 @@ CREATE TABLE `payment_followup_attempts` (
   UNIQUE KEY `uq_followup_attempt_no` (`intent_id`,`attempt_no`),
   UNIQUE KEY `uq_followup_attempt_token` (`dispatch_token`),
   CONSTRAINT `fk_followup_attempt_intent` FOREIGN KEY (`intent_id`) REFERENCES `payment_followup_intents` (`id`),
-  CONSTRAINT `ck_followup_attempt_ack_identity` CHECK ((`ack_chat_id` is null and `ack_message_id` is null or `result` = 'acknowledged' and `ack_chat_id` is not null and `ack_chat_id` <> 0 and `ack_message_id` is not null and `ack_message_id` > 0))
+  CONSTRAINT `ck_followup_attempt_ack_identity` CHECK ((`ack_chat_id` is null and `ack_message_id` is null or `result` = 'acknowledged' and `ack_chat_id` is not null and `ack_chat_id` <> 0 and `ack_message_id` is not null and `ack_message_id` > 0)),
+  CONSTRAINT `ck_followup_attempt_wire` CHECK ((`wire_action` = 'send' and `wire_message_id` is null or `wire_action` in ('edit_text','edit_keys') and `wire_message_id` is not null and `wire_message_id` > 0))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
