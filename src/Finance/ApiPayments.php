@@ -64,67 +64,6 @@ function achbotApiPaymentContext(mysqli $db,string $hash,int $actor=0): ?array {
 function achbotApiPaymentTerminal(array $pay): bool {
     return in_array((string)($pay['state']??''),['approved','paid','auto_cart_approved','paid_with_wallet'],true);
 }
-function achbotApiPaymentInvoiceText(array $c): string {
-    $p=$c['pay'];
-    if ($p['state']==='have_sent') return achbotManualAcknowledgement($p,(string)$c['attempt']['provider']);
-    return buildCartToCartInfoMessage($GLOBALS['paymentKeys']??[],(int)$p['price'],(int)$p['user_id'],(string)$c['attempt']['provider'],(string)$p['hash_id']);
-}
-/** Post-send source-real reference; first successful invoice response wins. */
-function achbotApiPaymentTrackInvoice(mysqli $db,string $hash,int $actor,$response): void {
-    $message=(int)($response->result->message_id??0);
-    if ($message<=0 || $actor<=0 || !achbotApiPaymentReady($db)) return;
-    try {
-        $q=$db->prepare('UPDATE payment_attempts a JOIN pays p ON p.id=a.pay_row_id
-            SET a.evidence_invoice_chat_id=?,a.evidence_invoice_message_id=?
-            WHERE p.hash_id=? AND p.user_id=? AND a.evidence_profile IS NOT NULL
-              AND a.evidence_invoice_message_id IS NULL');
-        $q->bind_param('iisi',$actor,$message,$hash,$actor);$q->execute();$q->close();
-        // If settlement won while Telegram was sending, immediately converge.
-        $c=achbotApiPaymentContext($db,$hash,$actor);if ($c) achbotApiPaymentSyncInvoice($db,$c);
-    } catch (Throwable $e) {error_log('achbot_api_invoice_reference_deferred');}
-}
-function achbotApiPaymentSyncInvoice(mysqli $db,array $c): bool {
-    $id=(int)($c['pay']['id']??0);
-    // Serialize projection with human receipt decisions and verification.
-    return achbotApiPaymentWithWorkerLock($db,$id,
-        static fn():string=>achbotApiPaymentSyncInvoiceLocked($db,$c)
-            ?'synchronized':'unchanged')==='synchronized';
-}
-function achbotApiPaymentSyncInvoiceLocked(mysqli $db,array $c): bool {
-    $p=$c['pay'];$a=$c['attempt'];$id=(int)$p['id'];
-    // Re-read the current state under the same session lease.
-    $current=achbotApiPaymentContext($db,(string)$p['hash_id'],(int)$p['user_id']);
-    if (!$current) return false;
-    $c=$current;$p=$c['pay'];$a=$c['attempt'];
-    $chat=(int)($a['evidence_invoice_chat_id']??0);$message=(int)($a['evidence_invoice_message_id']??0);
-    if ($chat!==(int)$p['user_id'] || $chat<=0 || $message<=0 || !function_exists('bot')) return false;
-    if (achbotApiPaymentTerminal($p) || !in_array($p['state'],['pending','have_sent'],true) ||
-        ($p['state']==='pending' && !achbotPayUxInvoiceOpen($a)))
-        $body=achbotPayUxStatusText($p,$a);
-    else {
-        $body=achbotApiPaymentInvoiceText($c);
-        if ($body==='') return false;
-    }
-    $keys=achbotManualReceiptKeyboard($p,$a);$digest=hash('sha256',$body."\n".$keys);
-    if (($a['evidence_invoice_digest']??null)===$digest) return true;
-    try {
-        $response=bot('editMessageText',['chat_id'=>$chat,'message_id'=>$message,'text'=>$body,'parse_mode'=>'HTML','reply_markup'=>$keys,'disable_web_page_preview'=>true]);
-        if (!achbotApiPaymentEditAccepted($response)) {
-            achbotApiPaymentEditFailure($id,'invoice',$response);
-            return false;
-        }
-        // Compare current financial state after the asynchronous edit. A stale
-        // pending edit may never stamp a terminal message as synchronized.
-        $fresh=achbotApiPaymentRow($db,$id);
-        if (!$fresh || $fresh['state']!==$p['state']) {
-            $again=achbotApiPaymentContext($db,(string)$p['hash_id']);
-            if ($again) return achbotApiPaymentSyncInvoice($db,$again);
-            return false;
-        }
-        $q=$db->prepare('UPDATE payment_attempts SET evidence_invoice_digest=? WHERE pay_row_id=?');
-        $q->bind_param('si',$digest,$id);$q->execute();$q->close();return true;
-    } catch (Throwable $e) {error_log('achbot_api_invoice_edit_deferred pay_id='.$id);return false;}
-}
 /**
  * Persist an already acknowledged staff keyboard only while its financial
  * state is still current. Finance holds pays before payment_attempts; the
@@ -181,16 +120,17 @@ function achbotApiPaymentEditFailure(int $payId,string $audience,$reply): void {
         ' tg_code='.$code);
 }
 
-function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $report=true): void {
-    $id=(int)$pay['id'];$incoming=$pay;$fresh=achbotApiPaymentRow($db,$id);if(!$fresh)return;
+function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $report=true): int {
+    $edited=0;
+    $id=(int)$pay['id'];$incoming=$pay;$fresh=achbotApiPaymentRow($db,$id);if(!$fresh)return 0;
     $incomingRefs=json_decode((string)($incoming['admins_messages']??''),true);$incomingRefs=is_array($incomingRefs)?$incomingRefs:[];
     $incomingRefs[]=['chat_id'=>$incoming['chat_id']??0,'message_id'=>$incoming['message_id']??0];
     $pay=$fresh;$storedRefs=json_decode((string)($pay['admins_messages']??''),true);$storedRefs=is_array($storedRefs)?$storedRefs:[];
     $pay['admins_messages']=json_encode(array_values(array_unique(array_merge($storedRefs,$incomingRefs),SORT_REGULAR)));
-    $hash=(string)$pay['hash_id'];$a=achbotApiPaymentAttempt($db,$id);if(!$a)return;
+    $hash=(string)$pay['hash_id'];$a=achbotApiPaymentAttempt($db,$id);if(!$a)return 0;
     // A new wallet credit owns durable receipt/report projection, including
     // service completion. Never announce delivery from paid alone.
-    if (($a['wallet_credit_entry_id']??null)!==null) return;
+    if (($a['wallet_credit_entry_id']??null)!==null) return 0;
     $proof=achbotPaymentEvidenceGetProof($db,$id);$pending=$proof?null:achbotPaymentEvidencePending($db,$id);
     $evidence=$proof['operation']??($pending['operation']??('invoice-'.$id));
     if(achbotApiPaymentTerminal($pay) && in_array($status,['used','revoked','expired','mismatch'],true))$status='settled';
@@ -261,7 +201,7 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
                 $reply=editKeys($keys,$msg,$chat);
                 if (!achbotApiPaymentEditAccepted($reply)) {
                     $ack=false;achbotApiPaymentEditFailure($id,'staff',$reply);
-                }
+                } else ++$edited;
             } catch(Throwable $error) {
                 $ack=false;
                 error_log('achbot_api_telegram_edit_deferred pay_id='.$id.
@@ -271,15 +211,15 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
         // Telegram may return after a real human/API winner committed. Never
         // acknowledge a stale action keyboard; converge every stored copy.
         $latest=achbotApiPaymentRow($db,$id);
-        if(!$latest)return;
+        if(!$latest)return $edited;
         if($latest['state']!==$pay['state'] || ($latest['approved_by']??null)!==($pay['approved_by']??null)){
             $latest['admins_messages']=json_encode($refs);
-            achbotApiPaymentNotice($db,$latest,achbotApiPaymentTerminal($latest)?'settled':'review',false);return;
+            return $edited+achbotApiPaymentNotice($db,$latest,achbotApiPaymentTerminal($latest)?'settled':'review',false);
         }
         if($ack) achbotApiPaymentStampStaffDigest($db,$id,(string)$pay['state'],
             $pay['approved_by']===null?null:(int)$pay['approved_by'],$staffDigest);
     }
-    $c=achbotApiPaymentContext($db,$hash);if($c)achbotApiPaymentSyncInvoice($db,$c);
+    return $edited;
 }
 /** Resume an already persisted proof through the common credit transaction. */
 function achbotApiPaymentSettle(mysqli $db,int $id,array $proof): string {
@@ -584,8 +524,7 @@ function achbotApiPaymentCheck(mysqli $db,int $id): string {
                     achbotApiPaymentNotice($db,$pay,$status);
                 elseif (in_array($status,['review','pending','unavailable'],true))
                     achbotApiPaymentNotice($db,$pay,$status==='pending'?'uncertain':'review');
-                $c=achbotApiPaymentContext($db,(string)$pay['hash_id']);
-                if ($c) achbotApiPaymentSyncInvoice($db,$c);
+                achbotPayUxSyncMessages($db,$id);
             }
             return $status;
         } catch (Throwable $e) {
@@ -662,14 +601,13 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
             try {
                 $c=achbotApiPaymentContext($db,(string)$row['hash_id']);
                 if (!$c) {achbotDiagnosticEvent('achbot.finance.evidence_projection',['pay_id'=>$id,'reason'=>'original_context_unavailable'],'warning');continue;}
-                if(achbotApiPaymentSyncInvoice($db,$c))$edited++;
                 $p=$c['pay'];$a=$c['attempt'];$proof=achbotPaymentEvidenceGetProof($db,(int)$p['id']);
-                if(achbotApiPaymentTerminal($p))achbotApiPaymentNotice($db,$p,($proof['mode']??'')==='evidence_only'?'evidence_only':(($a['wallet_credit_entry_id']??null)!==null?'confirmed':'settled'));
+                if(achbotApiPaymentTerminal($p))$edited+=achbotApiPaymentNotice($db,$p,($proof['mode']??'')==='evidence_only'?'evidence_only':(($a['wallet_credit_entry_id']??null)!==null?'confirmed':'settled'));
                 elseif(($a['evidence_state']??'')==='invalid_code'){
                     $d=achbotPaymentEvidenceUnprotect('code:'.$a['id'].':'.$p['id'],(string)$a['evidence_code']);
-                    if(in_array($d['last_status']??'',['used','revoked','expired','mismatch'],true))achbotApiPaymentNotice($db,$p,$d['last_status']);
+                    if(in_array($d['last_status']??'',['used','revoked','expired','mismatch'],true))$edited+=achbotApiPaymentNotice($db,$p,$d['last_status']);
                 }
-                elseif(in_array($a['evidence_state']??'',['review','uncertain'],true)||$p['state']==='processing')achbotApiPaymentNotice($db,$p,($a['evidence_state']??'')==='uncertain'?'uncertain':'review');
+                elseif(in_array($a['evidence_state']??'',['review','uncertain'],true)||$p['state']==='processing')$edited+=achbotApiPaymentNotice($db,$p,($a['evidence_state']??'')==='uncertain'?'uncertain':'review');
             } catch (Throwable $e) {
                 achbotDiagnosticEvent('achbot.finance.evidence_projection',['pay_id'=>$id,
                     'reason'=>'projection_deferred','class'=>get_class($e)],'warning');

@@ -40,36 +40,51 @@ function achbotReceiptStep(string $step): ?array {
     return ['hash'=>$m[1],'generation'=>$m[2],'prompt'=>(int)$m[3]];
 }
 
-/** One method selection for every checkout kind. The pinned financial
- * coordinator is the only owner of eligibility, quote and service admission. */
+/** Issue once through the financial coordinator, then convert the positively
+ * identified selector in place. Replays reconcile the same invoice instead
+ * of issuing another Telegram send. */
 function achbotManualPresentInvoice(mysqli $db,array $pay,int $actor,string $method,?string $network,int $source): void {
-    $expected=(string)($GLOBALS['userInfo']['step']??'none');
-    $mode=achbotCheckoutMode($pay);
-    if ($mode===null || !achbotManualClaim($db,$pay,$method,$actor,$network,$mode)) {
-        alert(achbotMessage('payment.checkout.alert.1a885aaca4'),true);return;
-    }
-    $body=buildCartToCartInfoMessage((array)($GLOBALS['paymentKeys']??[]),
-        (int)$pay['price'],$actor,$method,(string)$pay['hash_id']);
-    if ($body==='') {alert(achbotMessage('payment.checkout.alert.07ee06b4bc'),true);return;}
-    $keys=achbotManualInvoiceKeyboard($db,$pay);
-    $sent=sendMessage($body,$keys,'HTML',$actor);
-    if (\AchBot\Telegram\Conversation\acknowledgedMessage($sent,$actor)===null) {
-        alert(achbotMessage('payment.checkout.alert.7a9c30e938'),true);return;
-    }
-    answerCallbackQuery((string)($GLOBALS['callbackId']??''));
-    $old=achbotReceiptStep($expected);
-    if ($old!==null && achbotReceiptStepChange($db,$actor,$expected,'none') && $old['prompt']>0)
-        delMessage($old['prompt'],$actor);
-    achbotPayUxTrackMessage($db,(int)$pay['id'],$actor,$sent);
-    if (function_exists('achbotApiPaymentTrackInvoice'))
-        achbotApiPaymentTrackInvoice($db,(string)$pay['hash_id'],$actor,$sent);
-    // The selector (not the new issued invoice) is explicitly transient.
-    // Retire its controls only after acknowledgement of the retained invoice.
-    $deleted=delMessage($source,$actor);
-    if (\AchBot\Telegram\Response\isSuccessful($deleted)) {
-        $s=achbotProviderStatement($db,'DELETE FROM payment_message_refs WHERE pay_row_id=? AND chat_id=? AND message_id=?',
-            'iii',[(int)$pay['id'],$actor,$source]);$s->close();
-    }
+    $id=(int)$pay['id'];
+    $done=achbotPayUxWithLease($db,$id,static function() use ($db,$pay,$actor,$method,$network,$source,$id): bool {
+        $ref=achbotPayUxRef($db,$id,$actor,$source);
+        if ($ref && $ref['purpose']==='invoice' && $ref['retired_reason']===null) {
+            achbotPayUxSyncMessages($db,$id);return true;
+        }
+        $ref=achbotPayUxSelectorRef($db,$id,$actor,$source,$GLOBALS['update']??null);
+        if (!$ref) return false;
+        $mode=achbotCheckoutMode($pay);
+        if ($mode===null || !achbotManualClaim($db,$pay,$method,$actor,$network,$mode)) return false;
+        $facts=achbotPayUxProjectionSource($db,$id);
+        if (!$facts) return false;
+        [$current,$attempt]=$facts;
+        if (!$attempt || $attempt['provider']!==$method) return false;
+        // Other selectors (discount redraw, etc.) are not new invoices.
+        $existing=achbotProviderRow($db,"SELECT id FROM payment_message_refs
+            WHERE pay_row_id=? AND purpose='invoice' AND retired_reason IS NULL LIMIT 1",'i',[$id]);
+        $purpose=$existing?'status':'invoice';
+        $projection=achbotPayUxProjection($db,$current,$attempt,$purpose);
+        if ($projection===null || !achbotPayUxChangePurpose($db,$ref,$purpose)) return false;
+        $ref['purpose']=$purpose;$ref['synced_digest']=null;
+        [$body,$keys,$markup]=$projection;
+        $result=achbotPayUxApplyProjection($db,$ref,$body,$keys,$markup);
+        $shown=in_array($result,['acknowledged','unchanged'],true);
+        if ($result==='retired' && $purpose==='invoice') {
+            // An explicit click may replace a definitely unavailable target
+            // once. The old identity was retired before the send, so a lost
+            // send ACK or concurrent replay cannot issue another replacement.
+            $sent=sendMessage($body,$keys,'HTML',$actor);
+            if (achbotPayUxTrackMessage($db,$id,$actor,$sent,'invoice')) {
+                $shown=true;delMessage($source,$actor);
+            }
+        }
+        $expected=(string)($GLOBALS['userInfo']['step']??'none');
+        $old=achbotReceiptStep($expected);
+        if ($shown && $old!==null && achbotReceiptStepChange($db,$actor,$expected,'none') && $old['prompt']>0)
+            delMessage($old['prompt'],$actor);
+        return true;
+    },false);
+    if ($done) answerCallbackQuery((string)($GLOBALS['callbackId']??''));
+    else alert(achbotMessage('payment.checkout.alert.1a885aaca4'),true);
 }
 
 function achbotReceiptOpenPrompt(mysqli $db,array $pay,int $actor,string $expected): void {

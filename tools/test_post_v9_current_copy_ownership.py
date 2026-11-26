@@ -110,6 +110,13 @@ def classify_unowned_copy(tokens: list[dict]) -> tuple[list[str], int]:
 
 
 def assert_retired_absent(sources: dict[str, str]) -> None:
+    for path,content in sources.items():
+        for marker in ('achbotApiPaymentTrackInvoice','achbotApiPaymentSyncInvoice',
+                       'achbotApiPaymentInvoiceText','evidence_invoice_chat_id',
+                       'evidence_invoice_message_id','evidence_invoice_digest',
+                       'achbotPayUxTrackClicked','buildCartToCartInfoMessage',
+                       'achbotManualInvoiceKeyboard'):
+            check(marker not in content, "retired_projection_reintroduced:" + path + ":" + marker)
     for path in ("src/Plans/Administration.php", "src/Admin/Access.php", "bot.php", "src/Admin/ManagementFlow.php", "src/Subscription/CustomerRoutes.php", "config.php", "src/Finance/Routes/AdminWallet.php"):
         content = sources[path]
         for marker in RETIRED:
@@ -241,7 +248,7 @@ def indirect_legacy_keys(sources: dict[str, str],
     check(receipt_prompts, "manual_receipt_prompt_set_empty")
 
     # Both manual payment quote branches are finite and source-typed.
-    quote = php_function(receipts, "buildCartToCartInfoMessage")
+    quote = php_function(receipts, "achbotManualInvoiceText")
     templates = re.findall(
         r"""\?\s*'([^']+)'\s*:\s*'([^']+)'\s*\)\s*\)""",
         quote)

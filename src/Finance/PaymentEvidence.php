@@ -191,8 +191,7 @@ function achbotPaymentEvidenceSchemaReady(mysqli $db): bool {
     try {
         $required=[
             'payment_attempts'=>['evidence_profile','evidence_state','evidence_cursor_id','evidence_claim_token',
-                'evidence_claimed_at','evidence_next_check_at','evidence_invoice_chat_id',
-                'evidence_invoice_message_id','evidence_invoice_digest','evidence_code',
+                'evidence_claimed_at','evidence_next_check_at','evidence_code',
                 'evidence_code_sha256','evidence_review_sent_at','evidence_projection_checked_at',
                 'evidence_staff_digest'],
             'payment_transactions'=>['evidence_state','evidence_operation','evidence_payload',

@@ -19,6 +19,8 @@ if (preg_match('/\A(pm_([bg])|rs|rc|dc)_([A-Za-z0-9_-]{1,50})\z/D',$action,$manu
         $pay=achbotProviderRow($connection,'SELECT * FROM pays WHERE hash_id=? AND user_id=?','si',[$hash,$actor]);
         if (!$pay) {alert(achbotMessage('payment.checkout.alert.d06bc731eb'),true);return;}
         if ($manual[1]==='rs') {
+            $ref=achbotPayUxRecoveryRef($connection,(int)$pay['id'],$actor,(int)$message_id,$update);
+            if (!$ref || !in_array($ref['purpose'],['invoice','status','receipt'],true)) return;
             achbotReceiptOpenPrompt($connection,$pay,$actor,$receiptStep);
         } elseif ($manual[1]==='rc') {
             // Only this current prompt owns cancellation, not the invoice.
@@ -29,19 +31,19 @@ if (preg_match('/\A(pm_([bg])|rs|rc|dc)_([A-Za-z0-9_-]{1,50})\z/D',$action,$manu
             \AchBot\Telegram\Conversation\replaceTransient($actor,(int)$message_id,
                 achbotMessage('legacy_messages.operation_canceled')."\n\n".achbotCurrentMessage('reached_main_menu'),getMainKeys());
         } elseif ($manual[1]==='dc') {
-            // Cancel only the current selector. Retire the reference once its
-            // transition to Home is acknowledged; a future financial refresh
-            // must never replace that Home menu with an obsolete status card.
-            answerCallbackQuery($callbackId);
-            $body=achbotMessage('legacy_messages.operation_canceled')."\n\n".achbotCurrentMessage('reached_main_menu');
-            $shown=\AchBot\Telegram\Conversation\replaceTransient($actor,(int)$message_id,$body,getMainKeys());
-            if ($shown!==null) {
-                $s=achbotProviderStatement($connection,'DELETE FROM payment_message_refs WHERE pay_row_id=? AND chat_id=? AND message_id=?',
-                    'iii',[(int)$pay['id'],$actor,(int)$message_id]);$s->close();
+            // Retire before the transport, under the same lease as Cron.
+            // Even an unknown edit response cannot let Cron rewrite Home.
+            $done=achbotPayUxWithLease($connection,(int)$pay['id'],static function() use ($connection,$pay,$actor,$message_id,$update,$receipt,$receiptStep,$hash): bool {
+                $ref=achbotPayUxSelectorRef($connection,(int)$pay['id'],$actor,(int)$message_id,$update);
+                if (!$ref || !achbotPayUxRetire($connection,$ref,'navigation')) return false;
+                $body=achbotMessage('legacy_messages.operation_canceled')."\n\n".achbotCurrentMessage('reached_main_menu');
+                \AchBot\Telegram\Conversation\replaceTransient($actor,(int)$message_id,$body,getMainKeys());
                 if (($receipt['hash']??null)===$hash && achbotReceiptStepChange($connection,$actor,$receiptStep,'none') &&
                     $receipt['prompt']>0 && $receipt['prompt']!==(int)$message_id)
                     delMessage($receipt['prompt'],$actor);
-            }
+                return true;
+            },false);
+            if ($done) answerCallbackQuery($callbackId);
         } else {
             achbotManualPresentInvoice($connection,$pay,$actor,$manual[2]==='b'?'bank_transfer':'gift_card',null,(int)$message_id);
         }
@@ -116,10 +118,18 @@ if ($isMenu || $isPick) {
             $message=\achbotMessage('manual_payment.manual_crypto.message.d05b7cfc7d').
                 \achbotMessage('manual_payment.manual_crypto.text.0a49531de8').
                 \achbotMessage('manual_payment.manual_crypto.text.ee4ae4b0c7');
-            answerCallbackQuery($callbackId);
-            $shown=\AchBot\Telegram\Conversation\replaceTransient((int)$from_id,(int)$message_id,$message,
-                json_encode(['inline_keyboard'=>$keyboard],JSON_UNESCAPED_UNICODE));
-            if ($shown!==null) achbotPayUxTrackClicked($connection,$payId,(int)$from_id,$shown);
+            $done=achbotPayUxWithLease($connection,$payId,static function() use ($connection,$payId,$from_id,$message_id,$update,$message,$keyboard): bool {
+                $ref=achbotPayUxSelectorRef($connection,$payId,(int)$from_id,(int)$message_id,$update);
+                if (!$ref) return false;
+                $keys=json_encode(['inline_keyboard'=>$keyboard],JSON_UNESCAPED_UNICODE);
+                $result=achbotPayUxApplyProjection($connection,$ref,$message,$keys);
+                if ($result==='retired') {
+                    $sent=sendMessage($message,$keys,'HTML',(int)$from_id);
+                    achbotPayUxTrackMessage($connection,$payId,(int)$from_id,$sent,'selector');
+                }
+                return true;
+            },false);
+            if ($done) answerCallbackQuery($callbackId);
             return;
         }
         $option=$options[$pickMatch[1]] ?? null;

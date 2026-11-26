@@ -88,6 +88,14 @@ authentic funds/evidence or treating a migrated PasarGuard account as retired.
 
 ## Payments and Wallet
 
+- One owned customer message registry projects manual/API and hosted
+  invoices and status. Promote a selector in place, retain receipt evidence,
+  retire obsolete navigation before editing, and never blindly resend on
+  an unknown transport outcome. Service progress and delivery use the
+  original durable evidence, not a payment state alone. See
+  [payment message lifecycle](post-v9/PAYMENT-UX-LIFECYCLE.md).
+
+
 - Receipt proof and Wallet credit are separate from funded service
   completion and message delivery. All methods enter the same original
   settlement transaction and shared service engine. Recover original

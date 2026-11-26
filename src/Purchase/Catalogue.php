@@ -56,7 +56,10 @@ if(preg_match('/\AselectCategory(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0-9
         }
         $keyboard[] = ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "selectServer{$sid}_{$match['buyType']}"];
         $keyboard = array_chunk($keyboard,1);
-        editText($message_id,\achbotMessage('legacy_messages.buy_sub_select_plan'), json_encode(['inline_keyboard'=>$keyboard]));
+        $keys=json_encode(['inline_keyboard'=>$keyboard]);
+        if (!achbotPayUxNavigateBack($connection,(int)$from_id,(int)$message_id,
+            \achbotMessage('legacy_messages.buy_sub_select_plan'),$keys))
+            editText($message_id,\achbotMessage('legacy_messages.buy_sub_select_plan'),$keys);
     }
 
 }

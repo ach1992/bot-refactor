@@ -86,7 +86,7 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $o
     }
     if (($noMethod && !$renew) || ($discountRejectedNoMethod && !$noMethod)) $msg.="\n\n".$notice;
     $sent=sendMessage($msg,json_encode(['inline_keyboard'=>$keyboard]),'HTML');
-    achbotPayUxTrackByHash($db,(string)$hash_id,$actor,$sent);
+    achbotPayUxTrackByHash($db,(string)$hash_id,$actor,$sent,'selector');
 }
 
 function achbotRenderNewCheckoutDraft(mysqli $db,int $id,int $actor,array $states,string $botUrl): bool {

@@ -225,9 +225,6 @@ CREATE TABLE `payment_attempts` (
   `evidence_claim_token` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `evidence_claimed_at` datetime DEFAULT NULL,
   `evidence_next_check_at` datetime DEFAULT NULL,
-  `evidence_invoice_chat_id` bigint(20) DEFAULT NULL,
-  `evidence_invoice_message_id` int(11) DEFAULT NULL,
-  `evidence_invoice_digest` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `evidence_code` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `evidence_code_sha256` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `evidence_review_sent_at` datetime DEFAULT NULL,
@@ -403,12 +400,16 @@ CREATE TABLE `payment_message_refs` (
   `chat_id` bigint(20) NOT NULL,
   `message_id` int(11) NOT NULL,
   `kind` varchar(8) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'text',
+  `purpose` varchar(12) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'status',
+  `last_status_update_id` bigint(20) unsigned DEFAULT NULL,
+  `last_status_requested_at` datetime(6) DEFAULT NULL,
+  `retired_reason` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `synced_digest` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime(6) NOT NULL DEFAULT current_timestamp(6) ON UPDATE current_timestamp(6),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_payment_message_chat` (`chat_id`,`message_id`),
-  KEY `idx_payment_message_order` (`pay_row_id`,`updated_at`),
+  KEY `idx_payment_message_order` (`pay_row_id`,`retired_reason`,`updated_at`),
   CONSTRAINT `fk_payment_message_pay` FOREIGN KEY (`pay_row_id`) REFERENCES `pays` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;

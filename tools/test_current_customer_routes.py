@@ -36,7 +36,7 @@ $telegramWebhookSecret='Synthetic_Current_Routes_2026';
 $_SERVER['REQUEST_METHOD']='POST';$_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']=$telegramWebhookSecret;
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $from_id=(int)($spec['actor']??2001);$admin=9001;$chat_id=$from_id;
-$botUsername='fixture_bot';$callbackId='fixture';$message_id=(int)($spec['message_id']??81);$username='fixture';$first_name='Fixture';
+$botToken='999999:fixture-only';$botUsername='fixture_bot';$callbackId='fixture';$message_id=(int)($spec['message_id']??81);$username='fixture';$first_name='Fixture';
 $userInfo=achbotProviderRow($connection,'SELECT * FROM users WHERE userid=?','i',[$from_id])??[];
 $botState=json_decode(achbotProviderRow($connection,"SELECT value FROM setting WHERE type='BOT_STATES'")['value'],true);
 $robotState=$botState['botState']??'on';$botUrl='https://fixture.invalid/';
@@ -52,14 +52,26 @@ $data=$spec['callback']??'';$text=$spec['text']??'';
 $chat=(object)['id'=>(int)($spec['chat']??$from_id),'type'=>$spec['chat_type']??'private'];
 $sender=(object)['id'=>$from_id,'first_name'=>'Fixture','username'=>'fixture'];
 $update=$data!==''?(object)['callback_query'=>(object)['from'=>$sender,'data'=>$data,
-    'message'=>(object)['chat'=>$chat,'message_id'=>$message_id]]]:
+    'message'=>(object)['chat'=>$chat,'message_id'=>$message_id,'from'=>(object)['id'=>999999,'is_bot'=>true],
+      'reply_markup'=>(object)['inline_keyboard'=>[[(object)['callback_data'=>$data]]]]]]]:
     (object)['message'=>(object)['from'=>$sender,'chat'=>$chat,'message_id'=>(int)($spec['message_id']??82),'text'=>$text]];
 $update->update_id=(int)($spec['update_id']??100001);
 if (isset($spec['photo']) && isset($update->message)) $update->message->photo=[(object)['file_id'=>$spec['photo']]];
-function sendMessage($text,$keys=null,$mode=null,$uid=null){$GLOBALS['events'][]=['send',$text,$keys,$mode];return (object)['ok'=>true,'result'=>(object)['message_id'=>(int)($GLOBALS['spec']['sent_id']??100+count($GLOBALS['events'])),'chat'=>(object)['id'=>(int)($uid??$GLOBALS['from_id'])]]];}
-function editText($id,$text,$keys=null,$mode=null){$GLOBALS['events'][]=['edit',$text,$keys,$mode];
+function sendMessage($text,$keys=null,$mode=null,$uid=null){
+    $GLOBALS['events'][]=['send',$text,$keys,$mode];
+    if (array_key_exists('send_result',$GLOBALS['spec'])) return json_decode(json_encode($GLOBALS['spec']['send_result']));
+    $chat=(int)($uid??$GLOBALS['from_id']);
+    $next=(int)achbotProviderRow($GLOBALS['connection'],'SELECT COALESCE(MAX(message_id),100) AS n FROM payment_message_refs WHERE chat_id=?','i',[$chat])['n'];
+    return (object)['ok'=>true,'result'=>(object)['message_id'=>(int)($GLOBALS['spec']['sent_id']??$next+count($GLOBALS['events'])),'chat'=>(object)['id'=>$chat]]];
+}
+function editText($id,$text,$keys=null,$mode=null){$GLOBALS['events'][]=['edit',$text,$keys,$mode,$id];
     if (array_key_exists('edit_result',$GLOBALS['spec'])) return json_decode(json_encode($GLOBALS['spec']['edit_result']));
     return (object)['ok'=>true];}
+function bot($method,$data=[]){
+    if ($method==='editMessageText') return editText($data['message_id'],$data['text'],$data['reply_markup']??null,$data['parse_mode']??null);
+    if ($method==='editMessageReplyMarkup') {$GLOBALS['events'][]=['markup',$data['message_id'],$data['reply_markup']??null];return (object)['ok'=>true];}
+    throw new RuntimeException('unexpected fixture bot method '.$method);
+}
 function delMessage(...$a){if (($GLOBALS['spec']['op']??'')==='manual_checkout') $GLOBALS['events'][]=['delete',...$a];return (object)['ok'=>true];}
 function sendPhoto($file,$text,$keys=null,$mode=null,$uid=null){$GLOBALS['events'][]=['photo',$text,$keys,$mode,$uid,$file];return (object)['ok'=>true,'result'=>(object)['message_id'=>333,'chat'=>(object)['id'=>(int)$uid]]];}
 function sendToAllAdmins(...$a){}
@@ -146,6 +158,8 @@ case 'manual_claim':
     $pay=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=?','i',[(int)$spec['pay']]);
     $events[]=['claim',achbotManualClaim($connection,$pay,$spec['method'],$from_id,$spec['network']??null,$spec['mode']??'standard')];
     break;
+case 'projection':
+    $events[]=['projection',achbotPayUxSyncMessages($connection,(int)$spec['pay'])];break;
 case 'payment_status':
     require $root.'/src/Finance/Routes/PrePayment.php';break;
 case 'renew':
@@ -312,6 +326,10 @@ def main():
             assert rr['user']['step']=='none' and sql(f"SELECT expire_count FROM discounts WHERE hash_id='{code}'")=='1',rr
             funded=run('wallet',actor=uid,hash=h,mode=mode)['events'][0][1]
             assert funded['status']=='funded',funded
+            before=sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{funded['operation']}'")
+            progress=run('projection',actor=uid,pay=int(pid))
+            assert any(e[0]=='edit' and 'در حال انجام درخواست شما هستیم' in e[1] for e in progress['events']),progress
+            assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{funded['operation']}'")==before
             quote=json.loads(sql(f"SELECT quote_payload FROM service_operations WHERE id={funded['operation']}"))['request']
             assert quote['price']==amount and quote['plan_id']==7 and quote['quantity']==quantity,quote
             if mode=='custom': assert quote['days']==3 and quote['volume']==2 and quote['remark']=='custom12345',quote
@@ -937,7 +955,8 @@ def main():
         sql("UPDATE setting SET value='"+json.dumps(crypto_keys)+"' WHERE type='PAYMENT_KEYS'")
         r=run('standard',callback='selectPlan7_1_none');pid,h,_,_=latest(2001)
         state(walletState='off',manualUsdtState='on',gatewayAudience={'manual_trx':'off'})
-        rr=run('manual_checkout',callback='mcm_'+h,stale_state={'manualUsdtState':'off'},stale_keys={'manualUsdtWalletBEP20':'invalid','manualUsdtWalletERC20':'invalid'})
+        mid=int(sql(f'SELECT message_id FROM payment_message_refs WHERE pay_row_id={pid} AND retired_reason IS NULL ORDER BY id DESC LIMIT 1'))
+        rr=run('manual_checkout',callback='mcm_'+h,message_id=mid,stale_state={'manualUsdtState':'off'},stale_keys={'manualUsdtWalletBEP20':'invalid','manualUsdtWalletERC20':'invalid'})
         assert callbacks(rr)==['mc_b_'+h,'mc_e_'+h,'dc_'+h],rr
         before=sql("SELECT COUNT(*) FROM payment_attempts")
         rr=run('manual_claim',pay=int(pid),method='manual_trx',network='TRON')
@@ -949,7 +968,7 @@ def main():
         assert json.loads(issued[0])['wallet']=='0x'+'a'*40 and float(issued[1])==0.1 and len(issued[2])==64,issued
         sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
         state(walletState='off',manualUsdtState='off')
-        rr=run('manual_checkout',callback='mcm_'+h)
+        rr=run('manual_checkout',callback='mcm_'+h,message_id=mid)
         assert callbacks(rr)==['mc_b_'+h,'dc_'+h],rr
         rr=run('manual_claim',pay=int(pid),method='manual_usdt',network='BEP20')
         assert ['claim',True] in rr['events'],rr
@@ -979,7 +998,8 @@ def main():
         # Actual current-schema checkout draft, without any issuance/claim.
         sql(f"UPDATE pays SET draft_expires_at=UNIX_TIMESTAMP()-1 WHERE id={pid}")
         before=sql(f"SELECT state,COALESCE(checkout_operation_id,0),COALESCE(payid,'') FROM pays WHERE id={pid}")
-        r=run('payment_status',callback='ps_'+h)
+        mid=int(sql(f'SELECT message_id FROM payment_message_refs WHERE pay_row_id={pid} AND retired_reason IS NULL ORDER BY id DESC LIMIT 1'))
+        r=run('payment_status',callback='ps_'+h,message_id=mid)
         edits=[e for e in r['events'] if e[0]=='edit']
         assert len(edits)==1 and 'مهلت انتخاب روش پرداخت پایان یافت' in edits[0][1],r
         assert callbacks(r)==['mainMenu'],r
@@ -988,7 +1008,7 @@ def main():
         assert not any(e[0]=='edit' for e in r['events']),r
         # A contradictory original provider locator must retain recovery.
         sql(f"UPDATE pays SET payid='fixture-unknown-provider' WHERE id={pid}")
-        r=run('payment_status',callback='ps_'+h)
+        r=run('payment_status',callback='ps_'+h,message_id=mid)
         assert 'ps_'+h in callbacks(r),r
         cases.append('expired_unadmitted_current_draft_only_home_and_uncertain_retains_recovery')
 

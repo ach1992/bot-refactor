@@ -308,6 +308,10 @@ REQUIRED_SCENARIOS = {
         "definite_target_rejection_replaces_prompt_unknown_and_rate_limit_do_not",
         "draft_cancel_retires_selector_only",
         "original_receipt_routes_to_staff_without_credit_or_human_delete",
+        "committed_invoice_recovered_in_place_and_original_facts_preserved",
+        "rate_limit_respected_by_cron_and_explicit_status_replay",
+        "ambiguous_home_edit_cannot_revive_selector_or_admit_stale_payment",
+        "status_send_unknown_replay_fenced_and_new_click_recovers",
     ),
     "current_customer_routes": (
         "actual_public_content_namespace_exact_and_no_private_values",

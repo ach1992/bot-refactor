@@ -619,6 +619,37 @@
     },
     "before": null
   },
+  "payment.payment_lifecycle.original_bank_destination": {
+    "after": {
+      "parameters": [
+        "account",
+        "holder"
+      ],
+      "text": "💳 شماره کارت: <code>{account}</code>\n👤 صاحب حساب: {holder}"
+    },
+    "before": null
+  },
+  "payment.payment_lifecycle.original_crypto_destination": {
+    "after": {
+      "parameters": [
+        "network",
+        "wallet"
+      ],
+      "text": "🌐 شبکه: {network}\n📋 آدرس مقصد: <code>{wallet}</code>"
+    },
+    "before": null
+  },
+  "payment.payment_lifecycle.original_invoice_record": {
+    "after": {
+      "parameters": [
+        "method",
+        "amount",
+        "currency"
+      ],
+      "text": "<b>🧾 اطلاعات فاکتور اصلی (سوابق)</b>\n💳 روش: {method}\n💰 مبلغ فاکتور: <code>{amount}</code> {currency}"
+    },
+    "before": null
+  },
   "payment.payment_lifecycle.pay_ux_status_text.service_superseded_next": {
     "after": "درخواست قبلی دوباره فعال نمی‌شود. مبلغ پرداخت قبلی پس از تأیید به کیف پول شما اضافه می‌شود؛ دوباره پرداخت نکنید.",
     "before": "پرداخت این فاکتور دیگر اشتراک را تغییر نمی‌دهد. اگر وجهی پرداخت کرده‌اید، با شناسه پیگیری برای بررسی مالی به پشتیبانی اطلاع دهید."
@@ -626,6 +657,10 @@
   "payment.payment_lifecycle.pay_ux_status_text.service_superseded_title": {
     "after": "🔄 درخواست قبلی بسته شده است.",
     "before": "🔄 فاکتور قبلی به دلیل تغییر سرویس متوقف شده است."
+  },
+  "payment.payment_lifecycle.pay_ux_status_text.text.368ad58967": {
+    "after": "🔎 نتیجه انجام سفارش را از همین پیام پیگیری کنید.",
+    "before": "🔰 پرداخت شما ثبت شده است و اطلاعات سفارش شما باید در ادامه ارسال شده باشد."
   },
   "payment.payment_lifecycle.pay_ux_status_text.text.8b1195f62f": {
     "after": "پرداخت جدید انجام ندهید. اگر قبلاً وجهی پرداخت کرده‌اید، همان پرداخت را برای بررسی ارسال کنید. پس از بسته‌شدن درخواست، مبلغ تأییدشده به کیف پول شما اضافه می‌شود.",
@@ -639,8 +674,36 @@
     "after": "🔎 بررسی پرداخت قبلی",
     "before": null
   },
+  "payment.payment_lifecycle.progress_completed": {
+    "after": "✅ درخواست انجام شد و اطلاعات آن ارسال شده است.",
+    "before": null
+  },
+  "payment.payment_lifecycle.progress_delivery_unconfirmed": {
+    "after": "درخواست انجام شده، اما ارسال اطلاعات هنوز تأیید نشده است. لطفاً وضعیت همین سفارش را پیگیری کنید.",
+    "before": null
+  },
+  "payment.payment_lifecycle.progress_pending": {
+    "after": "⏳ در حال انجام درخواست شما هستیم. نیازی به پرداخت مجدد نیست.",
+    "before": null
+  },
+  "payment.payment_lifecycle.progress_resolved": {
+    "after": "رسیدگی به این درخواست پایان یافته است؛ برای جزئیات، وضعیت سفارش را از پشتیبانی پیگیری کنید.",
+    "before": null
+  },
+  "payment.payment_lifecycle.progress_unverified": {
+    "after": "نتیجه نهایی هنوز قابل تأیید نیست. پرداخت را تکرار نکنید و وضعیت همین سفارش را پیگیری کنید.",
+    "before": null
+  },
+  "payment.payment_lifecycle.progress_wallet_credited": {
+    "after": "✅ مبلغ تأییدشده به کیف پول شما اضافه شد.",
+    "before": null
+  },
   "payment.payment_lifecycle.request_accepted": {
     "after": "✅ درخواست شما ثبت شد",
+    "before": null
+  },
+  "payment.payment_lifecycle.toman": {
+    "after": "تومان",
     "before": null
   },
   "purchase.catalogue.message.ef774be0a5": {

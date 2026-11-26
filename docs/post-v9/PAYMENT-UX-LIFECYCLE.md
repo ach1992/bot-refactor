@@ -50,6 +50,54 @@ checkout/message projection and the merchant configuration workflow.
   for API evidence and original-receipt recovery. Keep user-facing changes
   within the approved product contract.
 
+## Message ownership and recovery
+
+`payment_message_refs` is the single customer projection registry, with a
+semantic purpose (`selector`, `invoice`, `status`, `receipt`) and exact
+owned chat/message identity. The existing payment session lease serializes
+message promotion, navigation retirement and projection. No database
+transaction is held across a Telegram edit.
+
+Manual issuance promotes the existing selector to the invoice in place.
+A committed original whose selector was not promoted is recovered by the
+same projector. Other selectors are status views, not additional invoices.
+Receipt acknowledgements retain their original text; their keyboard alone
+may be updated. Closed manual invoices retain pinned amount and destination
+as historical facts, without new payment instructions. Hosted gateways
+project the original guarded payment URL; they do not send a second
+provider-specific invoice notice.
+
+A retired navigation reference is not a successful edit and cannot become a
+payment target again. Definite Telegram missing/non-editable responses retire
+that reference. Unknown outcomes do not authorize replacement sends; the
+existing due time and Telegram retry_after govern edits, including direct
+status clicks. A definite target rejection can permit one explicit
+replacement. Status requests from retained evidence use the active invoice
+or status view when available; a new explicit request has a durable
+update cursor before a new send. No repeated processing of the same update
+may blindly resend an unknown result.
+
+A recorded Wallet debit or receipt credit is not proof of delivery. Use the
+original command and service completion evidence to distinguish pending
+service, completed delivery, completed service with unconfirmed delivery,
+Wallet credit only, resolved and unverified outcomes.
+
+## Existing-instance transfer boundary
+
+The current consolidated schema is for empty installation. Construction
+script 051 refuses existing message references or former API invoice fields;
+it is not a live upgrade procedure. For a separately authorized existing
+instance transfer, preserve the source snapshot, original pay/attempt
+identity, financial evidence, staff receipt IDs and delivery history. Map a
+known API invoice chat/message pair to the same owned customer reference,
+deduplicate by exact chat/message, and classify a reference only with
+positive evidence of its purpose. Preserve ambiguous references as retired
+non-projectable identities or in the protected transfer audit, not as guessed
+active invoices. Preserve the original message data in the source backup.
+Verify ownership, counts, collisions and financial evidence before activation;
+an old digest is not acknowledgement of new presentation. The new runtime
+does not carry the retired API fields or a compatibility projector.
+
 ## Invoice deadlines and late payment
 
 The administrator's payment policy controls new invoices. The default
@@ -70,8 +118,8 @@ available. A closed current draft positively proven never admitted into
 payment or service execution is different: show a closed selection notice
 and Home, not order review. Missing or inconsistent evidence cannot prove
 nonadmission. Bank instructions use the persisted invoice deadline once,
-not a hardcoded duration. The API invoice owns its own first registered projection; other
-tracked references use the common lifecycle status.
+not a hardcoded duration. All customer invoice and status references use
+the same projection owner, including API-assisted invoices.
 
 Late evidence is admitted against the same immutable issued invoice.
 Verified funds for an expired or superseded service credit Wallet once;

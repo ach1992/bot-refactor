@@ -107,8 +107,6 @@ if(mysqli_num_rows($payInfo)==0){
             $botState,is_string($nowpaymentsIpnSecret??null)?$nowpaymentsIpnSecret:null);
         if ($r['status']==='issued' && is_string($r['url']??null) && $r['url']!=='') {
             if (!empty($r['newly_issued'])) {
-                if ($checkoutMethod==='nowpayments')
-                    achbotCheckoutNotifyHostedInvoice($connection,$payParam,$botUrl,$hash_id,$r);
                 // Every issued hosted method projects its pinned deadline and
                 // original link to already tracked customer checkout messages.
                 achbotPayUxSyncMessages($connection,(int)$payParam['id']);
@@ -131,28 +129,6 @@ if(mysqli_num_rows($payInfo)==0){
 
 // The controller alone can supply the payment disposition. Free-form
 // customer text and failed checkout attempts cannot prove failed settlement.
-function achbotCheckoutNotifyHostedInvoice(mysqli $connection,array $payParam,string $botUrl,string $hash_id,array $attempt): void {
-    $orderId=(int)$payParam['id'];$userId=(int)$payParam['user_id'];
-        // The merchant can recover this exact provider invoice on every
-        // subsequent click; also preserve a direct button in Telegram.
-        if ($userId > 0) {
-            $keyboard = json_encode(['inline_keyboard'=>[
-                [['text'=>\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.button.f81a8cfcdd'),
-                  'url'=>achbotPayUxHostedLink('nowpayments',$hash_id,$botUrl)]],
-                [['text'=>\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.button.f0137e1007'),'callback_data'=>'ps_'.$hash_id]]
-            ]], JSON_UNESCAPED_UNICODE);
-            try {
-                $notice=sendMessage(\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.cd27d14216').achbotPayUxReference($payParam)
-                    .\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.0c4a9612f7')
-                    .\achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.0a2e0bc7bc').achbotPayUxDeadlineText($attempt),
-                    $keyboard, 'HTML', $userId);
-                achbotPayUxTrackMessage($connection,(int)$orderId,(int)$userId,$notice);
-            } catch (Throwable $ignored) {
-                // Durable invoice persists even if a Telegram send fails.
-            }
-        }
-}
-
 function showForm($msg, $presentation = null){
     require_once __DIR__ . '/../src/Finance/PaymentPage.php';
     achbotRenderPaymentPage($msg, '', false, $presentation);

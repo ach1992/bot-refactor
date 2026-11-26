@@ -133,7 +133,36 @@ def main():
                 assert sql('fresh_chain','SELECT * FROM payment_delivery_intents')==before
                 checks.append('construction_refuses_historical_delivery_without_mutating_evidence')
                 sql('fresh_chain','DELETE FROM payment_delivery_intents; DELETE FROM payment_attempts; DELETE FROM pays')
-            sql('fresh_chain',migration.read_text())
+            if migration.name=='051_payment_message_ownership.sql':
+                sql('fresh_chain', """INSERT INTO pays(hash_id,user_id,type,price,request_date,state)
+                    VALUES ('old-message-fixture',1001,'INCREASE_WALLET',100,1700000000,'paid');
+                    INSERT INTO payment_message_refs(pay_row_id,chat_id,message_id,kind)
+                    SELECT id,user_id,123,'text' FROM pays WHERE hash_id='old-message-fixture';
+                    INSERT INTO payment_attempts(pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,stage,evidence_invoice_chat_id,evidence_invoice_message_id,evidence_invoice_digest)
+                    SELECT id,'bank_transfer',hash_id,price,'toman',price,'done',user_id,123,REPEAT('a',64) FROM pays WHERE hash_id='old-message-fixture';""")
+                before_ref=sql('fresh_chain','SELECT * FROM payment_message_refs')
+                before_attempt=sql('fresh_chain','SELECT * FROM payment_attempts')
+                # Execute the complete construction script against each
+                # forbidden source independently. Neither rows nor schema
+                # may change, even if only the second source blocks it.
+                before_defs={table:sql('fresh_chain','SHOW CREATE TABLE '+table)
+                    for table in ('payment_message_refs','payment_attempts')}
+                rejected=subprocess.run(cli+['fresh_chain'],input=migration.read_text(),text=True,env=env,capture_output=True,timeout=30)
+                assert rejected.returncode!=0 and 'existing message references require transfer' in rejected.stderr,rejected.stderr
+                assert sql('fresh_chain','SELECT * FROM payment_message_refs')==before_ref
+                assert sql('fresh_chain','SELECT * FROM payment_attempts')==before_attempt
+                assert all(sql('fresh_chain','SHOW CREATE TABLE '+table)==definition for table,definition in before_defs.items())
+                sql('fresh_chain','DELETE FROM payment_message_refs')
+                rejected=subprocess.run(cli+['fresh_chain'],input=migration.read_text(),text=True,env=env,capture_output=True,timeout=30)
+                assert rejected.returncode!=0 and 'existing API invoice references require transfer' in rejected.stderr,rejected.stderr
+                assert sql('fresh_chain','SELECT * FROM payment_attempts')==before_attempt
+                assert all(sql('fresh_chain','SHOW CREATE TABLE '+table)==definition for table,definition in before_defs.items())
+                checks.append('construction_refuses_historical_invoice_references_without_mutation')
+                sql('fresh_chain','DELETE FROM payment_message_refs; DELETE FROM payment_attempts; DELETE FROM pays')
+            try:
+                sql('fresh_chain',migration.read_text())
+            except subprocess.CalledProcessError as error:
+                raise AssertionError((migration.name,error.stderr)) from error
         sql('fresh_single',(ROOT/'database/current-schema.sql').read_text())
         old=set(sql('fresh_chain','SHOW TABLES').splitlines())
         new=set(sql('fresh_single','SHOW TABLES').splitlines())
@@ -152,7 +181,7 @@ def main():
         assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_operations' AND COLUMN_NAME='historical_pay_id'")=='0'
         assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users' AND COLUMN_NAME='userid' AND NON_UNIQUE=0")!='0'
         checks+=['no_historical_funding_column','unique_wallet_owner']
-        retired_columns=['review_notified_at', 'evidence_review_claim_token', 'evidence_review_claimed_at', 'evidence_report_digest', 'evidence_fulfillment_state', 'evidence_fulfillment_payload','review_archived_at','review_archived_by']
+        retired_columns=['review_notified_at', 'evidence_review_claim_token', 'evidence_review_claimed_at', 'evidence_report_digest', 'evidence_fulfillment_state', 'evidence_fulfillment_payload','review_archived_at','review_archived_by','evidence_invoice_chat_id','evidence_invoice_message_id','evidence_invoice_digest']
         for column in retired_columns:
             assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_attempts' AND COLUMN_NAME='"+column+"'")== '0',column
             checks.append('retired_payment_column:'+column)

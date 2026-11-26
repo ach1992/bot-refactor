@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Source-real unified receipt conversation against a fresh disposable schema."""
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import json
 from pathlib import Path
 import subprocess
@@ -31,7 +32,7 @@ def main():
         INSERT INTO users(userid,name,username,refcode,wallet,date) VALUES (2001,'Fixture <&','fixture','0',0,'1700000000'),(2002,'Foreign','foreign','0',0,'1700000000');
         """)
         sql(f"UPDATE users SET step='achbotWalletTopup:amount:100000:81:{int(time.time())}' WHERE userid=2001")
-        r=run('topup')
+        r=run('topup',sent_id=201)
         assert ['topup','created'] in r['events'],r
         pid,h=sql("SELECT id,hash_id FROM pays WHERE user_id=2001").split('\t')
         assert 'pm_b_'+h in callbacks(r) and 'dc_'+h in callbacks(r),r
@@ -39,9 +40,19 @@ def main():
             r=run(callback='pm_b_'+h,**spec)
             assert 'rs_'+h not in callbacks(r),r
             assert sql('SELECT COUNT(*) FROM payment_attempts')=='0'
-        r=run(callback='pm_b_'+h,message_id=101,sent_id=201)
+        # Concurrent method callbacks share the original session lease.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            pending=[pool.submit(run,callback='pm_b_'+h,message_id=201) for _ in range(2)]
+            replies=[f.result() for f in pending]
+        assert sum(e[0]=='edit' for result in replies for e in result['events'])==1,replies
+        assert not any(e[0]=='send' for result in replies for e in result['events']),replies
+        r=next(result for result in replies if any(e[0]=='edit' for e in result['events']))
         assert 'rs_'+h in callbacks(r) and 'ph_'+h in callbacks(r),r
-        assert ['delete',101,2001] in r['events'],r
+        assert len([e for e in r['events'] if e[0]=='edit'])==1 and not any(e[0] in ('send','delete') for e in r['events']),r
+        assert sql(f"SELECT purpose FROM payment_message_refs WHERE pay_row_id={pid} AND message_id=201")=='invoice'
+        r=run(callback='pm_b_'+h,message_id=201)
+        assert not any(e[0] in ('send','delete','edit') for e in r['events']),r
+        assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='1'
         assert sql(f"SELECT provider FROM payment_attempts WHERE pay_row_id={pid}")=='bank_transfer'
         cases.append('unified_method_issue_exact_owner_and_retained_invoice')
         r=run(callback='rs_'+h,message_id=201,sent_id=202)
@@ -86,10 +97,78 @@ def main():
         pid2,h2=sql("SELECT id,hash_id FROM pays WHERE user_id=2001 ORDER BY id DESC LIMIT 1").split('\t')
         r=run(callback='dc_'+h2,message_id=211)
         assert any(e[0]=='edit' for e in r['events']) and not any(e[0]=='send' for e in r['events']),r
-        assert sql(f"SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id={pid2} AND message_id=211")=='0'
+        assert sql(f"SELECT retired_reason FROM payment_message_refs WHERE pay_row_id={pid2} AND message_id=211")=='navigation'
+        r=run(callback='dc_'+h2,message_id=211)
+        assert not any(e[0] in ('send','edit','delete') for e in r['events']),r
         assert sql(f"SELECT state FROM pays WHERE id={pid2}")=='pending'
         assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid2}")=='0'
         cases.append('draft_cancel_retires_selector_only')
+        # Admission can commit just before the request exits. The next
+        # common projector promotes the same selector, using its pinned
+        # original destination rather than new payment settings.
+        def draft(mid):
+            sql(f"UPDATE users SET step='achbotWalletTopup:amount:{mid}:81:{int(time.time())}' WHERE userid=2002")
+            r=run('topup',actor=2002,sent_id=mid,update_id=mid+1)
+            assert ['topup','created'] in r['events'],r
+            return sql("SELECT id,hash_id FROM pays WHERE user_id=2002 ORDER BY id DESC LIMIT 1").split('\t')
+        p3,h3=draft(230)
+        assert ['claim',True] in run('manual_claim',actor=2002,pay=int(p3),method='bank_transfer',mode='topup')['events']
+        original=sql(f"SELECT checkout_url,quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={p3}")
+        sql("UPDATE setting SET value=JSON_OBJECT('bankAccount','new-bank','holderName','new-holder') WHERE type='PAYMENT_KEYS'")
+        r=run('projection',actor=2002,pay=int(p3))
+        edits=[e for e in r['events'] if e[0]=='edit']
+        assert len(edits)==1 and edits[0][4]==230 and 'fixture-bank' in edits[0][1] and 'new-bank' not in edits[0][1],r
+        assert sql(f"SELECT purpose FROM payment_message_refs WHERE pay_row_id={p3}")=='invoice'
+        assert sql(f"SELECT checkout_url,quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={p3}")==original
+        sql(f"UPDATE pays SET state='expired' WHERE id={p3}")
+        r=run('projection',actor=2002,pay=int(p3))
+        edits=[e for e in r['events'] if e[0]=='edit']
+        assert len(edits)==1 and 'fixture-bank' in edits[0][1] and 'سوابق' in edits[0][1] and 'new-bank' not in edits[0][1],r
+        cases.append('committed_invoice_recovered_in_place_and_original_facts_preserved')
+
+        # A rate limit or unknown edit must never cause a second send,
+        # or let an explicit status click bypass the provider wait.
+        p4,h4=draft(240)
+        limit={'ok':False,'error_code':429,'description':'Too Many Requests','parameters':{'retry_after':90}}
+        r=run(actor=2002,callback='pm_b_'+h4,message_id=240,edit_result=limit)
+        assert sum(e[0]=='edit' for e in r['events'])==1 and not any(e[0] in ('send','markup') for e in r['events']),r
+        assert int(sql(f"SELECT TIMESTAMPDIFF(SECOND,NOW(6),updated_at) FROM payment_message_refs WHERE pay_row_id={p4}"))>=85
+        for r in (run('payment_status',actor=2002,callback='ps_'+h4,message_id=240),
+                  run(actor=2002,callback='pm_b_'+h4,message_id=240)):
+            assert not any(e[0] in ('edit','markup','send') for e in r['events']),r
+        sql(f"UPDATE payment_message_refs SET updated_at=NOW(6)-INTERVAL 1 SECOND WHERE pay_row_id={p4}")
+        r=run('projection',actor=2002,pay=int(p4))
+        assert sum(e[0]=='edit' for e in r['events'])==1 and not any(e[0]=='send' for e in r['events']),r
+        assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={p4}")=='1'
+        cases.append('rate_limit_respected_by_cron_and_explicit_status_replay')
+
+        # Once Home owns a selector, even an ambiguous edit cannot make
+        # that old reference available to later payment projections.
+        p5,h5=draft(250)
+        r=run(actor=2002,callback='dc_'+h5,message_id=250,edit_result=None)
+        assert sum(e[0]=='edit' for e in r['events'])==1 and not any(e[0]=='send' for e in r['events']),r
+        sql(f"UPDATE pays SET draft_expires_at=UNIX_TIMESTAMP()-1 WHERE id={p5}")
+        r=run('projection',actor=2002,pay=int(p5))
+        assert not any(e[0] in ('edit','markup','send') for e in r['events']),r
+        r=run(actor=2002,callback='pm_b_'+h5,message_id=250)
+        assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={p5}")=='0'
+        assert sql(f"SELECT retired_reason FROM payment_message_refs WHERE pay_row_id={p5}")=='navigation'
+        cases.append('ambiguous_home_edit_cannot_revive_selector_or_admit_stale_payment')
+
+        # Explicit status recovery from a verified retained message:
+        # an unknown send result is not an ACK and cannot be replayed.
+        r=run('payment_status',actor=2002,callback='ps_'+h5,message_id=251,update_id=3000,send_result=None)
+        assert sum(e[0]=='send' for e in r['events'])==1,r
+        for event_id in (3000,2999):
+            r=run('payment_status',actor=2002,callback='ps_'+h5,message_id=251,update_id=event_id)
+            assert not any(e[0]=='send' for e in r['events']),r
+        r=run('payment_status',actor=2002,callback='ps_'+h5,message_id=251,update_id=3001,sent_id=252)
+        assert sum(e[0]=='send' for e in r['events'])==1,r
+        assert sql(f"SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id={p5} AND purpose='status' AND retired_reason IS NULL")=='1'
+        r=run('payment_status',actor=2002,callback='ps_'+h5,message_id=251,update_id=3001)
+        assert not any(e[0]=='send' for e in r['events']),r
+        cases.append('status_send_unknown_replay_fenced_and_new_click_recovers')
+
     result={'complete':True,'status':'PASS','cases':len(cases),'scenarios':cases,'production_mutations':0,'external_requests':0}
     if args.report:args.report.write_text(json.dumps(result))
     print(json.dumps(result))

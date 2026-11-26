@@ -44,16 +44,16 @@ unused historical tables (`admins`, `black_list`, `servers`,
 The disposable [fresh-schema proof](../../tools/test_wallet_first_fresh_schema.py)
 constructs a reference from `database/legacy-schema.sql` and all tracked numbered
 `migrations/post-v9/[0-9][0-9][0-9]_*.sql` files in sorted order.
-The Wallet-first baseline has 46 numbered scripts ending at
-`050_message_action_cursor.sql`, including 044-045 (retired plan/category
+The Wallet-first baseline has 47 numbered scripts ending at
+`051_payment_message_ownership.sql`, including 044-045 (retired plan/category
 fields) and 046-047 (category reference and physical username indexes).
 It compares all 35 retained empty table definitions, verifies the omitted
-tables, eight retired payment execution/review columns, 27 obsolete Native,
+tables, eleven retired payment execution/review/projection columns, 27 obsolete Native,
 plan, category and gift cursor columns, and four retired payment-only delivery
 columns. The exact selected release's tracked roster and consolidated schema
 remain authoritative; the construction sequence is a disposable test, not
 an installation or upgrade procedure. The proof also verifies mandatory current multipart
-source/part identities, rejection of historical delivery rows before any construction-only
+source/part identities, rejection of historical delivery rows and customer invoice references before any construction-only
 column removal, and current money,
 identity, delivery and service schema prerequisites. No X-UI transport or local port settings are required; the Native provider owns connection configuration. Bot and gateway settings menus work on empty and partially configured documents without creating settings rows; payment methods remain off until configured.
 
@@ -130,7 +130,7 @@ Expected lock-directory ownership/mode: `root:root 700`. Do not overwrite or cha
 
 For aaPanel-managed Cron logs, configure log rotation in the **host scheduler** using that installation's actual log path and Owner-approved retention. The bot does not rotate aaPanel-managed files; avoid copying identifiers from another tenant or suppressing useful diagnostics.
 
-Cron diagnostics should remain enabled. The corrected shared `config.php` does not perform Telegram membership lookups or use unbound callback variables during CLI runs. An unsynchronized customer payment message emits `achbot_payment_telegram_edit_deferred` with `pay_id`, `ref_id`, `kind`, `category`, bounded `tg_code` and `markup_only` (a repaired keyboard does **not** prove the old text was changed). Known missing/not-editable/forbidden originals are retried no sooner than six hours; transient failures retry after three minutes. These are per-attempt failure signals, not routine success prints. Native diagnostics use the current PasarGuard adapter and original account identity. Never log credentials or token-bearing links. Preserve financial and provider failure logs; investigate persistent categories instead of muting them or clearing the log.
+Cron diagnostics should remain enabled. The corrected shared `config.php` does not perform Telegram membership lookups or use unbound callback variables during CLI runs. An unsynchronized customer payment message emits `achbot_payment_telegram_edit_deferred` with `pay_id`, `ref_id`, `kind`, `category`, bounded `tg_code` and `markup_only` (a repaired keyboard does **not** prove the old text was changed). Definite missing/non-editable originals are retired without an ACK; forbidden originals retry no sooner than six hours, transient failures after three minutes, and Telegram retry_after is honored. These are per-attempt failure signals, not routine success prints. Native diagnostics use the current PasarGuard adapter and original account identity. Never log credentials or token-bearing links. Preserve financial and provider failure logs; investigate persistent categories instead of muting them or clearing the log.
 
 After settings/readiness preparation, schedule **one invocation per minute**. In aaPanel select the one-minute schedule and put only the command below in its command field. In a normal crontab, prefix the command with `* * * * *`. Replace paths with this installation's actual paths and pre-create its private writable log directory:
 

@@ -117,6 +117,15 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
 }
 function bot($method,$data=[]) {
     global $db,$x;
+    if ($x['op']==='telegram_wallet' && in_array($method,['editMessageText','editMessageReplyMarkup'],true)) {
+        $ref=achbotProviderRow($db,'SELECT * FROM payment_message_refs WHERE chat_id=? AND message_id=?','ii',[(int)$data['chat_id'],(int)$data['message_id']]);
+        if (!$ref || $ref['purpose']!=='status' || $ref['retired_reason']!==null ||
+            (int)$data['chat_id']!==(int)$GLOBALS['from_id'] ||
+            (int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0)
+            throw new RuntimeException('fixture_wallet_projection_target');
+        $GLOBALS['fixtureWalletProjection'][]=$data;
+        return (object)['ok'=>true];
+    }
     if (!in_array($x['op'],['plan','plan_recover','plan_correct','reassign'],true) || $method!=='editMessageReplyMarkup' ||
         !in_array(array_keys($data),[['chat_id','message_id'],['chat_id','message_id','reply_markup']],true) ||
         (int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0)
@@ -225,18 +234,25 @@ try {
         };
     }
     elseif ($x['op']==='telegram_wallet') {
-        $from_id=(int)($x['sender']??1001);$chat_id=$from_id;$callbackId='fixture-callback';$message_id=721;
+        $from_id=(int)($x['sender']??1001);$chat_id=$from_id;$callbackId='fixture-callback';
         $userInfo=achbotProviderRow($db,'SELECT * FROM users WHERE userid=?','i',[$from_id]);
-        $text='';$botUrl='https://bot.fixture.invalid/';$botUsername='fixture_bot';
+        $text='';$botUrl='https://bot.fixture.invalid/';$botUsername='fixture_bot';$botToken='999999:fixture-only';
         $botState=$GLOBALS['botState']+['walletState'=>'on','remark'=>'digits'];
-        $data=$x['callback'];$GLOBALS['fixtureAlerts']=[];
+        $data=$x['callback'];$GLOBALS['fixtureAlerts']=[];$GLOBALS['fixtureWalletProjection']=[];
+        // Each synthetic draft has its own bot-authored selector, exactly as
+        // Telegram sends it. Replay retains that message identity.
+        preg_match('/\Apay(?:Buy|Custom|Renew|IncreaseDay|Increase)WithWallet([A-Za-z0-9_-]{1,50})\z/D',$data,$match);
+        $p=achbotProviderRow($db,'SELECT id FROM pays WHERE hash_id=?','s',[$match[1]??'']);
+        $message_id=100000+(int)($p['id']??0);
         $update=(object)['update_id'=>123456,'callback_query'=>(object)['id'=>$callbackId,'from'=>(object)['id'=>$from_id],
-            'data'=>$data,'message'=>(object)['message_id'=>$message_id,'chat'=>(object)['id'=>$chat_id,'type'=>'private']]]];
+            'data'=>$data,'message'=>(object)['message_id'=>$message_id,'chat'=>(object)['id'=>$chat_id,'type'=>'private'],
+                'from'=>(object)['id'=>999999,'is_bot'=>true],
+                'reply_markup'=>(object)['inline_keyboard'=>[[(object)['callback_data'=>$data]]]]]]];
         if ($x['missing_key']??false) $GLOBALS['telegramWebhookSecret']=null;
         $route=match($x['route']) {'buy','custom'=>'Checkout','renew'=>'RenewalCheckout','day','volume'=>'Extensions',
             default=>throw new RuntimeException('fixture_invalid_route')};
         require $argv[1].'/src/Finance/Routes/'.$route.'.php';
-        $r=$GLOBALS['fixtureAlerts'];
+        $r=['alerts'=>$GLOBALS['fixtureAlerts'],'projection'=>$GLOBALS['fixtureWalletProjection']];
     }
     elseif ($x['op']==='commercial_plan') {
         require_once $argv[1].'/src/Subscription/AccountDetails.php';
@@ -459,6 +475,20 @@ def main():
             p=subprocess.run(client,input=q,text=True,encoding="utf-8",env=env,capture_output=True,timeout=15)
             assert p.returncode==0,(q,p.stderr)
             return p.stdout.strip()
+        # The current outbox schedules new reports immediately. Isolate the
+        # retry/lease scenario without changing any other report's real state,
+        # payload or original schedule; restore its schedule after the check.
+        def isolate_followup(rid):
+            rows=sql(f"SELECT id,COALESCE(CAST(next_attempt_at AS CHAR),'NULL') FROM payment_followup_intents WHERE id<>{int(rid)} AND state IN ('pending','dispatching')").splitlines()
+            ids=[int(row.split('\t',1)[0]) for row in rows]
+            if ids:
+                sql("UPDATE payment_followup_intents SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 HOUR),updated_at=updated_at WHERE id IN ("+','.join(map(str,ids))+")")
+            return rows
+        def restore_followups(rows):
+            for row in rows:
+                rid,stamp=row.split('\t',1)
+                val='NULL' if stamp=='NULL' else "'"+stamp+"'"
+                sql(f"UPDATE payment_followup_intents SET next_attempt_at={val},updated_at=updated_at WHERE id={int(rid)}")
         assert sql('SELECT @@character_set_client,@@character_set_connection,@@character_set_results')=='utf8mb4\tutf8mb4\tutf8mb4'
         lock=threading.Lock()
         users={};requests=[];faults=[];errors=[]
@@ -1477,6 +1507,7 @@ DELIMITER ;
                 assert sql(f"SELECT CONCAT(result,':',telegram_error_code,':',retry_after_seconds) FROM payment_followup_attempts WHERE intent_id={report_id}")=='rejected:429:35'
                 assert sql(f"SELECT next_attempt_at>NOW(6) FROM payment_followup_intents WHERE id={report_id}")=='1'
                 assert php(mode,'followup',id=report_id)=='not_due'
+                schedules=isolate_followup(report_id)
                 assert php(mode,'maintain_followups',limit=10)==[]
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={report_id}")=='1'
                 sql(f"UPDATE payment_followup_intents SET next_attempt_at=NOW(6) WHERE id={report_id}")
@@ -1490,6 +1521,7 @@ DELIMITER ;
                 assert php(mode,'followup',id=report_id)=='acknowledged'
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={report_id} AND text LIKE '%rn_%'")=='2'
                 assert sql(f"SELECT GROUP_CONCAT(result ORDER BY attempt_no) FROM payment_followup_attempts WHERE intent_id={report_id}")=='rejected,acknowledged'
+                restore_followups(schedules)
                 cases.append(mode+'_followup_known_429_due_redelivery')
                 report_id=int(reports[1].split('\t')[0])
                 assert php(mode,'followup',id=report_id,response=dict(ok=False,error_code=500,description='Internal error'))=='unknown'
@@ -1794,7 +1826,9 @@ DELIMITER ;
                 rid=int(targets['service_channel'])
                 assert php(mode,'claim_followup',id=rid)['status']=='claimed'
                 sql(f"UPDATE payment_followup_intents SET updated_at=DATE_SUB(NOW(),INTERVAL 3 MINUTE) WHERE id={rid}")
+                schedules=isolate_followup(rid)
                 assert php(mode,'maintain_followups',limit=10)=={str(rid):'unknown'}
+                restore_followups(schedules)
                 assert php(mode,'followup',id=rid)=='unknown'
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='0'
                 assert sql(f"SELECT result FROM payment_followup_attempts WHERE intent_id={rid}")=='unknown'
@@ -2336,7 +2370,9 @@ DELIMITER ;
                     php(mode,'telegram_wallet',route=kind,callback=prefix+h,missing_key=True)
                     assert finance()==before and len(requests)==wire
                     assert sql(f"SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}")=='1'
-                    php(mode,'telegram_wallet',route=kind,callback=prefix+h)
+                    result=php(mode,'telegram_wallet',route=kind,callback=prefix+h)
+                    assert result['projection'],result
+                    assert sql(f"SELECT CONCAT(purpose,':',synced_digest IS NOT NULL) FROM payment_message_refs WHERE pay_row_id={pid} AND chat_id=1001")=='status:1'
                     op=int(sql(f"SELECT checkout_operation_id FROM pays WHERE id={pid}"))
                     assert sql(f"SELECT state FROM pays WHERE id={pid}")=='paid_with_wallet'
                     assert sql(f"SELECT stage FROM service_operations WHERE id={op}")=='completed'

@@ -34,7 +34,7 @@ merely because its historic `payment_attempts.stage=review` or
 `provider_status=receipt_started` remains intact. Reconcile original
 `pays.state=auto_cart_approved`, the proven SMS transaction, the linked
 service effect, original order and acknowledged delivery separately from
-`evidence_invoice_digest`, `evidence_staff_digest` and customer
+`evidence_staff_digest` and customer
 `payment_message_refs.synced_digest`. The latter only prove that Telegram
 presentation was acknowledged. After an actual original settlement, update
 that payment's registered messages immediately; if Telegram is unavailable,

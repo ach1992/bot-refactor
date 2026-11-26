@@ -44,7 +44,7 @@ function bot($method,$data=[]) {
         return (object)['ok'=>false,'error_code'=>400,
             'description'=>'Bad Request: message is not modified'];
     if (($GLOBALS['spec']['fail_text_only']??false) &&
-        $method==='editMessageText') $fail=true;
+        $method==='editMessageText') return (object)['ok'=>false,'error_code'=>400,'description'=>'Bad Request: cannot parse entities'];
     return (object)['ok'=>!$fail];
 }
 function sendMessage($text,$keys=null,$mode='HTML',$chat=null) {
@@ -107,12 +107,11 @@ if ($action==='expire') {
         (string)($spec['provider']??'bank_transfer'),(int)($spec['actor']??1001));
 } elseif ($action==='track') {
     $msgId=(int)($spec['message_id']??55);
-    $reply=(object)['ok'=>true,'result'=>(object)['message_id'=>$msgId]];
+    $reply=(object)['ok'=>true,'result'=>(object)['message_id'=>$msgId,'chat'=>(object)['id'=>(int)($spec['response_chat_id']??$spec['chat_id']??1001)]]];
     $before=achbotPayUxTrackMessage($connection,$id,(int)($spec['chat_id']??1001),
-                                     $reply,(string)($spec['kind']??'text'));
-} elseif ($action==='clicked') {
-    achbotPayUxTrackClicked($connection,$id,(int)$spec['chat_id'],
-                            (int)$spec['message_id']);
+                                     $reply,(string)($spec['purpose']??'status'),(string)($spec['kind']??'text'));
+ } elseif ($action==='ref_lookup') {
+    $before=achbotPayUxRef($connection,$id,(int)$spec['chat_id'],(int)$spec['message_id'])!==null;
 } elseif ($action==='sync') {
     $before=achbotPayUxSyncMessages($connection,$id);
 } elseif ($action==='maintain') {
@@ -129,7 +128,7 @@ if ($action==='expire') {
     $photo=(object)['message'=>(object)['photo'=>[(object)['file_id'=>'owned-original-photo']]]];
     $text=(object)['message'=>(object)['text'=>$code]];
     $before=[
-        'initial'=>json_decode(achbotManualInvoiceKeyboard($connection,$pay),true),
+        'initial'=>json_decode(achbotManualReceiptKeyboard($pay,$attempt),true),
         'status'=>json_decode(achbotPayUxStatusKeyboard($hash,$pay,$attempt),true),
         'cancel'=>json_decode(kbOnlyCancel($pay),true),
         'prompt'=>achbotManualEvidencePrompt($connection,$pay,$method),
@@ -365,7 +364,7 @@ def main():
                                  message_id=mid))['result'] is True
         sql(w,e,f"UPDATE pays SET state='paid' WHERE id={overflow}")
         first=run(w,e,dict(action='sync',id=overflow,fail_text_only=True,
-            expected_edit_diagnostic='category=telegram_rejected tg_code=0 markup_only=1'))
+            expected_edit_diagnostic='category=telegram_rejected tg_code=400 markup_only=1'))
         assert first['result']==0
         assert len([x for x in first['events']
                     if x['method']=='editMessageReplyMarkup'])==10
@@ -418,15 +417,13 @@ def main():
         lost=run(w,e,dict(action='sync',id=missing_msg,telegram_message_missing=True,
             expected_edit_diagnostic='category=message_missing tg_code=400 markup_only=0'))
         assert lost['result']==0
-        assert [x['method'] for x in lost['events']]==[
-            'editMessageText','editMessageReplyMarkup']
+        assert [x['method'] for x in lost['events']]==['editMessageText']
         assert count(w,e,'payment_message_refs',f'pay_row_id={missing_msg} AND synced_digest IS NULL')==1
-        remaining=int(sql(w,e,'SELECT TIMESTAMPDIFF(SECOND,NOW(),updated_at) '
-            f'FROM payment_message_refs WHERE pay_row_id={missing_msg}'))
-        assert 5*3600<remaining<=6*3600,remaining
+        assert count(w,e,'payment_message_refs',f"pay_row_id={missing_msg} AND retired_reason='message_missing' AND synced_digest IS NULL")==1
+        sql(w,e,f"UPDATE payment_message_refs SET updated_at=NOW(6)-INTERVAL 1 DAY WHERE pay_row_id={missing_msg}")
         not_retried=run(w,e,dict(action='sync',id=missing_msg))
         assert not_retried['result']==0 and not not_retried['events']
-        cases.append('missing_telegram_message_preserved_with_six_hour_bounded_retry')
+        cases.append('missing_telegram_message_retired_without_false_ack_or_retry')
         for mid in (90,91):
             run(w,e,dict(action='track',id=uncertain,message_id=mid))
         protected=run(w,e,dict(action='sync',id=uncertain))
@@ -443,11 +440,13 @@ def main():
         assert count(w,e,'payment_message_refs',
                      f'pay_row_id={media} AND synced_digest IS NOT NULL')==1
         cases.append('media_caption_and_buttons_updated_after_receipt_review')
-        run(w,e,dict(action='clicked',id=msg,chat_id=1001,message_id=200))
+        assert not run(w,e,dict(action='ref_lookup',id=msg,chat_id=1001,message_id=200))['result']
+        assert run(w,e,dict(action='track',id=msg,chat_id=1001,message_id=200))['result']
+        assert run(w,e,dict(action='ref_lookup',id=msg,chat_id=1001,message_id=200))['result']
+        assert not run(w,e,dict(action='ref_lookup',id=msg,chat_id=9002,message_id=200))['result']
+        assert not run(w,e,dict(action='track',id=msg,chat_id=1001,message_id=201,response_chat_id=9002))['result']
         assert count(w,e,'payment_message_refs',f'pay_row_id={msg}')==4
-        run(w,e,dict(action='clicked',id=msg,chat_id=9002,message_id=201))
-        assert count(w,e,'payment_message_refs',f'pay_row_id={msg}')==4
-        cases.append('owner_qualified_clicked_message_tracked')
+        cases.append('exact_ack_and_owner_qualified_reference_only')
         old=add(w,e,'race-expire',kind='INCREASE_WALLET')
         s={'action':'expire','id':old,'clock':1800000000}
         ps=[subprocess.Popen(cmd(w,e,ROOT,s),env=e,cwd=w,stdout=subprocess.PIPE,

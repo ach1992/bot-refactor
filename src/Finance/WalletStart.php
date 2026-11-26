@@ -164,7 +164,7 @@ function startWalletPayment(mysqli $connection, $botUrl,
         $reply = sendMessage(\achbotMessage('wallet.wallet_start.start_wallet_payment.message.1f46b2b87f') . number_format($amount) .
             \achbotMessage('wallet.wallet_start.start_wallet_payment.message.64ab796d01'), $keys, 'HTML');
         require_once __DIR__ . '/PaymentLifecycle.php';
-        achbotPayUxTrackByHash($connection,$hash_id,$actor,$reply);
+        achbotPayUxTrackByHash($connection,$hash_id,$actor,$reply,'selector');
         if (!is_object($reply) || ($reply->ok ?? false) !== true) {
             error_log('achbot_wallet_topup_delivery_deferred update_id=' . $updateId);
         }

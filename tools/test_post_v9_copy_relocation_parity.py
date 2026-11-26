@@ -16,7 +16,7 @@ import package_current
 import test_post_v9_current_copy_ownership as owner
 
 ROOT = Path(__file__).resolve().parents[1]
-RETIREMENT_SHA256 = "e242d55331dcfc57357d71488a188ff75a91be8dcab684f8dd3ee8e8c991a168"
+RETIREMENT_SHA256 = "1a6e842851482efbfd230ee7391b90d7188d8fdfb567883903ff772d4b810235"
 
 
 def check(ok: bool, name: str) -> None:
@@ -62,7 +62,7 @@ def main() -> None:
     allowed = json.loads((ROOT / "tools/wallet_first_copy_corrections.json").read_text())
     actual = {k: {"before": old.get(k), "after": new[k]} for k in new if k not in old or old[k]!=new[k]}
     check(actual == allowed, "retained_copy_bytes_changed")
-    check(len(retired)==445 and digest(retired)==RETIREMENT_SHA256, "retired_copy_set_changed")
+    check(len(retired)==457 and digest(retired)==RETIREMENT_SHA256, "retired_copy_set_changed")
     sources = {p:(ROOT/p).read_text() for p in package_current.members()
                if p.endswith(".php") and p not in owner.AUDIENCES}
     restored = {topic:dict(entries) for topic,entries in owner.loaded_catalog().items()}

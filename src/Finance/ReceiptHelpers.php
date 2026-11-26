@@ -650,27 +650,35 @@ function achbotManualAcknowledgement(array $payInfo, string $method): string {
         \achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.62e569e922');
 }
 
-/** Read only the original pinned manual quote and destination, never changed settings. */
-function buildCartToCartInfoMessage(array $paymentKeys, int $priceToman,
-                                    int $userId = 0, string $method = 'bank_transfer',
-                                    string $hashId = ''): string {
-    global $connection;
-    if (!achbotCreditMethodHas($method,'manual_quote') ||
-        $hashId === '' || !($connection instanceof mysqli)) return '';
+/** Render only the owned immutable manual invoice. Its closed form retains
+ * the original amount/destination without telling the customer to pay again. */
+function achbotManualInvoiceText(mysqli $db,array $pay,array $attempt,bool $open=true): string {
     try {
-        require_once __DIR__.'/PaymentLifecycle.php';
-        $pay=achbotPayUxOwnedReference($connection,$hashId,$userId);
-        if (!$pay) return '';
-        $stmt = $connection->prepare("SELECT provider,quote_amount,quote_currency,
-            local_amount_toman,settlement_currency,checkout_url,invoice_expires_at
-            FROM payment_attempts WHERE order_hash=? AND provider=? LIMIT 1");
-        $stmt->bind_param('ss', $hashId, $method);
-        $stmt->execute();
-        $attempt = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        if (!$attempt || (int)$attempt['local_amount_toman'] !== $priceToman) return '';
+        require_once __DIR__.'/PaymentCredit.php';
+        $method=(string)$attempt['provider'];$priceToman=(int)$pay['price'];
+        if (!achbotPayUxManualProvider($method) ||
+            (int)$attempt['pay_row_id']!==(int)$pay['id'] ||
+            $attempt['order_hash']!==$pay['hash_id'] ||
+            (int)$attempt['local_amount_toman']!==$priceToman ||
+            !achbotCurrentReceiptPin($attempt) ||
+            !hash_equals($attempt['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$attempt))) return '';
         $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], $method);
         if (!$intent) return '';
+        if (!$open) {
+            $amount=(string)$attempt['quote_amount'];
+            $currency=(string)$attempt['quote_currency'];
+            $facts=achbotMessageHtml('payment.payment_lifecycle.original_invoice_record',[
+                'method'=>achbotCreditMethodLabel($method),
+                'amount'=>$currency==='toman'?number_format((int)$amount):(str_contains($amount,'.')?rtrim(rtrim($amount,'0'),'.'):$amount),
+                'currency'=>$currency==='toman'?achbotMessage('payment.payment_lifecycle.toman'):$currency]);
+            if ($method==='bank_transfer')
+                $facts.="\n".achbotMessageHtml('payment.payment_lifecycle.original_bank_destination',[
+                    'account'=>(string)($intent['account']??''),'holder'=>(string)($intent['holder']??'')]);
+            elseif (in_array($method,['manual_usdt','manual_trx'],true))
+                $facts.="\n".achbotMessageHtml('payment.payment_lifecycle.original_crypto_destination',[
+                    'network'=>(string)($intent['network']??''),'wallet'=>(string)($intent['wallet']??'')]);
+            return $facts;
+        }
         if (in_array($method, ['manual_usdt','manual_trx'], true)) {
             $network = (string)($intent['network'] ?? '');
             $wallet = (string)($intent['wallet'] ?? '');
@@ -700,7 +708,7 @@ function buildCartToCartInfoMessage(array $paymentKeys, int $priceToman,
         if ($method === 'bank_transfer' &&
             (trim((string)($intent['account'] ?? '')) === '' ||
              trim((string)($intent['holder'] ?? '')) === '')) return '';
-        if(achbotManualTypedGift($connection,$pay,$method))return achbotMessageHtml('payment.api_payment.gift_invoice',['amount'=>number_format($amount)]).achbotPayUxDeadlineText($attempt);
+        if(achbotManualTypedGiftAttempt($attempt))return achbotMessageHtml('payment.api_payment.gift_invoice',['amount'=>number_format($amount)]).achbotPayUxDeadlineText($attempt);
         $template = \achbotMessage('legacy_messages.'.($method === 'gift_card' ?
             'brw_cart_to_cart_gift' : 'brw_cart_to_cart_detail'));
         return strtr($template, [
@@ -749,14 +757,6 @@ function achbotManualReceiptKeyboard(array $pay,array $attempt): string {
     return inlineKeyboard([$row,[['text'=>achbotMessage('telegram.markup.receipt_and_cancel.button.cc357a4c9f'),
         'callback_data'=>$action['cancel']]]]);
 }
-/** Re-read the original invoice after issuance; never use mutable settings for its action. */
-function achbotManualInvoiceKeyboard(mysqli $db,array $pay): string {
-    $current=achbotProviderRow($db,'SELECT * FROM pays WHERE id=? AND user_id=?','ii',[(int)$pay['id'],(int)$pay['user_id']]);
-    if (!$current) return achbotPayUxStatusKeyboard((string)$pay['hash_id']);
-    $attempt=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=?','i',[(int)$current['id']]);
-    return $attempt?achbotManualReceiptKeyboard($current,$attempt):achbotPayUxStatusKeyboard((string)$current['hash_id'],$current);
-}
-
 function kbOnlyCancel(array $pay): string {
     return inlineKeyboard([[['text'=>achbotMessage('telegram.markup.receipt_and_cancel.button.cc357a4c9f'),
         'callback_data'=>'rc_'.$pay['hash_id']]]]);
@@ -940,7 +940,7 @@ function achbotManualAcknowledgeAndVerify(mysqli $db,array $pay,string $method,s
         if ($current['pay']['state']==='service_superseded' &&
             achbotPaymentEvidenceReviewReady($current['pay'],$current['attempt']))
             achbotApiPaymentCheck($db,(int)$pay['id']);
-        else achbotApiPaymentSyncInvoice($db,$current);
+        else achbotPayUxSyncMessages($db,(int)$pay['id']);
         return;
     }
     try {
@@ -977,7 +977,7 @@ function sendWithStartButton($text, $buttonText, $botUsername, $startPayload = '
         isset($GLOBALS['from_id']) && (int)$GLOBALS['from_id']>0) {
         require_once __DIR__ . '/PaymentLifecycle.php';
         achbotPayUxTrackByHash($GLOBALS['connection'],$paymentHash,
-            (int)$GLOBALS['from_id'],$sent);
+            (int)$GLOBALS['from_id'],$sent,'receipt');
     }
     return $sent;
 }

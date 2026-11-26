@@ -541,6 +541,16 @@ return [
         // payment_lifecycle.pay_ux_status_text
         'payment_lifecycle.pay_ux_status_text.text.df83eb82dd' => 'پرداخت سفارش',
         'payment_lifecycle.request_accepted' => '✅ درخواست شما ثبت شد',
+        'payment_lifecycle.progress_pending' => '⏳ در حال انجام درخواست شما هستیم. نیازی به پرداخت مجدد نیست.',
+        'payment_lifecycle.progress_completed' => '✅ درخواست انجام شد و اطلاعات آن ارسال شده است.',
+        'payment_lifecycle.progress_delivery_unconfirmed' => 'درخواست انجام شده، اما ارسال اطلاعات هنوز تأیید نشده است. لطفاً وضعیت همین سفارش را پیگیری کنید.',
+        'payment_lifecycle.progress_wallet_credited' => '✅ مبلغ تأییدشده به کیف پول شما اضافه شد.',
+        'payment_lifecycle.progress_resolved' => 'رسیدگی به این درخواست پایان یافته است؛ برای جزئیات، وضعیت سفارش را از پشتیبانی پیگیری کنید.',
+        'payment_lifecycle.progress_unverified' => 'نتیجه نهایی هنوز قابل تأیید نیست. پرداخت را تکرار نکنید و وضعیت همین سفارش را پیگیری کنید.',
+        'payment_lifecycle.original_invoice_record' => ['text' => '<b>🧾 اطلاعات فاکتور اصلی (سوابق)</b>' . "\n" . '💳 روش: {method}' . "\n" . '💰 مبلغ فاکتور: <code>{amount}</code> {currency}', 'parameters' => ['method', 'amount', 'currency']],
+        'payment_lifecycle.original_bank_destination' => ['text' => '💳 شماره کارت: <code>{account}</code>' . "\n" . '👤 صاحب حساب: {holder}', 'parameters' => ['account', 'holder']],
+        'payment_lifecycle.original_crypto_destination' => ['text' => '🌐 شبکه: {network}' . "\n" . '📋 آدرس مقصد: <code>{wallet}</code>', 'parameters' => ['network', 'wallet']],
+        'payment_lifecycle.toman' => 'تومان',
         'payment_lifecycle.draft_closed' => '<b>⌛️ مهلت انتخاب روش پرداخت پایان یافت.</b> لطفاً درخواست خود را دوباره ثبت کنید.',
         'payment_lifecycle.pay_ux_status_text.text.a1026d7b85' => '⌛️ مهلت این درخواست پرداخت پایان یافته است.',
         'payment_lifecycle.pay_ux_status_text.text.74adf2adfe' => '🧾 درخواست جدیدتری جایگزین این پیش‌نویس شده است.',
@@ -560,7 +570,7 @@ return [
         'payment_lifecycle.pay_ux_status_text.text.c0ee0533a8' => 'از فاکتور جدید استفاده کنید. لینک قبلی دیگر برای پرداخت قابل استفاده نیست؛ اگر وجهی فرستاده‌اید با پشتیبانی هماهنگ کنید.',
         'payment_lifecycle.pay_ux_status_text.text.b2948cf010' => '🔎 جزئیات بررسی را از پشتیبانی پیگیری کنید.',
         'payment_lifecycle.pay_ux_status_text.text.d5b12a8ef5' => '⏳ رسید در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.',
-        'payment_lifecycle.pay_ux_status_text.text.368ad58967' => '🔰 پرداخت شما ثبت شده است و اطلاعات سفارش شما باید در ادامه ارسال شده باشد.',
+        'payment_lifecycle.pay_ux_status_text.text.368ad58967' => '🔎 نتیجه انجام سفارش را از همین پیام پیگیری کنید.',
         'payment_lifecycle.pay_ux_status_text.text.f1092775b2' => '🛑 پرداخت این فاکتور هنوز تأیید نشده است؛ اگر پرداخت کرده‌اید، با شناسه سفارش از پشتیبانی پیگیری کنید و پرداخت را تکرار نکنید.',
         'payment_lifecycle.pay_ux_status_text.text.5e55076dd5' => '⚠️ در صورتی که پرداخت انجام شده ولی تایید نشده برای پشتیبانی پیام ارسال کنید.',
         'payment_lifecycle.pay_ux_status_text.text.d251ffde03' => '🧾 موضوع: ',
@@ -578,8 +588,6 @@ return [
         'checkout.alert.bfa5553444' => '⛔️ لینک اشتراک در حال حاضر در دسترس نیست.',
         'checkout.alert.baff5f2488' => '⛔️ کانفیگ قابل نمایش در دسترس نیست.',
         'checkout.alert.1a885aaca4' => '⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.',
-        'checkout.alert.07ee06b4bc' => '⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.',
-        'checkout.alert.7a9c30e938' => '⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.',
         'checkout.alert.d06bc731eb' => '⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.',
         'checkout.alert.560f05f822' => '⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',
         'checkout.alert.882596d0f1' => '⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.',
@@ -590,19 +598,12 @@ return [
         // checkout.alert
         'pre_payment.alert.8fbaa8aebc' => 'این سفارش برای شما قابل مشاهده نیست.',
         // pre_payment.text
-        'pre_payment.text.ea9faa7b63' => 'ترون دستی (TRX)',
-        'pre_payment.text.16b71e846a' => 'تتر دستی',
-        'pre_payment.text.ace4b5ad89' => 'کارت‌به‌کارت بانکی',
-        'pre_payment.text.46daee8b43' => 'پرداخت رمزارزی',
         // pre_payment.next_pay
-        'pre_payment.next_pay.68fdcf6af2' => 'درگاه نکست‌پی',
         // pre_payment.zarinpal
-        'pre_payment.zarinpal.4497ba648f' => 'درگاه زرین‌پال',
         // pre_payment.text
         'pre_payment.text.f07a81a062' => 'نامشخص',
         'pre_payment.text.c8886e46d5' => '' . "\n" . '💳 روش پرداخت: ',
         // pre_payment.body
-        'pre_payment.body.ff6ceb47bf' => '' . "\n" . '📅 تاریخ تأیید: <code>',
         // pre_payment.button
         // pre_payment.alert
         'pre_payment.alert.fdf0d1d6f9' => 'وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.',
@@ -676,9 +677,6 @@ return [
         'gateway_initiation.mark_checkout_uncertain.message.32573bc25a' => 'این روش پرداخت برای حساب شما فعال نیست؛ اگر فاکتور قبلی صادر شده با پشتیبانی وضعیت آن را پیگیری کنید.',
         'gateway_initiation.mark_checkout_uncertain.message.2d6b333856' => 'مهلت استفاده از لینک این فاکتور پایان یافته است. وضعیت پرداخت در حال پیگیری است؛ وجه را دوباره ارسال نکنید.',
         'gateway_initiation.mark_checkout_uncertain.message.eaf7a98f3e' => 'وضعیت فاکتور آنلاین نیازمند بررسی است؛ پرداخت مجدد انجام ندهید.',
-        'gateway_initiation.mark_checkout_uncertain.button.f81a8cfcdd' => '💳 پرداخت فاکتور',
-        'gateway_initiation.mark_checkout_uncertain.button.f0137e1007' => '🧾 بررسی وضعیت سفارش',
-        'gateway_initiation.mark_checkout_uncertain.message.cd27d14216' => '🧾 فاکتور ثبت شد.' . "\n" . '',
         'gateway_initiation.mark_checkout_uncertain.message.0c4a9612f7' => '⚠️ پرداخت فقط پس از تأیید درگاه و ثبت نتیجه در ربات نهایی است؛ ',
         'gateway_initiation.mark_checkout_uncertain.message.0a2e0bc7bc' => 'پردازش ممکن است بیش از چند دقیقه طول بکشد.',
         'gateway_return.np_reconcile_batch.message.f48a802b77' => 'خطا!',
