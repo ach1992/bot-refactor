@@ -2745,7 +2745,7 @@ DELIMITER ;
                     def addon_keys(keys):
                         sql("UPDATE setting SET value='"+json.dumps(keys)+"' WHERE type='PAYMENT_KEYS'")
                     def assert_addon_methods(expected,**configuration):
-                        for table,route,prefix in [('increase_day','selectPlanDayIncrease','payIncreaseDay'),('increase_plan','increaseVolumePlan','payIncrease')]:
+                        for table,route in [('increase_day','selectPlanDayIncrease'),('increase_plan','increaseVolumePlan')]:
                             offer=sql(f"SELECT id FROM {table} WHERE volume=97 AND server_id IS NULL")
                             before=finance()
                             count=int(sql("SELECT COUNT(*) FROM pays"))
@@ -2761,7 +2761,7 @@ DELIMITER ;
                                 for b in row:
                                     cb=b.get('callback_data','');url=b.get('url','')
                                     if cb=='dc_'+h:cancel=True
-                                    elif cb==prefix+'WithWallet'+h:actual.add('wallet')
+                                    elif cb=='pw_'+h:actual.add('wallet')
                                     elif cb=='pm_b_'+h:actual.add('bank_transfer')
                                     elif cb=='pm_g_'+h:actual.add('gift_card')
                                     elif cb=='mcm_'+h:actual.add('crypto')
@@ -2853,17 +2853,17 @@ DELIMITER ;
                     # methods disabled; one button plus existing cancel.
                     sql("""UPDATE users SET is_agent=1,discount_percent='{"normal":100}' WHERE userid=9002""")
                     sql("""UPDATE setting SET value='{"sellState":"on","agencyState":"on","renewAccountState":"on","increaseTimeState":"on","increaseVolumeState":"on","walletState":"off"}' WHERE type='BOT_STATES'""")
-                    for kind,callback,prefix,label in [
-                        ('renew',f'renewAccount{ordinary_zero}','payRenew','✅ تمدید رایگان'),
-                        ('day',f'selectPlanDayIncrease{ordinary_zero}_'+sql("SELECT id FROM increase_day WHERE volume=97 AND server_id IS NULL"),'payIncreaseDay','✅ افزایش زمان رایگان'),
-                        ('volume',f'increaseVolumePlan{ordinary_zero}_'+sql("SELECT id FROM increase_plan WHERE volume=97 AND server_id IS NULL"),'payIncrease','✅ افزایش حجم رایگان'),
+                    for kind,callback,label in [
+                        ('renew',f'renewAccount{ordinary_zero}','✅ تمدید رایگان'),
+                        ('day',f'selectPlanDayIncrease{ordinary_zero}_'+sql("SELECT id FROM increase_day WHERE volume=97 AND server_id IS NULL"),'✅ افزایش زمان رایگان'),
+                        ('volume',f'increaseVolumePlan{ordinary_zero}_'+sql("SELECT id FROM increase_plan WHERE volume=97 AND server_id IS NULL"),'✅ افزایش حجم رایگان'),
                     ]:
                         r=php(mode,'telegram_addon_quote',actor=9002,callback=callback)
                         assert r['messages'],r
                         h,pid,price=sql("SELECT hash_id,id,price FROM pays WHERE user_id=9002 ORDER BY id DESC LIMIT 1").split('\t')
                         assert price=='0'
                         buttons=[b for row in r['messages'][-1]['keys']['inline_keyboard'] for b in row]
-                        assert buttons[0]==dict(text=label,callback_data=prefix+'WithWallet'+h),buttons
+                        assert buttons[0]==dict(text=label,callback_data='pw_'+h),buttons
                         assert len(buttons)==2 and buttons[1]['callback_data']=='dc_'+h,buttons
                         assert r['messages'][-1]['text']=='🧾 مبلغ نهایی این سفارش صفر تومان است. برای انجام عملیات، تأیید کنید.',r
                         before=finance();request_count=len(requests)

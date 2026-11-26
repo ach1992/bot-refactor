@@ -317,8 +317,8 @@ def main():
             assert r['user']['step']=='discountCheckout_'+pid,r
             sql(f"INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('{code}','percent',{100 if zero else 20},0,2,-1)")
             r=run('discount',actor=uid,text=code,**configuration)
-            cb=callbacks(r);prefix={'standard':'payBuy','custom':'payCustom','renew':'payRenew'}[mode]
-            assert prefix+'WithWallet'+h in cb and (('dc_'+h if back=='mainMenu' else back) in cb),r
+            cb=callbacks(r)
+            assert 'pw_'+h in cb and (('dc_'+h if back=='mainMenu' else back) in cb),r
             assert int(latest(uid)[2])==amount and max(1,int(count))==quantity,(r,latest(uid))
             assert sql(f"SELECT expire_count FROM discounts WHERE hash_id='{code}'")=='1'
             # A replayed button cannot reopen a second redemption.
@@ -485,8 +485,7 @@ def main():
             else:
                 r=run('standard',callback='selectPlan7_1_none')
             _,h,_,_=latest(2001)
-            prefix='payBuy' if mode=='standard' else 'payCustom'
-            assert prefix+'WithWallet'+h in callbacks(r),r
+            assert 'pw_'+h in callbacks(r),r
             queries=['SELECT COUNT(*) FROM service_operations','SELECT COUNT(*) FROM service_effects','SELECT COUNT(*) FROM wallet_entries','SELECT ucount FROM server_info WHERE id=2','SELECT wallet,freetrial FROM users WHERE userid=2001','SELECT COUNT(*) FROM orders_list']
             snapshot=tuple(sql(q) for q in queries)
             sql('UPDATE server_plans SET price=0 WHERE id=7')
