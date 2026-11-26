@@ -69,7 +69,7 @@ function achbotPayUxSelectorRef(mysqli $db,int $payId,int $actor,int $message,$u
 function achbotPayUxVerifiedCallback($update,int $actor,int $message): bool {
     $source=\AchBot\Telegram\Conversation\source($update,$actor,true);
     $botId=explode(':',(string)($GLOBALS['botToken']??''),2)[0];
-    if (!$source || $source->message_id!==$message || !ctype_digit($botId) ||
+    if (!$source || $source->message_id!==$message || preg_match('/\A[0-9]+\z/D',$botId)!==1 ||
         ($source->from->is_bot??false)!==true || (string)($source->from->id??'')!==$botId) return false;
     $action=$update->callback_query->data;
     foreach ($source->reply_markup->inline_keyboard??[] as $buttons) foreach ($buttons as $button)
@@ -110,6 +110,22 @@ function achbotPayUxWithLease(mysqli $db,int $payId,callable $action,$busy=null)
     if (!in_array($lease,['owned','borrowed'],true)) return $busy;
     try {return $action();}
     finally {achbotOriginalDispatchLeaseEnd($db,$payId,$lease);}
+}
+
+/** Under the original payment lease, a selector is disposable only
+ * until an actual admission exists. Recover the committed invoice/status
+ * rather than losing its last projection on a stale Back/Cancel. */
+function achbotPayUxRetireNavigation(mysqli $db,array $ref): bool {
+    $pay=(int)$ref['pay_row_id'];
+    $source=achbotProviderRow($db,'SELECT checkout_operation_id,
+        EXISTS(SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id) AS admitted
+        FROM pays p WHERE id=?','i',[$pay]);
+    if (!$source) return false;
+    if ($source['checkout_operation_id']!==null || (int)$source['admitted']!==0) {
+        achbotPayUxSyncMessages($db,$pay);
+        return false;
+    }
+    return achbotPayUxRetire($db,$ref,'navigation');
 }
 
 function achbotPayUxRetire(mysqli $db,array $ref,string $reason): bool {
@@ -322,7 +338,7 @@ function achbotPayUxNavigateBack(mysqli $db,int $actor,int $message,string $body
             if ($ref['retired_reason']!==null || $ref['purpose']!=='selector') return;
             // The same message can be reused for ordinary category navigation.
             // It is permanently removed from payment projection ownership.
-            if (achbotPayUxRetire($db,$ref,'navigation'))
+            if (achbotPayUxRetireNavigation($db,$ref))
                 \AchBot\Telegram\Conversation\replaceTransient($actor,$message,$body,$keys);
         });
         return true;

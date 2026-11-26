@@ -115,7 +115,10 @@ def main():
         assert ['claim',True] in run('manual_claim',actor=2002,pay=int(p3),method='bank_transfer',mode='topup')['events']
         original=sql(f"SELECT checkout_url,quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={p3}")
         sql("UPDATE setting SET value=JSON_OBJECT('bankAccount','new-bank','holderName','new-holder') WHERE type='PAYMENT_KEYS'")
-        r=run('projection',actor=2002,pay=int(p3))
+        # A stale cancellation delivered before Cron must recover the
+        # admitted invoice instead of retiring its last selector.
+        r=run(actor=2002,callback='dc_'+h3,message_id=230)
+        assert sql(f"SELECT retired_reason IS NULL FROM payment_message_refs WHERE pay_row_id={p3}")=='1'
         edits=[e for e in r['events'] if e[0]=='edit']
         assert len(edits)==1 and edits[0][4]==230 and 'fixture-bank' in edits[0][1] and 'new-bank' not in edits[0][1],r
         assert sql(f"SELECT purpose FROM payment_message_refs WHERE pay_row_id={p3}")=='invoice'

@@ -2371,7 +2371,7 @@ DELIMITER ;
                     assert finance()==before and len(requests)==wire
                     assert sql(f"SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}")=='1'
                     result=php(mode,'telegram_wallet',route=kind,callback=prefix+h)
-                    assert result['projection'],result
+                    assert result['projection'],(result,last_diagnostics)
                     assert sql(f"SELECT CONCAT(purpose,':',synced_digest IS NOT NULL) FROM payment_message_refs WHERE pay_row_id={pid} AND chat_id=1001")=='status:1'
                     op=int(sql(f"SELECT checkout_operation_id FROM pays WHERE id={pid}"))
                     assert sql(f"SELECT state FROM pays WHERE id={pid}")=='paid_with_wallet'

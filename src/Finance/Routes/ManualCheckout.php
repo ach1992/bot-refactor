@@ -35,7 +35,7 @@ if (preg_match('/\A(pm_([bg])|rs|rc|dc)_([A-Za-z0-9_-]{1,50})\z/D',$action,$manu
             // Even an unknown edit response cannot let Cron rewrite Home.
             $done=achbotPayUxWithLease($connection,(int)$pay['id'],static function() use ($connection,$pay,$actor,$message_id,$update,$receipt,$receiptStep,$hash): bool {
                 $ref=achbotPayUxSelectorRef($connection,(int)$pay['id'],$actor,(int)$message_id,$update);
-                if (!$ref || !achbotPayUxRetire($connection,$ref,'navigation')) return false;
+                if (!$ref || !achbotPayUxRetireNavigation($connection,$ref)) return false;
                 $body=achbotMessage('legacy_messages.operation_canceled')."\n\n".achbotCurrentMessage('reached_main_menu');
                 \AchBot\Telegram\Conversation\replaceTransient($actor,(int)$message_id,$body,getMainKeys());
                 if (($receipt['hash']??null)===$hash && achbotReceiptStepChange($connection,$actor,$receiptStep,'none') &&
