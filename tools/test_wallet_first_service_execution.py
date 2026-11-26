@@ -80,11 +80,11 @@ function fixtureDeliverySend(string $kind,int $uid,?string $text,?string $keys,?
     } elseif ($part['text']!==$text || $part['keys']!==$keys || $part['mode']!==$mode)
         throw new RuntimeException('fixture_text_wire');
     $s=achbotProviderStatement($db,'INSERT INTO fixture_telegram(intent_id,user_id,part_no,kind,qr,caption,keys_json,mode)
-        VALUES (?,?,?,?,?,?,?,?)','iiisssss',[$d['id'],$uid,$ctx['delivery_part'],$kind,$qr,$text,$keys,$mode]);$s->close();
+        VALUES (?,?,?,?,?,?,?,?)','iiisssss',[$d['id'],$uid,$ctx['delivery_part'],$kind,$qr,$text,$keys,$mode]);$messageId=(int)$s->insert_id;$s->close();
     if (($x['crash_after_part']??null)===$ctx['delivery_part']) exit(29);
     if (array_key_exists($ctx['delivery_part'],$x['responses']??[]))
         return json_decode(json_encode($x['responses'][$ctx['delivery_part']],JSON_THROW_ON_ERROR),false,64,JSON_THROW_ON_ERROR);
-    return (object)['ok'=>!($x['unknown_ack']??false)];
+    return ($x['unknown_ack']??false)?(object)['ok'=>false]:fixtureMessageAck($uid,$messageId);
 }
 function sendPhoto($photo,$caption=null,$keys=null,$mode=null,$uid=null) {
     return fixtureDeliverySend('qr',$uid,$caption,$keys,$mode,$photo);
@@ -483,6 +483,7 @@ def main():
     focus.add_argument('--zero-commercial-only',action='store_true',help='Run zero-price commercial execution proof')
     focus.add_argument('--name-collision-only',action='store_true',help='Run physical generated-name collision proof')
     focus.add_argument('--report-revisions-only',action='store_true',help='Run real report revision and retry proof')
+    focus.add_argument('--delivery-identity-only',action='store_true',help='Run original customer message identity and due queue proof')
     args=ap.parse_args()
     cases=[]
     with owned.owned_database(ROOT/'database/current-schema.sql') as (work,env):
@@ -1264,7 +1265,7 @@ def main():
                 assert sql(f"SELECT state FROM service_effects WHERE pay_row_id={pid}")=='reserved'
                 assert finance()==before and len(requests)==n
                 cases.append(mode+'_historical_prepaid_claim_no_adoption_or_new_effect')
-            for mode in (() if args.report_revisions_only or args.resolution_only or args.referral_agent_only or args.plan_recovery_only or args.bulk_report_only or args.zero_commercial_only or args.name_collision_only else ('strict','off')):
+            for mode in (() if args.delivery_identity_only or args.report_revisions_only or args.resolution_only or args.referral_agent_only or args.plan_recovery_only or args.bulk_report_only or args.zero_commercial_only or args.name_collision_only else ('strict','off')):
                 # Isolate each test mode's scheduler from previously deferred
                 # conflict fixtures; no terminal evidence is changed.
                 sql("UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE stage IN ('funded','prepared','dispatching','applied')")
@@ -1429,7 +1430,7 @@ DELIMITER ;
                 next_id=issue(mode,'delivery-fair');fund(mode,next_id)
                 step(mode,next_id,'applied');step(mode,next_id,'completed')
                 next_delivery=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={next_id}"))
-                sql(f"UPDATE payment_delivery_intents SET updated_at=DATE_SUB(NOW(),INTERVAL 4 MINUTE) WHERE id IN ({delivery},{next_delivery})")
+                sql(f"UPDATE payment_delivery_intents SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE state IN ('pending','dispatching') AND id NOT IN ({delivery},{next_delivery})")
                 reqs=len(requests);before=finance()
                 stats=php(mode,'maintain_delivery',limit=2)
                 assert stats==dict(checked=2,acknowledged=1,unknown=0,deferred=1),stats
@@ -2642,7 +2643,7 @@ DELIMITER ;
                 agent_referral_cases(mode)
 
                 assert not faults and not errors,(faults,errors)
-            if not (args.report_revisions_only or args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.bulk_report_only or args.name_collision_only):
+            if not (args.delivery_identity_only or args.report_revisions_only or args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.bulk_report_only or args.name_collision_only):
                 # Original zero-price commercial checkout, through actual
                 # reservation, Native execution, order, delivery and reports.
                 for mode in ('strict','off'):
@@ -2917,7 +2918,7 @@ DELIMITER ;
 
                     assert not faults and not errors,(faults,errors)
                 sql("UPDATE users SET is_agent=0,discount_percent=NULL WHERE userid=9002")
-            if not (args.report_revisions_only or args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.bulk_report_only or args.zero_commercial_only):
+            if not (args.delivery_identity_only or args.report_revisions_only or args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.bulk_report_only or args.zero_commercial_only):
                 # Two independent claims on the same physical panel must not
                 # strand a valid generated-name purchase. Cover single,
                 # bulk, explicit-name refusal and uncertain-write replay.
@@ -3114,7 +3115,7 @@ DELIMITER ;
                     assert rows(op)[0]==pinned and posts()==n and finance()==before and not faults and not errors
                     sql(f"UPDATE service_operations SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE id={op}")
                     cases.append(mode+'_import_create_physical_lock_read_committed_and_original_fence')
-            if not (args.report_revisions_only or args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.zero_commercial_only or args.name_collision_only):
+            if not (args.delivery_identity_only or args.report_revisions_only or args.plan_recovery_only or args.referral_agent_only or args.resolution_only or args.zero_commercial_only or args.name_collision_only):
                 # Actual large BUY: every Native name and original order ID
                 # is present in exactly one bounded report per recipient.
                 mode='strict'
@@ -3165,7 +3166,40 @@ DELIMITER ;
                 for mode in ('strict','off'):
                     resolution_cases(mode)
                     assert not faults and not errors,(faults,errors)
-            if args.report_revisions_only or not any((args.resolution_only,args.referral_agent_only,args.plan_recovery_only,args.bulk_report_only,args.zero_commercial_only,args.name_collision_only)):
+            if args.delivery_identity_only or not any((args.report_revisions_only,args.resolution_only,args.referral_agent_only,args.plan_recovery_only,args.bulk_report_only,args.zero_commercial_only,args.name_collision_only)):
+                for mode in ('strict','off'):
+                    # Isolate scheduling without modifying historical packets or attempts.
+                    sql("UPDATE payment_delivery_intents SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 HOUR) WHERE state IN ('pending','dispatching')")
+                    def identity_delivery(tag):
+                        sid=issue(mode,mode+'-delivery-identity-'+tag)
+                        fund(mode,sid);step(mode,sid,'applied');step(mode,sid,'completed')
+                        did=int(sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={sid}"))
+                        assert sql(f"SELECT part_count FROM payment_delivery_intents WHERE id={did}")=='2'
+                        return did
+                    # Both fresh intents are due without a fabricated old timestamp.
+                    bad=identity_delivery('blocked');good=identity_delivery('fresh')
+                    bad_order=int(sql(f"SELECT order_id FROM payment_delivery_intents WHERE id={bad}"))
+                    sql(f"UPDATE orders_list SET uuid='fixture-obsolete-credential' WHERE id={bad_order}")
+                    before=finance();n=len(requests)
+                    assert php(mode,'maintain_delivery',limit=2)==dict(checked=2,acknowledged=1,unknown=0,deferred=1)
+                    assert sql(f"SELECT COUNT(*) FROM payment_delivery_attempts WHERE intent_id={bad}")=='0'
+                    assert sql(f"SELECT COUNT(*) FROM payment_delivery_attempts WHERE intent_id={good} AND result='acknowledged' AND ack_chat_id=1001 AND ack_message_id>0")=='2'
+                    assert sql(f"SELECT next_attempt_at>NOW(6) FROM payment_delivery_intents WHERE id={bad}")=='1'
+                    assert finance()==before and len(requests)==n
+                    cases.append(mode+'_new_delivery_due_immediately_and_failed_preflight_yields')
+                    # Malformed or foreign success cannot certify either a photo or text.
+                    for i,response in enumerate([dict(ok=True),dict(ok=True,result=dict(chat=dict(id=9001),message_id=22)),dict(ok=True,result=dict(chat=dict(id=1001),message_id=0)),dict(ok=True,error_code=400,result=dict(chat=dict(id=1001),message_id=22))]):
+                        did=identity_delivery('malformed-'+str(i))
+                        before=finance();n=len(requests)
+                        part=1+i%2
+                        assert php(mode,'deliver',id=did,responses={part:response})=='unknown'
+                        assert sql(f"SELECT COUNT(*) FROM payment_delivery_attempts WHERE intent_id={did} AND result='unknown' AND ack_chat_id IS NULL AND ack_message_id IS NULL")=='1'
+                        assert sql(f"SELECT COUNT(*) FROM payment_delivery_attempts WHERE intent_id={did} AND result='acknowledged' AND ack_chat_id=1001 AND ack_message_id>0")=='1'
+                        assert php(mode,'deliver',id=did)=='unknown'
+                        assert sql(f"SELECT COUNT(*) FROM fixture_telegram WHERE intent_id={did}")=='2'
+                        assert finance()==before and len(requests)==n
+                    cases.append(mode+'_customer_photo_text_ack_identity_and_independent_sibling')
+            if args.report_revisions_only or not any((args.delivery_identity_only,args.resolution_only,args.referral_agent_only,args.plan_recovery_only,args.bulk_report_only,args.zero_commercial_only,args.name_collision_only)):
                 sql("UPDATE users SET wallet=50000,refered_by=0 WHERE userid=1001; UPDATE server_info SET ucount=100 WHERE id=2")
                 for mode in ('strict','off'):
                     report_revision_cases(mode)

@@ -283,6 +283,15 @@ def main():
         text=run(w,e,dict(action='state',id=manual))['result']
         assert text['state']=='receipt_review' and 'رسید' in text['body']
         cases.append('manual_receipt_not_expired')
+        # Old contradictory drafts must not occupy every limited sweep slot.
+        contradictory=add(w,e,'contradictory-pending-receipt',who=9530,old=100)
+        sql(w,e,f"UPDATE pays SET message_id=667,chat_id='9530' WHERE id={contradictory}")
+        eligible=add(w,e,'eligible-behind-contradictory',who=9531,old=110)
+        run(w,e,dict(action='maintain',limit=1))
+        assert state(w,e,'contradictory-pending-receipt')=='pending'
+        assert state(w,e,'eligible-behind-contradictory')=='expired'
+        cases.append('bounded_expiry_skips_original_evidence_without_starvation')
+
         now=int(time.time())
         fresh=add(w,e,'selectable-fresh',who=9021,kind='INCREASE_WALLET',old=now)
         assert run(w,e,dict(action='selectable',id=fresh))['result'] is True

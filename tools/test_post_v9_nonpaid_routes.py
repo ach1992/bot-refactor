@@ -92,7 +92,7 @@ function fixtureDeliveryTransport($to) {
     if (($GLOBALS['spec']['notice']??'')==='interrupt') exit(0);
     if (($GLOBALS['spec']['notice']??'')==='throw') throw new RuntimeException('lost_qr_ack');
     if (($GLOBALS['spec']['notice']??'')==='false') return (object)['ok'=>false,'error_code'=>500,'description'=>'uncertain'];
-    return (object)['ok'=>true,'result'=>(object)['message_id'=>42]];
+    return fixtureMessageAck($to);
 }
 function sendMessage($body=null,$keys=null,$format=null,$to=null){
     $transport=fixtureDeliveryTransport($to);

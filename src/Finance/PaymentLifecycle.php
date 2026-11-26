@@ -863,18 +863,15 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
             $cutoff=time();
             $stmt=$db->prepare(
                 "SELECT p.id FROM pays p WHERE p.state='pending'
-                   AND (p.payid IS NULL OR p.payid='')
-                   AND NOT EXISTS (
-                       SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id
-                   )
-                   AND p.draft_expires_at IS NOT NULL
+                   AND p.user_id>0 AND ".achbotPayUxDraftWithoutEvidenceSql()."
+                   AND p.draft_expires_at>0
                    AND (p.draft_expires_at<=? OR EXISTS (
                        SELECT 1 FROM pays n WHERE n.user_id=p.user_id
                          AND SUBSTRING_INDEX(n.type,'_',2)=SUBSTRING_INDEX(p.type,'_',2)
                          AND n.id>p.id
                          AND COALESCE(n.order_id,0)=COALESCE(p.order_id,0)
                    ))
-                 ORDER BY p.request_date ASC LIMIT {$maxRows}"
+                 ORDER BY p.request_date ASC,p.id LIMIT {$maxRows}"
             );
             $stmt->bind_param('i',$cutoff);$stmt->execute();
             $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();

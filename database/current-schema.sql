@@ -276,12 +276,15 @@ CREATE TABLE `payment_delivery_attempts` (
   `claim_state` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `telegram_error_code` smallint(5) unsigned DEFAULT NULL,
   `retry_after_seconds` int(10) unsigned DEFAULT NULL,
+  `ack_chat_id` bigint(20) DEFAULT NULL,
+  `ack_message_id` bigint(20) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_delivery_attempt_no` (`intent_id`,`attempt_no`),
   UNIQUE KEY `uq_delivery_dispatch_token` (`dispatch_token`),
   KEY `idx_delivery_part_attempt` (`intent_id`,`part_no`,`attempt_no`),
   CONSTRAINT `fk_delivery_attempt_intent` FOREIGN KEY (`intent_id`) REFERENCES `payment_delivery_intents` (`id`),
-  CONSTRAINT `fk_delivery_attempt_part` FOREIGN KEY (`intent_id`, `part_no`) REFERENCES `payment_delivery_parts` (`intent_id`, `part_no`)
+  CONSTRAINT `fk_delivery_attempt_part` FOREIGN KEY (`intent_id`, `part_no`) REFERENCES `payment_delivery_parts` (`intent_id`, `part_no`),
+  CONSTRAINT `ck_delivery_attempt_ack_identity` CHECK ((`ack_chat_id` is null and `ack_message_id` is null or `result` = 'acknowledged' and `ack_chat_id` is not null and `ack_chat_id` <> 0 and `ack_message_id` is not null and `ack_message_id` > 0))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

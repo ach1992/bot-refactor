@@ -39,7 +39,9 @@ function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null,bool 
         });
         achbotCheckoutAdvanceStage($operation,$payId,'delivery',function() use ($db,$operation,$payId,$deadline) {
             $s=achbotProviderStatement($db,"SELECT id FROM payment_delivery_intents
-                WHERE service_operation_id=? AND state IN ('pending','dispatching') ORDER BY ordinal LIMIT 8",'i',[$operation]);
+                WHERE service_operation_id=? AND state IN ('pending','dispatching')
+                  AND (next_attempt_at IS NULL OR next_attempt_at<=NOW(6))
+                ORDER BY COALESCE(next_attempt_at,updated_at),ordinal LIMIT 8",'i',[$operation]);
             $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
             foreach ($rows as $row) {
                 if (hrtime(true)/1000000000>=$deadline) break;

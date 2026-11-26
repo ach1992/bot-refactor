@@ -415,8 +415,8 @@ actual operation/effect and original order. Gift notices are bound to the
 actual subscription attachment. A changed/removed attachment is terminally
 skipped; transient failures defer. Current multipart delivery and followup
 attempts preserve original source and recipient, known rejection versus unknown
-ACK, rate-limit recovery, and explicit original-packet redrive. Followup
-attempts also persist the actual acknowledged numeric chat and message id;
+ACK, rate-limit recovery, and explicit original-packet redrive. Customer delivery and followup
+attempts persist the actual acknowledged numeric chat and message id;
 a configured channel username must match the returned chat username before
 pinning its numeric identity. A success without matching message identity is
 unknown, not an automatic resend. An explicit identical-edit rejection can
@@ -425,7 +425,9 @@ target and previous attempt evidence remain unchanged. During installed-data
 transfer, preserve old intents, attempts and original ACK evidence in an
 explicit, separately authorized transfer/reconciliation. Map proven fixed
 wire actions/targets from original intents; never guess missing message IDs
-or replay historical delivery. Superseded legacy funded-credit/separate
+or replay historical delivery. Prior customer ACKs without proven message
+identity remain historical ACK evidence; new customer ACKs require exact
+recipient and positive returned message id, including QR parts. Superseded legacy funded-credit/separate
 delivery-notice presentations are not active runtime alternatives. A verified
 prior logical summary ACK may anchor a current revision only after exact source,
 recipient and message reconciliation; otherwise retain audit evidence without

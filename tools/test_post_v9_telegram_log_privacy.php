@@ -12,7 +12,7 @@ $curlConstants = [
     'CURLOPT_TIMEOUT', 'CURLOPT_CONNECTTIMEOUT', 'CURLOPT_IPRESOLVE',
     'CURL_IPRESOLVE_V4', 'CURLOPT_HTTPHEADER', 'CURLOPT_HTTP_VERSION',
     'CURL_HTTP_VERSION_1_1', 'CURLOPT_NOSIGNAL', 'CURLOPT_DNS_CACHE_TIMEOUT',
-    'CURLINFO_RESPONSE_CODE',
+    'CURLINFO_RESPONSE_CODE', 'CURLINFO_REQUEST_SIZE', 'CURLINFO_SIZE_UPLOAD',
 ];
 foreach ($curlConstants as $i => $name) {
     if (!defined($name)) {
@@ -31,11 +31,30 @@ function curl_setopt($handle, $option, $value) {
 }
 function curl_close($handle) {}
 function curl_errno($handle) {
-    return str_contains($GLOBALS['owned_curl_mode'], 'curl_error') ? 28 : 0;
+    $mode=$GLOBALS['owned_curl_mode'];
+    if (str_starts_with($mode,'journal_presend_'))
+        return $mode==='journal_presend_timeout'?28:6;
+    return str_contains($mode, 'curl_error') ? 28 : 0;
 }
 function curl_error($handle) { return 'PRIVATE-TRANSPORT-ERROR-SENTINEL'; }
 function curl_getinfo($handle, $opt) {
-    return match($GLOBALS['owned_curl_mode']) {
+    $mode=$GLOBALS['owned_curl_mode'];
+    if ($opt===CURLINFO_REQUEST_SIZE || $opt===CURLINFO_SIZE_UPLOAD) {
+        $request=$opt===CURLINFO_REQUEST_SIZE;
+        return match($mode) {
+            'journal_presend_request_bytes'=>$request?12:0.0,
+            'journal_presend_upload_bytes'=>$request?0:1.0,
+            'journal_presend_missing_request'=>$request?false:0.0,
+            'journal_presend_missing_upload'=>$request?0:false,
+            'journal_presend_malformed_request'=>$request?'0':0.0,
+            'journal_presend_malformed_upload'=>$request?0:null,
+            default=>$request?0:0.0,
+        };
+    }
+    if ($opt!==CURLINFO_RESPONSE_CODE) throw new RuntimeException('Unexpected cURL info option');
+    if (str_starts_with($mode,'journal_presend_'))
+        return $mode==='journal_presend_http_response'?200:0;
+    return match($mode) {
         'request_http_500','file_http_500','journal_conflict_429','journal_conflict_ack'=>500,
         'entities_400'=>400,'blocked_403'=>403,
         'rate_429','journal_rate_429'=>429,'journal_conflict_entities','plain_conflict_entities','file_conflict_entities'=>503,default=>200,
@@ -43,7 +62,7 @@ function curl_getinfo($handle, $opt) {
 }
 function curl_exec($handle) {
     $mode=$GLOBALS['owned_curl_mode'];
-    if (str_contains($mode, 'curl_error')) { return false; }
+    if (curl_errno($handle)!==0) { return false; }
     if (str_contains($mode, 'http_500')) {
         return '{"ok":false,"description":"PRIVATE-TELEGRAM-RESPONSE-SENTINEL"}';
     }
@@ -102,6 +121,12 @@ $cases=[
     ['plain_conflict_entities','request',true],
     ['file_conflict_entities','file',true],
 ];
+// Both form and multipart must consult the real wire counters. An unknown
+// transport outcome must not become a retryable local failure.
+foreach (['zero','request_bytes','upload_bytes','missing_request','missing_upload',
+          'malformed_request','malformed_upload','http_response','timeout'] as $variant)
+    foreach (['request','file'] as $kind)
+        $cases[]=['journal_presend_'.$variant,$kind,true];
 $passed=0;
 try {
     foreach ($cases as [$mode,$kind,$mustLog]) {
@@ -123,7 +148,16 @@ try {
         if (array_key_exists(CURLOPT_IPRESOLVE, $GLOBALS['owned_curl_options'])) {
             throw new RuntimeException('Telegram transport forced an IP family: '.$mode);
         }
-        if (str_contains($mode,'curl_error')) {
+        if (str_starts_with($mode,'journal_presend_')) {
+            if ($mode==='journal_presend_zero') {
+                if (!($result instanceof \AchBot\Telegram\Response\PreSendFailure) ||
+                    $result->errno!==6 ||
+                    \AchBot\Telegram\Response\deliveryOutcome($result)['result']!=='local_failed')
+                    throw new RuntimeException('Proven nonapplication lost: '.$kind);
+            } elseif ($result!==($kind==='request'?null:false)) {
+                throw new RuntimeException('Uncertain transport classified as retryable: '.$mode.' '.$kind);
+            }
+        } elseif (str_contains($mode,'curl_error')) {
             if ($result!==($kind==='request' ? null : false)) {
                 throw new RuntimeException('cURL error contract drift: '.$mode);
             }

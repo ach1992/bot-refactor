@@ -99,6 +99,8 @@ REQUIRED_CURRENT_CASES = {
         "missing_current_report_attempt_no_legacy_fallback",
         "actual_long_checkout_and_auto_renew_storage_bound",
         "current_schema_source_execution_without_migrations",
+        "new_delivery_due_immediately_and_failed_preflight_yields",
+        "customer_photo_text_ack_identity_and_independent_sibling",
         "five_real_wallet_callbacks_owner_schema_and_replay_fences",
         "actual_low_wallet_callback_switch_to_manual",
         "invalid_native_names_never_debit_or_allocate",

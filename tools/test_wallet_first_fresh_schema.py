@@ -216,6 +216,9 @@ def main():
             for column in columns:
                 assert sql('fresh_single',"SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='"+table+"' AND COLUMN_NAME='"+column+"'")=='NO'
                 checks.append('required_delivery_column:'+table+'.'+column)
+        for column in ('ack_chat_id','ack_message_id'):
+            assert sql('fresh_single',"SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_delivery_attempts' AND COLUMN_NAME='"+column+"'")=='YES'
+            checks.append('historical_delivery_identity_nullable:'+column)
         path=work/'fresh.php';path.write_text(PHP)
         for mode in ('strict','off'):
             p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode],

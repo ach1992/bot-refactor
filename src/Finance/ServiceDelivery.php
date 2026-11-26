@@ -26,7 +26,7 @@ function achbotServiceDeliveryStorageReady(mysqli $db): bool {
                 'columns'=>'intent_id,part_no,payload_sha256,state,last_attempt_no,next_attempt_at',
                 'keys'=>['PRIMARY'=>['intent_id','part_no']]],
             'payment_delivery_attempts'=>[
-                'columns'=>'id,intent_id,attempt_no,dispatch_token,actor_userid,result,started_at,finished_at,part_no,claim_state,telegram_error_code,retry_after_seconds',
+                'columns'=>'id,intent_id,attempt_no,dispatch_token,actor_userid,result,started_at,finished_at,part_no,claim_state,telegram_error_code,retry_after_seconds,ack_chat_id,ack_message_id',
                 'keys'=>['PRIMARY'=>['id'],'uq_delivery_attempt_no'=>['intent_id','attempt_no'],'uq_delivery_dispatch_token'=>['dispatch_token']]],
         ];
         foreach ($tables as $table=>$spec) {
@@ -405,7 +405,8 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
                 'service_operation_id'=>$serviceId,'delivery_id'=>$id,'ordinal'=>(int)$d['ordinal'],
                 'delivery_part'=>$cursor,'actor_id'=>$actor,'request_attempt'=>$claim['attempt'],
                 'state'=>$r['state'],'result'=>$outcome['result'],'telegram_error_code'=>$outcome['code'],
-                'retry_after'=>$outcome['retry_after'],'curl_errno'=>$outcome['curl_errno']??null],$outcome['result']==='acknowledged'?'info':'warning');
+                'retry_after'=>$outcome['retry_after'],'curl_errno'=>$outcome['curl_errno']??null,
+                'reason'=>$outcome['reason']??null,'telegram_message_id'=>$outcome['ack']['message_id']??null],$outcome['result']==='acknowledged'?'info':'warning');
             if ($actor>0) return $r['part_state'];
             if ($r['state']!=='pending') return $r['state'];
             // Scan each part at most once during this invocation, even if

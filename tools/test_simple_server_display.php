@@ -132,7 +132,7 @@ $effects=[];$failAt=0;
 function sendMessage($text,$keys=null,...$rest){
     $GLOBALS['effects'][]=['kind'=>'send','text'=>$text,'keys'=>$keys];
     if($GLOBALS['failAt']===count($GLOBALS['effects'])) throw new RuntimeException('owned_text_unknown');
-    return(object)['ok'=>true];
+    return(object)['ok'=>true,'result'=>(object)['message_id'=>count($GLOBALS['effects']),'chat'=>(object)['id'=>(int)($rest[1]??1001)]]];
 }
 function editText($id,$text,$keys=null,...$rest){
     $GLOBALS['effects'][]=['kind'=>'edit','id'=>$id,'text'=>$text,'keys'=>$keys];return(object)['ok'=>true];
