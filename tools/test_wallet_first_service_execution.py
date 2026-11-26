@@ -3119,6 +3119,8 @@ DELIMITER ;
                 # is present in exactly one bounded report per recipient.
                 mode='strict'
                 sql('UPDATE users SET wallet=50000 WHERE userid=1001; UPDATE server_info SET ucount=100 WHERE id=2')
+                # Exercise continuation boundaries with realistic larger IDs.
+                sql('ALTER TABLE orders_list AUTO_INCREMENT=1000000')
                 op=issue(mode,'bulk-report-'+('x'*76),42)
                 fund(mode,op)
                 for i in range(42):
@@ -3127,6 +3129,7 @@ DELIMITER ;
                 names=sql(f"SELECT remote_username,order_id FROM service_effects WHERE source_kind='service_operation' AND source_ref='{op}' ORDER BY ordinal").splitlines()
                 assert len(names)==42 and all(len(v.split('\t')[0])>=80 for v in names),names
                 before=finance();n=len(requests)
+                max_wire=0;max_display=0
                 for role in ('service_admin','service_channel'):
                     ids=list(map(int,sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={op} AND role='{role}' AND (stage='service_completed' OR stage LIKE 'service_completed_p%') ORDER BY id").splitlines()))
                     assert len(ids)>1,(role,ids)
@@ -3135,13 +3138,20 @@ DELIMITER ;
                         assert php(mode,'followup',id=rid)=='acknowledged'
                         assert php(mode,'followup',id=rid)=='acknowledged'
                         assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='1'
-                        body=sql(f"SELECT text FROM fixture_followup WHERE intent_id={rid}")
-                        assert len(body.encode('utf-8'))<=4000
+                        # The batch client escapes line breaks and backslashes.
+                        # Verify the actual wire body, not its SQL display.
+                        body=bytes.fromhex(sql(f"SELECT HEX(text) FROM fixture_followup WHERE intent_id={rid}")).decode('utf-8')
+                        size=len(body.encode('utf-8'))
+                        assert size==int(sql(f"SELECT OCTET_LENGTH(text) FROM fixture_followup WHERE intent_id={rid}"))
+                        assert size<=4000,(role,rid,size)
+                        max_wire=max(max_wire,size)
+                        max_display=max(max_display,len(sql(f"SELECT text FROM fixture_followup WHERE intent_id={rid}").encode('utf-8')))
                         bodies.append(body)
                     for line in names:
                         name,oid=line.split('\t')
                         assert sum(f'<code>{name}</code> (#{oid})' in body for body in bodies)==1,(role,name,oid)
                 assert finance()==before and len(requests)==n
+                assert max_display>max_wire,(max_wire,max_display)
                 cases.append('actual_large_buy_all_names_bounded_durable_owner_channel_reports')
             if args.plan_recovery_only:
                 for mode in ('strict','off'):
