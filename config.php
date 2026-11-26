@@ -122,73 +122,10 @@ function stateFa($s){
     require_once __DIR__ . '/src/Presentation/Labels.php';
     return \AchBot\Presentation\Labels\broadcastState($s);
 }
-function getUsersCountByGroup($connection, $group){
-    if($group === 'has'){
-        $stmt = $connection->prepare("
-            SELECT COUNT(*) AS count
-            FROM `users` u
-            WHERE (u.step IS NULL OR (u.step <> 'Bot_Blocked' AND u.step <> 'banned'))
-              AND EXISTS (SELECT 1 FROM `orders_list` o WHERE o.userid = u.userid)
-        ");
-
-    } elseif($group === 'none'){
-        $stmt = $connection->prepare("
-            SELECT COUNT(*) AS count
-            FROM `users` u
-            LEFT JOIN `orders_list` o ON o.userid = u.userid
-            WHERE (u.step IS NULL OR (u.step <> 'Bot_Blocked' AND u.step <> 'banned'))
-              AND o.userid IS NULL
-        ");
-
-    } elseif($group === 'agents'){
-        $stmt = $connection->prepare("
-            SELECT COUNT(*) AS count
-            FROM `users`
-            WHERE is_agent = 1
-              AND (step IS NULL OR (step <> 'Bot_Blocked' AND step <> 'banned'))
-        ");
-
-    } else {
-        $stmt = $connection->prepare("
-            SELECT COUNT(*) AS count
-            FROM `users`
-            WHERE (step IS NULL OR (step <> 'Bot_Blocked' AND step <> 'banned'))
-        ");
-    }
-
-    $stmt->execute();
-    $res = $stmt->get_result();
-    $row = $res->fetch_assoc();
-    $stmt->close();
-
-    return (int)($row['count'] ?? 0);
-}
-
 // ✅ Helpers for Broadcast Pin/Unpin/Delete
 function apiOk($res){
     require_once __DIR__ . '/src/Telegram/Response.php';
     return \AchBot\Telegram\Response\isSuccessful($res);
-}
-
-function getApiMessageId($res){
-    require_once __DIR__ . '/src/Telegram/Response.php';
-    return \AchBot\Telegram\Response\messageId($res);
-}
-
-function logBroadcastUserMessage($connection, $broadcastId, $userid, $messageId){
-    if($broadcastId <= 0 || $userid <= 0 || $messageId <= 0) return;
-
-    $stmt = $connection->prepare("
-        INSERT INTO `bc_messages` (`broadcast_id`,`userid`,`message_id`)
-        VALUES (?,?,?)
-        ON DUPLICATE KEY UPDATE
-            `message_id`=VALUES(`message_id`),
-            `deleted`=0,
-            `deleted_at`=NULL
-    ");
-    $stmt->bind_param("iii", $broadcastId, $userid, $messageId);
-    $stmt->execute();
-    $stmt->close();
 }
 
 function pinOne($chatId, $messageId){

@@ -1757,10 +1757,10 @@ return [
         // broadcast_send.text
         'broadcast_send.text.5168e99d1c' => 'عملیات فوروارد همگانی شروع شد.',
         'broadcast_send.text.afcd1bb579' => 'عملیات ارسال پیام همگانی شروع شد.',
-        'broadcast_send.text.2c23963c7c' => '✅ عملیات فوروارد همگانی با موفقیت انجام شد.',
-        'broadcast_send.text.684e7d6efc' => '✅ عملیات ارسال پیام همگانی با موفقیت انجام شد.',
-        'broadcast_send.text.f9f933d21b' => '' . "\n" . '❇️ تا اینجا روی حدود ',
-        'broadcast_send.text.2e434e30b2' => ' نفر پردازش انجام شد.',
+        'broadcast_send.text.2c23963c7c' => '📣 پردازش فوروارد همگانی به پایان رسید.',
+        'broadcast_send.text.684e7d6efc' => '📣 پردازش ارسال همگانی به پایان رسید.',
+        'broadcast_send.text.f9f933d21b' => ['text' => "\n\n" . '✅ تعداد گیرندگان با پاسخ موفق ثبت‌شده از تلگرام: {count} نفر', 'parameters' => ['count']],
+        'broadcast_send.text.2e434e30b2' => "\n\n" . 'ارسال‌های بدون تأیید در این تعداد لحاظ نشده‌اند.',
         // broadcast_send.broadcast__send__failed_code
         'broadcast_send.button.488a04a1e0' => ['text' => '⛔️ ارسال همگانی لغو شد.' . "\n" . 'تا اینجا آخرین کاربر با id={offset} پردازش شده بود.', 'parameters' => ['offset']],
         // message_actions.button

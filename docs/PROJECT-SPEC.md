@@ -136,6 +136,11 @@ authentic funds/evidence or treating a migrated PasarGuard account as retired.
   Delivery recovery reuses original packets and never repeats money or
   Native changes. See the architecture for durable reporting and sales
   metric ownership.
+- Broadcast/forward processing continues past individual recipient failures
+  and resumes after interruption using the original durable cursor. Do not
+  replay uncertain sends or treat processing completion as universal Telegram
+  acceptance. Report recorded acknowledgements only and keep the shared Cron
+  available for other jobs; see [Telegram presentation](post-v9/TELEGRAM-PRESENTATION.md).
 - New user-/admin-visible text, menu, interaction, naming, timing and
   reporting changes require explicit prior Owner approval.
 

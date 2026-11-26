@@ -90,10 +90,37 @@ literal token-like strings in the note and its HTML attributes.
 Broadcast jobs store raw text for history and rendered HTML
 for execution; edit jobs do the same. Historical pending jobs are not replayed.
 The broadcast worker reserves each recipient in the existing durable cursor
-before dispatch. On a lost acknowledgement or process interruption, the
-recipient is not replayed; only an acknowledged message ID is recorded as
-delivered. This deliberately favors no duplicate message over claiming or
-retrying an uncertain delivery. A pause cannot rewind the claimed cursor.
+before dispatch. Recipient-specific rejection, malformed or missing response,
+transport exception, and a failed local ACK record do not discard later
+recipients. An interrupted job resumes at the next unclaimed recipient under
+the existing exclusive Cron lease, without a fixed stale-worker wait. Never
+replay an uncertain dispatch, including a crash between claiming and sending;
+a message may be omitted if its outcome cannot be established. Only a positive
+integer message ID from an accepted Telegram response is recorded in
+`bc_messages`; this is API acceptance, not proof of reading or receipt by the
+person. Record actual unpersisted ACK IDs and failures in the private error log.
+A failed database claim cannot authorize sending; failed audience/ACK reads
+cannot claim an empty successful completion. The next admitted Cron tick can
+recover after the database is available.
+
+A confirmed Telegram 429 defers the broadcast queue until the provider's
+valid `retry_after`, using the existing paused `send_list.updated_at` checkpoint
+as the earliest eligible time (normally NOW; future only during the pause).
+A rejected recipient is not automatically re-sent. Do not sleep for the
+provider's wait while holding the shared Cron lease; without a usable wait,
+yield to the next tick. Preserve FIFO across broadcasts. Keep the existing
+400-row page and normal pacing; stop claiming new recipients after a 45-second
+dispatch slice so slower sends cannot indefinitely occupy the other Cron
+jobs. An in-flight request may finish beyond the slice. This is not a total
+audience cap or a new scheduler. No new schema or state is required.
+
+Dispatch and live progress use the same current audience predicate. The
+remaining count is eligible rows after the durable cursor, not current group
+size minus ACK count. At completion count unique recorded positive message
+IDs for that broadcast only, independent of current audience. Persist
+completion before the optional approved admin report; distinguish processing
+completion from Telegram acceptance and exclude unconfirmed sends. Cancellation
+cannot be reopened and failure of a report cannot restart customer sends.
 A contradictory HTTP/Bot API acknowledgement or rejection cannot authorize
 a formatting retry in ordinary or multipart sends.
 Support history stores original literal content, and live sends render

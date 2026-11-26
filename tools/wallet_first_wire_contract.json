@@ -31,7 +31,8 @@
     "src/Services/Funding.php",
     "src/Services/Ownership.php",
     "src/Services/Resolution.php",
-    "src/Wallet/Ledger.php"
+    "src/Wallet/Ledger.php",
+    "src/Broadcast/Storage.php"
   ],
   "removed": [
     "src/Finance/AutomaticReceipts.php",

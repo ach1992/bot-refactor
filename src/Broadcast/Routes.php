@@ -8,13 +8,14 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__.'/../Admin/Access.php';
 require_once __DIR__.'/../Telegram/Presentation.php';
+require_once __DIR__.'/Storage.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
 // BEGIN send to all
 if($data == 'message2All' && ($from_id == $admin || $userInfo['isAdmin'] == true)){
 
-    $stmt = $connection->prepare("SELECT * FROM `send_list` WHERE `state` IN (1,2) ORDER BY `id` ASC LIMIT 1");
+    $stmt = $connection->prepare("SELECT * FROM `send_list` WHERE `state` IN (1,2) AND (type='forwardall' OR text_html IS NOT NULL) ORDER BY `id` ASC LIMIT 1");
     $stmt->execute();
     $info = $stmt->get_result();
     $stmt->close();
@@ -28,25 +29,12 @@ if($data == 'message2All' && ($from_id == $admin || $userInfo['isAdmin'] == true
         $title  = $sendInfo['title'] ?? '';
         $offset = (int)($sendInfo['offset'] ?? 0);
 			
-		$usersCount = getUsersCountByGroup($connection, $group);
+		$usersCount = achbotBroadcastAudienceCount($connection,$group);
 		$kind = ($type === 'forwardall') ? \achbotMessage('broadcast.routes.message2_all.text.e92414445c') : \achbotMessage('broadcast.routes.message2_all.text.a8b7952c88');
         $titleLine = $title ? \achbotMessage('broadcast.routes.message2_all.text.b00aae4551', ['title' => $title]) : "";
 
-		$sentCount = 0;
-		$stc = $connection->prepare("
-			SELECT COUNT(*) AS c
-			FROM `bc_messages`
-			WHERE `broadcast_id`=? AND `deleted`=0
-		");
-		$stc->bind_param("i", $jobId);
-		$stc->execute();
-		$rr = $stc->get_result();
-		if($rr && $rr->num_rows > 0){
-			$sentCount = (int)$rr->fetch_assoc()['c'];
-		}
-		$stc->close();
-
-		$left = max(0, $usersCount - $sentCount);
+        $sentCount=achbotBroadcastAckCount($connection,$jobId);
+        $left=achbotBroadcastAudienceCount($connection,$group,$offset);
 
 		$lastUserIdProcessed = $offset;
 

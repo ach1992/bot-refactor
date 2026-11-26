@@ -649,5 +649,26 @@
   "payment.payment_lifecycle.previous_payment_review": {
     "before": null,
     "after": "🔎 بررسی پرداخت قبلی"
+  },
+  "jobs.broadcast_send.text.2c23963c7c": {
+    "before": "✅ عملیات فوروارد همگانی با موفقیت انجام شد.",
+    "after": "📣 پردازش فوروارد همگانی به پایان رسید."
+  },
+  "jobs.broadcast_send.text.2e434e30b2": {
+    "before": " نفر پردازش انجام شد.",
+    "after": "\n\nارسال‌های بدون تأیید در این تعداد لحاظ نشده‌اند."
+  },
+  "jobs.broadcast_send.text.684e7d6efc": {
+    "before": "✅ عملیات ارسال پیام همگانی با موفقیت انجام شد.",
+    "after": "📣 پردازش ارسال همگانی به پایان رسید."
+  },
+  "jobs.broadcast_send.text.f9f933d21b": {
+    "before": "\n❇️ تا اینجا روی حدود ",
+    "after": {
+      "text": "\n\n✅ تعداد گیرندگان با پاسخ موفق ثبت‌شده از تلگرام: {count} نفر",
+      "parameters": [
+        "count"
+      ]
+    }
   }
 }

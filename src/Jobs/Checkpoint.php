@@ -25,14 +25,16 @@ function hbUpdate(mysqli $connection, string $table, int $id, int $offsetVal): v
     }
 }
 
-function markPaused(mysqli $connection, string $table, int $id, int $offsetVal): void {
-    $sql = "UPDATE `$table` SET `offset`=GREATEST(`offset`,?), `state`=1, `updated_at`=NOW() WHERE `id`=? AND `state`=2";
+/** Paused jobs may carry a future eligible-at checkpoint after rate limiting. */
+function markPaused(mysqli $connection, string $table, int $id, int $offsetVal, int $delaySeconds=0): bool {
+    $sql = "UPDATE `$table` SET `offset`=GREATEST(`offset`,?), `state`=1,
+        `updated_at`=DATE_ADD(NOW(),INTERVAL ? SECOND) WHERE `id`=? AND `state`=2";
     $st = $connection->prepare($sql);
-    if ($st) {
-        $st->bind_param("ii", $offsetVal, $id);
-        $st->execute();
-        safeClose($st);
-    }
+    if (!$st) return false;
+    try {
+        $st->bind_param("iii", $offsetVal, $delaySeconds, $id);
+        return $st->execute();
+    } finally {safeClose($st);}
 }
 
 function isCancelled(mysqli $connection, string $table, int $id): bool {
@@ -59,13 +61,13 @@ function markCancelled(mysqli $connection, string $table, int $id, int $offsetVa
     }
 }
 
-function markFinished(mysqli $connection, string $table, int $id, int $offsetVal): void {
-    $sql = "UPDATE `$table` SET `offset`=?, `state`=3, `updated_at`=NOW() WHERE `id`=? AND `state`=2";
+function markFinished(mysqli $connection, string $table, int $id, int $offsetVal): bool {
+    $sql = "UPDATE `$table` SET `offset`=GREATEST(`offset`,?), `state`=3, `updated_at`=NOW() WHERE `id`=? AND `state`=2";
     $st = $connection->prepare($sql);
-    if ($st) {
+    if (!$st) throw new RuntimeException('job_completion_prepare_failed',$connection->errno);
+    try {
         $st->bind_param("ii", $offsetVal, $id);
-        $st->execute();
-        safeClose($st);
-    }
+        if (!$st->execute()) throw new RuntimeException('job_completion_write_failed',$st->errno);
+        return $st->affected_rows===1;
+    } finally {safeClose($st);}
 }
-
