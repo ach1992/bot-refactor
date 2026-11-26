@@ -14,6 +14,7 @@
     "src/Finance/OperationalReports.php",
     "src/Finance/PaymentCredit.php",
     "src/Finance/ReceiptMethods.php",
+    "src/Finance/ReceiptNotices.php",
     "src/Finance/ReceiptReports.php",
     "src/Finance/Routes/PaymentActions.php",
     "src/Finance/ServiceDelivery.php",
@@ -44,6 +45,7 @@
     "src/Finance/RecoveryInspection.php",
     "src/Finance/RecoveryTransport.php",
     "src/Finance/RenewalHelper.php",
+    "src/Finance/Routes/ApiPayments.php",
     "src/Finance/Routes/ManualApproval.php",
     "src/Finance/Routes/ManualCrypto.php",
     "src/Finance/Routes/RenewalPlan.php",
@@ -107,11 +109,11 @@
       "reason": "Browser return no longer performs native operation or inline completion messages."
     },
     "src/Finance/ReceiptHelpers.php": {
+      "reason": "Remove direct original receipt send and customer acknowledgement; durable per-recipient receipt_admitted dispatch owns both.",
       "before_count": 6,
-      "after_count": 4,
+      "after_count": 1,
       "before_sha256": "a5b5ce5c92c2a86efa446fa6fe0bb66c54651c88d0c879bb7b06a023ed53b428",
-      "after_sha256": "cab2613938f380dd92d2e5fe51a49d42f7de8852f6fb6f211fba7b82f61b1688",
-      "reason": "Remove obsolete payment-path refund notice. Single guarded Home navigation acknowledges a retired callback; retired manual-selection helpers removed. Retire old two-message cancellation in favor of shared lifecycle; #236."
+      "after_sha256": "d94f1b211ec24754736a4b1414f97972d18320ce633e4920c17e4711e3b0d0a3"
     },
     "src/Finance/ReferralReward.php": {
       "before_count": 1,
@@ -121,11 +123,11 @@
       "reason": "Referral credit notices are durable source-owned reports."
     },
     "src/Finance/Routes/AutomaticGatewayReview.php": {
-      "reason": "Shared operations inbox, receipt evidence/recheck, service disposition, delivery and report recovery; archive removed; hosted rejection notification staged through durable outbox instead of direct send.",
+      "reason": "Private explicit receipt view stages original evidence in the existing journal.",
       "before_count": 49,
-      "after_count": 29,
+      "after_count": 27,
       "before_sha256": "4fb93a55e1bbfc7cdab723e0c4153b9d6f5e87c178b741f86ff79ed88a23c8af",
-      "after_sha256": "d56811d69095e8e7384bbdbde09201fb0d1864f2547052f3158a1e05ab29e3a3"
+      "after_sha256": "149e75474bd1288c094e39bf07903f88bf62b6f676ab8d5d7e627b026a21a444"
     },
     "src/Finance/Routes/Checkout.php": {
       "before_count": 15,
@@ -408,11 +410,11 @@
       "reason": "The original NOWPayments notification preserves its recipient and keyboard and appends the actual pinned invoice deadline through the shared lifecycle renderer. Remove duplicate hosted notice; original customer reference owns projection; #236."
     },
     "src/Finance/ManualCheckoutPresentation.php": {
+      "reason": "Commit admission before dispatch, then verify API independently of Telegram.",
       "before_count": 0,
-      "after_count": 11,
+      "after_count": 10,
       "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "after_sha256": "291052b20020796a3f4c92457727372b0b07bd7acd99a3c47277218c65a80308",
-      "reason": "One source-real manual invoice/receipt flow across all six checkout subjects, exact prompt ACK and guarded replacement; #236."
+      "after_sha256": "1cc21af27df7f1130ab1bb74f74588257d61e573157356975db3ad5103d6fc95"
     },
     "src/Finance/PaymentMessages.php": {
       "before_count": 0,
@@ -422,11 +424,11 @@
       "reason": "Shared owned navigation and projection; no duplicate API invoice owner; #236."
     },
     "src/Finance/Routes/ApiPayments.php": {
+      "reason": "Remove retired apiReview callback and direct unjournaled typed gift send.",
       "before_count": 5,
-      "after_count": 3,
+      "after_count": 0,
       "before_sha256": "872d9a33b2e1d101b887984a66db695a33f8288069364c61f26e4ba497b20af2",
-      "after_sha256": "4d8bc8d3e2ea45c333f586203059936cae90fbfd92c106b084f6a82a5c020f37",
-      "reason": "Retire obsolete customer API dispatch aliases; original manual evidence route owns receipt; #236."
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
     },
     "src/Finance/Routes/ManualCheckout.php": {
       "before_count": 0,
@@ -443,11 +445,11 @@
       "reason": "Remove obsolete duplicate crypto route; shared manual checkout and projector own transitions; #236."
     },
     "src/Finance/FollowupOutbox.php": {
-      "after_count": 2,
-      "after_sha256": "222d33dc46622a5c7dbb0e25396a24fb6a0b2bf158629f4f3eaffb1680302b0d",
+      "reason": "Existing journal owns sealed original receipt photo and typed evidence sends, with exact acknowledged identities.",
       "before_count": 1,
+      "after_count": 3,
       "before_sha256": "965ba962458246adc7d9b5a433f681af54df442552b93a0cf4cdb116783d2c1a",
-      "reason": "Original logical report selects a proven numeric message edit or safe first/replacement send, with committed attempt wire identity."
+      "after_sha256": "65c42c5a90a0e1e00bcc611b0d79a16c9b59d225db03d89a13b641d7497d6c31"
     }
   },
   "added_with_direct_send": [

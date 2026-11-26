@@ -204,12 +204,6 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         alert(\achbotMessage('manual_payment.manual_receipts.alert.872f260882'));
         return;
     }
-    $keys=json_encode(['inline_keyboard'=>[
-        [['text'=>\achbotMessage('manual_payment.manual_receipts.button.51fdc91d69',
-            ['from_id'=>$from_id]),'callback_data'=>'wizwizch']],
-        [['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604',
-            ['hash_id'=>$hash_id]),'callback_data'=>'noop_'.$hash_id]],
-    ]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
     $retryButton=json_encode(['inline_keyboard'=>[[['text'=>
         \achbotMessage('manual_payment.manual_receipts.button.e3517e568b'),
         'url'=>"https://t.me/$botUsername?start=restart_$hash_id"]]]],
@@ -290,38 +284,15 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         $opened=true;
         $actor=(int)$from_id;
         $locked=achbotCheckoutRejectReceiptLocked($connection,$payId,(int)$uid,$actor,(int)$admin,(string)$hash_id);
-        if ((int)$locked['chat_id']!==(int)$payInfo['chat_id'] ||
-            (int)$locked['message_id']!==(int)$payInfo['message_id'])
-            throw new RuntimeException('manual_reject_stale');
         // Consume only the current private reason editor; rollback also
         // restores the payment/command if another editor replaced it.
         $q=$connection->prepare("UPDATE users SET step='none' WHERE userid=? AND BINARY step=BINARY ?");
         $q->bind_param('is',$actor,$expectedEditor);
         $editorClaimed=$q->execute() && $q->affected_rows===1;$q->close();
         if (!$editorClaimed) throw new RuntimeException('manual_reject_editor_stale');
-        achbotFollowupInsertLocked($connection,$locked,'manual_reject',
-            'receipt_primary','edit',(string)(int)$locked['chat_id'],
-            (int)$locked['message_id'],['text'=>$keys,'keys'=>null,'mode'=>null]);
-        $adminMessages=json_decode((string)($locked['admins_messages']??''),true);
-        $seenMirrors=[];
-        if (is_array($adminMessages)) foreach ($adminMessages as $msgInfo) {
-            if (!is_array($msgInfo) ||
-                !isset($msgInfo['chat_id'],$msgInfo['message_id'])) continue;
-            $chat=(int)$msgInfo['chat_id'];$msg=(int)$msgInfo['message_id'];
-            // Distinct messages in the primary Owner chat are real copies;
-            // only the exact primary chat/message pair is redundant.
-            if (($chat===(int)$locked['chat_id'] &&
-                    $msg===(int)$locked['message_id']) ||
-                $chat<=0 || $msg<=0 ||
-                !achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],
-                    (int)$admin)) continue;
-            $ref=$chat.':'.$msg;
-            if (isset($seenMirrors[$ref])) continue;
-            achbotFollowupInsertLocked($connection,$locked,'manual_reject',
-                'receipt_mirror','edit',(string)$chat,$msg,
-                ['text'=>$keys,'keys'=>null,'mode'=>null]);
-            $seenMirrors[$ref]=true;
-        }
+        require_once __DIR__.'/../ReceiptReports.php';
+        $receiptAttempt=achbotProviderRow($connection,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
+        achbotReceiptStageTerminalEditsLocked($connection,$locked,$receiptAttempt);
         achbotFollowupInsertLocked($connection,$locked,'manual_reject',
             'customer','send',(string)(int)$uid,null,
             ['text'=>$message,'keys'=>$retryButton,'mode'=>'HTML']);

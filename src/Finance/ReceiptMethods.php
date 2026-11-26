@@ -164,15 +164,37 @@ function achbotCreditHostedEvidenceLocked(mysqli $db,array $attempt,string $refe
     return $tid;
 }
 
-/** The manual evidence contract is shared only by registered manual methods. */
+/** Read the admitted original evidence, never infer it from Telegram delivery.
+ * The issued invoice pin excludes mutable evidence; the sealed notice binds
+ * the actual source separately. No raw typed code is returned to callers
+ * that only need the evidence digest. */
+function achbotManualAdmittedEvidence(array $pay,array $attempt): ?array {
+    require_once __DIR__.'/PaymentCredit.php';
+    try {
+        $review=in_array($pay['state']??null,['have_sent','service_superseded'],true) &&
+            ($attempt['stage']??null)==='review';
+        $terminal=in_array($pay['state']??null,['paid','declined'],true) &&
+            ($attempt['stage']??null)==='done';
+        $method=(string)($attempt['provider']??'');
+        if ((!$review && !$terminal) || !achbotCreditMethodHas($method,'manual_quote') ||
+            !achbotCurrentReceiptPin($attempt) ||
+            !hash_equals((string)$attempt['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$attempt))) return null;
+        $intent=achbotManualIntentDecode((string)$attempt['checkout_url'],$method);
+        if (!$intent) return null;
+        if ($method==='gift_card' && $attempt['evidence_profile']!==null) {
+            $code=achbotPaymentEvidenceTypedCode($pay,$attempt);
+            if ($code===null || isset($intent['receipt_file_id'])) return null;
+            return ['kind'=>'typed','value'=>$code,'fingerprint'=>hash('sha256',$attempt['wallet_invoice_sha256'].':typed:'.$attempt['evidence_code_sha256'])];
+        }
+        $file=$intent['receipt_file_id']??null;
+        if (!is_string($file) || $file==='' || strlen($file)>1200) return null;
+        return ['kind'=>'photo','value'=>$file,'fingerprint'=>hash('sha256',$attempt['wallet_invoice_sha256'].':photo:'.hash('sha256',$file))];
+    } catch (Throwable $e) {return null;}
+}
 function achbotCreditValidateManualReceiptLocked(mysqli $db,array $pay,array $attempt): void {
-    if (!in_array($pay['state'],['have_sent','service_superseded'],true) ||
-        $attempt['stage']!=='review' ||
-        (int)($pay['message_id']??0)<=0 || (int)($pay['chat_id']??0)===0)
+    if (!in_array($pay['state'],['have_sent','service_superseded'],true) || $attempt['stage']!=='review')
         throw new RuntimeException('payment_credit_manual_receipt');
-    $intent=achbotManualIntentDecode((string)$attempt['checkout_url'],(string)$attempt['provider']);
-    if (empty($intent['receipt_file_id']) &&
-        !achbotPaymentEvidenceHasTypedReviewLocked($db,$pay))
+    if (achbotManualAdmittedEvidence($pay,$attempt)===null)
         throw new RuntimeException('payment_credit_manual_evidence');
 }
 function achbotCreditVerifyManualLocked(mysqli $db,array $pay,array $attempt,array $proof,int $actor,int $primary): ?int {

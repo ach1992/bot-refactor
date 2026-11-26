@@ -683,11 +683,10 @@ function achbotPaymentEvidenceGiftNormalize(array $data,array $profile,array $at
         'fingerprint'=>hash('sha256',json_encode($semantic,JSON_THROW_ON_ERROR))];
 }
 
-/** Genuine stored staff delivery, independent from remote evidence/finality. */
+/** Review-first means an admitted original receipt, not a sent message. */
 function achbotPaymentEvidenceReviewReady(array $pay,array $attempt): bool {
-    return (int)($pay['message_id']??0)>0 && (int)($pay['chat_id']??0)>0 &&
-        ((in_array($pay['state'],['have_sent','service_superseded'],true) && $attempt['stage']==='review') ||
-         in_array($pay['state'],['approved','paid','auto_cart_approved','paid_with_wallet'],true));
+    require_once __DIR__.'/ReceiptMethods.php';
+    return ($pay['state']??null)!=='declined' && achbotManualAdmittedEvidence($pay,$attempt)!==null;
 }
 function achbotPaymentEvidenceClaim(mysqli $db,int $payId): ?array {
     // Scope a transient provider backoff hint to this one admitted attempt.
@@ -760,10 +759,9 @@ function achbotPaymentEvidenceSaveGiftCodeLocked(mysqli $db,array $pay,array $a,
     if ($payId<=0 || $actor<=0 || !achbotPaymentEvidenceGiftCodeFormatValid($code) ||
         !$profile || $profile['method']!=='gift_card' ||
         (int)$pay['user_id']!==$actor || (int)$a['pay_row_id']!==$payId ||
-        !in_array($a['stage'],['pending','receiving'],true) ||
+        $a['stage']!=='pending' ||
         !in_array($pay['state'],['pending','service_superseded'],true) ||
-        ($pay['state']==='service_superseded' && $a['stage']!=='receiving' &&
-            (string)($a['provider_status']??'')!=='receipt_started') ||
+        ($pay['state']==='service_superseded' && (string)($a['provider_status']??'')!=='receipt_started') ||
         !hash_equals($profile['pay_sha256'],achbotPaymentEvidencePayFingerprint($pay)))
         return $bad;
     $digest=achbotPaymentEvidenceCodeDigest($code);
@@ -771,9 +769,8 @@ function achbotPaymentEvidenceSaveGiftCodeLocked(mysqli $db,array $pay,array $a,
         $read=achbotPaymentEvidenceUnprotect('code:'.$a['id'].':'.$payId,(string)$a['evidence_code']);
         return ['status'=>($read['code']??null)===$code?'same':'locked'];
     }
-    // Once receiving, only the exact original evidence may be recovered.
-    if ($a['stage']==='receiving' || ($a['evidence_code']!==null &&
-        ($a['evidence_state']!=='invalid_code' || $a['evidence_review_sent_at']!==null)))
+    // Once a code is saved, only an explicitly invalid pre-admission code may change.
+    if ($a['evidence_code']!==null && ($a['evidence_state']!=='invalid_code' || $a['evidence_review_sent_at']!==null))
         return ['status'=>'locked'];
     $aid=(int)$a['id'];
     $q=$db->prepare('SELECT id FROM payment_transactions WHERE attempt_id=? AND evidence_operation IS NOT NULL FOR UPDATE');
@@ -826,19 +823,22 @@ function achbotPaymentEvidenceRejectGiftCode(mysqli $db,int $payId,string $code,
         return true;
     } catch (Throwable $e) {try{$db->rollback();}catch(Throwable $x){}return false;}
 }
+/** Authenticate the typed original code and its owner from the sealed attempt. */
+function achbotPaymentEvidenceTypedCode(array $pay,array $a): ?string {
+    $profile=achbotPaymentEvidenceSnapshot($a);$payId=(int)$pay['id'];
+    if (!$profile || $profile['method']!=='gift_card' || (int)$a['pay_row_id']!==$payId ||
+        !hash_equals($profile['pay_sha256'],achbotPaymentEvidencePayFingerprint($pay))) return null;
+    $d=achbotPaymentEvidenceUnprotect('code:'.$a['id'].':'.$payId,(string)($a['evidence_code']??''));
+    $code=$d['code']??null;
+    return is_string($code) && achbotPaymentEvidenceGiftCodeFormatValid($code) &&
+        (int)($d['actor']??0)===(int)$pay['user_id'] &&
+        hash_equals((string)$a['evidence_code_sha256'],achbotPaymentEvidenceCodeDigest($code))?$code:null;
+}
 function achbotPaymentEvidenceHasTypedReviewLocked(mysqli $db,array $pay): bool {
-    if ((int)($pay['message_id']??0)<=0 || (int)($pay['chat_id']??0)<=0 ||
-        !achbotPaymentEvidenceSchemaReady($db)) return false;
+    require_once __DIR__.'/ReceiptMethods.php';
     try {
-        $payId=(int)$pay['id'];
-        $q=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE');
-        $q->bind_param('i',$payId);$q->execute();$a=$q->get_result()->fetch_assoc();$q->close();
-        $p=$a?achbotPaymentEvidenceSnapshot($a):null;
-        if (!$p || $p['method']!=='gift_card' || $a['evidence_review_sent_at']===null ||
-            !hash_equals($p['pay_sha256'],achbotPaymentEvidencePayFingerprint($pay))) return false;
-        $d=achbotPaymentEvidenceUnprotect('code:'.$a['id'].':'.$payId,(string)($a['evidence_code']??''));
-        return is_string($d['code']??null) && (int)($d['actor']??0)===(int)$pay['user_id'] &&
-            hash_equals((string)$a['evidence_code_sha256'],achbotPaymentEvidenceCodeDigest($d['code']));
+        $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=?','i',[(int)$pay['id']]);
+        return $a && (achbotManualAdmittedEvidence($pay,$a)['kind']??null)==='typed';
     } catch (Throwable $e) {return false;}
 }
 /** Reserve identity and original intent BEFORE any outbound mutation.

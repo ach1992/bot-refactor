@@ -801,7 +801,6 @@ return [
         'api_payment.status_review' => "نیازمند بررسی مدیر",
         'api_payment.status_uncertain' => "نتیجهٔ عملیات بیرونی نامشخص است.",
         'api_payment.status_evidence_only' => "پیامک دیررس ثبت شد؛ پرداخت قبلاً نهایی بود و عملیات مالی تکرار نشد",
-        'api_payment.view_code' => "مشاهده کد گیفت‌کارت",
         // Existing API-assisted payments.
         'receipt_helpers.manual_caption.header.cc6f426145' => '💎 مقدار رمزارز: <code>',
         'receipt_helpers.manual_caption.text.1c777cb98d' => '</code> | شبکه: <b>',

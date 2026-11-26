@@ -94,7 +94,6 @@ if (is_string($data) && preg_match(
     }
 }
 
-if (($achbotApiPaymentResult = require __DIR__.'/src/Finance/Routes/ApiPayments.php') === null) return;
 if ((require __DIR__ . '/src/Finance/Routes/PrePayment.php') === null) return;
 // END Pre Pay Check By ACh
 

@@ -56,7 +56,7 @@ output = json.loads(result.stdout)
 # decline action; all current references have compact ASCII prefixes.
 prefixes = (
     "pm_b_", "pm_g_", "mc_b_", "mc_c_", "mc_e_", "mc_t_", "mcm_", "rs_", "rc_", "dc_", "ps_", "ph_",
-    "pw_", "pa_", "declineAction_", "apiReview_",
+    "pw_", "pa_", "declineAction_",
 )
 if max(len((prefix + "A" * 50).encode("ascii"))
        for prefix in prefixes) > 64:

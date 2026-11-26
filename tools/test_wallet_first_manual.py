@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone, timedelta
 import json
 from pathlib import Path
@@ -21,15 +22,22 @@ PHP=evidence.DRIVER[:evidence.DRIVER.index("switch($spec['op'])")].replace(
 require_once dirname($argv[1]).'/ManualReceipt.php';
 require_once dirname($argv[1]).'/ApiPayments.php';
 require_once dirname($argv[1]).'/GatewayReview.php';
+require_once dirname($argv[1]).'/ReceiptNotices.php';
 function sendPhoto(...$args) {
     $GLOBALS['review_sends'][]=['kind'=>'photo','args'=>$args];
-    return (object)['ok'=>!($GLOBALS['spec']['fail_send']??false),'result'=>(object)['message_id'=>333]];
+    if ($GLOBALS['spec']['approve_during_send']??false) {
+        $GLOBALS['spec']['approve_during_send']=false;
+        achbotCheckoutSettleReceipt($GLOBALS['connection'],(int)$GLOBALS['id'],1001,'manual',[],9001,9001);
+    }
+    if (array_key_exists('response',$GLOBALS['spec'])) return json_decode(json_encode($GLOBALS['spec']['response']));
+    if ($GLOBALS['spec']['fail_send']??false) return null;
+    return fixtureMessageAck($args[4],222);
 }
 function sendMessage(...$args) {
     $GLOBALS['review_sends'][]=['kind'=>'message','args'=>$args];
     if (isset($GLOBALS['achbotTelegramDiagnosticContext']['followup_id'])) {
         if (array_key_exists('response',$GLOBALS['spec'])) return json_decode(json_encode($GLOBALS['spec']['response']));
-        if (!($GLOBALS['spec']['fail_send']??false)) return fixtureMessageAck($args[3]);
+        if (!($GLOBALS['spec']['fail_send']??false)) return fixtureMessageAck($args[3],((int)$args[3]===9001 && str_contains($args[0],'AG2-'))?222:null);
     }
     return (object)['ok'=>!($GLOBALS['spec']['fail_send']??false),'result'=>(object)['message_id'=>333]];
 }
@@ -52,6 +60,9 @@ function fixtureReview(mysqli $db,array $spec): array {
     $chat_id=(int)($spec['chat']??$from_id);$message_id=111;$callbackId='test-review';
     $data=$spec['callback'];$text=$spec['text']??'';$userInfo=['step'=>$spec['step']??'none'];
     $botUsername='fixture_bot';$cancelKey=null;
+    $update=(object)['update_id'=>(int)($spec['update_id']??12345),'callback_query'=>(object)[
+        'data'=>$data,'from'=>(object)['id'=>$from_id],'message'=>(object)['message_id'=>$message_id,
+        'chat'=>(object)['id'=>$chat_id,'type'=>$chat_id===$from_id?'private':'group']]]];
     $GLOBALS['from_id']=$from_id;$GLOBALS['chat_id']=$chat_id;$GLOBALS['data']=$data;$GLOBALS['callbackId']=$callbackId;
     $GLOBALS['review_sends']=[];$GLOBALS['review_alerts']=[];
     require dirname($GLOBALS['argv'][1]).'/Routes/ManualReceipts.php';
@@ -93,8 +104,9 @@ try {
         })(),
         'issue'=>achbotManualReceiptIssue($db,$id,(int)($spec['owner']??1001),$method,$spec['service']??null,$spec['network']??null),
         'start'=>achbotPayUxStartManualReceipt($db,$id,$method,(int)($spec['owner']??1001),$spec['expected_mode']??null),
-        'begin'=>achbotManualBeginEvidence($db,$pay,$method,(int)($spec['owner']??1001),$spec['file'],$spec['expected_mode']??null),
-        'finish'=>achbotManualFinishEvidence($db,$pay['hash_id'],$spec['file'],$spec['token'],222,9001),
+        'admit'=>achbotManualAdmitReceipt($db,$pay,$method,(int)($spec['owner']??1001),$spec['file'],
+            'fixture original receipt',inlineKeyboard([[['text'=>'approve','callback_data'=>achbotManualApprovalCallbackData($pay)]]]),
+            'fixture_bot',$spec['expected_mode']??null),
         'approve'=>achbotCheckoutSettleReceipt($db,$id,(int)($spec['owner']??1001),$spec['basis']??'manual',[],(int)($spec['actor']??9001),9001),
         'check'=>achbotManualReceiptCheckApi($db,$id),
         'quote'=>achbotServiceIssueLocked($db,1001,'fixture',$spec['reference'],$spec['request']),
@@ -150,10 +162,14 @@ def main():
                 sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state) VALUES ('{name}',1001,'{kind}',{price},UNIX_TIMESTAMP()-600,'pending')")
                 return int(sql(f"SELECT id FROM pays WHERE hash_id='{name}'"))
             def balance():return int(sql('SELECT wallet FROM users WHERE userid=1001'))
+            def notice(pid,recipient=9001):
+                role='customer' if recipient==1001 else 'receipt_notice'
+                return int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='receipt_admitted' AND recipient='{recipient}' AND role='{role}'"))
+            def send_original(mode,pid,**kw):
+                return result(mode,'report',pid,report=notice(pid),**kw)
             def submit(mode,pid,method,file,api=False):
-                token=result(mode,'begin',pid,method=method,file=file,api=api)
-                assert isinstance(token,str) and len(token)==32,token
-                assert result(mode,'finish',pid,method=method,file=file,token=token,api=api) is True
+                assert result(mode,'admit',pid,method=method,file=file,api=api) is True
+                assert send_original(mode,pid,api=api)['status']=='acknowledged'
             def roles(pid):
                 return sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")
             for mode in ('strict','off'):
@@ -167,7 +183,7 @@ def main():
                     if method=='manual_usdt':assert float(r['amount'])==0.01
                     if method=='manual_trx':assert float(r['amount'])==0.1
                     assert run(mode,'issue',pid,method=method,owner=9002)['ok'] is False
-                    assert result(mode,'begin',pid,method=method,file='fixture-photo',owner=9002) is None
+                    assert result(mode,'admit',pid,method=method,file='fixture-photo',owner=9002) is False
                     submit(mode,pid,method,'fixture-photo')
                     b=balance()
                     assert run(mode,'approve',pid,actor=1001)['ok'] is False and balance()==b
@@ -210,10 +226,10 @@ def main():
                 b=balance()
                 assert result(mode,'approve',pid,actor=9002)['funding']=='wallet_only'
                 assert balance()==b+1000
-                targets=sql(f"SELECT CONCAT(role,':',recipient) FROM payment_followup_intents WHERE pay_row_id={pid} AND kind='send' ORDER BY role").splitlines()
+                targets=sql(f"SELECT CONCAT(role,':',recipient) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='wallet_credit' AND kind='send' ORDER BY role").splitlines()
                 assert targets==['customer:1001','report_actor:9002','service_admin:9001','service_channel:@fixture_report'],targets
                 for target in ('9001','9002','@fixture_report'):
-                    rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND recipient='{target}' AND kind='send'"))
+                    rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='wallet_credit' AND recipient='{target}' AND kind='send'"))
                     report=result(mode,'report',pid,report=rid)
                     assert report['status']=='acknowledged' and len(report['sends'])==1,report
                     assert mode+'-operator-report' in report['sends'][0]['args'][0] and '9002' in report['sends'][0]['args'][0],report
@@ -231,7 +247,7 @@ def main():
                     r=result(mode,'approve',pid,report_channel=destination)
                     assert r['funding']=='wallet_only' and balance()==b+1000,r
                     assert result(mode,'approve',pid,report_channel=destination)['credit']['replayed']
-                    targets=sql(f"SELECT CONCAT(role,':',recipient) FROM payment_followup_intents WHERE pay_row_id={pid} AND kind='send' ORDER BY role").splitlines()
+                    targets=sql(f"SELECT CONCAT(role,':',recipient) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='wallet_credit' AND kind='send' ORDER BY role").splitlines()
                     assert targets==['customer:1001','service_admin:9001'],(destination,targets)
                     rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND role='service_admin'"))
                     report=result(mode,'report',pid,report=rid,report_channel=destination)
@@ -276,41 +292,89 @@ def main():
                     assert int(sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject' AND kind='send'"))==len(targets)
                     case('manual_rejection_dedup_owner_actor_channel_'+str(actor))
                 sql("DELETE FROM setting WHERE type='ADMIN_NOTIFY_9002'")
-                # Real private recovery route, lost ACK and independent delivery.
+                # Original admission commits without Telegram. Lost ACK never
+                # causes auto-resend, changes evidence, or gates money.
                 for method in ('bank_transfer','gift_card','manual_usdt','manual_trx'):
                     pid=seed(mode+'-recover-'+method)
                     result(mode,'issue',pid,method=method)
                     assert result(mode,'attention',pid) is False
-                    token=result(mode,'begin',pid,method=method,file='fixture-original-photo')
-                    assert token and result(mode,'attention',pid) is False
-                    sql(f'UPDATE payment_attempts SET review_notice_claimed_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={pid}')
+                    assert result(mode,'admit',pid,method=method,file='fixture-original-photo')
                     assert result(mode,'attention',pid) is True
+                    assert sql(f"SELECT CONCAT(p.state,':',a.stage,':',p.message_id IS NULL) FROM pays p JOIN payment_attempts a ON a.pay_row_id=p.id WHERE p.id={pid}")=='have_sent:review:1'
                     b=balance();cb=f'attentionReceipt_{pid}'
                     assert not result(mode,'review',pid,callback=cb,actor=1001)['sends']
                     assert not result(mode,'review',pid,callback=cb,chat=1001)['sends']
-                    assert result(mode,'begin',pid,method=method,file='replacement-photo') is None
-                    lost=result(mode,'review',pid,callback=cb,fail_send=True)
-                    assert len(lost['sends'])==1 and lost['sends'][0]['args'][0]=='fixture-original-photo',lost
-                    assert sql(f'SELECT state FROM pays WHERE id={pid}')=='pending'
-                    recovered=result(mode,'review',pid,callback=cb)
+                    assert result(mode,'admit',pid,method=method,file='replacement-photo') is False
+                    lost=send_original(mode,pid,method=method,fail_send=True)
+                    assert lost['status']=='unknown' and len(lost['sends'])==1 and lost['sends'][0]['args'][0]=='fixture-original-photo',lost
+                    assert send_original(mode,pid)['sends']==[]
+                    assert result(mode,'report',pid,report=notice(pid,1001))['status']=='acknowledged'
+                    recovered=result(mode,'review',pid,callback=cb,update_id=10001)
                     assert len(recovered['sends'])==1 and recovered['sends'][0]['args'][0]=='fixture-original-photo',recovered
-                    assert sql(f'SELECT state FROM pays WHERE id={pid}')=='have_sent'
+                    assert not result(mode,'review',pid,callback=cb,update_id=10001)['sends']
                     assert balance()==b and result(mode,'attention',pid)
                     assert result(mode,'approve',pid)['funding']=='wallet_only'
                     assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+1000
-                    assert not result(mode,'review',pid,callback=cb)['sends']
-                    assert result(mode,'attention',pid) is False
-                    sql(f"UPDATE payment_followup_intents SET state='unknown' WHERE pay_row_id={pid} AND role='customer'")
-                    assert result(mode,'attention',pid) is True
-                    assert not result(mode,'review',pid,callback=f'gatewayReview_H_{pid}')['sends']
+                    assert not result(mode,'review',pid,callback=cb,update_id=10002)['sends']
+                    assert result(mode,'attention',pid) is True # original unknown remains auditable
                     assert result(mode,'outcome',pid)=='wallet_credited'
                     case(method+'_lost_receipt_ack_recovery_and_independent_report')
+                # A failed outbox write must roll back the entire admission.
+                pid=seed(mode+'-admit-rollback')
+                result(mode,'issue',pid,method='bank_transfer')
+                sql("CREATE TRIGGER fixture_receipt_outbox_fail BEFORE INSERT ON payment_followup_intents FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture admission failure'")
+                try:
+                    assert result(mode,'admit',pid,file='rolled-back-photo') is False
+                    assert sql(f"SELECT state FROM pays WHERE id={pid}")=='pending'
+                    assert sql(f"SELECT stage FROM payment_attempts WHERE pay_row_id={pid}")=='pending'
+                    assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid}")=='0'
+                finally:
+                    sql('DROP TRIGGER fixture_receipt_outbox_fail')
+                assert result(mode,'admit',pid,file='real-photo') is True
+                assert send_original(mode,pid)['sends'][0]['args'][0]=='real-photo'
+                case('receipt_outbox_atomic_rollback')
+                # Concurrent uploads cannot replace the first admitted evidence.
+                pid=seed(mode+'-admit-concurrent')
+                result(mode,'issue',pid,method='bank_transfer')
+                files=['race-photo-a','race-photo-b']
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    admitted=list(pool.map(lambda f:result(mode,'admit',pid,file=f),files))
+                assert sum(admitted)==1,admitted
+                winner=files[admitted.index(True)]
+                assert send_original(mode,pid)['sends'][0]['args'][0]==winner
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='receipt_admitted' AND role='customer'")=='1'
+                case('receipt_concurrent_original_winner')
+                # The financial decision may commit while the staff send is in flight.
+                pid=seed(mode+'-late-staff-ack')
+                result(mode,'issue',pid,method='bank_transfer')
+                assert result(mode,'admit',pid,file='late-staff-photo')
+                b=balance()
+                wire=send_original(mode,pid,approve_during_send=True)
+                assert wire['status']=='acknowledged' and balance()==b+1000,wire
+                assert 'pa_' in wire['sends'][0]['args'][2]
+                edit=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='wallet_credit' AND kind='edit' AND recipient='9001'"))
+                wire=result(mode,'report',pid,report=edit)
+                assert wire['status']=='acknowledged' and wire['sends'][0]['args'][1]==222 and 'pa_' not in wire['sends'][0]['args'][0],wire
+                customer=result(mode,'report',pid,report=notice(pid,1001))
+                assert customer['status']=='superseded' and not customer['sends'],customer
+                assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+1000
+                case('receipt_late_ack_after_financial_commit')
+                # A definite 429 is retryable only after retry_after; each recipient is independent.
+                pid=seed(mode+'-receipt-rate-limit')
+                result(mode,'issue',pid,method='bank_transfer')
+                assert result(mode,'admit',pid,file='rate-limit-photo')
+                r=send_original(mode,pid,response={'ok':False,'error_code':429,'description':'Too Many Requests','parameters':{'retry_after':60}})
+                assert r['status']=='pending',r
+                assert not send_original(mode,pid)['sends']
+                assert result(mode,'report',pid,report=notice(pid,1001))['status']=='acknowledged'
+                assert sql(f"SELECT retry_after_seconds FROM payment_followup_attempts WHERE intent_id={notice(pid)} ORDER BY id DESC LIMIT 1")=='60'
+                sql(f"UPDATE payment_followup_intents SET next_attempt_at=NOW(6) WHERE id={notice(pid)}")
+                assert send_original(mode,pid)['status']=='acknowledged'
+                case('receipt_rate_limit_and_independent_customer')
                 pid=seed(mode+'-recover-typed-gift')
                 result(mode,'issue',pid,method='gift_card',api=True)
                 code=evidence.fixture_gift_code(mode+'-recover-typed-gift')
-                token=result(mode,'begin',pid,method='gift_card',file=code,api=True)
-                assert token
-                sql(f'UPDATE payment_attempts SET review_notice_claimed_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={pid}')
+                assert result(mode,'admit',pid,method='gift_card',file=code,api=True)
                 recovered=result(mode,'review',pid,callback=f'attentionReceipt_{pid}',api=True)
                 assert len(recovered['sends'])==1 and recovered['sends'][0]['kind']=='message' and code in recovered['sends'][0]['args'][0],recovered
                 assert sql(f'SELECT state FROM pays WHERE id={pid}')=='have_sent'
@@ -320,19 +384,18 @@ def main():
                 case('typed_gift_lost_receipt_ack_recovery')
                 pid=seed(mode+'-rejected-receipt')
                 result(mode,'issue',pid,method='bank_transfer')
-                token=result(mode,'begin',pid,file='original-photo')
-                sql(f'UPDATE payment_attempts SET review_notice_claimed_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={pid}')
+                assert result(mode,'admit',pid,file='original-photo')
                 aid=sql(f'SELECT id FROM payment_attempts WHERE pay_row_id={pid}')
                 assert result(mode,'attention',pid) is True
                 assert not result(mode,'review',pid,callback=f'gatewayReview_H_{aid}')['sends']
                 assert result(mode,'attention',pid) is True
-                assert result(mode,'review',pid,callback=f'attentionReceipt_{pid}')['sends']
                 b=balance()
                 assert run(mode,'reject',pid,actor=1001)['ok'] is False
                 assert result(mode,'reject',pid)=='declined'
                 assert result(mode,'attention',pid) is False
-                assert result(mode,'finish',pid,file='original-photo',token=token) is False
-                assert result(mode,'begin',pid,file='original-photo') is None
+                assert result(mode,'admit',pid,file='original-photo') is False
+                late=send_original(mode,pid)
+                assert late['status']=='acknowledged' and 'pa_' not in late['sends'][0]['args'][2]
                 assert not result(mode,'review',pid,callback=f'attentionReceipt_{pid}')['sends']
                 assert run(mode,'approve',pid)['ok'] is False and balance()==b
                 case('rejected_receipt_cannot_reopen_archive_callback_inert')
@@ -362,21 +425,19 @@ def main():
                         oid=result(mode,'quote',reference=name,request=q)
                         pid=seed(name,price=100,kind='BUY_SUB')
                         result(mode,'issue',pid,method=method,service=oid)
-                        token=result(mode,'begin',pid,method=method,file='original-inflight-photo')
+                        token=result(mode,'admit',pid,method=method,file='original-inflight-photo')
                         assert token
                         sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}; UPDATE service_operations SET stage='cancelled' WHERE id={oid}")
                         b=balance()
                         if lost:
-                            sql(f"UPDATE payment_attempts SET review_notice_claimed_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={pid}")
                             assert result(mode,'attention',pid) is True
-                            assert result(mode,'begin',pid,method=method,file='replacement-photo') is None
-                            recovered=result(mode,'review',pid,callback=f'attentionReceipt_{pid}',fail_send=True)
-                            assert len(recovered['sends'])==1
-                            assert sql(f"SELECT review_notice_claim_token IS NULL FROM payment_attempts WHERE pay_row_id={pid}")=='1'
+                            assert result(mode,'admit',pid,method=method,file='replacement-photo') is False
+                            recovered=send_original(mode,pid,fail_send=True)
+                            assert recovered['status']=='unknown' and len(recovered['sends'])==1
                             recovered=result(mode,'review',pid,callback=f'attentionReceipt_{pid}')
                             assert len(recovered['sends'])==1 and recovered['sends'][0]['args'][0]=='original-inflight-photo'
                         else:
-                            assert result(mode,'finish',pid,method=method,file='original-inflight-photo',token=token) is True
+                            assert send_original(mode,pid)['status']=='acknowledged'
                         assert sql(f"SELECT state FROM pays WHERE id={pid}")=='service_superseded'
                         assert result(mode,'attention',pid) is True
                         assert run(mode,'approve',pid,basis='bank_timer',actor=0)['ok'] is False and balance()==b
@@ -395,20 +456,20 @@ def main():
                 sql("""\nDELIMITER //
 CREATE TRIGGER fixture_receiving_fail BEFORE UPDATE ON payment_attempts
 FOR EACH ROW BEGIN
-    IF NEW.stage='receiving' THEN
+    IF NEW.stage='review' THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture receiving rollback';
     END IF;
 END//
 DELIMITER ;
 """)
                 try:
-                    assert result(mode,'begin',pid,method='gift_card',file=code,api=True) is None
+                    assert result(mode,'admit',pid,method='gift_card',file=code,api=True) is False
                     assert sql(f"SELECT CONCAT(stage,':',evidence_code IS NULL,':',review_notice_claim_token IS NULL) FROM payment_attempts WHERE pay_row_id={pid}")=='pending:1:1'
                 finally:sql('DROP TRIGGER fixture_receiving_fail')
-                assert result(mode,'begin',pid,method='gift_card',file=code,api=True)
-                sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}; UPDATE service_operations SET stage='cancelled' WHERE id={oid}; UPDATE payment_attempts SET review_notice_claimed_at=NOW()-INTERVAL 3 MINUTE WHERE pay_row_id={pid}")
+                assert result(mode,'admit',pid,method='gift_card',file=code,api=True)
+                sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}; UPDATE service_operations SET stage='cancelled' WHERE id={oid}")
                 assert result(mode,'attention',pid)
-                assert result(mode,'begin',pid,method='gift_card',file=evidence.fixture_gift_code(name+'-other'),api=True) is None
+                assert result(mode,'admit',pid,method='gift_card',file=evidence.fixture_gift_code(name+'-other'),api=True) is False
                 recovered=result(mode,'review',pid,callback=f'attentionReceipt_{pid}',api=True)
                 assert len(recovered['sends'])==1 and code in recovered['sends'][0]['args'][0]
                 assert sql(f"SELECT state FROM pays WHERE id={pid}")=='service_superseded'
@@ -423,7 +484,7 @@ DELIMITER ;
                 result(mode,'issue',pid,method='bank_transfer',service=oid)
                 sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}; UPDATE service_operations SET stage='cancelled' WHERE id={oid}")
                 assert result(mode,'issue',pid,method='bank_transfer',service=oid)['status']=='closed'
-                assert result(mode,'begin',pid,file='new-photo',owner=9002) is None
+                assert result(mode,'admit',pid,file='new-photo',owner=9002) is False
                 submit(mode,pid,'bank_transfer','original-late-photo')
                 assert result(mode,'attention',pid) is True
                 b=balance()
@@ -472,10 +533,10 @@ DELIMITER ;
                     assert result(mode,'start',pid,method=method,expected_mode='standard',api=api) is True
                     sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}; UPDATE service_operations SET stage='cancelled' WHERE id={oid}")
                     file=evidence.fixture_gift_code(name) if api else 'original-photo'
-                    assert result(mode,'begin',pid,method=method,file=file,expected_mode='topup',api=api) is None
-                    token=result(mode,'begin',pid,method=method,file=file,expected_mode='standard',api=api)
-                    assert isinstance(token,str) and len(token)==32,token
-                    assert result(mode,'finish',pid,method=method,file=file,token=token,api=api) is True
+                    assert result(mode,'admit',pid,method=method,file=file,expected_mode='topup',api=api) is False
+                    token=result(mode,'admit',pid,method=method,file=file,expected_mode='standard',api=api)
+                    assert token is True
+                    assert send_original(mode,pid,api=api)['status']=='acknowledged'
                     b=balance()
                     assert result(mode,'approve',pid)['funding']=='request_invalidated' and balance()==b+100
                     assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+100
@@ -483,7 +544,8 @@ DELIMITER ;
                 oid=result(mode,'quote',reference=mode+'-buy',request=q)
                 pid=seed(mode+'-sms',price=100,kind='BUY_SUB')
                 r=result(mode,'issue',pid,method='bank_transfer',api=True,service=oid)
-                submit(mode,pid,'bank_transfer','fixture-sms',api=True)
+                assert result(mode,'admit',pid,file='fixture-sms',api=True)
+                assert send_original(mode,pid,api=True,fail_send=True)['status']=='unknown'
                 ident='100' if mode=='strict' else '200'
                 now=datetime.now(timezone.utc).replace(microsecond=0)
                 server.messages[ident]=dict(id=int(ident),public_uid='UID'+ident,provider='BANK_FIXTURE',provider_sms_id='sms'+ident,
@@ -497,8 +559,9 @@ DELIMITER ;
                 assert result(mode,'check',pid)=='settled' and balance()==b+100 and server.consumes[ident]==1
                 assert sql(f'SELECT wallet_funding_result FROM payment_attempts WHERE pay_row_id={pid}')=='request_invalidated'
                 sql('UPDATE server_info SET active=1 WHERE id=2')
-                assert roles(pid)=='customer,receipt_primary,service_admin,service_channel',roles(pid)
-                case('actual_bank_scan_lost_remote_ack_service_invalidated')
+                assert roles(pid)=='customer,service_admin,service_channel',roles(pid)
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_attempts a JOIN payment_followup_intents f ON f.id=a.intent_id WHERE f.pay_row_id={pid} AND f.stage='receipt_admitted' AND a.result='acknowledged'")=='0'
+                case('actual_bank_scan_without_staff_ack_service_invalidated')
                 # A receipt already submitted before service supersession is
                 # still real money. Never revive the invalidated service.
                 oid=result(mode,'quote',reference=mode+'-superseded',request=q)
@@ -585,8 +648,8 @@ DELIMITER ;
                 msg=result(mode,'duplicate_guard',fresh,clock=now)
                 assert isinstance(msg,str) and 'بررسی' in msg,msg
                 assert result(mode,'duplicate_guard',fresh,clock=now,policy={'receiptReviewMinutes':5}) is None
-                assert result(mode,'begin',fresh,file='same-recovery-photo')
-                assert result(mode,'duplicate_guard',fresh,clock=now) is None
+                assert result(mode,'admit',fresh,file='same-recovery-photo')
+                assert result(mode,'duplicate_guard',fresh,clock=now) is not None
                 assert result(mode,'reject',old)=='declined'
                 case('current_review_cooldown_does_not_block_original_recovery')
 

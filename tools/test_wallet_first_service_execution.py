@@ -87,6 +87,11 @@ function fixtureDeliverySend(string $kind,int $uid,?string $text,?string $keys,?
     return ($x['unknown_ack']??false)?(object)['ok'=>false]:fixtureMessageAck($uid,$messageId);
 }
 function sendPhoto($photo,$caption=null,$keys=null,$mode=null,$uid=null) {
+    if (isset($GLOBALS['achbotTelegramDiagnosticContext']['followup_id'])) {
+        $ack=sendMessage($caption,$keys,$mode,$uid);
+        if (($ack->ok??false)===true) $ack->result->message_id=222;
+        return $ack;
+    }
     return fixtureDeliverySend('qr',$uid,$caption,$keys,$mode,$photo);
 }
 
@@ -96,12 +101,12 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
         throw new RuntimeException('fixture_telegram_inside_transaction');
     $fid=$GLOBALS['achbotTelegramDiagnosticContext']['followup_id']??null;
     if ($fid!==null) {
-        $d=achbotProviderRow($db,'SELECT id,state,attempt_count,dispatch_token FROM payment_followup_intents WHERE id=?','i',[$fid]);
+        $d=achbotProviderRow($db,'SELECT id,state,stage,attempt_count,dispatch_token FROM payment_followup_intents WHERE id=?','i',[$fid]);
         $a=achbotProviderRow($db,'SELECT result,attempt_no,actor_userid,wire_action,wire_recipient,wire_message_id FROM payment_followup_attempts
             WHERE intent_id=? AND dispatch_token=?','is',[$fid,$d['dispatch_token']]);
         if ($d['state']!=='dispatching' || !$a || $a['result']!=='dispatching' ||
             (int)$a['attempt_no']!==(int)$d['attempt_count'] ||
-            (int)$a['actor_userid']!==(int)($x['op']==='telegram_review' && str_starts_with($x['callback'],'attentionService')?0:($x['actor']??0)))
+            (int)$a['actor_userid']!==(int)($d['stage']==='receipt_admitted' || ($x['op']==='telegram_review' && str_starts_with($x['callback'],'attentionService'))?0:($x['actor']??0)))
             throw new RuntimeException('fixture_followup_claim_not_committed');
         $wireAction=str_starts_with((string)$mode,'edit_text:')?'edit_text':
             (str_starts_with((string)$mode,'edit:')?'edit_keys':'send');
@@ -357,8 +362,12 @@ try {
         $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[$x['pay']]);
         $r=achbotManualClaim($db,$pay,'bank_transfer',(int)($x['actor']??1001));
         if ($r && ($x['submit']??false)) {
-            $token=achbotManualBeginEvidence($db,$pay,'bank_transfer',1001,'fixture-photo');
-            if (!$token || !achbotManualFinishEvidence($db,$pay['hash_id'],'fixture-photo',$token,222,9001))
+            require_once $argv[1].'/src/Finance/ReceiptNotices.php';
+            $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[(int)$pay['id']]);
+            if (!achbotManualAdmitReceipt($db,$pay,'bank_transfer',1001,'fixture-photo','fixture receipt',inlineKeyboard([]),'fixture_bot'))
+                throw new RuntimeException('fixture_manual_admission');
+            $notice=achbotProviderRow($db,"SELECT id FROM payment_followup_intents WHERE pay_row_id=? AND stage='receipt_admitted' AND recipient='9001'",'i',[(int)$pay['id']]);
+            if (achbotFollowupDispatchOne($db,(int)$notice['id'])!=='acknowledged')
                 throw new RuntimeException('fixture_manual_receipt');
         }
     }
@@ -387,8 +396,12 @@ try {
         $pid=$x['pay'];$pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[$pid]);
         $issued=achbotManualReceiptIssue($db,$pid,1001,'bank_transfer',$x['id']);
         if ($issued['status']!=='issued') throw new RuntimeException('fixture_manual_issue');
-        $token=achbotManualBeginEvidence($db,$pay,'bank_transfer',1001,'fixture-photo');
-        if (!$token || !achbotManualFinishEvidence($db,$pay['hash_id'],'fixture-photo',$token,222,9001))
+        require_once $argv[1].'/src/Finance/ReceiptNotices.php';
+        $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[$pid]);
+        if (!achbotManualAdmitReceipt($db,$pay,'bank_transfer',1001,'fixture-photo','fixture receipt',inlineKeyboard([]),'fixture_bot'))
+            throw new RuntimeException('fixture_manual_admission');
+        $notice=achbotProviderRow($db,"SELECT id FROM payment_followup_intents WHERE pay_row_id=? AND stage='receipt_admitted' AND recipient='9001'",'i',[$pid]);
+        if (achbotFollowupDispatchOne($db,(int)$notice['id'])!=='acknowledged')
             throw new RuntimeException('fixture_manual_receipt');
         $r=achbotCheckoutSettleReceipt($db,$pid,1001,'manual',[],(int)($x['actor']??9001),9001);
     }
@@ -2028,14 +2041,14 @@ DELIMITER ;
                 finally:sql('DROP TRIGGER fixture_service_report_fail')
                 retry(mid);step(mode,mid,'completed')
                 assert finance()==before and len(requests)==n
-                row=sql(f"SELECT id,role,recipient,message_id FROM payment_followup_intents WHERE service_operation_id={mid} AND stage='service_completed' AND role='receipt_primary'").split('\t')
+                row=sql(f"SELECT id,role,recipient,message_id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='wallet_credit' AND role='receipt_primary'").split('\t')
                 assert row[1:]==['receipt_primary','9001','222'],row
                 rid=int(row[0])
                 # Changing a stored receipt target cannot re-route the sealed edit.
-                sql(f"UPDATE pays SET message_id=223 WHERE id={pid}")
+                sql(f"UPDATE payment_followup_attempts SET ack_message_id=223 WHERE intent_id IN (SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='receipt_admitted' AND recipient='9001') AND result='acknowledged'")
                 assert php(mode,'followup',id=rid)=='unavailable'
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid}")=='0'
-                sql(f"UPDATE pays SET message_id=222 WHERE id={pid}")
+                sql(f"UPDATE payment_followup_attempts SET ack_message_id=222 WHERE intent_id IN (SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='receipt_admitted' AND recipient='9001') AND result='acknowledged'")
                 assert php(mode,'followup',id=rid)=='acknowledged'
                 assert sql(f"SELECT COUNT(*) FROM fixture_followup WHERE intent_id={rid} AND mode='edit:222'")=='1'
                 assert finance()==before and len(requests)==n
@@ -2192,14 +2205,14 @@ DELIMITER ;
                     f"SELECT role,id FROM payment_followup_intents WHERE service_operation_id={op} AND stage='service_delivered'").splitlines()))
                 assert set(notices)=={'report_actor','service_admin','service_channel'},notices
                 operator=notices['report_actor']
-                edit_id=int(sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={op} AND stage='service_completed' AND role='receipt_primary'"))
+                edit_id=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='wallet_credit' AND role='receipt_primary'"))
                 dids=list(map(int,sql(f"SELECT id FROM payment_delivery_intents WHERE service_operation_id={op} ORDER BY ordinal").splitlines()))
                 assert len(dids)==2
                 before=finance();n=len(requests)
                 # Awaiting delivery must not enter the bounded due queue or
                 # prevent the independent terminal receipt edit.
                 sql("UPDATE payment_followup_intents SET next_attempt_at=DATE_ADD(NOW(6),INTERVAL 1 DAY) WHERE state='pending'")
-                sql(f"UPDATE payment_followup_intents SET next_attempt_at=NULL,updated_at=DATE_SUB(NOW(),INTERVAL 4 MINUTE) WHERE service_operation_id={op} AND stage IN ('service_delivered','service_completed')")
+                sql(f"UPDATE payment_followup_intents SET next_attempt_at=NULL,updated_at=DATE_SUB(NOW(),INTERVAL 4 MINUTE) WHERE (service_operation_id={op} AND stage IN ('service_delivered','service_completed')) OR id={edit_id}")
                 assert php(mode,'followup',id=operator)=='not_ready'
                 assert php(mode,'maintain_followups',limit=1)=={str(edit_id):'acknowledged'}
                 completion_ids=sql(f"SELECT id FROM payment_followup_intents WHERE service_operation_id={op} AND stage='service_completed' AND kind='send' ORDER BY id").splitlines()

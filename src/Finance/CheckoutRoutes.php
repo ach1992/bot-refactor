@@ -53,7 +53,7 @@ function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null,bool 
         achbotCheckoutAdvanceStage($operation,$payId,'report',function() use ($db,$operation,$payId,$deadline) {
             $s=achbotProviderStatement($db,"SELECT id FROM payment_followup_intents
                 WHERE ((service_operation_id IS NOT NULL AND service_operation_id=?) OR
-                    (pay_row_id IS NOT NULL AND pay_row_id=? AND stage='wallet_credit'))
+                    (pay_row_id IS NOT NULL AND pay_row_id=? AND stage IN ('wallet_credit','receipt_admitted')))
                 AND state IN ('pending','dispatching')
                 AND (next_attempt_at IS NULL OR next_attempt_at<=NOW(6)) ORDER BY id",
                 'ii',[$operation,$payId]);

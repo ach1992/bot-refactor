@@ -204,14 +204,6 @@ function achbotServiceStageCompletionReportsLocked(mysqli $db,array $op,array $q
     $remark=$kind!=='BUY'?$q['remark']:
         ($q['quantity']>1?achbotMessage('bulk_reporting.bulk_subject'):$accounts[0]['name']);
     $manual=$receipt!==null && !achbotReceiptIsHosted($receipt['attempt']);
-    if ($manual) {
-        $subject=match($kind) {
-            'ADD_TIME'=>achbotMessage('manual_receipt_final.day_subject',['remark'=>$remark,'units'=>$q['days']]),
-            'ADD_VOLUME'=>achbotMessage('manual_receipt_final.volume_subject',['remark'=>$remark,'units'=>$q['volume']]),
-            default=>$remark
-        };
-        achbotReceiptReportStageEditsLocked($db,$receipt,null,$id,'service_completed',$source['fingerprint'],$subject);
-    }
     $text='<b>'.achbotMessage(match($kind) {
         'BUY'=>'operational_reports.service_buy',
         'RENEW'=>'operational_reports.service_renew',
@@ -345,6 +337,8 @@ function achbotServiceReportValidateLocked(mysqli $db,array $op,array $quote,arr
         $source=achbotServiceCompletionReportSourceLocked($db,$op,$quote,$requiresAck);
         if ($requiresAck && !$source['delivered']) throw new RuntimeException('service_delivery_not_ready');
         $receipt=$source['receipt'];
+        // Previously staged completion edits remain executable only against
+        // the original verified receipt target. New receipts use wallet_credit.
         if ($r['kind']==='edit') {
             if ($requiresAck || $receipt===null || !achbotReceiptReportEditAllowed($db,$receipt,$r)) return null;
         } elseif (!achbotFollowupAdminReportAllowed($db,$r,$source['funding']['actor'])) return null;

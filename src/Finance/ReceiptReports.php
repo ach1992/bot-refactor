@@ -5,60 +5,93 @@ require_once __DIR__.'/PaymentCredit.php';
 require_once __DIR__.'/FollowupOutbox.php';
 require_once __DIR__.'/ReceiptHelpers.php';
 require_once __DIR__.'/ApiPaymentPresentation.php';
+require_once __DIR__.'/ReceiptNotices.php';
 
 /** Presentation follows registered method capability, not provider names. */
 function achbotReceiptIsHosted(array $attempt): bool {
     return achbotCreditMethodHas((string)$attempt['provider'],'hosted');
 }
 
-/** Original receipt copies have a distinct audience from unsolicited
- * financial reports. Current staff permission and exact message pair must
- * both hold. A late verified credit updates the original payment receipt. */
-function achbotReceiptReportEditAllowed(mysqli $db,array $source,array $r): bool {
-    $pay=$source['pay'];$a=$source['attempt'];$role=$r['role'];
-    if (achbotReceiptIsHosted($a) ||
-        $r['kind']!=='edit' || (int)$r['message_id']<=0 ||
-        !in_array($role,['receipt_primary','receipt_mirror'],true)) return false;
-    $who=(int)$r['recipient'];$message=(int)$r['message_id'];
-    if ((string)$who!==$r['recipient'] ||
-        !achbotFollowupStaffAllowed($db,$who,(int)($GLOBALS['admin']??0))) return false;
-    $primary=$who===(int)$pay['chat_id'] && $message===(int)$pay['message_id'];
-    if ($role==='receipt_primary') return $primary;
-    if ($primary) return false;
-    $copies=json_decode((string)($pay['admins_messages']??''),true);
-    if (!is_array($copies)) return false;
-    foreach ($copies as $copy)
-        if ((int)($copy['chat_id']??0)===$who && (int)($copy['message_id']??0)===$message) return true;
-    return false;
-}
-
-/** Keep the original manual/API terminal keyboard. The actor is read
- * from the actual once-only credit journal, not a later callback. */
-function achbotReceiptReportStageEditsLocked(mysqli $db,array $source,?int $payId,?int $serviceId,
-    string $stage,string $fingerprint,string $subject,bool $walletOnly=false): void {
-    $pay=$source['pay'];$a=$source['attempt'];$basis=$a['wallet_credit_basis'];
-    if (achbotReceiptIsHosted($a)) return;
+/** The retained receipt describes the original financial decision. The
+ * separate logical service report owns later Native completion/delivery.
+ * Both early and late receipt ACKs use the same stable terminal markup. */
+function achbotReceiptCreditMarkupLocked(mysqli $db,array $source): string {
+    $pay=$source['pay'];$a=$source['attempt'];
     $display=$pay;$display['approved_by']=$source['entry']['actor'];
-    $keys=achbotApiPaymentFinalKeyboard($display,
-        achbotMessage('manual_payment.api_payment.auto_approved'),$basis==='api',['subject'=>$subject],$walletOnly);
-    $targets=[['chat_id'=>$pay['chat_id'],'message_id'=>$pay['message_id'],'role'=>'receipt_primary']];
-    $copies=json_decode((string)($pay['admins_messages']??''),true);
-    if (is_array($copies)) foreach ($copies as $copy)
-        if (is_array($copy)) $targets[]=['role'=>'receipt_mirror']+$copy;
-    $seen=[];$owner=(int)($GLOBALS['admin']??0);
-    foreach ($targets as $target) {
-        $chat=(int)($target['chat_id']??0);$message=(int)($target['message_id']??0);
-        if ($chat<=0 || $message<=0 || isset($seen[$chat.':'.$message])) continue;
-        $seen[$chat.':'.$message]=true;$complete=true;
-        $allowed=achbotAdminStoredRecipientAllowed($db,$chat,$owner,true,$complete);
-        // The original receipt/message pair is already durable. A contended
-        // optional staff lookup cannot prevent money settlement. Revalidate
-        // current permission at dispatch; a definite denial is not staged.
-        if (!$complete) achbotDiagnosticEvent('achbot.finance.receipt_edit_permission_deferred',
-            ['pay_id'=>(int)$pay['id'],'service_operation_id'=>$serviceId,'actor_id'=>$chat],'warning');
-        if ($complete && !$allowed) continue;
-        achbotFollowupStoreLocked($db,$payId,$serviceId,$stage,$target['role'],'edit',
+    $funded=$a['wallet_funding_result']==='funded';
+    $subject=payTypeToDescription('INCREASE_WALLET');
+    if ($funded) {
+        require_once __DIR__.'/../Services/Funding.php';
+        [$op,$quote]=achbotServiceReadLocked($db,(int)$pay['user_id'],(int)$a['service_operation_id']);
+        $q=$quote['request'];
+        $remark=(string)($q['remark']??'');
+        if ($remark==='') $remark=payTypeToDescription((string)$pay['type']);
+        $subject=match($op['kind']) {
+            'BUY'=>$q['quantity']>1?achbotMessage('bulk_reporting.bulk_subject'):$remark,
+            'ADD_TIME'=>achbotMessage('manual_receipt_final.day_subject',['remark'=>$remark,'units'=>$q['days']]),
+            'ADD_VOLUME'=>achbotMessage('manual_receipt_final.volume_subject',['remark'=>$remark,'units'=>$q['volume']]),
+            default=>$remark
+        };
+    }
+    return achbotApiPaymentFinalKeyboard($display,achbotMessage('manual_payment.api_payment.auto_approved'),
+        $a['wallet_credit_basis']==='api',['subject'=>$subject],!$funded);
+}
+function achbotReceiptRejectedMarkup(array $pay): string {
+    return inlineKeyboard([
+        [['text'=>achbotMessage('manual_payment.manual_receipts.button.51fdc91d69',
+            ['from_id'=>(int)$pay['approved_by']]),'callback_data'=>'wizwizch']],
+        [['text'=>achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604',
+            ['hash_id'=>$pay['hash_id']]),'callback_data'=>'noop_'.$pay['hash_id']]]
+    ]);
+}
+function achbotReceiptTerminalMarkupLocked(mysqli $db,array $pay,array $a): ?string {
+    if ($pay['state']==='paid') {
+        $source=achbotReceiptCreditEvidenceLocked($db,(int)$pay['id'],(int)$pay['user_id']);
+        return achbotReceiptCreditMarkupLocked($db,$source);
+    }
+    if ($pay['state']==='declined' && $a['stage']==='done' &&
+        $a['provider_status']==='operator_rejected' && (int)$pay['approved_by']>0)
+        return achbotReceiptRejectedMarkup($pay);
+    return null;
+}
+function achbotReceiptReportEditAllowed(mysqli $db,array $source,array $r): bool {
+    return !achbotReceiptIsHosted($source['attempt']) && $r['kind']==='edit' &&
+        in_array($r['role'],['receipt_primary','receipt_mirror'],true) &&
+        achbotReceiptTargetAllowed($db,$source['pay'],$r) &&
+        achbotFollowupStaffAllowed($db,(int)$r['recipient'],(int)($GLOBALS['admin']??0));
+}
+/** One exact edit for every proven receipt ACK, including ACKs arriving
+ * after the decision. Do not hold a recipient lock across transport. */
+function achbotReceiptStageEditsLocked(mysqli $db,array $pay,string $stage,string $fingerprint,
+    string $keys,?array $targets=null): void {
+    $owner=(int)($GLOBALS['admin']??0);
+    foreach ($targets??achbotReceiptMessageTargets($db,$pay,true) as $target) {
+        $chat=(int)$target['chat_id'];$message=(int)$target['message_id'];$role=$target['role'];
+        if ($chat<=0 || $message<=0) continue;
+        $key=achbotFollowupIntentKey($stage,$role,'edit',(string)$chat,$message);
+        $existing=achbotProviderRow($db,'SELECT pay_fingerprint FROM payment_followup_intents
+            WHERE pay_row_id=? AND intent_key=?','is',[(int)$pay['id'],$key]);
+        if ($existing) {
+            if (!hash_equals($existing['pay_fingerprint'],$fingerprint))
+                throw new RuntimeException('receipt_terminal_intent_conflict');
+            continue;
+        }
+        // The exact proven original target is the staging input; current
+        // role authorization is independently enforced by dispatch.
+        achbotFollowupStoreLocked($db,(int)$pay['id'],null,$stage,$role,'edit',
             (string)$chat,$message,$fingerprint,['text'=>$keys,'keys'=>null,'mode'=>null]);
+    }
+}
+function achbotReceiptStageTerminalEditsLocked(mysqli $db,array $pay,array $a,?array $targets=null): void {
+    if (achbotReceiptIsHosted($a)) return;
+    if ($pay['state']==='paid') {
+        $source=achbotReceiptCreditEvidenceLocked($db,(int)$pay['id'],(int)$pay['user_id']);
+        achbotReceiptStageEditsLocked($db,$pay,'wallet_credit',$source['fingerprint'],
+            achbotReceiptCreditMarkupLocked($db,$source),$targets);
+    } elseif ($pay['state']==='declined' && $a['stage']==='done' &&
+        $a['provider_status']==='operator_rejected' && (int)$pay['approved_by']>0) {
+        achbotReceiptStageEditsLocked($db,$pay,'manual_reject',achbotPaymentEvidencePayFingerprint($pay),
+            achbotReceiptRejectedMarkup($pay),$targets);
     }
 }
 
@@ -83,6 +116,8 @@ function achbotReceiptReportStageLocked(mysqli $db,int $payId,int $userId,string
     $pay=$source['pay'];$a=$source['attempt'];$entry=$source['entry'];
     $funded=$a['wallet_funding_result']==='funded';
     $stage='wallet_credit';$fingerprint=$source['fingerprint'];
+    if (!achbotReceiptIsHosted($a))
+        achbotReceiptStageEditsLocked($db,$pay,$stage,$fingerprint,achbotReceiptCreditMarkupLocked($db,$source));
     if ($funded) {
         require_once __DIR__.'/ServiceReports.php';
         [$op,$quote]=achbotServiceReadLocked($db,$userId,(int)$a['service_operation_id']);
@@ -102,8 +137,6 @@ function achbotReceiptReportStageLocked(mysqli $db,int $payId,int $userId,string
     }
     achbotFollowupStoreLocked($db,$payId,null,$stage,'customer','send',(string)$userId,null,
         $fingerprint,['text'=>$text,'keys'=>null,'mode'=>$mode]);
-    achbotReceiptReportStageEditsLocked($db,$source,$payId,null,$stage,$fingerprint,
-        payTypeToDescription('INCREASE_WALLET'),true);
     $wallet=achbotWalletReportEntryLocked($db,$entry['id']);
     $result=$a['wallet_funding_result'];
     if ($result==='request_invalidated' && $originalState==='service_superseded') $result='service_superseded';
@@ -140,7 +173,7 @@ function achbotReceiptFundingResultLabel(string $result): string {
 function achbotReceiptReportValidateLocked(mysqli $db,array $pay,array $r): ?array {
     if (isset($r['service_operation_id']) || $r['stage']!=='wallet_credit') return null;
     $source=achbotReceiptCreditEvidenceLocked($db,(int)$pay['id'],(int)$pay['user_id']);
-    if ($source['attempt']['wallet_funding_result']==='funded') return null;
+    if ($source['attempt']['wallet_funding_result']==='funded' && $r['kind']!=='edit') return null;
     if ($r['role']==='customer') {
         if ($r['kind']!=='send' || $r['message_id']!==null ||
             $r['recipient']!==(string)(int)$pay['user_id']) return null;

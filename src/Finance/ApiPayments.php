@@ -103,16 +103,6 @@ function achbotApiPaymentStampStaffDigest(mysqli $db,int $id,string $state,?int 
     }
 }
 
-/** No general report reaches Operator/Support; existing copies still converge. */
-function achbotApiPaymentAck($response): bool {
-    return $response===true || (is_object($response)&&($response->ok??false)===true) || (is_array($response)&&($response['ok']??false)===true);
-}
-/** A Telegram 'message is not modified' response certifies an identical EDIT,
- * but never certifies sending a fresh message or fulfilling a payment.
- */
-function achbotApiPaymentEditAccepted($response): bool {
-    return achbotApiPaymentAck($response) || achbotPayUxEditAccepted($response);
-}
 /** Per-original-payment failure categories; no raw Telegram payload or chat ID. */
 function achbotApiPaymentEditFailure(int $payId,string $audience,$reply): void {
     $code=is_object($reply)?max(0,min(599,(int)($reply->error_code??0))):0;
@@ -123,15 +113,12 @@ function achbotApiPaymentEditFailure(int $payId,string $audience,$reply): void {
 
 function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $report=true): int {
     $edited=0;
-    $id=(int)$pay['id'];$incoming=$pay;$fresh=achbotApiPaymentRow($db,$id);if(!$fresh)return 0;
-    $incomingRefs=json_decode((string)($incoming['admins_messages']??''),true);$incomingRefs=is_array($incomingRefs)?$incomingRefs:[];
-    $incomingRefs[]=['chat_id'=>$incoming['chat_id']??0,'message_id'=>$incoming['message_id']??0];
-    $pay=$fresh;$storedRefs=json_decode((string)($pay['admins_messages']??''),true);$storedRefs=is_array($storedRefs)?$storedRefs:[];
-    $pay['admins_messages']=json_encode(array_values(array_unique(array_merge($storedRefs,$incomingRefs),SORT_REGULAR)));
+    $id=(int)$pay['id'];$pay=achbotApiPaymentRow($db,$id);if(!$pay)return 0;
+    require_once __DIR__.'/ReceiptNotices.php';
     $hash=(string)$pay['hash_id'];$a=achbotApiPaymentAttempt($db,$id);if(!$a)return 0;
     // A new wallet credit owns durable receipt/report projection, including
     // service completion. Never announce delivery from paid alone.
-    if (($a['wallet_credit_entry_id']??null)!==null) return 0;
+    if (($a['wallet_credit_entry_id']??null)!==null || $pay['state']==='declined') return 0;
     $proof=achbotPaymentEvidenceGetProof($db,$id);$pending=$proof?null:achbotPaymentEvidencePending($db,$id);
     $evidence=$proof['operation']??($pending['operation']??('invoice-'.$id));
     if(achbotApiPaymentTerminal($pay) && in_array($status,['used','revoked','expired','mismatch'],true))$status='settled';
@@ -142,7 +129,6 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
     $actionable=achbotGatewayAttentionCaseOpen($db,$id);
     $automatic=achbotApiPaymentTerminal($pay) && (int)($pay['approved_by']??-1)===0 && ($proof['mode']??'')==='settle';
     if($automatic)$label=achbotMessage('manual_payment.api_payment.auto_approved');
-    if($pay['state']==='declined')$label=achbotMessage('manual_payment.manual_receipts.button.51fdc91d69',['from_id'=>(int)$pay['approved_by']]);
     $presentation=achbotApiPaymentPresentation($db,$pay,$a);
     $amount=achbotPaymentEvidenceIntegralQuote($a['quote_amount'])??(string)$a['quote_amount'];
     $body=achbotMessageHtml('manual_payment.api_payment.report',[
@@ -156,13 +142,12 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
     // presenter. Owner opens the review workbench voluntarily: a background
     // provider poll must not send additional standalone admin messages.
     // Original receipt keyboards are still edited in place below.
-    $refs=json_decode((string)($pay['admins_messages']??''),true);$refs=is_array($refs)?$refs:[];
-    $refs[]=['chat_id'=>$pay['chat_id']??0,'message_id'=>$pay['message_id']??0];$seen=[];
+    $refs=achbotReceiptMessageTargets($db,$pay);$seen=[];
     $keys=inlineKeyboard([[['text'=>$label,'callback_data'=>'noop_'.$hash]]]);
     if(achbotApiPaymentTerminal($pay))
         $keys=achbotApiPaymentFinalKeyboard($pay,$label,$automatic,$presentation);
     if($invalidCode && $pay['state']==='have_sent'){
-        $rows=json_decode(achbotApiPaymentReviewKeyboard($pay),true)['inline_keyboard'];
+        $rows=json_decode(achbotApiPaymentReviewKeyboard($db,$pay),true)['inline_keyboard'];
         $rows[]=[['text'=>$label,'callback_data'=>'noop_'.$hash]];$keys=inlineKeyboard($rows);
     }
     if ($actionable) {
@@ -192,17 +177,17 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
         foreach($refs as $ref) {
             $chat=(int)($ref['chat_id']??0);$msg=(int)($ref['message_id']??0);$key=$chat.':'.$msg;
             if($msg<=0||isset($seen[$key]))continue;
-            $seen[$key]=true;$complete=true;
-            // API projection uses the existing bounded current read. Legacy
-            // stored-receipt callers retain their default locking semantics.
-            $allowed=achbotAdminStoredRecipientAllowed($db,$chat,(int)($GLOBALS['admin']??0),true,$complete);
-            if(!$complete)$ack=false;
-            if(!$allowed)continue;
+            $seen[$key]=true;
             try {
-                $reply=editKeys($keys,$msg,$chat);
-                if (!achbotApiPaymentEditAccepted($reply)) {
-                    $ack=false;achbotApiPaymentEditFailure($id,'staff',$reply);
-                } else ++$edited;
+                $result=achbotReceiptStatusEdit($db,$pay,$chat,$msg,static function() use ($id,$keys,$msg,$chat): ?bool {
+                    $reply=editKeys($keys,$msg,$chat);
+                    if (\AchBot\Telegram\Response\messageDeliveryOutcome($reply,(string)$chat,$msg)['result']!=='acknowledged') {
+                        achbotApiPaymentEditFailure($id,'staff',$reply);return null;
+                    }
+                    return true;
+                });
+                if ($result===null) $ack=false;
+                elseif ($result) ++$edited;
             } catch(Throwable $error) {
                 $ack=false;
                 error_log('achbot_api_telegram_edit_deferred pay_id='.$id.
@@ -214,7 +199,6 @@ function achbotApiPaymentNotice(mysqli $db,array $pay,string $status,bool $repor
         $latest=achbotApiPaymentRow($db,$id);
         if(!$latest)return $edited;
         if($latest['state']!==$pay['state'] || ($latest['approved_by']??null)!==($pay['approved_by']??null)){
-            $latest['admins_messages']=json_encode($refs);
             return $edited+achbotApiPaymentNotice($db,$latest,achbotApiPaymentTerminal($latest)?'settled':'review',false);
         }
         if($ack) achbotApiPaymentStampStaffDigest($db,$id,(string)$pay['state'],
@@ -463,16 +447,10 @@ function achbotApiPaymentCheckGift(mysqli $db,array $claim,callable $settle): st
     $proof=$consumed['proof']??achbotPaymentEvidenceGetProof($db,$id);
     return is_array($proof)?$settle($db,$id,$proof):'review';
 }
-function achbotApiPaymentReviewKeyboard(array $pay): string {
+function achbotApiPaymentReviewKeyboard(mysqli $db,array $pay): string {
     if($pay['state']!=='have_sent')return achbotPayUxStatusKeyboard((string)$pay['hash_id']);
-    $hash=(string)$pay['hash_id'];$approval=achbotManualApprovalCallbackData($pay);
-    $db=$GLOBALS['connection']??null;
-    if($db instanceof mysqli)return buildAdminKeyboardWithStats($db,$approval,'declineAction_'.$hash,$hash,(int)$pay['user_id']);
-    return inlineKeyboard([
-        [['text'=>achbotMessage('manual_payment.api_payment.view_code'),'callback_data'=>'apiReview_'.$hash]],
-        [['text'=>achbotMessage('legacy_buttons.approve'),'callback_data'=>$approval],
-         ['text'=>achbotMessage('legacy_buttons.decline'),'callback_data'=>'declineAction_'.$hash]]
-    ]);
+    $hash=(string)$pay['hash_id'];
+    return buildAdminKeyboardWithStats($db,achbotManualApprovalCallbackData($pay),'declineAction_'.$hash,$hash,(int)$pay['user_id']);
 }
 /** Button and admitted Cron service coalesce under this durable evidence claim. */
 /** Ephemeral monotonic timing context; never seal it in financial evidence. */
@@ -545,7 +523,7 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
                   AND (a.evidence_next_check_at IS NULL OR a.evidence_next_check_at<=NOW())
                   AND (a.evidence_state='proven' OR
                        (p.state<>'declined' AND (a.evidence_state IS NULL OR a.evidence_state NOT IN ('invalid_code','manual')) AND
-                         ((p.state IN ('have_sent','service_superseded') AND p.message_id>0 AND p.chat_id>0) OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_operation IS NOT NULL))))
+                         ((p.state IN ('have_sent','service_superseded') AND a.stage='review') OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=a.id AND t.evidence_operation IS NOT NULL))))
                 ORDER BY COALESCE(a.evidence_next_check_at,a.created_at),a.id LIMIT ".($limit+1));
         $rows=$q->fetch_all(MYSQLI_ASSOC);
         if (count($rows)>$limit) {

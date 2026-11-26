@@ -171,8 +171,8 @@ function achbotReceiptStaffCaption(mysqli $db,array $pay,string $mode,string $me
 }
 
 /** One submission path for all receipt methods and modes. Human evidence
- * is never deleted. The current durable lease still owns exactly-once
- * settlement and verified staff review. */
+ * is never deleted. Admission, original evidence and independent notice
+ * packets commit before any Telegram transport. */
 function achbotReceiptSubmit(mysqli $db,array $pay,int $actor,array $profile,string $expected,object $update): void {
     $mode=achbotCheckoutMode($pay);$method=achbotManualSelectedMethod($db,$pay);
     if ($mode===null || $method===null || !achbotManualReceiptAllowed($db,$pay,$method,$actor,$mode)) {
@@ -197,13 +197,24 @@ function achbotReceiptSubmit(mysqli $db,array $pay,int $actor,array $profile,str
     if (achbotManualTypedGift($db,$pay,$method) && !achbotManualGiftReviewFits($caption,$evidence,$screen)) {
         sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML',$actor);return;
     }
-    $token=achbotManualBeginEvidence($db,$pay,$method,$actor,$evidence,$mode,$expected);
-    if ($token===null) {sendMessage(achbotMessage('payment.checkout.alert.795c4bddb8'),null,'HTML',$actor);return;}
+    require_once __DIR__.'/ReceiptNotices.php';
     $hash=(string)$pay['hash_id'];
     $keys=buildAdminKeyboardWithStats($db,achbotManualApprovalCallbackData($pay),'declineAction_'.$hash,$hash,$actor);
-    if (sendReceiptToAdminsAndUpdatePay($db,$evidence,$caption,$keys,(int)$GLOBALS['admin'],$hash,$token,$screen)) {
-        if (achbotReceiptStepChange($db,$actor,$expected,'none') && ($step['prompt']??0)>0)
-            delMessage($step['prompt'],$actor);
-        achbotManualAcknowledgeAndVerify($db,$pay,$method,achbotMessage('legacy_buttons.start_bot'),(string)$GLOBALS['botUsername']);
-    } else sendMessage(achbotMessage('payment.checkout.message.c346a0d62e'),null,'HTML',$actor);
+    if (!achbotManualAdmitReceipt($db,$pay,$method,$actor,$evidence,$caption,$keys,
+        (string)$GLOBALS['botUsername'],$mode,$expected,$screen)) {
+        sendMessage(achbotMessage('payment.checkout.alert.795c4bddb8'),null,'HTML',$actor);return;
+    }
+    $id=(int)$pay['id'];
+    if (($step['prompt']??0)>0) {
+        try {delMessage($step['prompt'],$actor);} catch (Throwable $ignored) {}
+    }
+    try {
+        achbotFollowupDispatchPending($db,$id,'receipt_admitted',8.0);
+    } catch (Throwable $e) {
+        achbotDiagnosticEvent('achbot.finance.receipt_notice_deferred',['pay_id'=>$id]+achbotDiagnosticLocalFailure($e),'warning');
+    } finally {
+        require_once __DIR__.'/ApiPayments.php';
+        $api=achbotApiPaymentContext($db,$hash);
+        if ($api && !achbotApiPaymentTerminal($api['pay'])) achbotApiPaymentCheck($db,$id);
+    }
 }

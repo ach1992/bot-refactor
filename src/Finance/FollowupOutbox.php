@@ -68,10 +68,13 @@ function achbotFollowupStorageReady(mysqli $db): bool {
         return true;
     } catch(Throwable $error) {return false;}
 }
+function achbotFollowupReceiptStaffRole(string $role): bool {
+    return $role==='receipt_notice' || preg_match('/\Aview_[1-9][0-9]{0,18}\z/D',$role)===1;
+}
 function achbotFollowupJournaled(array $r): bool {
     return (is_string($r['operational_ref']??null) &&
         achbotFollowupOperationalStage((string)($r['stage']??''))) || (int)($r['wallet_entry_id']??0)>0 || (int)($r['service_operation_id']??0)>0 ||
-        (in_array($r['stage']??null,['wallet_credit','manual_reject'],true) && (int)($r['pay_row_id']??0)>0);
+        (in_array($r['stage']??null,['wallet_credit','manual_reject','receipt_admitted'],true) && (int)($r['pay_row_id']??0)>0);
 }
 function achbotFollowupPurpose(int $payId,string $stage,string $key): string {
     return 'payment-followup:v1:'.$payId.':'.$stage.':'.$key;
@@ -79,6 +82,10 @@ function achbotFollowupPurpose(int $payId,string $stage,string $key): string {
 function achbotFollowupIntentKey(string $stage,string $role,string $kind,
                                 string $recipient,?int $messageId): string {
     return hash('sha256',$stage.'|'.$role.'|'.$kind.'|'.$recipient.'|'.($messageId??0));
+}
+function achbotFollowupReceiptTargetValid(mysqli $db,array $pay,string $role,string $recipient,?int $messageId): bool {
+    require_once __DIR__.'/ReceiptNotices.php';
+    return achbotReceiptTargetAllowed($db,$pay,['role'=>$role,'recipient'=>$recipient,'message_id'=>$messageId]);
 }
 /** Pure SQL-local staging, before the payment's terminal COMMIT. */
 function achbotFollowupInsertLocked(mysqli $db,array $pay,string $stage,string $role,
@@ -104,9 +111,8 @@ function achbotFollowupInsertLocked(mysqli $db,array $pay,string $stage,string $
     $payId=(int)($pay['id']??0);
     if ($payId<=0 || (int)($pay['user_id']??0)<=0 ||
         ($role==='customer' && $recipient!==(string)(int)$pay['user_id']) ||
-        ($role==='receipt_primary' &&
-            ($recipient!==(string)(int)$pay['chat_id'] ||
-             $messageId!==(int)$pay['message_id'])))
+        (in_array($role,['receipt_primary','receipt_mirror'],true) &&
+            !achbotFollowupReceiptTargetValid($db,$pay,$role,$recipient,$messageId)))
         throw new RuntimeException('followup_pay_target_invalid');
     achbotFollowupStoreLocked($db,$payId,$serviceId,$stage,$role,$kind,$recipient,$messageId,
         achbotPaymentEvidencePayFingerprint($pay),$content);
@@ -135,7 +141,9 @@ function achbotFollowupStoreLocked(mysqli $db,?int $payId,?int $serviceId,string
         !preg_match('/^[a-f0-9]{64}$/D',$fingerprint) ||
         !is_string($content['text']??null) || $content['text']==='' ||
         !in_array($content['mode']??null,['HTML','plain',null],true) ||
-        (!is_null($content['keys']??null) && !is_string($content['keys']??null)))
+        (!is_null($content['keys']??null) && !is_string($content['keys']??null)) ||
+        (array_key_exists('photo',$content) && ($stage!=='receipt_admitted' || !achbotFollowupReceiptStaffRole($role) ||
+            $kind!=='send' || !is_string($content['photo']) || $content['photo']==='')))
         throw new RuntimeException('followup_source_packet_invalid');
     $key=achbotFollowupIntentKey($stage,$role,$kind,$recipient,$messageId);
     $body=['v'=>$event!==null?6:($walletId!==null?5:($stage==='wallet_credit'?4:($payId===null?3:($serviceId===null?1:2)))),'pay_id'=>$payId,'stage'=>$stage,'role'=>$role,
@@ -228,16 +236,9 @@ function achbotFollowupRecipientAllowed(mysqli $db,array $pay,array $r): bool {
     if ($r['stage']==='manual_reject' && in_array($role,['service_admin','service_channel','report_actor'],true))
         return achbotFollowupAdminReportAllowed($db,$r,(int)$pay['approved_by']);
     if ($role==='customer') return $recipient===(string)(int)$pay['user_id'];
-    if ($role==='receipt_primary')
-        return $who===(int)$pay['chat_id'] && (int)$r['message_id']===(int)$pay['message_id'] && achbotFollowupStaffAllowed($db,$who,$owner);
-    if ($role==='receipt_mirror') {
-        $copies=json_decode((string)($pay['admins_messages']??''),true);
-        if (!is_array($copies))
-            return false;
-        foreach ($copies as $copy)
-            if ((int)($copy['chat_id']??0)===$who &&
-                (int)($copy['message_id']??0)===(int)$r['message_id']) return achbotFollowupStaffAllowed($db,$who,$owner);
-        return false;
+    if (in_array($role,['receipt_primary','receipt_mirror'],true)) {
+        require_once __DIR__.'/ReceiptNotices.php';
+        return achbotReceiptTargetAllowed($db,$pay,$r) && achbotFollowupStaffAllowed($db,$who,$owner);
     }
     return false;
 }
@@ -285,11 +286,17 @@ function achbotFollowupDecodePacket(?array $pay,array $r,?string $sourceFingerpr
     return is_array($packet) && is_string($packet['text']??null) &&
         ($packet['text']??'')!=='' &&
         in_array($packet['mode']??null,['HTML','plain',null],true) &&
-        (is_null($packet['keys']??null) || is_string($packet['keys']))
+        (is_null($packet['keys']??null) || is_string($packet['keys'])) &&
+        (!array_key_exists('photo',$packet) || ($r['stage']==='receipt_admitted' && achbotFollowupReceiptStaffRole($r['role']) &&
+            $r['kind']==='send' && is_string($packet['photo']) && $packet['photo']!==''))
         ?$packet:null;
 }
 
 function achbotFollowupValidateLocked(mysqli $db,array $pay,array $r): ?array {
+    if ($r['stage']==='receipt_admitted') {
+        require_once __DIR__.'/ReceiptNotices.php';
+        return achbotReceiptNoticeValidateLocked($db,$pay,$r);
+    }
     if ($r['stage']==='wallet_credit') {
         require_once __DIR__.'/ReceiptReports.php';
         return achbotReceiptReportValidateLocked($db,$pay,$r);
@@ -329,8 +336,11 @@ function achbotFollowupRevisionRank(array $r): int {
 }
 function achbotFollowupLeaseName(mysqli $db,array $r): string {
     $dbName=achbotProviderRow($db,'SELECT DATABASE() AS db')['db'];
-    $key=achbotFollowupRevisionRank($r)>0
-        ?'service:'.$r['service_operation_id'].':'.$r['recipient']:'intent:'.$r['id'];
+    $receiptEdit=$r['kind']==='edit' &&
+        in_array($r['role'],['receipt_primary','receipt_mirror'],true);
+    $key=$receiptEdit?'receipt:'.$r['recipient'].':'.$r['message_id']:
+        (achbotFollowupRevisionRank($r)>0
+        ?'service:'.$r['service_operation_id'].':'.$r['recipient']:'intent:'.$r['id']);
     return 'achbot-followup-'.substr(hash('sha256',$dbName.':'.$key),0,40);
 }
 /** Read under the source row lock, then serialize only this destination
@@ -470,7 +480,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         if ($payId>0) {
             // New credit reports must follow the common owner-first order,
             // never lock a receipt and then wait on its financial owner.
-            if (in_array($owner['stage'],['wallet_credit','manual_reject'],true)) {
+            if (in_array($owner['stage'],['wallet_credit','manual_reject','receipt_admitted'],true)) {
                 require_once __DIR__.'/PaymentCredit.php';
                 $loc=achbotProviderRow($db,'SELECT user_id FROM pays WHERE id=?','i',[$payId]);
                 if (!$loc) throw new RuntimeException('followup_missing');
@@ -479,7 +489,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
             $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
             $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
             if (!$pay) throw new RuntimeException('followup_missing');
-            if (in_array($owner['stage'],['wallet_credit','manual_reject'],true) && (int)$pay['user_id']!==(int)$loc['user_id'])
+            if (in_array($owner['stage'],['wallet_credit','manual_reject','receipt_admitted'],true) && (int)$pay['user_id']!==(int)$loc['user_id'])
                 throw new RuntimeException('followup_owner_changed');
         } elseif ($walletId!==null) {
             require_once __DIR__.'/WalletReports.php';
@@ -558,6 +568,17 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
             return 'skipped';
         }
         if (!$packet) throw new RuntimeException('followup_identity_invalid');
+        if ($r['stage']==='receipt_admitted' && $r['role']==='customer' &&
+            in_array($pay['state'],['paid','declined'],true)) {
+            if ($actor>0) {$db->rollback();$opened=false;return 'stale';}
+            $s=achbotProviderStatement($db,"UPDATE payment_followup_intents
+                SET state='superseded',last_result='superseded',next_attempt_at=NULL
+                WHERE id=? AND state='pending' AND dispatch_token IS NULL",'i',[$id]);
+            $changed=$s->affected_rows;$s->close();
+            if ($changed!==1 || !$db->commit()) throw new RuntimeException('followup_receipt_supersession_failed');
+            $opened=false;return 'superseded';
+        }
+
         // Validate explicit actor authority before changing any older row.
         if ($actor>0) {
             $primary=(int)($GLOBALS['admin']??0);
@@ -607,7 +628,9 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         $result=match($wire['action']) {
             'edit_keys'=>editKeys((string)$packet['text'],$wire['message'],$target),
             'edit_text'=>editText($wire['message'],(string)$packet['text'],$packet['keys']??null,$mode,$target),
-            'send'=>sendMessage((string)$packet['text'],$packet['keys']??null,$mode,$target)
+            'send'=>isset($packet['photo'])
+                ?sendPhoto($packet['photo'],(string)$packet['text'],$packet['keys']??null,$mode,$target)
+                :sendMessage((string)$packet['text'],$packet['keys']??null,$mode,$target)
         };
         $outcome=\AchBot\Telegram\Response\messageDeliveryOutcome($result,$wire['recipient'],$wire['message']);
     } catch(Throwable $error) {
@@ -620,7 +643,13 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         if (!$db->begin_transaction()) throw new RuntimeException('followup_finish_begin');
         $lock=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$name]);
         if ((int)($lock['owned']??0)!==1) throw new RuntimeException('followup_service_ownership_lost');
+        $receiptPay=null;
+        if ($r['stage']==='receipt_admitted' && $outcome['result']==='acknowledged') {
+            require_once __DIR__.'/ReceiptNotices.php';
+            [$receiptPay]=achbotCreditInvoiceLocked($db,$payId,(int)$pay['user_id']);
+        }
         $status=achbotFollowupAttemptFinishLocked($db,$id,$token,$outcome);
+        if ($receiptPay!==null) achbotReceiptNoticeFinishLocked($db,$receiptPay,$r,$outcome,$packet);
         if (!$db->commit()) throw new RuntimeException('followup_ack_commit_unknown');
         achbotDiagnosticEvent('achbot.delivery.followup_result',[
             'followup_id'=>$id,'pay_id'=>$payId,'service_operation_id'=>$serviceId,'wallet_entry_id'=>$walletId,'operational_ref'=>$ref,'actor_id'=>$actor,
@@ -641,18 +670,19 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
     }
 }
 /** All pending rows only, including previous-crash rows. UNKNOWN untouched. */
-function achbotFollowupDispatchPending(mysqli $db,int $payId,string $stage): array {
+function achbotFollowupDispatchPending(mysqli $db,int $payId,string $stage,?float $budgetSeconds=null): array {
     if (!achbotFollowupSchemaReady($db) || $payId<=0 ||
-        !in_array($stage,['manual_reject','referral_reward','wallet_credit'],true)) return [];
-    $cursor=0;$out=[];
-    while (true) {
+        !in_array($stage,['manual_reject','referral_reward','wallet_credit','receipt_admitted'],true)) return [];
+    $cursor=0;$out=[];$deadline=$budgetSeconds===null?INF:hrtime(true)/1000000000+$budgetSeconds;
+    while (hrtime(true)/1000000000<$deadline) {
         $q=$db->prepare("SELECT id FROM payment_followup_intents
             WHERE pay_row_id=? AND stage=? AND state='pending' AND id>?
-            ORDER BY id LIMIT 30");
+            AND (next_attempt_at IS NULL OR next_attempt_at<=NOW(6)) ORDER BY id LIMIT 30");
         $q->bind_param('isi',$payId,$stage,$cursor);$q->execute();
         $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
         if (!$rows) break;
         foreach ($rows as $row) {
+            if (hrtime(true)/1000000000>=$deadline) break;
             $cursor=(int)$row['id'];
             $out[$cursor]=achbotFollowupDispatchOne($db,$cursor);
         }
@@ -667,7 +697,7 @@ function achbotFollowupMaintainOriginalPending(mysqli $db,int $limit,float $budg
     achbotServiceOperationsPresent($db);
     $deadline=hrtime(true)/1000000000+$budgetSeconds;
     $s=achbotProviderStatement($db,"SELECT f.id FROM payment_followup_intents f
-        WHERE (f.service_operation_id IS NOT NULL OR f.wallet_entry_id IS NOT NULL OR f.operational_ref IS NOT NULL OR f.stage IN ('wallet_credit','manual_reject'))
+        WHERE (f.service_operation_id IS NOT NULL OR f.wallet_entry_id IS NOT NULL OR f.operational_ref IS NOT NULL OR f.stage IN ('wallet_credit','manual_reject','receipt_admitted'))
           AND f.state IN ('pending','dispatching')
           AND (f.next_attempt_at IS NULL OR f.next_attempt_at<=NOW(6))
           AND (f.state='dispatching' OR f.stage<>'service_delivered' OR NOT EXISTS (

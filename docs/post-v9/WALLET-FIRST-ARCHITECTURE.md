@@ -341,14 +341,38 @@ API proof may succeed while panel is down; receipt still credits exactly once.
 No time-only payment proof. Every receipt requires authenticated evidence
 or authorized staff confirmation.
 
-Receipt submission and service validity are separate. A receipt already
-reserved as receiving may finish or recover its original evidence and
-Telegram reference even if the service is superseded concurrently. Its
-superseded financial state is retained: verified funds credit Wallet once
-and never revive the invalidated service. A superseded invoice without
-an original receiving claim cannot start new evidence submission. Typed
-gift-code storage and receiving reservation are one locked transaction;
-failure rolls back both.
+Receipt submission and service validity are separate. Original photo or
+sealed typed-code evidence, its admitted state, the customer receipt notice,
+and the intended staff notice packets commit together under the original
+invoice lock. Neither Telegram success nor a staff message ID authorizes
+admission or credit. API verification and authorized staff decisions use the
+same admitted original evidence. A superseded invoice can retain valid
+original proof and credit Wallet once without reviving the invalidated
+service; existing expiry and submission eligibility still apply.
+Each destination dispatches independently through the existing followup
+journal. Definite rate-limit rejection retries when due; ambiguous new
+sends are not repeated automatically. An authenticated private staff view
+uses the original evidence and a stable Telegram update identity. No
+opt-out or role change permits unauthorized delivery.
+Receipt edits use exact acknowledged targets and the shared target lease.
+Approval/rejection owns financial terminal markup, not Native completion.
+A staff acknowledgement arriving after the financial decision stages an
+exact terminal edit; a later send projects the already committed outcome.
+Older pending customer admission notices are superseded by a terminal
+outcome, without pretending an earlier unknown send was never delivered.
+
+**Installed transfer gate:** No new columns or parallel receipt queue are
+needed. Before activating this version, stop previous workers and inspect
+all payment attempts with legacy receiving state, pending/unknown receipt
+delivery evidence, and actionable old keyboards. Preserve the existing
+receipt payloads, claim fields and exact known chat/message references.
+Reconcile any legacy receiving attempt under an explicitly authorized
+installed-data plan; do not infer admission or Telegram success from an
+expired lease or blindly resend a previous unknown send. Previously sealed
+service-completion receipt edits remain valid only for their original source
+and proven target; new terminal receipt edits belong to the financial
+decision. Do not transfer until unresolved legacy receiving rows have a
+recorded disposition.
 
 Configured receipt cooldowns are evaluated on current admitted manual
 receipts and actual manual credit basis. They do not turn historical
