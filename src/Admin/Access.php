@@ -57,17 +57,15 @@ function achbotAdminCan(string $capability,?int $actor=null): bool {
 function achbotAdminCanLocked(mysqli $db,int $actor,int $primary,string $capability): bool {
     return achbotAdminLevelCan(achbotAdminLevel($actor,$db,$primary,true),$capability);
 }
-/** Same persisted membership as the administrator list, using a current read.
- * A conflicting older RR snapshot fails closed and may defer copies until the
- * next ordinary delivery. Shared current reads do not conflict with another
- * notifier. NOWAIT prevents writers from stalling financial error handling.
- * Callers can observe deferred discovery;
- * no caller transaction, financial lock or isolation mode is changed. */
-function achbotAdminRecipientCandidates(mysqli $db,int $primary,?bool &$complete=null): array {
+/** Immediate delivery uses a nonblocking current read. Durable intent
+ * staging uses the committed snapshot: an unrelated writer cannot make an
+ * intended recipient disappear. Dispatch always checks current authority. */
+function achbotAdminRecipientCandidates(mysqli $db,int $primary,?bool &$complete=null,bool $snapshot=false): array {
     $complete=false;
     if ($primary<=0) return [];
     try {
-        $q=$db->prepare('SELECT userid FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id LOCK IN SHARE MODE NOWAIT');
+        $lock=$snapshot?'':' LOCK IN SHARE MODE NOWAIT';
+        $q=$db->prepare('SELECT userid FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id'.$lock);
         $q->bind_param('i',$primary);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
         $complete=true;
         return array_values(array_unique(array_column($rows,'userid'),SORT_STRING));
@@ -111,30 +109,39 @@ function achbotAdminSetNotify(mysqli $db,int $owner,int $primary,int $target,boo
         return false;
     }
 }
-/** Previously delivered receipt keyboards stay current for genuine staff;
- * the notification preference only filters new copies. */
-function achbotAdminStoredRecipientAllowed(mysqli $db,$recipient,int $primary,bool $notificationRead=false,?bool &$complete=null): bool {
+/** Normalize a recipient once and read the same role policy for stored
+ * receipts, immediate delivery, and the durable audience snapshot. */
+function achbotAdminRecipientLevel(mysqli $db,$recipient,int $primary,bool $notificationRead=false,?bool &$complete=null,bool $snapshot=false): string {
     $complete=true;
     if (is_int($recipient)) $actor=$recipient;
     elseif (is_string($recipient) && preg_match('/^[1-9][0-9]*$/D',$recipient))
         $actor=filter_var($recipient,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
-    else return false;
-    return is_int($actor) && $actor>0 &&
-        in_array(achbotAdminLevel($actor,$db,$primary,true,$notificationRead,$complete),['owner','manager','operator','support'],true);
+    else return 'none';
+    return is_int($actor) && $actor>0
+        ?achbotAdminLevel($actor,$db,$primary,!$snapshot,$notificationRead,$complete):'none';
 }
-/** New copies require both genuine current staff and an enabled preference.
- * An unreadable current record is deferred, unlike a definitive exclusion. */
+/** Previously delivered receipt keyboards stay current for genuine staff;
+ * the notification preference only filters new copies. */
+function achbotAdminStoredRecipientAllowed(mysqli $db,$recipient,int $primary,bool $notificationRead=false,?bool &$complete=null): bool {
+    return in_array(achbotAdminRecipientLevel($db,$recipient,$primary,$notificationRead,$complete),
+        ['owner','manager','operator','support'],true);
+}
+/** New copies require both genuine current staff and an enabled preference. */
 function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary,?bool &$complete=null): bool {
-    return achbotAdminStoredRecipientAllowed($db,$recipient,$primary,true,$complete) &&
-        achbotAdminNotifyEnabled($db,(int)$recipient,$primary,true,true,$complete);
+    return achbotAdminNotificationAllowed($db,$recipient,$primary,'manual_review',$complete);
 }
-/** Unsolicited delivery policy; it never grants the recipient action rights. */
-function achbotAdminNotificationAllowed(mysqli $db,$recipient,int $primary,string $event='general',?bool &$complete=null): bool {
+/** Unsolicited delivery policy; it never grants the recipient action rights.
+ * Snapshot mode is only for recording intended recipients, not sending. */
+function achbotAdminNotificationAllowed(mysqli $db,$recipient,int $primary,string $event='general',?bool &$complete=null,bool $snapshot=false): bool {
     $complete=true;
-    if (!in_array($event,['general','manual_review'],true) ||
-        !achbotAdminRecipientAllowed($db,$recipient,$primary,$complete)) return false;
-    return $event==='manual_review' ||
-        in_array(achbotAdminLevel((int)$recipient,$db,$primary,true,true,$complete),['owner','manager'],true);
+    $levels=match($event) {
+        'general'=>['owner','manager'],
+        'manual_review'=>['owner','manager','operator','support'],
+        default=>[],
+    };
+    if (!$levels || !in_array(achbotAdminRecipientLevel($db,$recipient,$primary,true,$complete,$snapshot),$levels,true))
+        return false;
+    return achbotAdminNotifyEnabled($db,(int)$recipient,$primary,!$snapshot,true,$complete);
 }
 function achbotAdminButtonCapability(string $key): string {
     return match($key) {

@@ -399,6 +399,14 @@ order IDs without dropping the summary's financial facts. All money amounts,
 ledger IDs, receipt basis, original actors and local Tehran presentation dates
 derive from frozen source evidence.
 
+The durable report audience is recorded from committed membership and
+notification preferences, without acquiring locks on unrelated staff rows.
+A contended role or preference writer must not silently remove an intended
+recipient. Before transport, use the existing current authorization check;
+a transient unreadable role defers only its recipient, while a committed
+revocation or opt-out skips the original intent. The snapshot is a staging
+input, never permission to disclose a report.
+
 Each logical summary/destination has its own transport lease, rather than
 holding a payment or Native service lease across Telegram I/O. Ordinary
 operational report destinations use independent intent leases; batch compaction

@@ -735,12 +735,12 @@ function achbotFollowupStageAdminReportLocked(mysqli $db,?int $payId,?int $servi
     string $stage,string $fingerprint,int $owner,string $channel,array $content,int $actor=0,?int $walletId=null,
     ?string $actorKeys=null,array $pages=[],?array $event=null,?string $staffKeys=null,array $additionalActors=[]): void {
     if ($owner<=0) throw new RuntimeException('followup_report_owner_missing');
-    $complete=false;$staff=achbotAdminRecipientCandidates($db,$owner,$complete);
+    $complete=false;$staff=achbotAdminRecipientCandidates($db,$owner,$complete,true);
     if (!$complete) error_log('achbot_report_optional_staff_deferred stage='.$stage);
     $targets=[(string)$owner=>true];
     foreach ($staff as $uid) {
         $complete=true;
-        if (achbotAdminNotificationAllowed($db,$uid,$owner,'general',$complete))
+        if (achbotAdminNotificationAllowed($db,$uid,$owner,'general',$complete,true))
             $targets[(string)(int)$uid]=true;
         if (!$complete) error_log('achbot_report_optional_permission_deferred stage='.$stage);
     }

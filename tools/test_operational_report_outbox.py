@@ -173,6 +173,37 @@ ensure(achbotFollowupDispatchOne($connection,$id)==='unavailable' &&
     reportRow('server:107','9002')['state']==='pending','contended_permission_read_not_definitive');
 $other->rollback();$other->close();
 ensure(achbotFollowupDispatchOne($connection,$id)==='acknowledged','deferred_permission_recovers');
+// An independent writer must not erase intended audiences at staging.
+// Read the last committed membership/preference; only dispatch authorizes.
+$other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+$other->begin_transaction();
+$other->query("UPDATE users SET isAdmin=0 WHERE userid=9002");
+$other->query("UPDATE setting SET value='off' WHERE type='ADMIN_NOTIFY_9002'");
+$connection->begin_transaction();
+achbotOperationalReportStageLocked($connection,'server:190',1001,0,'orders','Fixture audience');
+$connection->commit();
+$blocked=reportRow('server:190','9002');
+ensure($blocked && $blocked['state']==='pending','locked_recipient_retains_durable_intent');
+$before=count($events);
+ensure(achbotFollowupDispatchOne($connection,(int)$blocked['id'])==='unavailable' &&
+    count($events)===$before,'locked_recipient_cannot_receive_private_report');
+ensure(achbotFollowupDispatchOne($connection,(int)reportRow('server:190','9001')['id'])==='acknowledged' &&
+    achbotFollowupDispatchOne($connection,(int)reportRow('server:190','@fixturereport')['id'])==='acknowledged',
+    'locked_recipient_does_not_block_peer_destinations');
+$other->rollback();
+ensure(achbotFollowupDispatchOne($connection,(int)$blocked['id'])==='acknowledged','original_audience_recovers_after_writer_rollback');
+$other->begin_transaction();
+$other->query("UPDATE setting SET value='off' WHERE type='ADMIN_NOTIFY_9002'");
+$connection->begin_transaction();
+achbotOperationalReportStageLocked($connection,'server:191',1001,0,'orders','Fixture audience');
+$connection->commit();
+$blocked=reportRow('server:191','9002');
+ensure($blocked && $blocked['state']==='pending','preference_writer_retains_durable_intent');
+$other->commit();$other->close();
+$before=count($events);
+ensure(achbotFollowupDispatchOne($connection,(int)$blocked['id'])==='skipped' &&
+    count($events)===$before && reportRow('server:191','9002')['last_result']==='recipient_ineligible',
+    'committed_opt_out_blocks_delivery_from_older_snapshot');
 query("DELETE FROM setting WHERE type='ADMIN_ROLE_9002'");
 query("UPDATE setting SET value='off' WHERE type='ADMIN_NOTIFY_9002'");
 // Unknown transport evidence remains immutable when a later authorized
