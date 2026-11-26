@@ -28,6 +28,9 @@ DYNAMIC_PREFIXES = {
     "legacy_buttons.",
 }
 RETIRED = (
+    "renewPay_", "achbotPayUxReceiptPrefixes", "achbotManualCryptoVerifiedDispatch",
+    "achbotManualCryptoChoice", "apiGiftCode_", "payBuyWithCartToCart", "payBuyWithManualUsdt",
+    "payIncreaseWalletWithGiftCard", "sendIncreaseVolumeUsdtReceipt", "handleCancelFlow",
     "editServerNames", "editDestName", "editSpiderX", "editFlow", "editPFlow",
     "wizwizplanslimit", "wizwizplansinobundid",
     "cantEditTrojan", "changesServerIp", "editsServer", "changesServerLoginInfo", "cantEditGrpc", "changeCustomPort", "changeCustomSni", "changeCustomPath",

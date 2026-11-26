@@ -20,29 +20,22 @@ function achbotCheckoutPaymentKeyboard(string $mode,string $hash,int $amount,arr
         return [[['text'=>$label,'callback_data'=>$prefix.'WithWallet'.$hash]]];
     }
     if ($amount<=0) return [];
-    $renew=$mode==='renew';
     $keyboard=[];
     if (in_array('bank_transfer',$methods,true))
-        $keyboard[]=[['text'=>achbotMessage('legacy_buttons.cart_to_cart'),'callback_data'=>$prefix.'WithCartToCart'.$hash]];
+        $keyboard[]=[['text'=>achbotMessage('legacy_buttons.cart_to_cart'),'callback_data'=>'pm_b_'.$hash]];
     if (in_array('gift_card',$methods,true))
         $keyboard[]=[['text'=>achbotMessage('legacy_buttons.gift_card'),
-            'callback_data'=>$prefix.'WithGiftCard'.$hash]];
+            'callback_data'=>'pm_g_'.$hash]];
     if (in_array('manual_usdt',$methods,true) || in_array('manual_trx',$methods,true)) {
         $label=achbotMessage('purchase.catalogue.button.e729457ba2');
         $keyboard[]=[['text'=>$label,'callback_data'=>'mcm_'.$hash]];
     }
-    foreach (['nowpayment'=>['nowpayments',achbotMessage('legacy_buttons.now_payment_gateway')],
-        'zarinpal'=>['zarinpal',achbotMessage('legacy_buttons.zarinpal_gateway')],
-        'nextpay'=>['nextpay',achbotMessage('legacy_buttons.nextpay_gateway')]] as $gateway=>[$method,$label]) {
+    foreach (['nowpayments'=>achbotMessage('legacy_buttons.now_payment_gateway'),
+        'zarinpal'=>achbotMessage('legacy_buttons.zarinpal_gateway'),
+        'nextpay'=>achbotMessage('legacy_buttons.nextpay_gateway')] as $method=>$label) {
         if (!in_array($method,$methods,true)) continue;
-        $button=['text'=>$label];
-        if ($renew) $button['callback_data']='renewPay_'.$gateway.'_'.$hash;
-        else {
-            $url=achbotPayUxHostedLink($method,$hash,$botUrl);
-            if ($url===null) continue;
-            $button['url']=$url;
-        }
-        $keyboard[]=[$button];
+        $url=achbotPayUxHostedLink($method,$hash,$botUrl);
+        if ($url!==null) $keyboard[]=[['text'=>$label,'url'=>$url]];
     }
     if ($mode!=='topup' && in_array('wallet',$methods,true)) {
         $label=achbotMessage('legacy_buttons.pay_with_wallet');
@@ -67,7 +60,7 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $o
         $back='selectCategory'.$view['context']['category_id'].'_'.$q['server_id'].'_'.$buyType;
         $keyboard[]=[['text'=>achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>$back]];
     } else {
-        $keyboard[]=[['text'=>achbotMessage('legacy_buttons.cancel'),'callback_data'=>'mainMenu']];
+        $keyboard[]=[['text'=>achbotMessage('legacy_buttons.cancel'),'callback_data'=>'dc_'.$hash_id]];
     }
     $notice=achbotMessage('payment.discounts.no_monetary_method');
     if ($renew) $msg=$amount===0?achbotMessage('renewal.free_confirmation.prompt'):

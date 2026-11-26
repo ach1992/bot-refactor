@@ -492,36 +492,36 @@ def main():
         # initial and status projections must retain the original evidence
         # type and callback even when current API settings are the opposite.
         families=[
-            ('standard','BUY_SUB',False,'Buy','Cart'),
-            ('custom','BUY_SUB',True,'Custom','Cart'),
-            ('renew','RENEW_ACCOUNT',False,'Renew','Cart'),
-            ('day','INCREASE_DAY_1_1',False,'IncreaseDay',''),
-            ('volume','INCREASE_VOLUME_1_1',False,'IncreaseVolume',''),
-            ('topup','INCREASE_WALLET',False,'IncreaseWallet',''),
+            ('standard','BUY_SUB',False),
+            ('custom','BUY_SUB',True),
+            ('renew','RENEW_ACCOUNT',False),
+            ('day','INCREASE_DAY_1_1',False),
+            ('volume','INCREASE_VOLUME_1_1',False),
+            ('topup','INCREASE_WALLET',False),
         ]
         methods=[
-            ('bank_transfer',False,'📤 ارسال رسید بانکی',None),
-            ('bank_transfer',True,'📤 ارسال رسید بانکی',None),
-            ('gift_card',False,'📤 ارسال گیفت کارت','Gift'),
-            ('gift_card',True,'📤 ارسال کد گیفت کارت','Gift'),
-            ('manual_usdt',False,'📤 ارسال رسید تتر','Usdt'),
-            ('manual_trx',False,'📤 ارسال رسید TRX','Usdt'),
+            ('bank_transfer',False,'📤 ارسال رسید بانکی'),
+            ('bank_transfer',True,'📤 ارسال رسید بانکی'),
+            ('gift_card',False,'📤 ارسال گیفت کارت'),
+            ('gift_card',True,'📤 ارسال کد گیفت کارت'),
+            ('manual_usdt',False,'📤 ارسال رسید تتر'),
+            ('manual_trx',False,'📤 ارسال رسید TRX'),
         ]
-        for mode,kind,custom,family,bank in families:
-            for method,api,label,suffix in methods:
+        for mode,kind,custom in families:
+            for method,api,label in methods:
                 h=f'ui-{mode}-{method}-{int(api)}'
                 pid=quote(h,method,9431,age=21300,kind=kind,custom=custom,api=api)
                 spec=dict(action='manual_projection',id=pid,mode=mode,
                           states=dict(giftApiVerifyState='off' if api else 'on',
                                       smsApiVerifyState='off' if api else 'on'))
                 result=run(w,e,spec)['result']
-                callback='send'+family+(bank if suffix is None else suffix)+'Receipt'+h
-                cancel='cancel'+family+bank+'Receipt'+h
+                callback='rs_'+h
+                cancel='ph_'+h
                 expected=dict(text=label,callback_data=callback)
                 initial=result['initial']['inline_keyboard']
                 status=result['status']['inline_keyboard']
                 assert initial[0][0]==status[0][0]==expected,result
-                assert initial[-1][0]['callback_data']==result['cancel']['inline_keyboard'][0][0]['callback_data']==cancel,result
+                assert initial[-1][0]['callback_data']==cancel and result['cancel']['inline_keyboard'][0][0]['callback_data']=='rc_'+h,result
                 if method=='gift_card':
                     assert initial[0][1]['url']=='https://example.org/gift-card'
                 else:
@@ -532,7 +532,7 @@ def main():
                 assert ('فقط کد بفرستید' if typed else 'تصویر') in result['prompt']
                 assert result['owner'] is True and result['foreign'] is False and result['wrong_family'] is False
                 assert result['changed_original'] is None and result['broken_pin'] is None
-                assert all(not b.get('callback_data','').startswith('send') for row in result['other_hash']['inline_keyboard'] for b in row)
+                assert all(not b.get('callback_data','').startswith('rs_') for row in result['other_hash']['inline_keyboard'] for b in row)
                 # The issued deadline is not modified: start a real receipt
                 # grace then simulate expiration through the current clock.
                 assert run(w,e,dict(action='manual_start',id=pid,provider=method,actor=9431))['result'] is True

@@ -53,14 +53,11 @@ output = json.loads(result.stdout)
 
 # All rendered Telegram Callback strings with an original merchant hash must
 # fit 64 BYTES, not 64 Unicode characters. The longest supported event is the
-# renewal/extension pre-payment selector; the rest have shorter ASCII prefixes.
+# current Wallet selector; manual actions use compact ASCII prefixes.
 prefixes = (
-    "prePayCheck_INCREASEVOLUME_ManualUsdt_",
-    "prePayCheck_INCREASEVOLUME_CartToCart_",
-    "prePayCheck_RENEWACCOUNT_nowpayment_",
-    "payIncreaseWalletWithManualUsdt",
-    "sendIncreaseVolumeUsdtReceipt",
-    "payIncreaseDayWithManualUsdt",
+    "pm_b_", "pm_g_", "mc_b_", "mc_c_", "mc_e_", "mc_t_", "mcm_", "rs_", "rc_", "dc_", "ps_", "ph_",
+    "payBuyWithWallet", "payCustomWithWallet", "payRenewWithWallet",
+    "payIncreaseDayWithWallet", "payIncreaseWithWallet",
 )
 if max(len((prefix + "A" * output["default_length"]).encode("ascii"))
        for prefix in prefixes) > 64:

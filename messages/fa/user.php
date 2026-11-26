@@ -189,14 +189,6 @@ return [
         'wallet_recharge.wallet_topup_amount_problem.message.983d706c66' => '⚠️ وضعیت درخواست شارژ نیازمند بررسی است؛ قبل از تلاش مجدد، وضعیت را بررسی کنید.',
         'wallet_recharge.wallet_topup_amount_problem.message.d0531e17b9' => '⚠️ این درخواست قبلاً پردازش یا جایگزین شده است. شارژ کیف پول را دوباره از منو آغاز کنید.',
         'wallet_recharge.wallet_topup_amount_problem.message.ae69d93a89' => '💰 لطفاً مبلغ شارژ را وارد کنید.' . "\n\n" . '✅ حداقل مبلغ قابل شارژ <b>100,000 تومان</b> می باشد.' . "\n" . '✅ حداکثر مبلغ قابل شارژ <b>10,000,000 تومان</b> می باشد.' . "\n" . '✅ مبلغ باید فقط مضربی از <b>50,000 تومان</b> باشد.' . "\n\n" . '🔢 لطفاً فقط اعداد انگلیسی وارد کنید.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.1a885aaca4' => '⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.07ee06b4bc' => '⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.7a9c30e938' => '⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.d06bc731eb' => '⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.560f05f822' => '⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.882596d0f1' => '⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.795c4bddb8' => '⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.',
-        'wallet_recharge.wallet_topup_amount_problem.message.c346a0d62e' => '📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.',
         // wallet_transfer.wallet_transfer_restart
         'wallet_transfer.wallet_transfer_restart.message.1286cd29ed' => '⚠️ آماده‌سازی درخواست انتقال با مشکل روبه‌رو شد؛ لطفاً انتقال را دوباره شروع کنید.',
         'wallet_transfer.wallet_transfer_restart.message.03d3c27bc2' => '⛔️ این پیام برای مرحلهٔ فعلی انتقال معتبر نیست؛ لطفاً از منوی کیف پول انتقال تازه‌ای شروع کنید.',
@@ -451,17 +443,9 @@ return [
         // extensions.message
         'extensions.message.48930749a9' => '🧾 روش پرداخت سفارش را انتخاب کنید.',
         // extensions.alert
-        'extensions.alert.1a885aaca4' => '⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.',
-        'extensions.alert.07ee06b4bc' => '⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.',
-        'extensions.alert.7a9c30e938' => '⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.',
-        'extensions.alert.d06bc731eb' => '⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.',
-        'extensions.alert.560f05f822' => '⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',
-        'extensions.alert.882596d0f1' => '⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.',
-        'extensions.alert.795c4bddb8' => '⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.',
         // extensions.text
         'extensions.text.9699c34220' => 'زمان',
         // extensions.message
-        'extensions.message.c346a0d62e' => '📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.',
         // extensions.alert
         // extensions.message
         'extensions.message.24dea9b122' => ['text' => '✅ مدت <b>{volume}</b> روز به مدت زمان اشتراک <code>{remark}</code> اضافه شد.', 'parameters' => ['volume', 'remark']],
@@ -601,7 +585,6 @@ return [
         'checkout.alert.882596d0f1' => '⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.',
         'checkout.alert.795c4bddb8' => '⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.',
         // checkout.text
-        'checkout.text.04029e7ea7' => 'کارت به کارت',
         // checkout.message
         'checkout.message.c346a0d62e' => '📥 تصویر برای پیگیری ثبت شده اما تأیید دریافت آن مشخص نیست. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.',
         // checkout.alert
@@ -626,13 +609,8 @@ return [
         'pre_payment.alert.fa55f5201f' => '⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست. با پشتیبانی تماس بگیرید.',
         'pre_payment.button.f81a8cfcdd' => '💳 پرداخت فاکتور',
         // pre_payment.alert
-        'pre_payment.alert.093b359bab' => 'فاکتور آمادهٔ پرداخت است.',
         // pre_payment.text
-        'pre_payment.text.52bdfa0dce' => '⏳ پردازش رمزارزی ممکن است بیش از چند دقیقه طول بکشد.',
-        'pre_payment.text.64b1e46fd3' => '⚠️ بازگشت از درگاه، به‌تنهایی تأیید مالی نیست.',
         // pre_payment.message
-        'pre_payment.message.b3b3cf5aae' => '🧾 <b>فاکتور آماده است</b>' . "\n" . '',
-        'pre_payment.message.69b0efb715' => '' . "\n" . 'پس از پرداخت، وضعیت سفارش را در ربات بررسی کنید.',
     ],
 
     // ── رسیدهای پرداخت دستی ──
@@ -672,7 +650,6 @@ return [
         'manual_crypto.text.ee4ae4b0c7' => '🧾 پس از ارسال رسید، نتیجه بررسی به شما اعلام می‌شود.',
         // manual_crypto.alert
         'manual_crypto.alert.93decba032' => 'این شبکه برای سفارش در دسترس نیست.',
-        'manual_crypto.alert.fc9718b40b' => 'این نوع سفارش از این پرداخت پشتیبانی نمی‌کند.',
         'manual_crypto.alert.5216f25f85' => 'وضعیت سفارش قابل خواندن نیست؛ لطفاً بعداً تلاش کنید.',
         // manual_receipts.message
         'manual_receipts.message.f568baa065' => '✅ افزایش حساب شما با موفقیت تایید شد.' . "\n" . '💰 مبلغ <b>',

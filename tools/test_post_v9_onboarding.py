@@ -161,7 +161,7 @@ def write_runtime(w: Path) -> None:
             "if($userInfo['phone'] == null"),
         "menu-source.php":current_section("bot.php",
             "$paymentHomeMatch=[];",
-            "if(preg_match('/^sendMessageToUser"),
+            "if ((require __DIR__.'/src/Finance/Routes/ManualCheckout.php')"),
     }
     for file,body in files.items():
         (w/file).write_text(body.replace('achbotCurrentMessage(', 'fixtureCurrentMessage(').replace("__DIR__ . '/src/Telegram/UserProfile.php'","$root . '/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Telegram/UserProfile.php'","$root.'/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Subscription/Presentation.php'","$root.'/src/Subscription/Presentation.php'"),encoding="utf-8")

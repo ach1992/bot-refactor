@@ -13,8 +13,17 @@ checkout/message projection and the merchant configuration workflow.
   the checkout body; recharge never offers Wallet self-payment.
   A legitimately zero-priced commercial command has its own free
   confirmation and needs no monetary method or external invoice.
-- Initial and status receipt actions share the original checkout family,
-  callback mapping and admitted receipt type. The pinned invoice evidence
+- One manual checkout route handles all six payment subjects. Method selection
+  uses pm_b_/pm_g_ and the shared crypto network selector; rs_ starts an
+  original receipt and rc_ cancels its current acknowledged prompt.
+  The subject/method come from the owned persisted invoice, not the callback.
+  The receipt step has a generation and exact bot prompt ID; validation
+  reuses the prompt and only a definite target-specific edit rejection
+  permits replacement. A concurrent changed step cannot authorize evidence.
+  Invoice Home (ph_) preserves the retained invoice. Draft cancellation
+  (dc_) retires a selector, not a financial claim. Hosted methods, including
+  renewal, use the same guarded URL directly.
+  Initial and status receipt actions share the admitted receipt type. The pinned invoice evidence
   profile, not later method settings, determines gift image versus API gift
   code input. Bank and crypto retain their own approved labels; closed
   invoices offer original-payment review without a new payment link.

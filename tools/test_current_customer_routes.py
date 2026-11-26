@@ -36,7 +36,7 @@ $telegramWebhookSecret='Synthetic_Current_Routes_2026';
 $_SERVER['REQUEST_METHOD']='POST';$_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']=$telegramWebhookSecret;
 $spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);
 $from_id=(int)($spec['actor']??2001);$admin=9001;$chat_id=$from_id;
-$callbackId='fixture';$message_id=81;$username='fixture';$first_name='Fixture';
+$botUsername='fixture_bot';$callbackId='fixture';$message_id=(int)($spec['message_id']??81);$username='fixture';$first_name='Fixture';
 $userInfo=achbotProviderRow($connection,'SELECT * FROM users WHERE userid=?','i',[$from_id])??[];
 $botState=json_decode(achbotProviderRow($connection,"SELECT value FROM setting WHERE type='BOT_STATES'")['value'],true);
 $robotState=$botState['botState']??'on';$botUrl='https://fixture.invalid/';
@@ -52,12 +52,17 @@ $data=$spec['callback']??'';$text=$spec['text']??'';
 $chat=(object)['id'=>(int)($spec['chat']??$from_id),'type'=>$spec['chat_type']??'private'];
 $sender=(object)['id'=>$from_id,'first_name'=>'Fixture','username'=>'fixture'];
 $update=$data!==''?(object)['callback_query'=>(object)['from'=>$sender,'data'=>$data,
-    'message'=>(object)['chat'=>$chat,'message_id'=>81]]]:
-    (object)['message'=>(object)['from'=>$sender,'chat'=>$chat,'message_id'=>82,'text'=>$text]];
+    'message'=>(object)['chat'=>$chat,'message_id'=>$message_id]]]:
+    (object)['message'=>(object)['from'=>$sender,'chat'=>$chat,'message_id'=>(int)($spec['message_id']??82),'text'=>$text]];
 $update->update_id=(int)($spec['update_id']??100001);
-function sendMessage($text,$keys=null,$mode=null,$uid=null){$GLOBALS['events'][]=['send',$text,$keys,$mode];return (object)['ok'=>true,'result'=>(object)['message_id'=>100+count($GLOBALS['events'])]];}
-function editText($id,$text,$keys=null,$mode=null){$GLOBALS['events'][]=['edit',$text,$keys,$mode];return (object)['ok'=>true];}
-function delMessage(...$a){}
+if (isset($spec['photo']) && isset($update->message)) $update->message->photo=[(object)['file_id'=>$spec['photo']]];
+function sendMessage($text,$keys=null,$mode=null,$uid=null){$GLOBALS['events'][]=['send',$text,$keys,$mode];return (object)['ok'=>true,'result'=>(object)['message_id'=>(int)($GLOBALS['spec']['sent_id']??100+count($GLOBALS['events'])),'chat'=>(object)['id'=>(int)($uid??$GLOBALS['from_id'])]]];}
+function editText($id,$text,$keys=null,$mode=null){$GLOBALS['events'][]=['edit',$text,$keys,$mode];
+    if (array_key_exists('edit_result',$GLOBALS['spec'])) return json_decode(json_encode($GLOBALS['spec']['edit_result']));
+    return (object)['ok'=>true];}
+function delMessage(...$a){if (($GLOBALS['spec']['op']??'')==='manual_checkout') $GLOBALS['events'][]=['delete',...$a];return (object)['ok'=>true];}
+function sendPhoto($file,$text,$keys=null,$mode=null,$uid=null){$GLOBALS['events'][]=['photo',$text,$keys,$mode,$uid,$file];return (object)['ok'=>true,'result'=>(object)['message_id'=>333,'chat'=>(object)['id'=>(int)$uid]]];}
+function sendToAllAdmins(...$a){}
 function alert(...$a){$GLOBALS['events'][]=['alert',...$a];}
 function answerCallbackQuery(...$a){$GLOBALS['events'][]=['ack',...$a];}
 function sendAction(...$a){}
@@ -135,13 +140,13 @@ case 'topup':
     $events[]=['topup',startWalletPayment($connection,$botUrl,$from_id,
         100000,(string)$userInfo['step'],(int)$update->update_id,$message_id)];
     break;
-case 'manual_crypto':
-    require $root.'/src/Finance/Routes/ManualCrypto.php';break;
+case 'manual_checkout':
+    require $root.'/src/Finance/Routes/ManualCheckout.php';break;
 case 'manual_claim':
     $pay=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=?','i',[(int)$spec['pay']]);
     $events[]=['claim',achbotManualClaim($connection,$pay,$spec['method'],$from_id,$spec['network']??null,$spec['mode']??'standard')];
     break;
-case 'renew_link':
+case 'payment_status':
     require $root.'/src/Finance/Routes/PrePayment.php';break;
 case 'renew':
     require $root.'/src/Finance/Routes/RenewalCheckout.php';break;
@@ -162,7 +167,7 @@ case 'wallet':
 case 'shortcut':
     // Actual current ban and membership/registration/phone/home source.
     eval(fixtureSection("if ((\$userInfo['step'] ?? null) ===", '$checkSpam = checkSpam();'));
-    eval(fixtureSection('// "عضو شدم" is a navigation continuation', "if(preg_match('/^sendMessageToUser"));
+    eval(fixtureSection('// "عضو شدم" is a navigation continuation', "if ((require __DIR__.'/src/Finance/Routes/ManualCheckout.php')"));
     break;
 default:throw new RuntimeException('unknown fixture route');
 }
@@ -180,7 +185,7 @@ def main():
             r=subprocess.run(args,env=env,capture_output=True,text=True,timeout=20)
             assert r.returncode==0,(op,kw,r.returncode,r.stdout[-1200:],r.stderr[-1600:])
             for line in r.stderr.splitlines():
-                assert op=='manual_claim' and line.startswith('[AChBot] '),(op,line)
+                assert op in ('manual_claim','manual_checkout') and line.startswith('[AChBot] '),(op,line)
                 diagnostic=json.loads(line[len('[AChBot] '):])
                 assert diagnostic['event']=='achbot.finance.checkout_manual_admission_deferred',diagnostic
             return json.loads(r.stdout)
@@ -299,7 +304,7 @@ def main():
             sql(f"INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('{code}','percent',{100 if zero else 20},0,2,-1)")
             r=run('discount',actor=uid,text=code,**configuration)
             cb=callbacks(r);prefix={'standard':'payBuy','custom':'payCustom','renew':'payRenew'}[mode]
-            assert prefix+'WithWallet'+h in cb and back in cb,r
+            assert prefix+'WithWallet'+h in cb and (('dc_'+h if back=='mainMenu' else back) in cb),r
             assert int(latest(uid)[2])==amount and max(1,int(count))==quantity,(r,latest(uid))
             assert sql(f"SELECT expire_count FROM discounts WHERE hash_id='{code}'")=='1'
             # A replayed button cannot reopen a second redemption.
@@ -663,7 +668,7 @@ def main():
         def no_money_card(r,pid):
             cb=callbacks(r)
             assert 'haveDiscountCheckout_'+str(pid) in cb,r
-            assert not any(b.get('url') or b.get('callback_data','').startswith(('payBuyWith','payCustomWith','payRenewWith','renewPay_','mcm_')) for b in buttons(r)),r
+            assert not any(b.get('url') or b.get('callback_data','').startswith(('payBuyWith','payCustomWith','payRenewWith','pm_','mcm_')) for b in buttons(r)),r
             assert sum(no_method_notice in e[1] for e in r['events'] if e[0]=='send')==1,r
         def reject_partial(uid,r,tag,discount_type='percent',amount=20,maximum=None,stale_state=None,stale_keys=None,**configuration):
             pid,h,price,_=latest(uid)
@@ -787,8 +792,8 @@ def main():
         base_keys={'bankAccount':'fixture-bank','holderName':'fixture-holder','private':'PRIVATE_SYNTHETIC'}
         methods=[
             ('walletState','wallet',{},'payBuyWithWallet'),
-            ('cartToCartState','bank_transfer',{},'payBuyWithCartToCart'),
-            ('giftCardState','gift_card',{'giftCardUrl':'https://fixture.invalid/gift'},'payBuyWithGiftCard'),
+            ('cartToCartState','bank_transfer',{},'pm_b_'),
+            ('giftCardState','gift_card',{'giftCardUrl':'https://fixture.invalid/gift'},'pm_g_'),
             ('manualUsdtState','manual_usdt',{'manualUsdtWalletBEP20':'0x'+'a'*40,'manualUsdtRateToman':'1000'},'mcm_'),
             ('manualUsdtState','manual_trx',{'manualTrxWallet':'T9yD14Nj9j7xAB4dbGeiX9h8unkKHxuWwb','manualTrxRateToman':'1000'},'mcm_'),
             ('zarinpal','zarinpal',{'zarinpal':'fixture-merchant'},'zarinpal'),
@@ -847,16 +852,16 @@ def main():
             actual=set()
             for b in buttons(rr):
                 cb=b.get('callback_data','');url=b.get('url','')
-                if cb=='mainMenu':continue
-                elif cb=='payIncreaseWalletWithCartToCart'+h:actual.add('bank_transfer')
-                elif cb=='payIncreaseWalletWithGiftCard'+h:actual.add('gift_card')
+                if cb=='dc_'+h:continue
+                elif cb=='pm_b_'+h:actual.add('bank_transfer')
+                elif cb=='pm_g_'+h:actual.add('gift_card')
                 elif cb=='mcm_'+h:actual.add('crypto')
                 else:
                     urls={f'https://fixture.invalid/pay/checkout.php?{flag}&hash_id={h}':m
                         for flag,m in [('nowpayment','nowpayments'),('zarinpal','zarinpal'),('nextpay','nextpay')]}
                     assert url in urls,(b,rr)
                     actual.add(urls[url])
-            assert actual==expected and 'mainMenu' in callbacks(rr),(expected,actual,rr)
+            assert actual==expected and 'dc_'+h in callbacks(rr),(expected,actual,rr)
             assert not any(x.startswith('haveDiscountCheckout_') for x in callbacks(rr)),rr
         for flag,method,keys,_ in methods:
             sql("UPDATE setting SET value='"+json.dumps(base_keys|keys)+"' WHERE type='PAYMENT_KEYS'")
@@ -932,8 +937,8 @@ def main():
         sql("UPDATE setting SET value='"+json.dumps(crypto_keys)+"' WHERE type='PAYMENT_KEYS'")
         r=run('standard',callback='selectPlan7_1_none');pid,h,_,_=latest(2001)
         state(walletState='off',manualUsdtState='on',gatewayAudience={'manual_trx':'off'})
-        rr=run('manual_crypto',callback='mcm_'+h,stale_state={'manualUsdtState':'off'},stale_keys={'manualUsdtWalletBEP20':'invalid','manualUsdtWalletERC20':'invalid'})
-        assert callbacks(rr)==['mc_b_'+h,'mc_e_'+h,'mainMenu'],rr
+        rr=run('manual_checkout',callback='mcm_'+h,stale_state={'manualUsdtState':'off'},stale_keys={'manualUsdtWalletBEP20':'invalid','manualUsdtWalletERC20':'invalid'})
+        assert callbacks(rr)==['mc_b_'+h,'mc_e_'+h,'dc_'+h],rr
         before=sql("SELECT COUNT(*) FROM payment_attempts")
         rr=run('manual_claim',pay=int(pid),method='manual_trx',network='TRON')
         assert ['claim',False] in rr['events'] and sql("SELECT COUNT(*) FROM payment_attempts")==before,rr
@@ -944,8 +949,8 @@ def main():
         assert json.loads(issued[0])['wallet']=='0x'+'a'*40 and float(issued[1])==0.1 and len(issued[2])==64,issued
         sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
         state(walletState='off',manualUsdtState='off')
-        rr=run('manual_crypto',callback='mcm_'+h)
-        assert callbacks(rr)==['mc_b_'+h,'mainMenu'],rr
+        rr=run('manual_checkout',callback='mcm_'+h)
+        assert callbacks(rr)==['mc_b_'+h,'dc_'+h],rr
         rr=run('manual_claim',pay=int(pid),method='manual_usdt',network='BEP20')
         assert ['claim',True] in rr['events'],rr
         assert sql(f"SELECT checkout_url,quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}").split('\t')==issued
@@ -964,27 +969,26 @@ def main():
         state(walletState='off',nextpay='on')
         sql("UPDATE setting SET value='"+json.dumps(base_keys|{'nextpay':'fixture-merchant'})+"' WHERE type='PAYMENT_KEYS'")
         r=run('renew',callback=f'renewAccount{oid}');pid,h,_,_=latest(2001)
-        cb='renewPay_nextpay_'+h
-        assert cb in callbacks(r),r
-        rr=run('renew_link',callback=cb,stale_state={'nextpay':'off'})
-        assert any('?nextpay&hash_id='+h in b.get('url','') for b in buttons(rr)),rr
+        assert any('?nextpay&hash_id='+h in b.get('url','') for b in buttons(r)),r
+        assert not any(cb.startswith('renewPay_') for cb in callbacks(r)),r
         sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
-        rr=run('renew_link',callback=cb,stale_keys={'nextpay':'stale'})
-        assert not any('?nextpay&hash_id='+h in b.get('url','') for b in buttons(rr)),rr
+        rr=run('renew',callback=f'renewAccount{oid}',stale_keys={'nextpay':'stale'})
+        assert not any('?nextpay&hash_id=' in b.get('url','') for b in buttons(rr)),rr
+        pid,h,_,_=latest(2001)
         cases.append('actual_renewal_hosted_navigation_current_method_configuration')
         # Actual current-schema checkout draft, without any issuance/claim.
         sql(f"UPDATE pays SET draft_expires_at=UNIX_TIMESTAMP()-1 WHERE id={pid}")
         before=sql(f"SELECT state,COALESCE(checkout_operation_id,0),COALESCE(payid,'') FROM pays WHERE id={pid}")
-        r=run('renew_link',callback='ps_'+h)
+        r=run('payment_status',callback='ps_'+h)
         edits=[e for e in r['events'] if e[0]=='edit']
         assert len(edits)==1 and 'مهلت انتخاب روش پرداخت پایان یافت' in edits[0][1],r
         assert callbacks(r)==['mainMenu'],r
         assert sql(f"SELECT state,COALESCE(checkout_operation_id,0),COALESCE(payid,'') FROM pays WHERE id={pid}")==before
-        r=run('renew_link',actor=2002,callback='ps_'+h)
+        r=run('payment_status',actor=2002,callback='ps_'+h)
         assert not any(e[0]=='edit' for e in r['events']),r
         # A contradictory original provider locator must retain recovery.
         sql(f"UPDATE pays SET payid='fixture-unknown-provider' WHERE id={pid}")
-        r=run('renew_link',callback='ps_'+h)
+        r=run('payment_status',callback='ps_'+h)
         assert 'ps_'+h in callbacks(r),r
         cases.append('expired_unadmitted_current_draft_only_home_and_uncertain_retains_recovery')
 

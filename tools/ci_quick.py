@@ -33,6 +33,7 @@ NATIVE_TESTS = (
     ("current_payment_readiness", "test_post_v9_payment_readiness.py"),
     ("current_sales_discount", "test_current_sales_discount.py"),
     ("current_customer_routes", "test_current_customer_routes.py"),
+    ("manual_checkout_conversation", "test_manual_checkout_conversation.py"),
     ("wallet_first_hosted", "test_wallet_first_hosted.py"),
     ("wallet_first_manual", "test_wallet_first_manual.py"),
     ("wallet_first_service_execution", "test_wallet_first_service_execution.py"),
@@ -300,6 +301,13 @@ REQUIRED_SCENARIOS = {
     ),
     "gateway_rules": (
         "current_service_history_funding_only_excluded_auto_renew_counted_once",
+    ),
+    "manual_checkout_conversation": (
+        "unified_method_issue_exact_owner_and_retained_invoice",
+        "prompt_reuse_and_exact_cancel_no_financial_cancellation",
+        "definite_target_rejection_replaces_prompt_unknown_and_rate_limit_do_not",
+        "draft_cancel_retires_selector_only",
+        "original_receipt_routes_to_staff_without_credit_or_human_delete",
     ),
     "current_customer_routes": (
         "actual_public_content_namespace_exact_and_no_private_values",

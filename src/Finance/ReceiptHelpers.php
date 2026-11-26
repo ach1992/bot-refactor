@@ -210,20 +210,6 @@ function achbotManualSelectedMethod(mysqli $connection, array $payInfo): ?string
 }
 
 
-/** Read the provider from the immutable order-claim, not from a stale button. */
-function achbotManualCryptoReceiptProviderByHash(mysqli $db, string $hashId): string {
-    if (!preg_match('/^[A-Za-z0-9_-]{1,50}$/D', $hashId)) return '';
-    try {
-        $stmt=$db->prepare('SELECT provider FROM payment_attempts WHERE order_hash=? LIMIT 1');
-        $stmt->bind_param('s',$hashId);$stmt->execute();
-        $attempt=$stmt->get_result()->fetch_assoc();$stmt->close();
-        $method=(string)($attempt['provider']??'');
-        return in_array($method,['manual_usdt','manual_trx'],true) ? $method : '';
-    } catch (Throwable $ignored) {
-        return '';
-    }
-}
-
 function achbotManualClaim(mysqli $connection, array $payInfo, string $method, int $userId,
                            ?string $chosenNetwork = null,?string $expectedMode=null): bool {
     if (!in_array($method, ['bank_transfer', 'gift_card', 'manual_usdt','manual_trx'], true) ||
@@ -271,14 +257,20 @@ function achbotManualReceiptAllowed(mysqli $connection, array $payInfo, string $
  * using the SAME evidence, not replaced by a different image.
  */
 function achbotManualBeginEvidence(mysqli $connection, array $payInfo, string $method,
-                                   int $userId, string $fileId,?string $expectedMode=null): ?string {
+                                   int $userId, string $fileId,?string $expectedMode=null,?string $expectedReceiptStep=null): ?string {
     if (!achbotManualReceiptAllowed($connection,$payInfo,$method,$userId,$expectedMode)) return null;
     if ($userId <= 0 || $fileId === '' || strlen($fileId) > 4096) return null;
     try {
         $claimToken = bin2hex(random_bytes(16));
         if (!$connection->begin_transaction()) throw new RuntimeException('manual_evidence_transaction_failed');
         $id = (int)$payInfo['id'];
-        achbotWalletLockOwnerLocked($connection,$userId);
+        $owner=achbotWalletLockOwnerLocked($connection,$userId);
+        if ($expectedReceiptStep!==null) {
+            $current=achbotProviderRow($connection,'SELECT step FROM users WHERE id=? FOR UPDATE','i',[$owner['id']]);
+            if (($current['step']??null)!==$expectedReceiptStep) {
+                $connection->rollback();return null;
+            }
+        }
         $stmt = $connection->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
         $stmt->bind_param('i', $id);
         $stmt->execute();
@@ -727,9 +719,10 @@ function buildCartToCartInfoMessage(array $paymentKeys, int $priceToman,
 
 /** Shared original receipt button for initial and status projections. */
 function achbotManualReceiptAction(array $pay,array $attempt): ?array {
+    require_once __DIR__.'/CheckoutAdmission.php';
     $method=(string)($attempt['provider']??'');
     if (!achbotManualReceiptEligible($pay,$attempt,$method) ||
-        !($prefixes=achbotPayUxReceiptPrefixes($pay,$method))) return null;
+        achbotCheckoutMode($pay)===null) return null;
     $late=$pay['state']!=='pending' || !achbotPayUxInvoiceOpen($attempt);
     $label=$late?achbotMessage('payment.payment_lifecycle.previous_payment_review'):match($method) {
         'gift_card'=>achbotManualTypedGiftAttempt($attempt)?achbotMessage('payment.api_payment.code'):
@@ -738,8 +731,8 @@ function achbotManualReceiptAction(array $pay,array $attempt): ?array {
         'manual_trx'=>achbotMessage('telegram.markup.receipt_and_cancel.text.75b57f3066'),
         default=>achbotMessage('telegram.markup.receipt_and_cancel.button.ae15b282fd')
     };
-    return ['button'=>['text'=>$label,'callback_data'=>$prefixes[0].$pay['hash_id']],
-        'cancel'=>$prefixes[1].$pay['hash_id']];
+    return ['button'=>['text'=>$label,'callback_data'=>'rs_'.$pay['hash_id']],
+        'cancel'=>'ph_'.$pay['hash_id']];
 }
 /** Original invoice navigation; closed invoices use the same status projection. */
 function achbotManualReceiptKeyboard(array $pay,array $attempt): string {
@@ -765,20 +758,8 @@ function achbotManualInvoiceKeyboard(mysqli $db,array $pay): string {
 }
 
 function kbOnlyCancel(array $pay): string {
-    $prefixes=achbotPayUxReceiptPrefixes($pay,'bank_transfer');
-    if (!$prefixes) throw new InvalidArgumentException('receipt_cancel_family_invalid');
-    [, $cancel]=$prefixes;
     return inlineKeyboard([[['text'=>achbotMessage('telegram.markup.receipt_and_cancel.button.cc357a4c9f'),
-        'callback_data'=>$cancel.$pay['hash_id']]]]);
-}
-
-function handleCancelFlow($removeKeyboard) {
-    // The cancel button is shared by invoice evidence and receipt prompts.
-    // It cannot prove that its source is disposable.
-    setUser();
-    sendMessage(\achbotMessage('legacy_messages.operation_canceled'), $removeKeyboard, "HTML");
-    sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');
-    exit;
+        'callback_data'=>'rc_'.$pay['hash_id']]]]);
 }
 
 function extractPhotoFileId($update): ?string {

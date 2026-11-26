@@ -852,19 +852,6 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         .\achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.d251ffde03').$safe($subject).\achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.20714482be', ['amount' => $amount]).$safe($next).achbotPayUxDeadlineText($attempt??[]);
 }
 
-function achbotPayUxReceiptPrefixes(array $pay,string $method): array {
-    require_once __DIR__.'/CheckoutAdmission.php';
-    $family=match(achbotCheckoutMode($pay)) {
-        'standard'=>['Buy','Cart'],'custom'=>['Custom','Cart'],'renew'=>['Renew','Cart'],
-        'day'=>['IncreaseDay',''],'volume'=>['IncreaseVolume',''],'topup'=>['IncreaseWallet',''],
-        default=>null,
-    };
-    if (!$family || !achbotPayUxManualProvider($method)) return [];
-    [$name,$bank]=$family;
-    $suffix=match($method) {'gift_card'=>'Gift','manual_usdt','manual_trx'=>'Usdt',default=>$bank};
-    return ['send'.$name.$suffix.'Receipt','cancel'.$name.$bank.'Receipt'];
-}
-
 /** Invoice deadline is an absolute time, never a new destination or quote. */
 function achbotPayUxDeadlineText(array $attempt): string {
     $deadline=achbotPayUxInvoiceDeadline($attempt);

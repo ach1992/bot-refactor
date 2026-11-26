@@ -80,10 +80,10 @@ if(is_numeric($checkSpam)){
 require_once __DIR__.'/src/Telegram/UserProfile.php';
 if (is_object($update->message??null) && achbotCustomerShortcut($update,(int)$from_id)!==null) $text='/start';
 
-// Reject malformed direct wallet and manual-choice callback frames before
+// Reject malformed direct wallet callback frames before
 // another payment route can interpret a substring as a different action.
 if (is_string($data) && preg_match(
-    '/\A(?:pay(?:Buy|Custom|Renew|IncreaseDay|Increase)With(?:Wallet|CartToCart|GiftCard|ManualUsdt)|payIncreaseWalletWith(?:CartToCart|GiftCard|ManualUsdt))/',
+    '/\Apay(?:Buy|Custom|Renew|IncreaseDay|Increase)WithWallet/',
     $data, $paymentAction)) {
     if (strlen($data) > 64 || !preg_match(
         '/\A' . preg_quote($paymentAction[0], '/') . '[A-Za-z0-9_-]{1,50}\z/D',
@@ -95,12 +95,7 @@ if (is_string($data) && preg_match(
 }
 
 if (($achbotApiPaymentResult = require __DIR__.'/src/Finance/Routes/ApiPayments.php') === null) return;
-$achbotV8Result = require __DIR__ . '/src/Finance/Routes/PrePayment.php';
-if ($achbotV8Result === '__ACHBOT_V8_GOTO_START__') goto GOTOSTART;
-if ($achbotV8Result === null) return;
-$achbotManualCryptoResult = require __DIR__ . '/src/Finance/Routes/ManualCrypto.php';
-if ($achbotManualCryptoResult === '__ACHBOT_V8_GOTO_START__') goto GOTOSTART;
-if ($achbotManualCryptoResult === null) return;
+if ((require __DIR__ . '/src/Finance/Routes/PrePayment.php') === null) return;
 // END Pre Pay Check By ACh
 
 // "عضو شدم" is a navigation continuation, not proof of membership. Only
@@ -339,6 +334,8 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == \achbotMessage('legacy_butt
     }
     exit;
 }
+
+if ((require __DIR__.'/src/Finance/Routes/ManualCheckout.php') === null) return;
 
 if(preg_match('/^sendMessageToUser(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     editText($message_id,\achbotMessage('bot.bot.webhook_ingress_authenticated.message.305cb98154'));
@@ -1099,8 +1096,7 @@ if($data=="myInfo"){
             $keys,"html");
 }
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/WalletTransfer.php') === null) return;
-if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/WalletRecharge.php') === null) return;
-if ($achbotV8Result === '__ACHBOT_V8_GOTO_START__') goto GOTOSTART;
+if ((require __DIR__ . '/src/Finance/Routes/WalletRecharge.php') === null) return;
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/ManualReceipts.php') === null) return;
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/AdminWallet.php') === null) return;
 if($data=="editRewardChannel" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -1233,8 +1229,7 @@ if ((require __DIR__ . '/src/Purchase/Catalogue.php') === null) return;
 if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/DiscountEntry.php') === null) return;
 if ((require __DIR__ . '/src/Purchase/TrialCatalogue.php') === null) return;
 if ((require __DIR__ . '/src/Purchase/SelectPlan.php') === null) return;
-if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/Checkout.php') === null) return;
-if ($achbotV8Result === '__ACHBOT_V8_GOTO_START__') goto GOTOSTART;
+if ((require __DIR__ . '/src/Finance/Routes/Checkout.php') === null) return;
 if($data=="availableServers2" && ($botState['individualExistence']??'off')==='on'){
     $keys = [[
         ['text'=>\achbotMessage('bot.bot.process_callback_query.button.423ff3a159'),'callback_data'=>"wizwizch"],
@@ -1352,8 +1347,7 @@ if ((require __DIR__ . '/src/Subscription/ConfigRefresh.php') === null) return;
 if ((require __DIR__ . '/src/Plans/Administration.php') === null) return;
 if ((require __DIR__ . '/src/Subscription/CustomerRoutes.php') === null) return;
 
-if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/RenewalCheckout.php') === null) return;
-if ($achbotV8Result === '__ACHBOT_V8_GOTO_START__') goto GOTOSTART;
+if ((require __DIR__ . '/src/Finance/Routes/RenewalCheckout.php') === null) return;
 if ((require __DIR__ . '/src/Subscription/AccountTransfers.php') === null) return;
 
 if($data=="giftVolumeAndDay" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -1610,8 +1604,7 @@ if(preg_match('/^giftServerVolume([1-9][0-9]*)_(0|[1-9][0-9]*)$/D',$userInfo['st
 else {
     require __DIR__ . '/src/Subscription/AccountDeletion.php';
 }
-if (($achbotV8Result = require __DIR__ . '/src/Finance/Routes/Extensions.php') === null) return;
-if ($achbotV8Result === '__ACHBOT_V8_GOTO_START__') goto GOTOSTART;
+if ((require __DIR__ . '/src/Finance/Routes/Extensions.php') === null) return;
 if ((require __DIR__ . '/src/Plans/Categories.php') === null) return;
 if(($data=='serversSetting' || preg_match('/^nextServerPage(\d+)/',$data,$match)) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if(isset($match[1])) $keys = getServerListKeys($match[1]);

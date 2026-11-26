@@ -158,7 +158,7 @@ function startWalletPayment(mysqli $connection, $botUrl,
     require_once __DIR__.'/../Purchase/CheckoutPresentation.php';
     $methods=array_keys(achbotCheckoutDraftPaymentOptions($connection,$draftId,$actor));
     $keyboard=achbotCheckoutPaymentKeyboard('topup',$hash_id,$amount,$methods,$botUrl);
-    $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cancel'), 'callback_data' => 'mainMenu']];
+    $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cancel'), 'callback_data' => 'dc_'.$hash_id]];
     $keys = json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);
     try {
         $reply = sendMessage(\achbotMessage('wallet.wallet_start.start_wallet_payment.message.1f46b2b87f') . number_format($amount) .
