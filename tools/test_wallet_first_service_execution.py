@@ -146,7 +146,7 @@ function bot($method,$data=[]) {
         throw new RuntimeException('fixture_unexpected_bot_markup');
     $s=achbotProviderStatement($db,'INSERT INTO fixture_markup(chat_id,message_id,markup) VALUES (?,?,?)',
         'iis',[(int)$data['chat_id'],(int)$data['message_id'],$data['reply_markup']??null]);$s->close();
-    return (object)['ok'=>true];
+    return fixtureMessageAck((int)$data['chat_id'],(int)$data['message_id']);
 }
 function achbotNotifyAdmins(...$args) {return true;}
 function delMessage(...$args) {}
