@@ -209,13 +209,22 @@ def main():
                 with ThreadPoolExecutor(max_workers=1) as pool:
                     pending=pool.submit(run,actor=2002,callback='dc_'+h7,message_id=270)
                     try:
-                        deadline=time.monotonic()+5
+                        # Match the actual prepared locking query. MariaDB
+                        # 10.11 does not reliably expose INNODB_LOCK_WAITS
+                        # (see the existing physical reservation race).
+                        probe=subprocess.run(client,input=f"START TRANSACTION; SELECT id FROM pays WHERE id={p7} FOR UPDATE NOWAIT; ROLLBACK;\n",
+                            text=True,env=env,capture_output=True,timeout=3)
+                        assert probe.returncode!=0 and 'ERROR 1205' in probe.stderr,probe
+                        wait_sql=("SELECT COUNT(*) FROM information_schema.PROCESSLIST WHERE DB=DATABASE() "
+                            "AND COMMAND='Execute' AND TIME>=1 AND INFO LIKE 'SELECT id FROM pays WHERE id=% AND user_id=% FOR UPDATE'")
+                        deadline=time.monotonic()+8
                         while time.monotonic()<deadline and not pending.done():
-                            if int(sql("SELECT COUNT(*) FROM information_schema.INNODB_LOCK_WAITS")):
+                            if int(sql(wait_sql)):
                                 break
                             time.sleep(.05)
                         else:
-                            raise AssertionError('navigation did not await original pay lock')
+                            raise AssertionError(('navigation did not await original pay lock',
+                                pending.result() if pending.done() else sql('SHOW FULL PROCESSLIST')))
                         writer.stdin.write(f"UPDATE pays SET payid='browser-reserved-fixture' WHERE id={p7}; COMMIT; SELECT 'committed';\n")
                         writer.stdin.flush()
                         assert writer.stdout.readline().strip()=='committed'
