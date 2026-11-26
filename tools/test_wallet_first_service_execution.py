@@ -104,9 +104,10 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
             (int)$a['actor_userid']!==(int)($x['op']==='telegram_review' && str_starts_with($x['callback'],'attentionService')?0:($x['actor']??0)))
             throw new RuntimeException('fixture_followup_claim_not_committed');
         $s=achbotProviderStatement($db,'INSERT INTO fixture_followup(intent_id,recipient,text,mode,keys_json) VALUES (?,?,?,?,?)',
-            'issss',[$d['id'],(string)$uid,$text,$mode,$keys]);$s->close();
+            'issss',[$d['id'],(string)$uid,$text,$mode,$keys]);$mid=(int)$s->insert_id;$s->close();
         if (isset($x['response'])) return json_decode(json_encode($x['response'],JSON_THROW_ON_ERROR),false,64,JSON_THROW_ON_ERROR);
-        return (object)['ok'=>!($x['unknown_ack']??false)];
+        return ($x['unknown_ack']??false)?(object)['ok'=>false]:fixtureMessageAck($uid,
+            str_starts_with((string)$mode,'edit:')?(int)substr($mode,5):$mid);
     }
     if ($x['op']==='telegram_addon_quote') {
         $GLOBALS['fixtureQuoteMessages'][]=['text'=>$text,'keys'=>json_decode($keys??'null',true)];
@@ -457,6 +458,9 @@ try {
     echo json_encode(['ok'=>false,'reason'=>$e->getMessage()],JSON_THROW_ON_ERROR);
 }
 '''
+
+from operational_report_fixture import with_message_ack
+PHP=with_message_ack(PHP)
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)

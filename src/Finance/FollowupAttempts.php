@@ -65,13 +65,22 @@ function achbotFollowupAttemptClaimLocked(mysqli $db,array $r,int $actor,?string
 function achbotFollowupAttemptFinishLocked(mysqli $db,int $id,string $token,array $outcome): string {
     $result=$outcome['result'];$code=$outcome['code'];$delay=$outcome['retry_after'];
     $state=$result==='rejected' && $delay!==null?'pending':$result;
-    $a=achbotProviderRow($db,'SELECT id,result FROM payment_followup_attempts
-        WHERE intent_id=? AND dispatch_token=? FOR UPDATE','is',[$id,$token]);
+    $a=achbotProviderRow($db,'SELECT a.id,a.result,i.recipient,i.kind,i.message_id
+        FROM payment_followup_attempts a JOIN payment_followup_intents i ON i.id=a.intent_id
+        WHERE a.intent_id=? AND a.dispatch_token=? FOR UPDATE','is',[$id,$token]);
     if (!$a) throw new RuntimeException('followup_attempt_finish_missing');
     if ($a['result']!=='dispatching') throw new RuntimeException('followup_attempt_finish_conflict');
+    $ack=$outcome['ack']??null;
+    if ($result==='acknowledged') {
+        if (!is_array($ack) || !is_int($ack['chat_id']??null) || $ack['chat_id']===0 ||
+            !is_int($ack['message_id']??null) || $ack['message_id']<=0 ||
+            (!str_starts_with($a['recipient'],'@') && (string)$ack['chat_id']!==$a['recipient']) ||
+            ($a['kind']==='edit' && $ack['message_id']!==(int)$a['message_id']))
+            throw new RuntimeException('followup_ack_identity_invalid');
+    } elseif ($ack!==null) throw new RuntimeException('followup_ack_without_success');
     $s=achbotProviderStatement($db,'UPDATE payment_followup_attempts SET result=?,
-        telegram_error_code=?,retry_after_seconds=?,finished_at=NOW(6)
-        WHERE id=? AND result=\'dispatching\'','siii',[$result,$code,$delay,(int)$a['id']]);
+        telegram_error_code=?,retry_after_seconds=?,ack_chat_id=?,ack_message_id=?,finished_at=NOW(6)
+        WHERE id=? AND result=\'dispatching\'','siiiii',[$result,$code,$delay,$ack['chat_id']??null,$ack['message_id']??null,(int)$a['id']]);
     $n=$s->affected_rows;$s->close();
     if ($n!==1) throw new RuntimeException('followup_attempt_result_failed');
     $s=achbotProviderStatement($db,"UPDATE payment_followup_intents SET state=?,last_result=?,

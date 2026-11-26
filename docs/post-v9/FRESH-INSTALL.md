@@ -44,8 +44,8 @@ unused historical tables (`admins`, `black_list`, `servers`,
 The disposable [fresh-schema proof](../../tools/test_wallet_first_fresh_schema.py)
 constructs a reference from `database/legacy-schema.sql` and all tracked numbered
 `migrations/post-v9/[0-9][0-9][0-9]_*.sql` files in sorted order.
-The Wallet-first baseline has 47 numbered scripts ending at
-`051_payment_message_ownership.sql`, including 044-045 (retired plan/category
+The Wallet-first baseline has 48 numbered scripts ending at
+`052_followup_message_identity.sql`, including 044-045 (retired plan/category
 fields) and 046-047 (category reference and physical username indexes).
 It compares all 35 retained empty table definitions, verifies the omitted
 tables, eleven retired payment execution/review/projection columns, 27 obsolete Native,

@@ -27,12 +27,20 @@ function sendPhoto(...$args) {
 }
 function sendMessage(...$args) {
     $GLOBALS['review_sends'][]=['kind'=>'message','args'=>$args];
+    if (isset($GLOBALS['achbotTelegramDiagnosticContext']['followup_id'])) {
+        if (array_key_exists('response',$GLOBALS['spec'])) return json_decode(json_encode($GLOBALS['spec']['response']));
+        if (!($GLOBALS['spec']['fail_send']??false)) return fixtureMessageAck($args[3]);
+    }
     return (object)['ok'=>!($GLOBALS['spec']['fail_send']??false),'result'=>(object)['message_id'=>333]];
 }
 function answerCallbackQuery(...$args) {$GLOBALS['review_alerts'][]=$args;}
 function alert(...$args) {$GLOBALS['review_alerts'][]=$args;}
 function editKeys(...$args) {
     $GLOBALS['review_sends'][]=['kind'=>'edit_keys','args'=>$args];
+    if (isset($GLOBALS['achbotTelegramDiagnosticContext']['followup_id'])) {
+        if (array_key_exists('response',$GLOBALS['spec'])) return json_decode(json_encode($GLOBALS['spec']['response']));
+        return fixtureMessageAck($args[2],(int)$args[1]);
+    }
     return (object)['ok'=>true];
 }
 function editText(...$args) {
@@ -102,6 +110,9 @@ PHP=PHP.replace("    $result=match ($spec['op']) {","    if ($spec['op']==='quot
     "    echo json_encode(['ok'=>true", "    if ($spec['op']==='quote' && !$db->commit()) throw new RuntimeException('fixture_commit');\n    echo json_encode(['ok'=>true")
 
 
+from operational_report_fixture import with_message_ack
+PHP=with_message_ack(PHP)
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--run-disposable',required=True,action='store_true')
@@ -165,6 +176,25 @@ def main():
                     assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+1000
                     assert roles(pid)=='customer,receipt_primary,service_admin,service_channel',roles(pid)
                     case(method+'_actual_issue_and_manual_approval')
+                for label,response,expected in (
+                    ('exact',{'ok':True,'result':{'chat':{'id':9001},'message_id':222}},'acknowledged'),
+                    ('no_op',{'ok':False,'error_code':400,'description':'Bad Request: message is not modified'},'acknowledged'),
+                    ('foreign_message',{'ok':True,'result':{'chat':{'id':9001},'message_id':223}},'unknown'),
+                    ('foreign_chat',{'ok':True,'result':{'chat':{'id':9002},'message_id':222}},'unknown'),
+                ):
+                    pid=seed(mode+'-receipt-edit-'+label)
+                    result(mode,'issue',pid,method='bank_transfer')
+                    submit(mode,pid,'bank_transfer','fixture-identity-edit')
+                    assert result(mode,'approve',pid)['funding']=='wallet_only'
+                    rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND role='receipt_primary' AND kind='edit'"))
+                    b=balance()
+                    report=result(mode,'report',pid,report=rid,response=response)
+                    assert report['status']==expected and len(report['sends'])==1,report
+                    assert report['sends'][0]['kind']=='edit_keys' and report['sends'][0]['args'][1:]==[222,9001],report
+                    identity=sql(f"SELECT CONCAT(result,':',COALESCE(ack_chat_id,'null'),':',COALESCE(ack_message_id,'null')) FROM payment_followup_attempts WHERE intent_id={rid}")
+                    assert identity==(expected+(':9001:222' if expected=='acknowledged' else ':null:null')),identity
+                    assert result(mode,'report',pid,report=rid)['sends']==[] and balance()==b
+                    case('original_receipt_edit_identity_'+label)
                 # The approving operator receives a standalone report even
                 # when general unsolicited notifications are disabled.
                 sql("INSERT INTO setting(type,value) VALUES ('ADMIN_NOTIFY_9002','off')")

@@ -52,6 +52,39 @@ function isEditNoop($res): bool {
         str_contains(strtolower(((array)$res)['description']),'message is not modified');
 }
 
+/** A complete Bot API Message must prove its actual destination. */
+function acknowledgedMessageIdentity($res,string $recipient,?int $expectedMessage=null): ?array {
+    if (deliveryOutcome($res)['result']!=='acknowledged') return null;
+    $envelope=(array)$res;
+    if (array_key_exists('error_code',$envelope)) return null;
+    $message=(array)($envelope['result']??[]);
+    $chat=(array)($message['chat']??[]);
+    $id=$chat['id']??null;$mid=$message['message_id']??null;
+    if (!is_int($id) || $id===0 || !is_int($mid) || $mid<=0 ||
+        ($expectedMessage!==null && $mid!==$expectedMessage)) return null;
+    if (str_starts_with($recipient,'@')) {
+        if (!is_string($chat['username']??null) ||
+            strcasecmp('@'.$chat['username'],$recipient)!==0) return null;
+    } elseif ((string)$id!==$recipient) return null;
+    return ['chat_id'=>$id,'message_id'=>$mid];
+}
+
+/** Identity-bound message evidence. A malformed success is uncertain,
+ * never an invitation to resend. An exact numeric edit may prove a no-op. */
+function messageDeliveryOutcome($res,string $recipient,?int $targetMessage=null): array {
+    $outcome=deliveryOutcome($res);$identity=null;
+    if ($targetMessage!==null && $targetMessage>0 && isEditNoop($res) &&
+        (string)(int)$recipient===$recipient && (int)$recipient!==0) {
+        $identity=['chat_id'=>(int)$recipient,'message_id'=>$targetMessage];
+        $outcome=['result'=>'acknowledged','code'=>400,'retry_after'=>null];
+    } elseif ($outcome['result']==='acknowledged') {
+        $identity=acknowledgedMessageIdentity($res,$recipient,$targetMessage);
+        if ($identity===null) $outcome=['result'=>'unknown','code'=>null,'retry_after'=>null,
+            'reason'=>'message_identity_unproven'];
+    }
+    return $outcome+['ack'=>$identity];
+}
+
 /** A contradictory HTTP envelope is not a proven ACK or rejection. */
 function deliveryTransportResponse($res,int $http,int $errno) {
     if ($errno!==0) return null;

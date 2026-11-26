@@ -98,7 +98,7 @@ function sendMessage($body=null,$keys=null,$format=null,$to=null){
     $transport=fixtureDeliveryTransport($to);
     if ($transport!==null) return $transport;
     $GLOBALS['events'][]=['name'=>'MESSAGE','to'=>$to,'text'=>(string)$body,'format'=>$format];
-    return (object)['ok'=>true];
+    return isset($GLOBALS['achbotTelegramDiagnosticContext']['followup_id'])?fixtureMessageAck($to):(object)['ok'=>true];
 }
 function sendPhoto($photo,$caption,$keys,$format,$to) {
     if (!($photo instanceof CURLFile) || !is_file($photo->getFilename()))
@@ -189,6 +189,9 @@ if (($spec['route']??'trial')==='import_occupancy') {
     require $root.'/src/Purchase/EntryAndBulk.php';
 }
 '''
+
+from operational_report_fixture import with_message_ack
+PHP=with_message_ack(PHP)
 
 def sql(work,env,cmd):
     return subprocess.run(['mariadb','--no-defaults','--protocol=SOCKET',

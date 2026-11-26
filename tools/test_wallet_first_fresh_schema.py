@@ -179,6 +179,10 @@ def main():
             assert sql('fresh_single','SELECT COUNT(*) FROM `'+table+'`')=='0',table
             checks.append('empty_and_exact:'+table)
         assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_operations' AND COLUMN_NAME='historical_pay_id'")=='0'
+        assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_followup_attempts' AND COLUMN_NAME IN ('ack_chat_id','ack_message_id')")=='2'
+        assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME='payment_followup_attempts' AND CONSTRAINT_NAME='ck_followup_attempt_ack_identity'")=='1'
+        checks.append('followup_attempt_identity_schema')
+
         assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users' AND COLUMN_NAME='userid' AND NON_UNIQUE=0")!='0'
         checks+=['no_historical_funding_column','unique_wallet_owner']
         retired_columns=['review_notified_at', 'evidence_review_claim_token', 'evidence_review_claimed_at', 'evidence_report_digest', 'evidence_fulfillment_state', 'evidence_fulfillment_payload','review_archived_at','review_archived_by','evidence_invoice_chat_id','evidence_invoice_message_id','evidence_invoice_digest']
@@ -243,6 +247,18 @@ def main():
                 assert p.returncode==0 and p.stdout=='REJECTED' and not p.stderr,(p.stdout,p.stderr)
                 checks.append(mode+':missing_'+key+'_denied')
             sql('fresh_single',f'ALTER TABLE {table} ADD UNIQUE INDEX {key} ({columns}); ALTER TABLE {table} DROP INDEX fixture_fk')
+        sql('fresh_single','ALTER TABLE payment_followup_attempts DROP CONSTRAINT ck_followup_attempt_ack_identity')
+        for mode in ('strict','off'):
+            p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode,'missing_followup_index'],
+                env=env,capture_output=True,text=True,timeout=20)
+            assert p.returncode==0 and p.stdout=='REJECTED' and not p.stderr,(p.stdout,p.stderr)
+            checks.append(mode+':missing_followup_ack_constraint_denied')
+        sql('fresh_single','ALTER TABLE payment_followup_attempts DROP COLUMN ack_message_id')
+        for mode in ('strict','off'):
+            p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode,'missing_followup_index'],
+                env=env,capture_output=True,text=True,timeout=20)
+            assert p.returncode==0 and p.stdout=='REJECTED' and not p.stderr,(p.stdout,p.stderr)
+            checks.append(mode+':missing_followup_ack_column_denied')
     result=dict(complete=True,status='PASS',cases=len(checks),tables=len(new),
                 migrations=len(migrations),checks=checks,external_requests=0)
     if args.report:args.report.write_text(json.dumps(result,indent=2)+'\n')

@@ -175,7 +175,7 @@ function sendMessage($body=null,$key=null,$parseMode=null,$recipient=null) {
     if (($GLOBALS['spec']['mode']??'')==='notice_fail' &&
         str_contains((string)$body,'✅'))
         throw new RuntimeException('synthetic_notification_lost');
-    return (object)['ok'=>true];
+    return isset($GLOBALS['achbotTelegramDiagnosticContext']['followup_id'])?fixtureMessageAck($recipient):(object)['ok'=>true];
 }
 function getMainKeys(){return 'MAIN_KEYS';}
 function editMarzbanConfig($sid,$change,?array $target=null): object {
@@ -259,6 +259,9 @@ if (!achbotWebhookIngressAuthenticated()) {
 $GLOBALS['fixture_printed']=true;
 echo json_encode(['events'=>$GLOBALS['events'],'plan_mutations'=>$GLOBALS['plan_mutations'],'customer_notices'=>$GLOBALS['customer_notices']??[]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 '''
+
+from operational_report_fixture import with_message_ack
+PHP=with_message_ack(PHP)
 
 def ensure(ok: bool, why: str) -> None:
     if not ok:

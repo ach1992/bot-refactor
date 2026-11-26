@@ -113,7 +113,8 @@ $cancelKey='cancel';
 $removeKeyboard='remove';
 function sendMessage(...$args) {
     $GLOBALS['events'][]=['kind'=>'sendMessage','args'=>$args];
-    return !($GLOBALS['spec']['notification_failure']??false) ? (object)['ok'=>true] : null;
+    if ($GLOBALS['spec']['notification_failure']??false) return null;
+    return isset($GLOBALS['achbotTelegramDiagnosticContext']['followup_id'])?fixtureMessageAck($args[3]):(object)['ok'=>true];
 }
 function delMessage(...$args) {$GLOBALS['events'][]=['kind'=>'delMessage'];}
 function getMainKeys() {return 'main-keys';}
@@ -167,6 +168,9 @@ if (!empty($spec['run_real_manage_panel_route'])) {
 }
 echo json_encode(['events'=>$events],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 """
+
+from operational_report_fixture import with_message_ack
+PHP=with_message_ack(PHP)
 
 def sql(work, env, query):
     return native.sql(work, env, query, DB).strip()

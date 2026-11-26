@@ -403,7 +403,16 @@ actual operation/effect and original order. Gift notices are bound to the
 actual subscription attachment. A changed/removed attachment is terminally
 skipped; transient failures defer. Current multipart delivery and followup
 attempts preserve original source and recipient, known rejection versus unknown
-ACK, rate-limit recovery, and explicit original-packet redrive. Large bulk and
+ACK, rate-limit recovery, and explicit original-packet redrive. Followup
+attempts also persist the actual acknowledged numeric chat and message id;
+a configured channel username must match the returned chat username before
+pinning its numeric identity. A success without matching message identity is
+unknown, not an automatic resend. An explicit identical-edit rejection can
+acknowledge only an exact numeric chat/message target. The sealed intent
+target and previous attempt evidence remain unchanged. During installed-data
+transfer, preserve prior acknowledgement evidence but leave both identity
+fields null if the original identity is not provable; such historical rows
+cannot authorize a guessed message edit or resend. Large bulk and
 partial-retained reports use bounded sealed continuation pages; compaction can
 only replace untouched packets, never an attempted message. Interrupted
 compaction leaves the individual verified creation reports deliverable.

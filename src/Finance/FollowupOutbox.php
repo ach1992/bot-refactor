@@ -31,7 +31,7 @@ function achbotFollowupStorageReady(mysqli $db): bool {
                     'uq_followup_operational_key'=>['operational_ref','intent_key']]],
             'payment_followup_attempts'=>[
                 'columns'=>'id,intent_id,attempt_no,dispatch_token,actor_userid,claim_state,result,'.
-                    'telegram_error_code,retry_after_seconds,started_at,finished_at',
+                    'telegram_error_code,retry_after_seconds,ack_chat_id,ack_message_id,started_at,finished_at',
                 'unique'=>['uq_followup_attempt_no'=>['intent_id','attempt_no'],
                     'uq_followup_attempt_token'=>['dispatch_token']]]
         ];
@@ -59,7 +59,11 @@ function achbotFollowupStorageReady(mysqli $db): bool {
                 if (array_values($indexes[$key])!==$columns) return false;
             }
         }
-        return true;
+        // The same read-only schema proof as the delivery journal: a
+        // SELECT-only preflight can inspect SHOW CREATE TABLE.
+        $ddl=achbotProviderRow($db,'SHOW CREATE TABLE payment_followup_attempts');
+        return preg_match('/^\s*CONSTRAINT `ck_followup_attempt_ack_identity` CHECK\s*\(/mi',
+            (string)($ddl['Create Table']??''))===1;
     } catch(Throwable $error) {return false;}
 }
 function achbotFollowupJournaled(array $r): bool {
@@ -484,7 +488,8 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
             $mode=($packet['mode']??null)==='plain'?null:$packet['mode'];
             $result=sendMessage((string)$packet['text'],$packet['keys']??null,$mode,$target);
         }
-        $outcome=\AchBot\Telegram\Response\deliveryOutcome($result);
+        $outcome=\AchBot\Telegram\Response\messageDeliveryOutcome($result,(string)$r['recipient'],
+            $r['kind']==='edit'?(int)$r['message_id']:null);
     } catch(Throwable $error) {
         error_log('achbot_followup_telegram_uncertain id='.$id.' class='.get_class($error));
     } finally {
@@ -502,7 +507,8 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
             'followup_id'=>$id,'pay_id'=>$payId,'service_operation_id'=>$serviceId,'wallet_entry_id'=>$walletId,'operational_ref'=>$ref,'actor_id'=>$actor,
             'request_attempt'=>(int)$r['attempt_count']+1,'state'=>$status,
             'telegram_error_code'=>$outcome['code'],'retry_after'=>$outcome['retry_after'],
-            'result'=>$outcome['result']],$status==='acknowledged'?'info':'warning');
+            'result'=>$outcome['result']]+(isset($outcome['reason'])?['reason'=>$outcome['reason']]:[]),
+            $status==='acknowledged'?'info':'warning');
     } catch(Throwable $error) {
         try {$db->rollback();}catch(Throwable $ignored){}
         error_log('achbot_followup_ack_unknown id='.$id);

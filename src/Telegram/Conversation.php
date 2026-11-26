@@ -27,11 +27,8 @@ function source($update,int $actor,bool $callback): ?object {
 /** Only a complete, exact acknowledged Telegram response identifies a
  * disposable new message. Missing response data is not proof of delivery. */
 function acknowledgedMessage($response,int $actor): ?int {
-    if (!\AchBot\Telegram\Response\isSuccessful($response)) return null;
-    $message=$response->result??null;
-    if (!is_object($message) || !is_int($message->message_id??null) ||
-        $message->message_id<=0 || ($message->chat->id??null)!==$actor) return null;
-    return $message->message_id;
+    if ($actor<=0) return null;
+    return \AchBot\Telegram\Response\acknowledgedMessageIdentity($response,(string)$actor)['message_id']??null;
 }
 
 /** Edit the exact caller-classified transient text screen. Unknown outcome,
