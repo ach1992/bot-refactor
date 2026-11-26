@@ -1,4 +1,4 @@
-# Shared provider storage (012)
+# Shared Native account identity and storage
 
 The owner-defined account model uses each `orders_list` row as a customer's
 subscription reference. Current expiry, usage, state and native links come from
@@ -29,13 +29,6 @@ incarnation. Legacy `pg:<instance>` effects and their deleted/uncertain
 provenance remain intact. A newly verified Native ID and creation time may
 reuse a retired username only after the older local active references have
 been resolved; no SQL migration is required for this source change.
-
-**Deployment rollback boundary:** after the new runtime has written
-`import:<orderId>` effects, an older Stable application may not validate
-their provenance. Do not downgrade application files alone; preserve the
-matching database/runtime recovery pair and use a separately verified
-rollback or forward-recovery plan. Source release alone performs no import
-and changes no installed database.
 
 An original Marzban→PasarGuard migration can have one physical
 `legacy_migration` effect and multiple verified order references. Its
@@ -73,17 +66,9 @@ Never replay historical effects or replace real provenance with a guessed
 mapping. The read-only readiness check is
 [the current preflight](PAYMENT-READINESS-PREFLIGHT.md).
 
-## Isolated evidence
+## Validation
 
-`tools/test_post_v9_shared_provider_storage.py --run-disposable` exercises a
-populated transfer with two customer references across two server aliases,
-immutable payment/origin/hash/order/wallet evidence, long credentials, unknown
-pre-order dispatch, shared mutation/replay protection, noncolliding sequences and
-an actual full-dump restore. It also proves required malformed/missing mapping
-cases stop before dropping source tables or altering application columns.
-
-Native client/storage, provider registry, import/renewal/lifecycle and readiness
-suites use the real shared schema and PHP. Archived historical code keeps its own
-old schema. No compatibility SQL views or native-proof bypass is used. These are
-owned socket MariaDB/loopback fixtures; no tenant migration or live provider,
-Telegram, wallet or merchant acceptance is claimed.
+The consolidated current schema and actual import, alias, naming,
+ownership, lifecycle and service regressions are required by
+[CI validation](CI-VALIDATION.md). Keep historical provenance as data;
+do not execute an older runtime or construction SQL on an existing tenant.

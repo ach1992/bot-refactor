@@ -32,7 +32,7 @@ TARGETS = (
     ('bot.php', 'gift_volume_and_day.message.df8d2180ae'),
 )
 EXPECTED_SOURCE_SHA256 = 'a38cb205ee5a7cc7a5c8de84a48de3bb4bc3aca1efdd1693bdbd805e4434fce1'
-EXPECTED_GOLDEN_SHA256 = 'd53b2a737f1ba2d675df4545ac644e85faca05353f60fe693d6d45cd33ae6514'
+EXPECTED_GOLDEN_SHA256 = '51dc0660fe9ac1ab460c1c67ff2346ae13cb38c919f7d6732b01bccdfbdc0457'
 HTML_UNSAFE = re.compile(r'[<>&*_`\[\]\\]|https?://|tg://|\bt\.me/', re.I)
 
 GATES = [
@@ -73,7 +73,7 @@ def cases() -> list[dict]:
     for i in range(max(len(GATES),len(ERROR_CODES),len(PUBLIC),14)):
         result.append(dict(name=f'case_{i:02}',public=PUBLIC[i%len(PUBLIC)],
             code=ERROR_CODES[i%len(ERROR_CODES)],prefix=PREFIX[i%len(PREFIX)],
-            field_index=i%7,gate=GATES[i%len(GATES)],
+            field_index=i%9,gate=GATES[i%len(GATES)],
             network=['BEP20','TRC20','ERC20'][i%3],
             amount_id=[1,7,100000,2147483647][i%4],
             stamp=['1405/08/29 12:34:56','1404/01/01 00:00:00'][i%2],
@@ -130,7 +130,7 @@ def run_real_php(rows:list[dict]) -> list[dict]:
         $allowed=['management_stale','management_targets','management_input',
             'management_other_flow','management_other_action','management_connection',
             'management_admin_required','server_referenced','management_rebind_requires_review'];
-        $time=$c['stamp'];$field=array_values(achbotPaymentPolicyFields())[$c['field_index']];
+        $time=$c['stamp'];$field=array_values(achbotPaymentPolicyFields(1795000000))[$c['field_index']];
         $gate=$c['gate']==='bot.bot.change_config_remark_type.gate.7602e74547'
             ?achbotMessage($c['gate'],['network'=>$c['network']]):achbotMessage($c['gate']);
         $directClaim=['id'=>$c['amount_id']];

@@ -12,6 +12,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
+require_once __DIR__.'/PaymentLifecycle.php';
 require_once __DIR__.'/../Panel/AccountNaming.php';
 require_once __DIR__.'/../Subscription/ServerDisplaySettings.php';
 

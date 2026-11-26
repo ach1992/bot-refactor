@@ -165,7 +165,7 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     if ($minPrice > 0 && $price < $minPrice) {
         if (!empty(\achbotMessage('legacy_messages.discount_min_price'))) {
             $msg = str_replace("MINPRICE", number_format($minPrice) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c'), \achbotMessage('legacy_messages.discount_min_price'));
-            sendMessage($msg);
+            sendMessage($msg, null, 'HTML');
         } else {
             sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
         }
@@ -269,9 +269,9 @@ function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $usern
     $discountText = number_format($discountValue) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
 
     if (!empty(\achbotMessage('legacy_messages.valid_discount_code'))) {
-        sendMessage(str_replace("AMOUNT", $discountText, \achbotMessage('legacy_messages.valid_discount_code')));
+        sendMessage(str_replace("AMOUNT", $discountText, \achbotMessage('legacy_messages.valid_discount_code')), null, 'HTML');
     } else {
-        sendMessage(\achbotMessage('payment.discounts.apply_discount_to_pay.message.e3c216313a') . $discountText);
+        sendMessage(\achbotMessage('payment.discounts.apply_discount_to_pay.message.e3c216313a') . $discountText, null, 'HTML');
     }
 
     // پیام به ادمین و کانال گزارش

@@ -45,6 +45,13 @@ function deliveryOutcome($res): array {
     return ['result'=>'rejected','code'=>$res['error_code'],'retry_after'=>$retry];
 }
 
+/** Only a complete explicit Telegram no-op certifies an identical edit.
+ * This is not an acknowledgement of sending or any other action. */
+function isEditNoop($res): bool {
+    return deliveryOutcome($res)['code']===400 &&
+        str_contains(strtolower(((array)$res)['description']),'message is not modified');
+}
+
 /** A contradictory HTTP envelope is not a proven ACK or rejection. */
 function deliveryTransportResponse($res,int $http,int $errno) {
     if ($errno!==0) return null;

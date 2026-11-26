@@ -10,7 +10,7 @@ use CURLFile;
 require_once __DIR__ . '/Response.php';
 require_once __DIR__ . '/Markup.php';
 
-function sendMessage(callable $request, $from_id, $txt, $key = null, $parse ="MarkDown", $ci= null, $msg = null){
+function sendMessage(callable $request, $from_id, $txt, $key = null, $parse ="HTML", $ci= null, $msg = null){
     $ci = $ci ?? $from_id;
 
     $payload = [
@@ -26,8 +26,8 @@ function sendMessage(callable $request, $from_id, $txt, $key = null, $parse ="Ma
 
     $res = $request('sendMessage', $payload);
 
-    if ($res && isset($res->ok) && $res->ok === false && isset($res->description)) {
-        if (strpos($res->description, "can't parse entities") !== false) {
+    if ($parse !== null && \AchBot\Telegram\Response\deliveryOutcome($res)['code'] === 400) {
+        if (str_contains(((array)$res)['description'], "can't parse entities")) {
             unset($payload['parse_mode']);
             $res = $request('sendMessage', $payload);
         }
@@ -119,16 +119,11 @@ function pinOne(callable $request, $chatId, $messageId){
 }
 
 function unpinOne(callable $request, $chatId, $messageId){
-    $res = $request('unpinChatMessage', [
+    // Telegram's omitted message_id unpins the latest pinned message,
+    // potentially an unrelated one. Never broaden the exact target.
+    return $request('unpinChatMessage', [
         'chat_id' => $chatId,
         'message_id' => $messageId
-    ]);
-
-    if(\AchBot\Telegram\Response\isSuccessful($res)) return $res;
-
-    // fallback: unpin آخرین پین
-    return $request('unpinChatMessage', [
-        'chat_id' => $chatId
     ]);
 }
 
@@ -139,7 +134,7 @@ function deleteOne(callable $request, $chatId, $messageId){
     ]);
 }
 
-function sendPhoto(callable $request, $from_id, $photo, $caption = null, $keyboard = null, $parse = "MarkDown", $ci = null, $replyTo = null){
+function sendPhoto(callable $request, $from_id, $photo, $caption = null, $keyboard = null, $parse = "HTML", $ci = null, $replyTo = null){
     $ci = $ci ?? $from_id;
 
     $data = [
@@ -157,8 +152,8 @@ function sendPhoto(callable $request, $from_id, $photo, $caption = null, $keyboa
 
     $res = $request('sendPhoto', $data);
 
-    if ($res && isset($res->ok) && $res->ok === false && isset($res->description)) {
-        if (strpos($res->description, "can't parse entities") !== false) {
+    if ($parse !== null && \AchBot\Telegram\Response\deliveryOutcome($res)['code'] === 400) {
+        if (str_contains(((array)$res)['description'], "can't parse entities")) {
             unset($data['parse_mode']);
             $res = $request('sendPhoto', $data);
         }

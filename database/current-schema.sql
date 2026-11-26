@@ -28,10 +28,10 @@ CREATE TABLE `bc_jobs` (
   `broadcast_id` int(11) NOT NULL,
   `action` enum('pin','unpin','delete','edit') NOT NULL,
   `new_text` text DEFAULT NULL,
-  `parse_mode` varchar(20) DEFAULT NULL,
+  `new_html` mediumtext DEFAULT NULL,
   `ok_cnt` int(11) NOT NULL DEFAULT 0,
   `fail_cnt` int(11) NOT NULL DEFAULT 0,
-  `offset` int(11) NOT NULL DEFAULT 0,
+  `offset` bigint(20) unsigned NOT NULL DEFAULT 0,
   `state` tinyint(4) NOT NULL DEFAULT 1,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime DEFAULT NULL,
@@ -79,7 +79,7 @@ CREATE TABLE `chats_info` (
   `chat_id` int(11) NOT NULL,
   `sent_date` int(11) NOT NULL,
   `msg_type` varchar(50) DEFAULT NULL,
-  `text` varchar(2000) NOT NULL,
+  `text` text NOT NULL,
   PRIMARY KEY (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -240,6 +240,9 @@ CREATE TABLE `payment_attempts` (
   `wallet_credit_transaction_id` bigint(20) unsigned DEFAULT NULL,
   `service_operation_id` bigint(20) unsigned DEFAULT NULL,
   `wallet_funding_result` varchar(48) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
+  `invoice_expires_at` bigint(20) unsigned DEFAULT NULL,
+  `receipt_grace_seconds` bigint(20) unsigned DEFAULT NULL,
+  `receipt_started_at` bigint(20) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_payment_attempt_pay_row` (`pay_row_id`),
   UNIQUE KEY `uq_payment_attempt_order_hash` (`order_hash`),
@@ -251,6 +254,7 @@ CREATE TABLE `payment_attempts` (
   KEY `idx_payment_attempt_reconcile` (`provider`,`stage`,`last_checked_at`),
   KEY `idx_payment_evidence_due` (`provider`,`evidence_state`,`evidence_next_check_at`),
   KEY `idx_payment_service_operation` (`service_operation_id`),
+  KEY `idx_attempt_deadline` (`stage`,`invoice_expires_at`,`pay_row_id`),
   CONSTRAINT `fk_payment_attempt_order` FOREIGN KEY (`pay_row_id`) REFERENCES `pays` (`id`),
   CONSTRAINT `fk_payment_service_operation` FOREIGN KEY (`service_operation_id`) REFERENCES `service_operations` (`id`),
   CONSTRAINT `fk_wallet_credit_entry` FOREIGN KEY (`wallet_credit_entry_id`) REFERENCES `wallet_entries` (`id`),
@@ -460,6 +464,7 @@ CREATE TABLE `pays` (
   `addon_scope_snapshot` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `checkout_draft_context` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL CHECK (json_valid(`checkout_draft_context`)),
   `checkout_operation_id` bigint(20) unsigned DEFAULT NULL,
+  `draft_expires_at` bigint(20) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `hash_id` (`hash_id`),
   UNIQUE KEY `uq_checkout_operation` (`checkout_operation_id`),
@@ -469,6 +474,7 @@ CREATE TABLE `pays` (
   KEY `idx_pays_state_updated_at` (`state`,`updated_at`),
   KEY `idx_pays_order_ref_v1` (`order_id`,`id`),
   KEY `idx_pays_type_ref_v1` (`type`,`id`),
+  KEY `idx_pays_draft_deadline` (`state`,`draft_expires_at`,`id`),
   CONSTRAINT `fk_checkout_operation` FOREIGN KEY (`checkout_operation_id`) REFERENCES `service_operations` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -512,6 +518,7 @@ CREATE TABLE `send_list` (
   `type` varchar(20) NOT NULL,
   `title` varchar(255) DEFAULT NULL,
   `text` text DEFAULT NULL,
+  `text_html` mediumtext DEFAULT NULL,
   `chat_id` bigint(20) DEFAULT NULL,
   `message_id` int(11) DEFAULT NULL,
   `file_id` varchar(500) DEFAULT NULL,

@@ -22,7 +22,7 @@ function achbotCreditMethodRegistry(): array {
         'manual'=>'achbotCreditVerifyManualLocked'],'additional_evidence'=>false,
         'manual_quote'=>'achbotManualBuildQuote'];
     $api=$manual;$api['proofs']['api']='achbotCreditVerifyApiLocked';
-    $bank=$api;$bank['proofs']['bank_timer']='achbotCreditVerifyTimerLocked';
+    $bank=$api;
     $bank['api_checker']='achbotCreditCheckBankApi';
     $api['api_checker']='achbotCreditCheckGiftApi';
     return [
@@ -164,50 +164,6 @@ function achbotCreditHostedEvidenceLocked(mysqli $db,array $attempt,string $refe
     return $tid;
 }
 
-/**
- * Same existing explicit timer policy, re-read under the financial lock.
- * Missing/ambiguous/malformed settings are not evidence of payment.
- * No service/catalog dependency and no API-pinned timer fallback.
- */
-function achbotCreditBankTimerEligibleLocked(mysqli $db,array $pay,array $attempt): bool {
-    if ($attempt['provider']!=='bank_transfer' || $attempt['evidence_profile']!==null ||
-        !in_array($pay['state'],['have_sent','service_superseded'],true)) return false;
-    // Match PaymentLifecycle's lock discipline: no unindexed locking
-    // scan over unrelated Marzban group settings. The existing writer
-    // mutex preserves the unique settings row's primary-key identity.
-    $q=$db->query("SELECT id FROM setting WHERE type='BOT_STATES' ORDER BY id LIMIT 2");
-    if (!$q) throw new RuntimeException('payment_credit_timer_policy_locate');
-    $rows=$q->fetch_all(MYSQLI_ASSOC);$q->free();
-    if (count($rows)!==1) return false;
-    $settingId=(int)$rows[0]['id'];
-    $s=$db->prepare('SELECT type,value FROM setting WHERE id=? LOCK IN SHARE MODE');
-    if (!$s) throw new RuntimeException('payment_credit_timer_policy_prepare');
-    $s->bind_param('i',$settingId);
-    if (!$s->execute() || !($rows=$s->get_result()))
-        throw new RuntimeException('payment_credit_timer_policy_read');
-    $row=$rows->fetch_assoc();$s->close();
-    if (!$row || $row['type']!=='BOT_STATES') return false;
-    $states=json_decode((string)$row['value'],true);
-    if (!is_array($states) || ($states['cartToCartAutoAcceptState']??null)!=='on') return false;
-    $minutes=$states['cartToCartAutoAcceptTime']??10;
-    $audience=(string)($states['cartToCartAutoAcceptType']??2);
-    if (!is_numeric($minutes) || !is_finite((float)$minutes) || $minutes<0 ||
-        !in_array($audience,['0','1','2'],true)) return false;
-    // Retain the existing configured timer arithmetic and audience.
-    $due=strtotime('-'.(string)$minutes.' minutes');
-    if ($due===false || (int)$pay['request_date']>$due) return false;
-    $id=(int)$pay['user_id'];
-    $q=$db->prepare('SELECT is_agent FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? LIMIT 2 FOR UPDATE');
-    if (!$q) throw new RuntimeException('payment_credit_timer_owner_prepare');
-    $q->bind_param('i',$id);
-    if (!$q->execute() || !($rows=$q->get_result()))
-        throw new RuntimeException('payment_credit_timer_owner_read');
-    $users=$rows->fetch_all(MYSQLI_ASSOC);$q->close();
-    if (count($users)!==1) throw new RuntimeException('payment_credit_timer_owner_ambiguous');
-    $agent=(int)$users[0]['is_agent']===1;
-    return $audience==='2' || ($audience==='0' && $agent) || ($audience==='1' && !$agent);
-}
-
 /** The manual evidence contract is shared only by registered manual methods. */
 function achbotCreditValidateManualReceiptLocked(mysqli $db,array $pay,array $attempt): void {
     if (!in_array($pay['state'],['have_sent','service_superseded'],true) ||
@@ -239,12 +195,6 @@ function achbotCreditVerifyHostedAttestationLocked(mysqli $db,array $pay,array $
     return null;
 }
 
-function achbotCreditVerifyTimerLocked(mysqli $db,array $pay,array $attempt,array $proof,int $actor,int $primary): ?int {
-    achbotCreditValidateManualReceiptLocked($db,$pay,$attempt);
-    if ($actor!==0 || !achbotCreditBankTimerEligibleLocked($db,$pay,$attempt))
-        throw new RuntimeException('payment_credit_timer_policy');
-    return null;
-}
 function achbotCreditVerifyApiLocked(mysqli $db,array $pay,array $attempt,array $proof,int $actor,int $primary): ?int {
     if ($actor!==0 || !achbotPaymentEvidenceValidateProofLocked($db,$pay,$proof))
         throw new RuntimeException('payment_credit_api_proof');

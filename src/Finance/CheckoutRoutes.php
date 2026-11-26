@@ -146,7 +146,7 @@ function achbotCheckoutRejectReceiptLocked(mysqli $db,int $id,int $uid,int $acto
     if (!in_array($pay['state'],['have_sent','service_superseded'],true) || $pay['hash_id']!==$hash ||
         $attempt['wallet_credit_entry_id']!==null ||
         !achbotPayUxManualProvider($attempt['provider']) ||
-        !is_string($attempt['wallet_invoice_sha256']) ||
+        !achbotCurrentReceiptPin($attempt) ||
         !hash_equals($attempt['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$attempt)) ||
         !achbotAdminCanLocked($db,$actor,$primary,'payments'))
         throw new DomainException('manual_reject_stale');
@@ -164,8 +164,8 @@ function achbotCheckoutRejectReceiptLocked(mysqli $db,int $id,int $uid,int $acto
 function achbotCheckoutRejectUnfundedLocked(mysqli $db,array $pay,array $attempt,int $actor,int $primary): array {
     $id=(int)$pay['id'];$uid=(int)$pay['user_id'];
     if ($attempt['wallet_credit_entry_id']!==null || $attempt['stage']!=='review' ||
-        !in_array($pay['state'],['pending','send','have_sent','service_superseded'],true) ||
-        !is_string($attempt['wallet_invoice_sha256']) ||
+        !in_array($pay['state'],['pending','send','have_sent','expired','service_superseded'],true) ||
+        !achbotCurrentReceiptPin($attempt) ||
         !hash_equals($attempt['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$attempt)) ||
         !achbotAdminCanLocked($db,$actor,$primary,'payments'))
         throw new DomainException('manual_reject_stale');

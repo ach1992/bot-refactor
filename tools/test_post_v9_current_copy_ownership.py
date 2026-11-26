@@ -219,7 +219,7 @@ def indirect_legacy_keys(sources: dict[str, str],
     wallet_route = scans["src/Finance/Routes/AdminWallet.php"]["clean"]
     modes = re.search(r"\$achbotWalletModes\s*=\s*\[(.*?)\];", wallet_route, re.S)
     check(modes is not None and
-          "sendMessage(\\achbotMessage('legacy_messages.'.$prompt))" in wallet_route,
+          "sendMessage(\\achbotMessage('legacy_messages.'.$prompt), null, 'HTML')" in wallet_route,
           "admin_wallet_prompt_binding_changed")
     wallet_prompts = set(re.findall(
         r"""'[^']+'\s*=>\s*\[\s*'[^']+'\s*,\s*'[^']+'\s*,\s*'([^']+)'\s*\]""",
@@ -380,7 +380,6 @@ def unresolved_copy_orphans(groups: dict[str, dict],
     contexts = set().union(*(set(row["context"]) for row in scans.values()))
     check(contexts == {
         "start_message", "user_welcome_message", "reached_main_menu",
-        "buy_subscription_detail", "buy_much_subscription_detail",
         "banned", "join_channel_message", "send_config_uuid",
         "agency_request_declined", "new_member_joined",
     }, "context_message_producer_inventory_changed:" + str(sorted(contexts)))

@@ -32,22 +32,15 @@ function achbotReceiptReportEditAllowed(mysqli $db,array $source,array $r): bool
     return false;
 }
 
-/** Keep the original manual/API/timer terminal keyboard. The actor is read
+/** Keep the original manual/API terminal keyboard. The actor is read
  * from the actual once-only credit journal, not a later callback. */
 function achbotReceiptReportStageEditsLocked(mysqli $db,array $source,?int $payId,?int $serviceId,
     string $stage,string $fingerprint,string $subject,bool $walletOnly=false): void {
     $pay=$source['pay'];$a=$source['attempt'];$basis=$a['wallet_credit_basis'];
     if (achbotReceiptIsHosted($a)) return;
-    if ($basis==='bank_timer') {
-        $keys=json_encode(['inline_keyboard'=>[[[
-            'text'=>achbotMessage('manual_payment.automatic_receipts.text.2898f8f112'),
-            'callback_data'=>'wizwizch'
-        ]]]],JSON_THROW_ON_ERROR);
-    } else {
-        $display=$pay;$display['approved_by']=$source['entry']['actor'];
-        $keys=achbotApiPaymentFinalKeyboard($display,
-            achbotMessage('manual_payment.api_payment.auto_approved'),$basis==='api',['subject'=>$subject],$walletOnly);
-    }
+    $display=$pay;$display['approved_by']=$source['entry']['actor'];
+    $keys=achbotApiPaymentFinalKeyboard($display,
+        achbotMessage('manual_payment.api_payment.auto_approved'),$basis==='api',['subject'=>$subject],$walletOnly);
     $targets=[['chat_id'=>$pay['chat_id'],'message_id'=>$pay['message_id'],'role'=>'receipt_primary']];
     $copies=json_decode((string)($pay['admins_messages']??''),true);
     if (is_array($copies)) foreach ($copies as $copy)
@@ -70,7 +63,7 @@ function achbotReceiptReportStageEditsLocked(mysqli $db,array $source,?int $payI
 }
 
 /** Method is distinct from approval authority. A hosted exception can
- * be human-approved; a bank receipt can be confirmed by API or timer. */
+ * be human-approved; a bank receipt can be confirmed by API or staff. */
 function achbotReceiptReportMethod(array $attempt): string {
     return achbotCreditMethodLabel((string)$attempt['provider']);
 }
@@ -78,7 +71,6 @@ function achbotReceiptReportBasis(array $attempt): string {
     return achbotMessage(match($attempt['wallet_credit_basis']) {
         'manual'=>'operational_reports.basis_manual',
         'api'=>'operational_reports.basis_api',
-        'bank_timer'=>'operational_reports.basis_timer',
         default=>'operational_reports.basis_hosted'
     });
 }
@@ -92,7 +84,7 @@ function achbotReceiptReportStageLocked(mysqli $db,int $payId,int $userId,string
     $pay=$source['pay'];$a=$source['attempt'];$entry=$source['entry'];
     $funded=$a['wallet_funding_result']==='funded';
     $stage='wallet_credit';$fingerprint=$source['fingerprint'];
-    $hosted=achbotReceiptIsHosted($a);$basis=$a['wallet_credit_basis'];
+    $hosted=achbotReceiptIsHosted($a);
     $amount=number_format((int)$pay['price']);
     if (!$funded) {
         $support=['supportID'=>(string)($GLOBALS['supportID']??'')];
@@ -100,10 +92,6 @@ function achbotReceiptReportStageLocked(mysqli $db,int $payId,int $userId,string
         if ($hosted) {
             $text=achbotMessage('gateway.gateway_return.perform_payment_effect.message.a5b15e454e').$amount.
                 achbotMessageHtml('gateway.gateway_return.perform_payment_effect.message.dd866497c7',$support);
-        } elseif ($basis==='bank_timer') {
-            $text=achbotMessage('manual_payment.automatic_receipts.message.38dd599e83').$amount.
-                achbotMessage('manual_payment.automatic_receipts.message.6f42cf1050');
-            $mode=null;
         } else {
             $text=achbotMessage('manual_payment.manual_receipts.message.f568baa065').$amount.
                 achbotMessageHtml('manual_payment.manual_receipts.message.f6331b33af',$support);

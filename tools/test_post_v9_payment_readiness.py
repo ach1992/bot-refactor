@@ -123,7 +123,7 @@ def main():
         seed({"walletState":"on","smsApiVerifyState":"on"},{})
         assert has(invoke(3),"api_bank_transfer","BLOCK")
         seed({"walletState":"on","smsApiVerifyState":"on"},{"smsApiUrl":"https://example.com/wp-json/ach-pay-manager/v1",
-             "smsApiHorizonHours":"48","smsApiToken":"achpe1:"+__import__("base64").b64encode(b"synthetic"*5).decode()})
+             "smsApiToken":"achpe1:"+__import__("base64").b64encode(b"synthetic"*5).decode()})
         assert invoke(0)["payment_apis"]["bank_transfer"]["local_configuration"]=="present_not_decrypted"
         cases.append("api_envelope_presence_not_decryption_or_authentication")
         seed({"walletState":"on"},{})

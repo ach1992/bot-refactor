@@ -12,6 +12,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__.'/../Admin/Access.php';
+require_once __DIR__.'/../Telegram/Presentation.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
@@ -32,21 +33,20 @@ if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && achbotAdminCanFor(
     $ticketCat = $ticketInfo['category'];
     
     $time = time();
+    $header='['.htmlspecialchars((string)$ticketTitle,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8').'] <i>'.htmlspecialchars((string)$ticketCat,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8')."</i>\n\n";
 
     
     if(isset($text)){
-        $ticketTitle = str_replace(["/","'","#"],['\/',"\'","\#"],$ticketTitle);
-        $text = str_replace(["/","'","#"],['\/',"\'","\#"],$text);
         $stmt = $connection->prepare("INSERT INTO `chats_info` (`chat_id`,`sent_date`,`msg_type`,`text`) VALUES
                     (?,?,'ADMIN',?)");
         $stmt->bind_param("iis", $chatRowId, $time, $text);
         
-        sendMessage("\[$ticketTitle] _{$ticketCat}_\n\n" . $text,json_encode(['inline_keyboard'=>[
+        sendMessage($header . \AchBot\Telegram\Presentation\incomingHtml($text,(array)($update->message->entities??[])),json_encode(['inline_keyboard'=>[
             [
                 ['text'=>\achbotMessage('support.admin_reply.button.f8a34e79d9'),'callback_data'=>"replySupport_$chatRowId"],
                 ['text'=>\achbotMessage('support.admin_reply.button.173875ae6b'),'callback_data'=>"closeTicket_$chatRowId"]
                 ]
-            ]]),"MarkDown", $userId);        
+            ]]),"HTML", $userId);
     }else{
         $text = json_encode(['file_id'=>$fileid, 'caption'=>$caption]);
         $stmt = $connection->prepare("INSERT INTO `chats_info` (`chat_id`,`sent_date`,`msg_type`,`text`) VALUES
@@ -60,7 +60,7 @@ if(preg_match('/^answer_(.*)/', $userInfo['step'], $match) && achbotAdminCanFor(
                 ]
             ]]);
             
-        sendPhoto($fileid, "\[$ticketTitle] _{$ticketCat}_\n\n" . $caption,$keyboard, "MarkDown", $userId);
+        sendPhoto($fileid, $header . \AchBot\Telegram\Presentation\incomingHtml($caption,(array)($update->message->caption_entities??[])),$keyboard, "HTML", $userId);
     }
     $stmt->execute();
     $stmt->close();

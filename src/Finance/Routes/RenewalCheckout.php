@@ -119,7 +119,7 @@ if (is_string($data) && (str_contains($data,'WithManualUsdt') ? ($GLOBALS['achbo
         alert(\achbotMessage('renewal.extensions.alert.07ee06b4bc'), true);
         return;
     }
-    $keyboard = kbSendReceiptAndCancel(in_array($method, ['manual_usdt','manual_trx'], true) ? "sendRenewUsdtReceipt" : ($method === 'gift_card' ? "sendRenewGiftReceipt" : "sendRenewCartReceipt"), "cancelRenewCartReceipt", $match[1], $method);
+    $keyboard = achbotManualInvoiceKeyboard($connection,$payInfo);
 
     $delivered = sendMessage($msg, $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
@@ -165,7 +165,7 @@ if (preg_match('/\Asend(?:RenewCart|RenewGift|RenewUsdt)Receipt(?<hashId>[A-Za-z
     delMessage();
     setUser((in_array($method, ['manual_usdt','manual_trx'], true) ? "waitRenewUsdtReceipt" : ($method === 'gift_card' ? "waitRenewGiftReceipt" : "waitRenewCartReceipt")) . $match['hashId']);
 
-    $keyboard = kbOnlyCancel("cancelRenewCartReceipt", $match['hashId']);
+    $keyboard = kbOnlyCancel($payInfo);
     $sent=sendMessage(achbotManualEvidencePrompt($connection,$payInfo,$method), $keyboard, "HTML");
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$match['hashId'],(int)$from_id,$sent);
@@ -188,7 +188,7 @@ if (preg_match('/\Await(?:RenewCart|RenewGift|RenewUsdt)Receipt([A-Za-z0-9_-]{1,
     }
     $fileid = achbotManualEvidenceInput($update, $connection, $receiptPay, $method);
     if ($fileid === null) {
-        $keyboard = kbOnlyCancel("cancelRenewCartReceipt", $match[1]);
+        $keyboard = kbOnlyCancel($receiptPay);
         sendMessage(achbotManualEvidencePrompt($connection,$receiptPay,$method,true), $keyboard, "HTML");
         exit;
     }
@@ -210,7 +210,7 @@ if (preg_match('/\Await(?:RenewCart|RenewGift|RenewUsdt)Receipt([A-Za-z0-9_-]{1,
     $giftScreen=achbotManualGiftSubmissionPreflight($connection,$receiptPay,$method,$fileid);
     if (!$giftScreen['accepted']) {
         sendMessage(achbotManualGiftRetryMessage((string)$giftScreen['reason']),
-            kbOnlyCancel('cancelRenewCartReceipt', $match[1]), 'HTML');
+            kbOnlyCancel($receiptPay), 'HTML');
         exit;
     }
     if(achbotManualTypedGift($connection,$receiptPay,$method) &&

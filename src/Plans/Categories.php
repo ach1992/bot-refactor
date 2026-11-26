@@ -94,13 +94,13 @@ if ($categoryData==='addNewCategory') {
     if (!achbotCategoryMutation($connection,$categoryActor,$categoryOwner,$update,$categoryData,$categoryText,'start','addNewCategory')) return;
     delMessage();
     $msg=\achbotMessage('plans.categories.add_new_category.msg.3eab115e65');
-    sendMessage($msg,$cancelKey);
+    sendMessage($msg,$cancelKey, 'HTML');
     return;
 }
 if ($categoryTyped && $categoryStep==='addNewCategory' && $text!==\achbotMessage('legacy_buttons.cancel')) {
     if (!achbotCategoryMutation($connection,$categoryActor,$categoryOwner,$update,$categoryData,$categoryText,'create',$categoryStep)) return;
     $msg=\achbotMessage('plans.categories.add_new_category.msg.5ba2f5c693');
-    sendMessage($msg,$removeKeyboard);
+    sendMessage($msg,$removeKeyboard, 'HTML');
     sendMessage(\achbotCurrentMessage('reached_main_menu'), getCategoriesKeys(), 'HTML');
     return;
 }

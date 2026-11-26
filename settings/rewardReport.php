@@ -45,5 +45,3 @@ require_once __DIR__.'/../src/Finance/CheckoutAdmission.php';
 require_once __DIR__.'/../src/Finance/HostedReceipt.php';
 achbotCheckoutRequireSchema($connection);
 achbotHostedReceiptMaintain($connection,3);
-
-require __DIR__ . '/../src/Finance/AutomaticReceipts.php';

@@ -88,7 +88,7 @@ if(preg_match('/\AselectCustomePlan(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-
     }
     delMessage();
     [$price]=achbotAgencyPrice($userInfo,$botState,(int)$plan['id'],(int)$plan['server_id'],(int)$botState['gbPrice']);
-	sendMessage(str_replace("VOLUME-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_volume')),$cancelKey);
+	sendMessage(str_replace("VOLUME-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_volume')),$cancelKey, 'HTML');
 	setUser("selectCustomPlanGB" . $match[1] . "_" . $match[2] . "_" . $match['buyType']);
 }
 if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AselectCustomPlanGB(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'], $match) && achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin) && $text != \achbotMessage('legacy_buttons.cancel')){
@@ -118,7 +118,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     
     $id=(int)$plan['id'];
     [$price]=achbotAgencyPrice($userInfo,$botState,$id,(int)$plan['server_id'],(int)$botState['dayPrice']);
-	sendMessage(str_replace("DAY-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_day')));
+	sendMessage(str_replace("DAY-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_day')), null, 'HTML');
 	setUser("selectCustomPlanDay" . $id . "_" . $match['categoryId'] . "_" . $units . "_" . $match['buyType']);
 }
 if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AselectCustomPlanDay(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<accountCount>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'], $match) && achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin) && $text != \achbotMessage('legacy_buttons.cancel')){

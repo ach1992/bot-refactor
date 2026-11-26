@@ -2,6 +2,7 @@
 declare(strict_types=1);
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/FundingCheckout.php';
+require_once __DIR__.'/PaymentLifecycle.php';
 
 /**
  * Hosted issuance/verification is outside money transactions. The source
@@ -34,7 +35,7 @@ function achbotHostedReservationIdentity(array $pay,array $a): string {
         (int)$a['id'],(string)$a['provider'],(string)$a['order_hash'],
         (string)$a['quote_amount'],(string)$a['quote_currency'],(int)$a['local_amount_toman'],
         (string)($a['settlement_currency']??''),(string)$a['minimum_settlement_amount'],
-        (int)($a['service_operation_id']??0),
+        (int)($a['service_operation_id']??0),(int)($a['invoice_expires_at']??0),
     ],JSON_THROW_ON_ERROR));
 }
 function achbotHostedMerchantPurpose(array $a): string {
@@ -63,13 +64,12 @@ function achbotHostedReceiptReserveLocked(mysqli $db,int $payId,int $userId,stri
             $a['wallet_invoice_sha256']===null)
             throw new DomainException('hosted_original_attempt_conflict');
         achbotHostedMerchantSnapshot($pay,$a);
-        if ($a['wallet_invoice_sha256']!=='' &&
+        if (achbotCurrentReceiptPin($a) &&
             hash_equals($a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$a))) {
             // Reissue neither a paid nor an invalidated invoice. The route
             // can render its original status without reopening a checkout.
-            return ['status'=>$pay['state']==='pending' && $a['stage']==='pending' &&
-                $a['wallet_credit_entry_id']===null &&
-                empty($a['payment_id'])?'issued':'closed','url'=>$a['checkout_url']];
+            return ['status'=>achbotPayUxHostedLinkOpen($pay,$a)?'issued':'closed','url'=>$a['checkout_url'],
+                'invoice_expires_at'=>achbotPayUxInvoiceDeadline($a)];
         }
         return ['status'=>'issuance_uncertain'];
     }
@@ -88,6 +88,7 @@ function achbotHostedReceiptReserveLocked(mysqli $db,int $payId,int $userId,stri
     $aid=(int)$s->insert_id;$s->close();
     if ($aid<=0) throw new RuntimeException('hosted_reservation_insert');
     $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE id=? FOR UPDATE','i',[$aid]);
+    $a=achbotPayUxSealInvoiceLocked($db,$a,achbotPayUxCurrentStatesLocked($db)??[]);
     $profile=achbotPaymentEvidenceProtect(achbotHostedMerchantPurpose($a),[
         'v'=>1,'method'=>$method,'credential'=>$credential,
         'identity'=>achbotHostedReservationIdentity($pay,$a)] + ($ipnSecret===null?[]:['ipn_secret'=>$ipnSecret]));
@@ -134,7 +135,10 @@ function achbotHostedReceiptBindLocked(mysqli $db,int $payId,int $userId,array $
     $s=achbotProviderStatement($db,"UPDATE payment_attempts SET wallet_invoice_sha256=? WHERE id=? AND wallet_invoice_sha256=''",'si',[$pin,(int)$a['id']]);
     $n=$s->affected_rows;$s->close();
     if ($n!==1) throw new RuntimeException('hosted_invoice_pin_write');
-    return ['status'=>$pay['state']==='pending'?'issued':'closed','url'=>$url];
+    $a['wallet_invoice_sha256']=$pin;
+    achbotPayUxCloseInvoiceLocked($db,$pay,$a);
+    return ['status'=>achbotPayUxHostedLinkOpen($pay,$a)?'issued':'closed','url'=>$url,
+        'invoice_expires_at'=>achbotPayUxInvoiceDeadline($a)];
 }
 function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $method,?int $operationId,
     ?array $quote,?array $paymentKeys,string $botUrl,string $description,?array $draftStates=null,?string $ipnSecret=null): array {
@@ -150,6 +154,7 @@ function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
             require_once __DIR__.'/CheckoutAdmission.php';
             achbotCheckoutRequireSchema($db);
             $pay=achbotCheckoutPayLocked($db,$payId,$userId);
+            if (achbotPayUxHasNewer($db,$pay,true)) throw new DomainException('checkout_draft_unavailable');
             $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
             if ($a!==null && !achbotPayUxAudienceAllowed($db,$method,$userId,true,$pay['type']))
                 throw new DomainException('checkout_method_unavailable');
@@ -178,6 +183,8 @@ function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
     if (!$db->begin_transaction()) throw new RuntimeException('hosted_bind_begin');
     try {
         $result=achbotHostedReceiptBindLocked($db,$payId,$userId,$r,$remote);
+        if ($draftStates!==null && $result['status']==='issued' &&
+            achbotPayUxHasNewer($db,$r['pay'],true)) $result['status']='closed';
         if (!$db->commit()) throw new RuntimeException('hosted_bind_commit');
         if ($draftStates!==null) $result['newly_issued']=true;
         return $result;
@@ -194,7 +201,7 @@ function achbotHostedReceiptVerify(mysqli $db,int $payId,int $userId,string $met
     if (!$db->begin_transaction()) throw new RuntimeException('hosted_verify_begin');
     try {
         [$pay,$a]=achbotCreditInvoiceLocked($db,$payId,$userId);
-        if ($a['provider']!==$method || !is_string($a['wallet_invoice_sha256']) ||
+        if ($a['provider']!==$method || !achbotCurrentReceiptPin($a) ||
             !hash_equals($a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$a)))
             throw new RuntimeException('hosted_invoice_unadmitted_or_changed');
         $profile=achbotHostedMerchantSnapshot($pay,$a);
@@ -210,6 +217,9 @@ function achbotHostedReceiptVerify(mysqli $db,int $payId,int $userId,string $met
         }
         if (achbotHasUnscopedPaymentReferenceCollision($db,(string)$a['provider_reference'],$payId))
             throw new DomainException('hosted_reference_collision');
+        // A new observation cannot outrun local expiry merely because the
+        // scheduled expiry pass has not run. Prior durable evidence survives.
+        achbotPayUxCloseInvoiceLocked($db,$pay,$a);
         if (!$db->commit()) throw new RuntimeException('hosted_verify_snapshot_commit');
     } catch (Throwable $e) {$db->rollback();throw $e;}
     // A completed single-reference receipt needs no more provider calls.
@@ -228,6 +238,7 @@ function achbotHostedReceiptVerify(mysqli $db,int $payId,int $userId,string $met
                     if ($attempt['wallet_invoice_sha256']!==$a['wallet_invoice_sha256'] ||
                         !hash_equals($a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($current,$attempt)))
                         throw new RuntimeException('hosted_invoice_changed_after_verify');
+                    achbotPayUxCloseInvoiceLocked($db,$current,$attempt);
                     if ($current['state']==='declined') {
                         if (!$db->commit()) throw new RuntimeException('hosted_observation_commit');
                         return $verified;
@@ -308,12 +319,17 @@ function achbotHostedReceiptIngestIpn(mysqli $db,string $raw,string $signature):
                 'ssi',[$invoice,$pin,(int)$a['id']]);$n=$s->affected_rows;$s->close();
             if ($n!==1) throw new RuntimeException('hosted_ipn_pin_write');
             $a['wallet_invoice_sha256']=$pin;
+            $a['stage']='review';
+            $a['provider_status']='signed_creation_recovered';
         }
         if ($a['provider_reference']!==$invoice || $pay['payid']!==$invoice ||
-            !is_string($a['wallet_invoice_sha256']) ||
+            !achbotCurrentReceiptPin($a) ||
             !hash_equals($a['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$a))) {
             $db->rollback();return 409;
         }
+        // Close an idle expired service before recording its first late IPN.
+        // Do not cancel the remote claim or discard the signed evidence.
+        achbotPayUxCloseInvoiceLocked($db,$pay,$a);
         $existing=achbotProviderRow($db,"SELECT * FROM payment_transactions WHERE provider='nowpayments' AND payment_id=? FOR UPDATE",'s',[$child]);
         if ($existing && (int)$existing['attempt_id']!==(int)$a['id']) {$db->rollback();return 409;}
         if (!$existing) {
@@ -356,14 +372,14 @@ function achbotHostedReceiptMaintain(mysqli $db,int $limit=3): array {
     $q=$db->query("SELECT a.pay_row_id,p.user_id,a.provider,a.provider_reference AS reference,
         NULL AS child_id,COALESCE(a.last_checked_at,a.created_at) AS due
         FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
-        WHERE a.provider IN ($singleSql) AND a.wallet_invoice_sha256<>'' AND a.wallet_credit_entry_id IS NULL
+        WHERE a.provider IN ($singleSql) AND a.wallet_invoice_sha256<>'' AND a.invoice_expires_at IS NOT NULL AND a.wallet_credit_entry_id IS NULL
           AND (a.last_checked_at IS NULL OR a.last_checked_at<DATE_SUB(NOW(),INTERVAL 60 SECOND))
         UNION ALL
         SELECT a.pay_row_id,p.user_id,a.provider,t.payment_id AS reference,t.id AS child_id,
           COALESCE(t.merchant_checked_at,t.received_at) AS due
         FROM payment_transactions t JOIN payment_attempts a ON a.id=t.attempt_id
         JOIN pays p ON p.id=a.pay_row_id
-        WHERE t.provider=a.provider AND t.provider IN ($childSql) AND a.wallet_invoice_sha256<>'' AND t.merchant_verified_at IS NULL
+        WHERE t.provider=a.provider AND t.provider IN ($childSql) AND a.wallet_invoice_sha256<>'' AND a.invoice_expires_at IS NOT NULL AND t.merchant_verified_at IS NULL
           AND t.observed_status NOT IN ('refunded','failed','expired')
           AND (t.merchant_checked_at IS NULL OR t.merchant_checked_at<DATE_SUB(NOW(),INTERVAL 60 SECOND))
         ORDER BY due,pay_row_id,child_id LIMIT ".$limit);

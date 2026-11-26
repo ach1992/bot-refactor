@@ -46,7 +46,7 @@ function sendFileToTelegram($method, $datas = []) {
     return \AchBot\Telegram\Transport\sendFile($botToken, __DIR__, $method, $datas);
 }
 
-function sendMessage($txt, $key = null, $parse ="MarkDown", $ci= null, $msg = null){
+function sendMessage($txt, $key = null, $parse ="HTML", $ci= null, $msg = null){
     global $from_id;
     require_once __DIR__ . '/src/Telegram/Messages.php';
     return \AchBot\Telegram\Messages\sendMessage('bot', $from_id, $txt, $key, $parse, $ci, $msg);
@@ -122,75 +122,7 @@ function stateFa($s){
     require_once __DIR__ . '/src/Presentation/Labels.php';
     return \AchBot\Presentation\Labels\broadcastState($s);
 }
-function getUsersCountByGroup($connection, $group){
-    if($group === 'has'){
-        $stmt = $connection->prepare("
-            SELECT COUNT(*) AS count
-            FROM `users` u
-            WHERE (u.step IS NULL OR (u.step <> 'Bot_Blocked' AND u.step <> 'banned'))
-              AND EXISTS (SELECT 1 FROM `orders_list` o WHERE o.userid = u.userid)
-        ");
-
-    } elseif($group === 'none'){
-        $stmt = $connection->prepare("
-            SELECT COUNT(*) AS count
-            FROM `users` u
-            LEFT JOIN `orders_list` o ON o.userid = u.userid
-            WHERE (u.step IS NULL OR (u.step <> 'Bot_Blocked' AND u.step <> 'banned'))
-              AND o.userid IS NULL
-        ");
-
-    } elseif($group === 'agents'){
-        $stmt = $connection->prepare("
-            SELECT COUNT(*) AS count
-            FROM `users`
-            WHERE is_agent = 1
-              AND (step IS NULL OR (step <> 'Bot_Blocked' AND step <> 'banned'))
-        ");
-
-    } else {
-        $stmt = $connection->prepare("
-            SELECT COUNT(*) AS count
-            FROM `users`
-            WHERE (step IS NULL OR (step <> 'Bot_Blocked' AND step <> 'banned'))
-        ");
-    }
-
-    $stmt->execute();
-    $res = $stmt->get_result();
-    $row = $res->fetch_assoc();
-    $stmt->close();
-
-    return (int)($row['count'] ?? 0);
-}
-
 // ✅ Helpers for Broadcast Pin/Unpin/Delete
-function apiOk($res){
-    require_once __DIR__ . '/src/Telegram/Response.php';
-    return \AchBot\Telegram\Response\isSuccessful($res);
-}
-
-function getApiMessageId($res){
-    require_once __DIR__ . '/src/Telegram/Response.php';
-    return \AchBot\Telegram\Response\messageId($res);
-}
-
-function logBroadcastUserMessage($connection, $broadcastId, $userid, $messageId){
-    if($broadcastId <= 0 || $userid <= 0 || $messageId <= 0) return;
-
-    $stmt = $connection->prepare("
-        INSERT INTO `bc_messages` (`broadcast_id`,`userid`,`message_id`)
-        VALUES (?,?,?)
-        ON DUPLICATE KEY UPDATE
-            `message_id`=VALUES(`message_id`),
-            `deleted`=0,
-            `deleted_at`=NULL
-    ");
-    $stmt->bind_param("iii", $broadcastId, $userid, $messageId);
-    $stmt->execute();
-    $stmt->close();
-}
-
 function pinOne($chatId, $messageId){
     require_once __DIR__ . '/src/Telegram/Messages.php';
     return \AchBot\Telegram\Messages\pinOne('bot', $chatId, $messageId);
@@ -206,7 +138,7 @@ function deleteOne($chatId, $messageId){
     return \AchBot\Telegram\Messages\deleteOne('bot', $chatId, $messageId);
 }
 // END send to all
-function sendPhoto($photo, $caption = null, $keyboard = null, $parse = "MarkDown", $ci = null, $replyTo = null){
+function sendPhoto($photo, $caption = null, $keyboard = null, $parse = "HTML", $ci = null, $replyTo = null){
     global $from_id;
     require_once __DIR__ . '/src/Telegram/Messages.php';
     return \AchBot\Telegram\Messages\sendPhoto('bot', $from_id, $photo, $caption, $keyboard, $parse, $ci, $replyTo);
@@ -512,15 +444,16 @@ function setSettings($field, $value): bool {
         'requirePhone','requireIranPhone','sellState','botState',
         'searchState',
         'renewConfigLinkState','updateConfigLinkState','qrConfigState',
-        'qrSubState','cartToCartAutoAcceptState','cartToCartAutoAcceptType',
+        'qrSubState',
         'giftCardState','manualUsdtState','cartToCartState',
         'nextpay','zarinpal','nowPaymentWallet','nowPaymentOther',
         'walletState','remark','rewaredTime',
-        'cartToCartAutoAcceptTime','gbPrice','dayPrice',
+        'gbPrice','dayPrice',
         'rewardChannel','lockChannel','supportID','lastRewardMessage',
         'instanceMessages','cooperationUrl','helpChannel','lockChannelJoinUrl',
         'gatewayAudience',
         'paymentDraftMinutes','paymentManualHours','paymentHostedHours',
+        'paymentReceiptGraceMinutes','paymentSmsReviewHours',
         'receiptApprovedMinutes','receiptApprovedOtherMinutes',
         'receiptReviewMinutes','receiptDeclinedMinutes'
     ];
@@ -1305,18 +1238,6 @@ function getBotSettingKeys(){
             ['text'=>$rewaredTime,'callback_data'=>'editRewaredTime'],
             ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.2d0dc535a6'), 'callback_data'=>'wizwizch']
             ],
-        [
-            ['text'=>($botState['cartToCartAutoAcceptState']??'off')=="on"?\achbotMessage('legacy_buttons.on'):\achbotMessage('legacy_buttons.off'),'callback_data'=>"changeBotcartToCartAutoAcceptState"],
-            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.f5d3c64f2a'),'callback_data'=>"wizwizch"]
-        ],
-        ...(($botState['cartToCartAutoAcceptState']??'off')=="on"?[[
-            ['text'=>(($botState['cartToCartAutoAcceptType']??'2') == "0"?\achbotMessage('admin_settings.config.get_bot_setting_keys.text.62c92fb90c'):(($botState['cartToCartAutoAcceptType']??'2') == "1"?\achbotMessage('admin_settings.config.get_bot_setting_keys.text.5bf4b36161'):\achbotMessage('admin_settings.config.get_bot_setting_keys.text.15270886ea'))),'callback_data'=>"changeBotcartToCartAutoAcceptType"],
-            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.aaeffd7e20'),'callback_data'=>"wizwizch"]
-        ]]:[]),
-        ...(($botState['cartToCartAutoAcceptState']??'off')=="on"?[[
-            ['text'=>($botState['cartToCartAutoAcceptTime']??"10") . \achbotMessage('admin_settings.config.get_bot_setting_keys.text.5e2c83ade1'),'callback_data'=>"editcartToCartAutoAcceptTime"],
-            ['text'=>\achbotMessage('admin_settings.config.get_bot_setting_keys.button.333513e744'),'callback_data'=>"wizwizch"]
-        ]]:[]),
         [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"managePanel"]]
         ]]);
 }
@@ -2120,7 +2041,7 @@ function getUserInfoKeys($userId) {
                 ],
                 [
                     ['text' => $agentStatus, 'callback_data' => $canManageAgents ? "toggleAgent_{$userId}" : "wizwizch"],
-                    ['text' => \achbotMessage('admin_settings.config.get_bot_setting_keys.text.62c92fb90c'), 'callback_data' => "wizwizch"]
+                    ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.agent_label'), 'callback_data' => "wizwizch"]
                 ],
                 ...($canManageAgents ? [[
                     ['text' => $agentPercent, 'callback_data' => "editAgentDiscountNormal{$userId}_userinfo"],

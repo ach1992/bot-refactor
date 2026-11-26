@@ -7,13 +7,15 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__.'/../Admin/Access.php';
+require_once __DIR__.'/../Telegram/Presentation.php';
+require_once __DIR__.'/Storage.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
 // BEGIN send to all
 if($data == 'message2All' && ($from_id == $admin || $userInfo['isAdmin'] == true)){
 
-    $stmt = $connection->prepare("SELECT * FROM `send_list` WHERE `state` IN (1,2) ORDER BY `id` ASC LIMIT 1");
+    $stmt = $connection->prepare("SELECT * FROM `send_list` WHERE `state` IN (1,2) AND (type='forwardall' OR text_html IS NOT NULL) ORDER BY `id` ASC LIMIT 1");
     $stmt->execute();
     $info = $stmt->get_result();
     $stmt->close();
@@ -27,25 +29,12 @@ if($data == 'message2All' && ($from_id == $admin || $userInfo['isAdmin'] == true
         $title  = $sendInfo['title'] ?? '';
         $offset = (int)($sendInfo['offset'] ?? 0);
 			
-		$usersCount = getUsersCountByGroup($connection, $group);
+		$usersCount = achbotBroadcastAudienceCount($connection,$group);
 		$kind = ($type === 'forwardall') ? \achbotMessage('broadcast.routes.message2_all.text.e92414445c') : \achbotMessage('broadcast.routes.message2_all.text.a8b7952c88');
         $titleLine = $title ? \achbotMessage('broadcast.routes.message2_all.text.b00aae4551', ['title' => $title]) : "";
 
-		$sentCount = 0;
-		$stc = $connection->prepare("
-			SELECT COUNT(*) AS c
-			FROM `bc_messages`
-			WHERE `broadcast_id`=? AND `deleted`=0
-		");
-		$stc->bind_param("i", $jobId);
-		$stc->execute();
-		$rr = $stc->get_result();
-		if($rr && $rr->num_rows > 0){
-			$sentCount = (int)$rr->fetch_assoc()['c'];
-		}
-		$stc->close();
-
-		$left = max(0, $usersCount - $sentCount);
+        $sentCount=achbotBroadcastAckCount($connection,$jobId);
+        $left=achbotBroadcastAudienceCount($connection,$group,$offset);
 
 		$lastUserIdProcessed = $offset;
 
@@ -59,13 +48,13 @@ if($data == 'message2All' && ($from_id == $admin || $userInfo['isAdmin'] == true
 			\achbotMessage('broadcast.routes.message2_all.text.c57348613a', ['lastUserIdProcessed' => $lastUserIdProcessed]);
 	
 
-        sendMessage($statusText, json_encode([
+        sendMessage(htmlspecialchars($statusText,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'), json_encode([
             'inline_keyboard' => [
                 [['text'=>\achbotMessage('broadcast.routes.message2_all.button.bf542d764e'), 'callback_data'=>"cancelBroadcast".$jobId]],
                 [['text'=>\achbotMessage('broadcast.routes.message2_all.button.0bb9320093'), 'callback_data'=>"broadcastHistory_0"]],
                 [['text'=>\achbotMessage('legacy_buttons.start_bot'), 'callback_data'=>"mainMenu"]],
             ]
-        ]));
+        ]), 'HTML');
     } else {
         sendMessage(\achbotMessage('broadcast.routes.message2_all.message.3c4afc11a6'), json_encode([
             'inline_keyboard' => [
@@ -127,7 +116,7 @@ if (preg_match('/^s2a_title_(all|has|none|agents)$/', $userInfo['step'], $match)
         sendMessage(
             \achbotMessage('broadcast.routes.broadcast_start.message.9df7171b87').
             \achbotMessage('broadcast.routes.broadcast_start.message.b6d57f844e'),
-            $cancelKey
+            $cancelKey, 'HTML'
         );
         setUser("s2a_title_$group");
         return;
@@ -196,19 +185,21 @@ if(preg_match('/^s2a_msg_(\d+)$/', $userInfo['step'], $match)
     if(isset($fileid) && $fileid !== null) {
         $stmt = $connection->prepare("
             UPDATE `send_list`
-            SET `type`=?, `text`=?, `file_id`=?
+            SET `type`=?, `text`=?, `text_html`=?, `file_id`=?
             WHERE `id`=? AND `state`=0
         ");
-        $stmt->bind_param("sssi", $filetype, $caption, $fileid, $sendId);
+        $captionHtml = \AchBot\Telegram\Presentation\incomingHtml($caption,(array)($update->message->caption_entities??[]));
+        $stmt->bind_param("ssssi", $filetype, $caption, $captionHtml, $fileid, $sendId);
         $stmt->execute();
         $stmt->close();
     } else {
         $stmt = $connection->prepare("
             UPDATE `send_list`
-            SET `type`='text', `text`=?
+            SET `type`='text', `text`=?, `text_html`=?
             WHERE `id`=? AND `state`=0
         ");
-        $stmt->bind_param("si", $text, $sendId);
+        $textHtml = \AchBot\Telegram\Presentation\incomingHtml($text,(array)($update->message->entities??[]));
+        $stmt->bind_param("ssi", $text, $textHtml, $sendId);
         $stmt->execute();
         $stmt->close();
     }
@@ -233,7 +224,7 @@ if(preg_match('/^noDontSend2all(\d+)/', $data, $match) && ($from_id == $admin ||
 if(preg_match('/^yesSend2All(\d+)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $id = (int)$match[1];
 
-    $stmt = $connection->prepare("UPDATE `send_list` SET `state`=1 WHERE `id`=? AND `state`=0");
+    $stmt = $connection->prepare("UPDATE `send_list` SET `state`=1 WHERE `id`=? AND `state`=0 AND (`type`='forwardall' OR `text_html` IS NOT NULL)");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $stmt->close();
@@ -296,7 +287,7 @@ if(preg_match('/^broadcastHistory_(\d+)$/', $data, $m) && ($from_id == $admin ||
     $kb[] = [['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.876ba507e6'), 'callback_data'=>"broadcastHistory_".($page+1)]];
     $kb[] = [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'), 'callback_data'=>"message2All"]];
 
-    sendMessage($out, json_encode(['inline_keyboard'=>$kb]));
+    sendMessage(htmlspecialchars($out,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'), json_encode(['inline_keyboard'=>$kb]), 'HTML');
 }
 // END send to all
 
@@ -403,7 +394,7 @@ if(preg_match('/^pinManageAllPage_(\d+)$/', $data, $m) && ($from_id == $admin ||
           . \achbotMessage('broadcast.routes.pin_manage_all.text.3586bc29c6').($page+1).\achbotMessage('broadcast.routes.pin_manage_all.text.a624a1e41f').($maxPage+1)."\n"
           . \achbotMessage('broadcast.routes.pin_manage_all.text.58592602aa');
  
-    sendMessage($text, json_encode(['inline_keyboard'=>$kb])); 
+    sendMessage(htmlspecialchars($text,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'), json_encode(['inline_keyboard'=>$kb]), 'HTML');
 }
 
 if($data == 'pmNoop' && isset($update->callback_query)){
@@ -491,7 +482,7 @@ if(preg_match('/^pinManageSelect_(\d+)$/', $data, $m) && ($from_id == $admin || 
     $kb[] = [['text'=>\achbotMessage('broadcast.routes.pin_manage_all.button.adbdd32809'), 'callback_data'=>"jobsStatusBid_{$bid}_0"]];
     $kb[] = [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'), 'callback_data'=>"pinManageAll"]];
 
-    sendMessage($out, json_encode(['inline_keyboard'=>$kb]));
+    sendMessage(htmlspecialchars($out,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'), json_encode(['inline_keyboard'=>$kb]), 'HTML');
 }
 
 if(preg_match('/^jobsStatusBid_(\d+)_(\d+)$/', $data, $m) && ($from_id == $admin || $userInfo['isAdmin'] == true)){ 
@@ -545,7 +536,7 @@ if(preg_match('/^jobsStatusBid_(\d+)_(\d+)$/', $data, $m) && ($from_id == $admin
         $st  = (int)$row['state']; 
         $stFa = ($st==1?\achbotMessage('broadcast.routes.pm_noop.text.1ebfb10a5f'):($st==2?\achbotMessage('broadcast.routes.pm_noop.text.ba31fd7d85'):($st==3?\achbotMessage('broadcast.routes.pm_noop.text.98a2718667'):\achbotMessage('broadcast.routes.pm_noop.text.1704c602b4'))));
  
-        $offx = (int)$row['offset'];
+        $offx = (string)$row['offset'];
 		$okc   = (int)($row['ok_cnt'] ?? 0);
 		$failc = (int)($row['fail_cnt'] ?? 0);
         $title = $row['title'] ?: \achbotMessage('broadcast.routes.broadcast_start.text.bddb5c40d4');
@@ -567,7 +558,7 @@ if(preg_match('/^jobsStatusBid_(\d+)_(\d+)$/', $data, $m) && ($from_id == $admin
  
     $kb[] = [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageSelect_$bid"]];
  
-    sendMessage(trim($txt), json_encode(['inline_keyboard'=>$kb])); 
+    sendMessage(htmlspecialchars(trim($txt),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'), json_encode(['inline_keyboard'=>$kb]), 'HTML');
 }
 
 if(preg_match('/^editBroadcastAsk_(\d+)$/', $data, $m) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -698,7 +689,7 @@ if(preg_match('/^bc_edit_(\d+)$/', $userInfo['step'], $m)
    && ($from_id == $admin || $userInfo['isAdmin'] == true)){
 
     $bid = (int)$m[1];
-    $input = trim((string)($text ?? $caption ?? ''));
+    $input = (string)($text ?? $caption ?? '');
 
     if($input === \achbotMessage('legacy_buttons.cancel')){
         setUser();
@@ -706,14 +697,8 @@ if(preg_match('/^bc_edit_(\d+)$/', $userInfo['step'], $m)
         return;
     }
 
-    if($input === ''){
+    if(trim($input) === ''){
         sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.272345cd68'), $cancelKey, null);
-        setUser("bc_edit_$bid");
-        return;
-    }
-
-    if(mb_strlen($input,'UTF-8') > 4096){
-        sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.72fe3f7c5d'), $cancelKey, null);
         setUser("bc_edit_$bid");
         return;
     }
@@ -754,15 +739,23 @@ if(preg_match('/^bc_edit_(\d+)$/', $userInfo['step'], $m)
         return;
     }
 
+    // The stored HTML is rendered once at admission, never truncated as markup.
+    $limit = $info['type']==='text' ? 4096 : 1024;
+    if(mb_strlen($input,'UTF-8') > $limit){
+        sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.72fe3f7c5d'), $cancelKey, null);
+        setUser("bc_edit_$bid");
+        return;
+    }
+    $entities = isset($text) ? ($update->message->entities??[]) : ($update->message->caption_entities??[]);
+    $html = \AchBot\Telegram\Presentation\incomingHtml($input,(array)$entities);
     $action = 'edit';
-    $parseMode = null;
 
     $ins = $connection->prepare("
         INSERT INTO `bc_jobs`
-        (`broadcast_id`,`action`,`new_text`,`parse_mode`,`offset`,`state`,`created_at`,`updated_at`)
+        (`broadcast_id`,`action`,`new_text`,`new_html`,`offset`,`state`,`created_at`,`updated_at`)
         VALUES (?,?,?,?,0,1,NOW(),NOW())
     ");
-    $ins->bind_param("isss", $bid, $action, $input, $parseMode);
+    $ins->bind_param("isss", $bid, $action, $input, $html);
     $ok = $ins->execute();
     $jid = (int)$ins->insert_id;
     $ins->close();
@@ -774,9 +767,9 @@ if(preg_match('/^bc_edit_(\d+)$/', $userInfo['step'], $m)
         return;
     }
 
-    $u = $connection->prepare("UPDATE `send_list` SET `text`=? WHERE `id`=? LIMIT 1");
+    $u = $connection->prepare("UPDATE `send_list` SET `text`=?, `text_html`=? WHERE `id`=? LIMIT 1");
     if($u){
-        $u->bind_param("si", $input, $bid);
+        $u->bind_param("ssi", $input, $html, $bid);
         $u->execute();
         $u->close();
     }
@@ -846,7 +839,7 @@ if(preg_match('/^jobsStatus_(\d+)$/', $data, $m) && ($from_id == $admin || $user
         $st  = (int)$row['state'];
         $stFa = ($st==1?\achbotMessage('broadcast.routes.pm_noop.text.1ebfb10a5f'):($st==2?\achbotMessage('broadcast.routes.pm_noop.text.ba31fd7d85'):($st==3?\achbotMessage('broadcast.routes.pm_noop.text.98a2718667'):\achbotMessage('broadcast.routes.pm_noop.text.1704c602b4'))));
 
-        $offx = (int)$row['offset'];
+        $offx = (string)$row['offset'];
 		$okc   = (int)($row['ok_cnt'] ?? 0);
 		$failc = (int)($row['fail_cnt'] ?? 0);
         $title = $row['title'] ?: \achbotMessage('broadcast.routes.broadcast_start.text.bddb5c40d4');
@@ -868,7 +861,7 @@ if(preg_match('/^jobsStatus_(\d+)$/', $data, $m) && ($from_id == $admin || $user
 
     $kb[] = [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageAll"]];
 
-    sendMessage(trim($txt), json_encode(['inline_keyboard'=>$kb]));
+    sendMessage(htmlspecialchars(trim($txt),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'), json_encode(['inline_keyboard'=>$kb]), 'HTML');
 }
 
 if(preg_match('/^jobCancel_(\d+)$/', $data, $m) && ($from_id == $admin || $userInfo['isAdmin'] == true)){

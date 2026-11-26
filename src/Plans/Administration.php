@@ -35,7 +35,7 @@ if($data == 'backplan' and achbotAdminCanFor($connection,(int)$from_id,(int)$adm
     if(isset($data) and $data=='backplan') {
         editText($message_id, $msg, json_encode(['inline_keyboard'=>$keyboard]));
     }else { sendAction('typing');
-        sendmessage($msg, json_encode(['inline_keyboard'=>$keyboard]));
+        sendmessage($msg, json_encode(['inline_keyboard'=>$keyboard]),'HTML');
     }
 
 

@@ -3,6 +3,7 @@
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__ . '/../../messages/loader.php';
 require_once __DIR__ . '/../Presentation/Text.php';
+require_once __DIR__ . '/../Telegram/Presentation.php';
 
 function achbotInstanceFields(): array {
     return ['start_message','user_welcome_message','reached_main_menu','purchase_note','cooperationUrl','helpChannel','lockChannelJoinUrl'];
@@ -21,52 +22,6 @@ function achbotInstanceLabel(string $field): string {
         'helpChannel'=>achbotMessage('instance_content.field_helpChannel'),
         'lockChannelJoinUrl'=>achbotMessage('instance_content.field_lockChannelJoinUrl')
     };
-}
-/** Telegram entities use UTF-16 offsets; literal input is always escaped. */
-function achbotInstanceInputHtml(string $text,array $entities=[]): ?string {
-    if (!mb_check_encoding($text,'UTF-8') || trim($text)==='' || mb_strlen($text,'UTF-8')>3000 ||
-        preg_match('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/',$text)) return null;
-    $chars=preg_split('//u',$text,-1,PREG_SPLIT_NO_EMPTY);$bounds=[0=>0];$unit=0;$bytes=0;
-    foreach ($chars as $char) {
-        $unit+=(int)(strlen(mb_convert_encoding($char,'UTF-16LE','UTF-8'))/2);
-        $bytes+=strlen($char);$bounds[$unit]=$bytes;
-    }
-    if ($unit>3000) return null;
-    $spans=[];$tags=['bold'=>'b','italic'=>'i','underline'=>'u','strikethrough'=>'s','code'=>'code',
-                    'pre'=>'pre','blockquote'=>'blockquote','expandable_blockquote'=>'blockquote'];
-    foreach ($entities as $index=>$entity) {
-        $e=(array)$entity;$type=$e['type']??'';
-        if (!isset($tags[$type]) && !in_array($type,['spoiler','text_link'],true)) continue;
-        $start=$e['offset']??null;$length=$e['length']??null;
-        if (!is_int($start)||!is_int($length)||$start<0||$length<=0||!isset($bounds[$start],$bounds[$start+$length])) return null;
-        if ($type==='text_link') {
-            $url=\AchBot\Presentation\Text\destinationUrl($e['url']??'');
-            if ($url==='') return null;
-            $open='<a href="'.htmlspecialchars($url,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8').'">';$close='</a>';
-        } elseif ($type==='spoiler') {$open='<tg-spoiler>';$close='</tg-spoiler>';}
-        else {$open='<'.$tags[$type].'>';$close='</'.$tags[$type].'>';}
-        $spans[]=['start'=>$start,'end'=>$start+$length,'open'=>$open,'close'=>$close,'index'=>$index,'type'=>$type];
-    }
-    foreach ($spans as $i=>$a) foreach ($spans as $j=>$b) if ($i<$j) {
-        if (($a['start']<$b['start'] && $b['start']<$a['end'] && $a['end']<$b['end']) ||
-            ($b['start']<$a['start'] && $a['start']<$b['end'] && $b['end']<$a['end'])) return null;
-        if (max($a['start'],$b['start'])<min($a['end'],$b['end']) &&
-            (in_array($a['type'],['pre','code'],true)||in_array($b['type'],['pre','code'],true))) return null;
-    }
-    $starts=[];$ends=[];
-    foreach($spans as $span){$starts[$span['start']][]=$span;$ends[$span['end']][]=$span;}
-    $out='';$position=0;
-    foreach (array_merge($chars,['']) as $char) {
-        $closing=$ends[$position]??[];
-        usort($closing,static fn($a,$b)=>($b['start']<=>$a['start'])?:($b['index']<=>$a['index']));
-        foreach($closing as $span)$out.=$span['close'];
-        $opening=$starts[$position]??[];
-        usort($opening,static fn($a,$b)=>($b['end']<=>$a['end'])?:($a['index']<=>$b['index']));
-        foreach($opening as $span)$out.=$span['open'];
-        $out.=htmlspecialchars($char,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
-        $position+=(int)(strlen(mb_convert_encoding($char,'UTF-16LE','UTF-8'))/2);
-    }
-    return $out;
 }
 function achbotInstanceStored(array $state,string $field): ?string {
     $messages=$state['instanceMessages']??null;
@@ -114,13 +69,11 @@ function achbotInstanceContextMessage(string $key): string {
     if ($key==='join_channel_message')
         $text=str_replace('CHANNEL-ID','LOCKCHANNEL',$text);
 
-    $modes=['banned'=>'Markdown','send_config_uuid'=>'Markdown',
+    $modes=['banned'=>'HTML','send_config_uuid'=>'HTML',
             'join_channel_message'=>'HTML','agency_request_declined'=>null];
     $formatted=\AchBot\Presentation\Text\replacePlaceholders(
         [$key=>$text],$state,$actor,$modes)[$key];
 
-    if (in_array($key,['buy_subscription_detail','buy_much_subscription_detail'],true))
-        return rtrim($formatted)."\n\n".achbotInstanceMessage($state,'purchase_note',$actor);
     return $formatted;
 }
 
@@ -198,8 +151,8 @@ function achbotHandleInstanceContent($update,$data,$text,array $cachedUser): boo
     if(!is_string($text))return true;
     if($text==='/clear')$value=in_array($field,achbotInstanceMessageFields(),true)?null:'';
     elseif(in_array($field,achbotInstanceMessageFields(),true)){
-        $html=achbotInstanceInputHtml($text,(array)($source->entities??[]));
-        if($html===null||($field==='purchase_note'&&strlen(mb_convert_encoding($text,'UTF-16LE','UTF-8'))/2>1200)){
+        $html=\AchBot\Telegram\Presentation\inputHtml($text,(array)($source->entities??[]));
+        if($html===null||trim($text)===''||strlen(mb_convert_encoding($text,'UTF-16LE','UTF-8'))/2>3000||($field==='purchase_note'&&strlen(mb_convert_encoding($text,'UTF-16LE','UTF-8'))/2>1200)){
             sendMessage(achbotMessage('instance_content.invalid_message'),$cancelKey,'HTML');return true;
         }
         $value=['format'=>'html','text'=>$html];

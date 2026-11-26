@@ -38,7 +38,7 @@ function curl_getinfo($handle, $opt) {
     return match($GLOBALS['owned_curl_mode']) {
         'request_http_500','file_http_500','journal_conflict_429','journal_conflict_ack'=>500,
         'entities_400'=>400,'blocked_403'=>403,
-        'rate_429','journal_rate_429'=>429,'journal_conflict_entities'=>503,default=>200,
+        'rate_429','journal_rate_429'=>429,'journal_conflict_entities','plain_conflict_entities','file_conflict_entities'=>503,default=>200,
     };
 }
 function curl_exec($handle) {
@@ -50,7 +50,7 @@ function curl_exec($handle) {
     if (in_array($mode,['journal_rate_429','journal_conflict_429'],true)) {
         return '{"ok":false,"error_code":429,"description":"Too Many Requests","parameters":{"retry_after":7}}';
     }
-    if ($mode==='journal_conflict_entities') return '{"ok":false,"error_code":400,"description":"can\'t parse entities"}';
+    if (str_ends_with($mode,'conflict_entities')) return '{"ok":false,"error_code":400,"description":"can\'t parse entities"}';
     if ($mode==='rate_429') {
         return '{"ok":false,"error_code":429,"parameters":{"retry_after":7}}';
     }
@@ -99,6 +99,8 @@ $cases=[
     ['journal_conflict_429','request',true],
     ['journal_conflict_ack','request',true],
     ['journal_conflict_entities','request',true],
+    ['plain_conflict_entities','request',true],
+    ['file_conflict_entities','file',true],
 ];
 $passed=0;
 try {
@@ -125,8 +127,8 @@ try {
             if ($result!==($kind==='request' ? null : false)) {
                 throw new RuntimeException('cURL error contract drift: '.$mode);
             }
-        } elseif (str_starts_with($mode,'journal_conflict_')) {
-            if ($result!==null) throw new RuntimeException('Contradictory HTTP response certified: '.$mode);
+        } elseif (str_starts_with($mode,'journal_conflict_') || str_ends_with($mode,'conflict_entities')) {
+            if ($result!==($kind==='request'?null:false)) throw new RuntimeException('Contradictory HTTP response certified: '.$mode);
         } elseif ($mode==='journal_rate_429') {
             if (\AchBot\Telegram\Response\deliveryOutcome($result)!==['result'=>'rejected','code'=>429,'retry_after'=>7])
                 throw new RuntimeException('Confirmed rate limit lost');

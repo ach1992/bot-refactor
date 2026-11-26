@@ -184,7 +184,7 @@ function achbotAddonAdminHandle(mysqli $db): bool {
                 }
                 $notice=\achbotMessage('addon_scopes.choose_groups');
                 // Telegram caps message length; accepting IDs is not limited to visible previews.
-                sendMessage($notice."\n".mb_substr(implode("\n",$list),0,2400),$cancelKey);
+                sendMessage($notice."\n".htmlspecialchars(mb_substr(implode("\n",$list),0,2400),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),$cancelKey,'HTML');
             } else throw new RuntimeException('addon_admin_scope_invalid');
             return true;
         }

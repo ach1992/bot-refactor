@@ -72,8 +72,8 @@ function achbotGatewayAttentionReceiptScope(): string {
     $hosted=achbotCreditMethodSqlList('hosted');
     $manual=achbotCreditMethodSqlList('manual_quote');
     return "(a.wallet_credit_entry_id IS NULL
-        AND a.wallet_invoice_sha256<>'' AND (
-            (p.state IN ('pending','send','service_superseded') AND a.stage='review' AND a.provider IN ($hosted)
+        AND a.invoice_expires_at IS NOT NULL AND a.wallet_invoice_sha256<>'' AND (
+            (p.state IN ('pending','send','expired','service_superseded') AND a.stage='review' AND a.provider IN ($hosted)
                 AND a.provider_status IN ('partially_paid','confirming','confirmed','sending','finished','refunded','amount_mismatch','multiple_payments','verification_unavailable'))
             OR (a.provider IN ($manual) AND (
                 (p.state IN ('have_sent','service_superseded') AND a.stage='review'

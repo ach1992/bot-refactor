@@ -579,16 +579,18 @@ return [
         'payment_lifecycle.pay_ux_status_text.text.df83eb82dd' => 'پرداخت سفارش',
         'payment_lifecycle.pay_ux_status_text.text.a1026d7b85' => '⌛️ مهلت این درخواست پرداخت پایان یافته است.',
         'payment_lifecycle.pay_ux_status_text.text.74adf2adfe' => '🧾 درخواست جدیدتری جایگزین این پیش‌نویس شده است.',
-        'payment_lifecycle.pay_ux_status_text.service_superseded_title' => '🔄 فاکتور قبلی به دلیل تغییر سرویس متوقف شده است.',
-        'payment_lifecycle.pay_ux_status_text.service_superseded_next' => 'پرداخت این فاکتور دیگر اشتراک را تغییر نمی‌دهد. اگر وجهی پرداخت کرده‌اید، با شناسه پیگیری برای بررسی مالی به پشتیبانی اطلاع دهید.',
+        'payment_lifecycle.pay_ux_status_text.service_superseded_title' => '🔄 درخواست قبلی بسته شده است.',
+        'payment_lifecycle.pay_ux_status_text.service_superseded_next' => 'درخواست قبلی دوباره فعال نمی‌شود. مبلغ پرداخت قبلی پس از تأیید به کیف پول شما اضافه می‌شود؛ دوباره پرداخت نکنید.',
         'payment_lifecycle.pay_ux_status_text.text.f8f1a7f2f5' => '❌ درخواست پرداخت تأیید نشد.',
         'payment_lifecycle.pay_ux_status_text.text.0a0cf2fd64' => '📥 رسید دریافت شده و در انتظار بررسی است.',
         'payment_lifecycle.pay_ux_status_text.text.8c253d0486' => '📤 در انتظار تصویر رسید یا گیفت‌کارت شما',
         'payment_lifecycle.pay_ux_status_text.text.aa6e41205d' => '⚠️ پرداخت یا تحویل نیازمند بررسی است.',
         'payment_lifecycle.pay_ux_status_text.text.7873970550' => '✅ وضعیت پرداخت ثبت شده است.',
         'payment_lifecycle.pay_ux_status_text.text.c7ccf032ac' => '🧾 فاکتور در انتظار پرداخت است.',
-        'payment_lifecycle.pay_ux_status_text.text.8b1195f62f' => 'مهلت ارسال رسید از طریق این فاکتور پایان یافته است. اگر وجهی انتقال داده‌اید، شواهد را فقط از طریق پشتیبانی ارائه کنید؛ انقضا به معنی برگشت وجه نیست.',
-        'payment_lifecycle.pay_ux_status_text.text.90290d6783' => 'مهلت این درخواست پایان یافته است. برای پرداخت جدید از منوی ربات اقدام کنید.',
+        'payment_lifecycle.pay_ux_status_text.text.8b1195f62f' => 'پرداخت جدید انجام ندهید. اگر قبلاً وجهی پرداخت کرده‌اید، همان پرداخت را برای بررسی ارسال کنید. پس از بسته‌شدن درخواست، مبلغ تأییدشده به کیف پول شما اضافه می‌شود.',
+        'payment_lifecycle.invoice_deadline' => ['text'=>'⏳ مهلت پرداخت: {deadline}','parameters'=>['deadline']],
+        'payment_lifecycle.previous_payment_review' => '🔎 بررسی پرداخت قبلی',
+        'payment_lifecycle.pay_ux_status_text.text.90290d6783' => 'مهلت پرداخت این درخواست پایان یافته است. اگر قبلاً پرداخت کرده‌اید، پرداخت را تکرار نکنید و وضعیت همان فاکتور را پیگیری کنید. مبلغ تأییدشده پس از بسته‌شدن درخواست به کیف پول شما اضافه می‌شود.',
         'payment_lifecycle.pay_ux_status_text.text.4bca689fc3' => 'درخواست ارسال رسید ثبت شد. تصویر معتبر را در گفت‌وگوی ربات بفرستید؛ زدن دکمه به معنی ثبت پرداخت نیست.',
         'payment_lifecycle.pay_ux_status_text.text.c0ee0533a8' => 'از فاکتور جدید استفاده کنید. لینک قبلی دیگر برای پرداخت قابل استفاده نیست؛ اگر وجهی فرستاده‌اید با پشتیبانی هماهنگ کنید.',
         'payment_lifecycle.pay_ux_status_text.text.b2948cf010' => '🔎 جزئیات بررسی را از پشتیبانی پیگیری کنید.',
@@ -638,7 +640,6 @@ return [
         // pre_payment.body
         'pre_payment.body.ff6ceb47bf' => '' . "\n" . '📅 تاریخ تأیید: <code>',
         // pre_payment.button
-        'pre_payment.button.ea1db2132d' => '🔄 بررسی دوباره وضعیت',
         // pre_payment.alert
         'pre_payment.alert.fdf0d1d6f9' => 'وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.',
         'pre_payment.alert.fa55f5201f' => '⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست. با پشتیبانی تماس بگیرید.',
@@ -655,12 +656,6 @@ return [
 
     // ── رسیدهای پرداخت دستی ──
     'manual_payment' => [
-        // automatic_receipts.text
-        'automatic_receipts.text.2cc98f7f7c' => ' تومان',
-        // automatic_receipts.message
-        'automatic_receipts.message.38dd599e83' => 'افزایش حساب شما با موفقیت تایید شد.' . "\n" . '✅ مبلغ ',
-        'automatic_receipts.message.6f42cf1050' => ' تومان به حساب شما اضافه شد.',
-        'automatic_receipts.message.cca1075329' => ['text' => '✅ اشتراک {remark} با موفقیت تمدید شد.', 'parameters' => ['remark']],
         'receipt_helpers.manual_label.text.3904ef0f3d' => 'گیفت‌کارت',
         'receipt_helpers.manual_label.text.2f1fd66193' => 'تتر دستی (USDT)',
         'receipt_helpers.manual_label.text.ea9faa7b63' => 'ترون دستی (TRX)',

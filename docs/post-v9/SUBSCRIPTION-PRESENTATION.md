@@ -1,13 +1,12 @@
 # Subscription presentation and per-server settings
 
-**Wallet-first boundary:** For the Wallet-first replacement, PasarGuard is the only shipped Native adapter. Use the current presentation modules and [architecture](WALLET-FIRST-ARCHITECTURE.md). Historical two-provider/Marzban positional and old settings compatibility descriptions below do not require a runnable old mode. The actual current schema and fresh runtime are authoritative.
-
-Current **Stable v0.10.0** contract for native Marzban and PasarGuard, accepted in [Issue #37](https://github.com/ach1992/bot-refactor/issues/37). Source/isolated tests do not establish installed Telegram/provider acceptance or authorize deployment.
+The shipped Native adapter supplies the actual subscription and configs.
+Presentation never changes credentials or Native entitlement. Current
+approved product policy and instance settings govern display.
 
 ## Ordinary administrator journey
 
-Open **selected server → نمایش کانفیگ‌ها و لینک اشتراک**. Both providers use the
-same controls and existing per-server settings:
+Open **selected server → نمایش کانفیگ‌ها و لینک اشتراک**. Use these independent per-server controls:
 
 | Section | Paired rows and actions |
 | --- | --- |
@@ -28,7 +27,7 @@ config text on with the first **3** native configs, purchase QR for the native
 subscription URL. Auxiliary visibility and subscription-QR availability are
 independent of primary subscription text visibility.
 
-Both native adapters supply unchanged config URIs. Names come from explicit
+The Native adapter supplies unchanged config URIs. Names come from explicit
 native metadata, the URI fragment, or vmess ps. No vendor config is generated,
 no arbitrary subscription host is fetched, and native Groups/access are not
 changed by presentation choices.
@@ -69,7 +68,7 @@ Ordinary messages remain byte-identical. This does not change the global
 Telegram transport or financial message handling. Native config validation
 still omits malformed/overlong (>2048-byte) URI records whole.
 
-## Existing storage and compatibility
+## Per-server settings
 
 One existing setting row uses type ACHBOT_SERVER_DISPLAY_<server_id> and the
 version1 envelope with exact server_id, provider, updated_source and display:
@@ -95,22 +94,12 @@ version1 envelope with exact server_id, provider, updated_source and display:
 }
 ~~~
 
-The simple controls overlay only their own context/field. Valid previous flat
-visibility, protocol/name/tag selectors, delivery_selectors/view_selectors and
-explicit limits remain readable until deliberately replaced. Explicit empty
-old selectors still select no inline configs. Old shared-selector fallback and
-peer preservation remain, without startup rewrites or a second settings registry.
-An explicit new config switch overrides retired hide/zero controls only in that
-context, so ON cannot remain hidden by an obsolete invisible setting.
-Native matching and final rendering are shared by both providers.
-
-The retired automatic QR choice maps to subscription QR in the three-state UI.
-Stored managed Marzban positional mode remains a read-compatibility path;
-PasarGuard never consumes those indices. Editing names explicitly replaces the
-positional selection for that context, leaving the other context intact.
-Ordinary screens expose neither legacy mode/index/protocol/threshold menus nor
-JSON editing. Explicit advanced repair remains available for one malformed
-record. Duplicate rows require separately authorized reconciliation.
+Controls update only the selected context/field of the current stored
+policy. Editing names explicitly replaces that context's selection without
+rewriting the other. Missing selection uses the documented automatic mode;
+an intentionally empty selection remains empty. No old Marzban positional
+workflow is required. Validate actual existing configuration during manual
+transfer; do not silently strip valid user choices.
 
 Malformed documents, unknown keys/types/providers, deleted servers and provider
 mismatch suppress config/subscription/QR data. Editing requires an authenticated
@@ -118,31 +107,11 @@ private webhook frame, current unique actor/capability, fresh source revision,
 owned persisted step, unchanged baseline and serialized transaction/lease.
 Logs contain no settings, URLs, raw exceptions or customer values.
 
-No DDL, private-file import or automatic migration occurs. Do not rerun012/013.
-Older runtimes do not understand the nested context fields; preserve paired
-source/settings during recovery instead of stripping keys or downgrading blindly.
+## Verification
 
-## Canonical modules and verification
-
-The root buy_helpers.php is retired with no alias. Purchase Core bootstraps
-canonical dependencies; Subscription/Delivery.php owns actual purchase/QR
-delivery, Purchase/OrderWrites.php owns createIncreaseOrder, and Purchase/Core.php
-owns finance diagnostic classification. Public entrypoints use these modules.
-Tuple positions, function signatures, stored full native links, identities,
-order writes and financial guards remain.
-
-Focused source checks:
-
-~~~sh
-php tools/test_subscription_presentation.php
-php tools/test_simple_server_display.php
-python3 tools/test_server_display_settings.py --run-disposable
-python3 tools/test_server_display_contexts.py --run-disposable
-python3 tools/test_config_qr_delivery.py --run-disposable
-~~~
-
-Current source acceptance uses the PHP 8.5 checks required by the active
-[CI contract](CI-VALIDATION.md), plus fresh author-separated independent
-review where required. Superseded PHP 8.1/8.4 implementation/history suites
-are not current compatibility targets. Merge, publication, deployment and
-actual installed acceptance remain separate.
+`src/Subscription/Presentation.php`, `ServerDisplaySettings.php`,
+`Delivery.php` and the current link/QR routes own these behaviors. Use
+[CI validation](CI-VALIDATION.md) for exact catalog/wire, display and delivery
+coverage. See [Telegram presentation](TELEGRAM-PRESENTATION.md) for optional
+transport decoration; verify installed operator/customer presentation
+separately.

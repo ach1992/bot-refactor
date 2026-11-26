@@ -8,6 +8,74 @@
  */
 namespace AchBot\Telegram\Presentation;
 
+require_once __DIR__.'/../Presentation/Text.php';
+require_once __DIR__.'/Response.php';
+
+/** Telegram entities use UTF-16 offsets; literal input is always escaped. */
+function inputHtml(string $text,array $entities=[]): ?string {
+    if (!mb_check_encoding($text,'UTF-8') ||
+        preg_match('/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/',$text)) return null;
+    if ($text==='') return '';
+    $chars=preg_split('//u',$text,-1,PREG_SPLIT_NO_EMPTY);$bounds=[0=>0];$unit=0;$bytes=0;
+    foreach ($chars as $char) {
+        $unit+=(int)(strlen(mb_convert_encoding($char,'UTF-16LE','UTF-8'))/2);
+        $bytes+=strlen($char);$bounds[$unit]=$bytes;
+    }
+    $spans=[];$tags=['bold'=>'b','italic'=>'i','underline'=>'u','strikethrough'=>'s','code'=>'code',
+                    'pre'=>'pre','blockquote'=>'blockquote','expandable_blockquote'=>'blockquote'];
+    foreach ($entities as $index=>$entity) {
+        $e=(array)$entity;$type=$e['type']??'';
+        if (!isset($tags[$type]) && !in_array($type,['spoiler','text_link','text_mention','custom_emoji'],true)) continue;
+        $start=$e['offset']??null;$length=$e['length']??null;
+        if (!is_int($start)||!is_int($length)||$start<0||$length<=0||!isset($bounds[$start],$bounds[$start+$length])) return null;
+        if ($type==='text_link') {
+            $url=\AchBot\Presentation\Text\destinationUrl($e['url']??'');
+            if ($url==='' && is_string($e['url']??null) && preg_match('/\Atg:\/\/[a-zA-Z0-9_?=&%+.-]+\z/D',$e['url'])) $url=$e['url'];
+            if ($url==='') return null;
+            $open='<a href="'.htmlspecialchars($url,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8').'">';$close='</a>';
+        } elseif ($type==='text_mention') {
+            $id=(string)(((array)($e['user']??[]))['id']??'');
+            if (!preg_match('/\A[1-9][0-9]*\z/D',$id)) return null;
+            $open='<a href="tg://user?id='.$id.'">';$close='</a>';
+        } elseif ($type==='custom_emoji') {
+            $id=(string)($e['custom_emoji_id']??'');
+            if (!preg_match('/\A[1-9][0-9]*\z/D',$id)) return null;
+            $open='<tg-emoji emoji-id="'.$id.'">';$close='</tg-emoji>';
+        } elseif ($type==='expandable_blockquote') {$open='<blockquote expandable>';$close='</blockquote>';}
+        elseif ($type==='pre' && isset($e['language']) && is_string($e['language']) && preg_match('/\A[A-Za-z0-9_+.#-]+\z/D',$e['language'])) {
+            $open='<pre><code class="language-'.htmlspecialchars($e['language'],ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8').'">';$close='</code></pre>';
+        } elseif ($type==='spoiler') {$open='<tg-spoiler>';$close='</tg-spoiler>';}
+        else {$open='<'.$tags[$type].'>';$close='</'.$tags[$type].'>';}
+        $spans[]=['start'=>$start,'end'=>$start+$length,'open'=>$open,'close'=>$close,'index'=>$index,'type'=>$type];
+    }
+    foreach ($spans as $i=>$a) foreach ($spans as $j=>$b) if ($i<$j) {
+        if (($a['start']<$b['start'] && $b['start']<$a['end'] && $a['end']<$b['end']) ||
+            ($b['start']<$a['start'] && $a['start']<$b['end'] && $b['end']<$a['end'])) return null;
+        if (max($a['start'],$b['start'])<min($a['end'],$b['end']) &&
+            ((in_array($a['type'],['text_link','text_mention'],true) && in_array($b['type'],['text_link','text_mention'],true)) || in_array($a['type'],['pre','code'],true)||in_array($b['type'],['pre','code'],true))) return null;
+    }
+    $starts=[];$ends=[];
+    foreach($spans as $span){$starts[$span['start']][]=$span;$ends[$span['end']][]=$span;}
+    $out='';$position=0;
+    foreach (array_merge($chars,['']) as $char) {
+        $closing=$ends[$position]??[];
+        usort($closing,static fn($a,$b)=>($b['start']<=>$a['start'])?:($b['index']<=>$a['index']));
+        foreach($closing as $span)$out.=$span['close'];
+        $opening=$starts[$position]??[];
+        usort($opening,static fn($a,$b)=>($b['end']<=>$a['end'])?:($a['index']<=>$b['index']));
+        foreach($opening as $span)$out.=$span['open'];
+        $out.=htmlspecialchars($char,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+        $position+=(int)(strlen(mb_convert_encoding($char,'UTF-16LE','UTF-8'))/2);
+    }
+    return $out;
+}
+/** Render native Telegram formatting, falling back to the exact literal text
+ * when entity metadata cannot be represented. Never interpret free text as markup. */
+function incomingHtml($text,array $entities=[]): string {
+    $text=(string)$text;
+    return inputHtml($text,$entities)??htmlspecialchars($text,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+}
+
 /** Read optional local-only instance policy from baseInfo.php. */
 function policy(): array {
     $value = $GLOBALS['achbotTelegramPresentation'] ?? null;
@@ -84,8 +152,7 @@ function htmlEmoji(string $html, array $ids): string {
 
 /**
  * Treat an unformatted Telegram text as literal input when opting in to
- * premium emoji. Markdown/MarkdownV2 cannot safely be auto-converted here:
- * their formatting must be migrated and regression-tested at the producer.
+ * premium emoji. Only HTML and unformatted literal text are current producers.
  */
 function decoratedText(array $payload, string $field, array $ids): array {
     if (!$ids || !isset($payload[$field]) || !is_string($payload[$field]) ||
@@ -184,8 +251,7 @@ function prepare(string $method, array $payload): array {
 /** Retry only when Telegram explicitly rejected our presentation extension. */
 function rejectedDecoration($result): bool {
     $data = is_object($result) ? (array)$result : $result;
-    if (!is_array($data) || ($data['ok'] ?? null) !== false ||
-        (int)($data['error_code'] ?? 0) !== 400) return false;
+    if (\AchBot\Telegram\Response\deliveryOutcome($data)['code'] !== 400) return false;
     $description = strtolower((string)($data['description'] ?? ''));
     return str_contains($description, 'custom emoji') ||
         str_contains($description, 'custom_emoji') ||

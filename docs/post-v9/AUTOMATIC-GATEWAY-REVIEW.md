@@ -1,6 +1,6 @@
 # Shared payment and service exception inbox
 
-Current contract: Wallet-first candidate, [Issue #204](https://github.com/ach1992/bot-refactor/issues/204#issuecomment-7137346243). Historical payment-specific recovery designs remain in Git history, not in the executable contract. Source integration, packaging, production activation and manual database transfer are separately gated.
+Current source contract: Wallet-first, [Issue #204](https://github.com/ach1992/bot-refactor/issues/204#issuecomment-7137346243). Historical payment-specific recovery designs remain in Git history, not in the executable contract. Source integration, packaging, production activation and manual database transfer are separately gated.
 
 ## One inbox, separate facts
 

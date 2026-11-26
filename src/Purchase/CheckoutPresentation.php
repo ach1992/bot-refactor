@@ -2,6 +2,7 @@
 declare(strict_types=1);
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/../Finance/CheckoutAdmission.php';
+require_once __DIR__.'/../Admin/InstanceContent.php';
 
 /** Shared payment rows for every current checkout. Only established
  * mode-specific labels and navigation differ; eligibility is decided once
@@ -43,7 +44,11 @@ function achbotCheckoutPaymentKeyboard(string $mode,string $hash,int $amount,arr
         if (!in_array($method,$methods,true)) continue;
         $button=['text'=>$label];
         if ($renew) $button['callback_data']='renewPay_'.$gateway.'_'.$hash;
-        else $button['url']=$botUrl.'pay/checkout.php?'.$gateway.'&hash_id='.$hash;
+        else {
+            $url=achbotPayUxHostedLink($method,$hash,$botUrl);
+            if ($url===null) continue;
+            $button['url']=$url;
+        }
         $keyboard[]=[$button];
     }
     if ($mode!=='topup' && in_array('wallet',$methods,true)) {
@@ -79,17 +84,23 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $o
     if ($renew) $msg=$amount===0?achbotMessage('renewal.free_confirmation.prompt'):
         ($noMethod?$notice:achbotMessage('renewal.renewal_checkout.message.24ae8c4399'));
     else {
-        $name=$view['category']['title'].' '.$plan['title'];$desc=$plan['descr'];
+        // Catalog titles and descriptions are literal stored data, not HTML
+        // templates. Preserve the separately authored instance note and
+        // replace tokens in one pass (never re-expand a dynamic value).
+        $safe=static fn($v)=>htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+        $values=['PLAN-NAME'=>$safe($view['category']['title'].' '.$plan['title']),
+            'DESCRIPTION'=>$safe($plan['descr']),'PRICE'=>$price];
+        $template=achbotMessage('legacy_messages.buy_subscription_detail');
         if ($mode==='standard' && (int)$pay['agent_count']>0) {
-            $eachPrice=number_format($amount/$q['quantity']).achbotMessage('purchase.select_plan.text.2cc98f7f7c');
-            $msg=str_replace(['ACCOUNT-COUNT','TOTAL-PRICE','PLAN-NAME','PRICE','DESCRIPTION'],
-                [$q['quantity'],$price,$name,$eachPrice,$desc],achbotCurrentMessage('buy_much_subscription_detail'));
+            $template=achbotMessage('legacy_messages.buy_much_subscription_detail');
+            $values['ACCOUNT-COUNT']=(string)$q['quantity'];
+            $values['TOTAL-PRICE']=$price;
+            $values['PRICE']=number_format($amount/$q['quantity']).achbotMessage('purchase.select_plan.text.2cc98f7f7c');
         } elseif ($mode==='custom') {
-            $msg=str_replace(['VOLUME','DAYS','PLAN-NAME','PRICE','DESCRIPTION'],
-                [$q['volume'],$q['days'],$name,$price,$desc],achbotCurrentMessage('buy_subscription_detail'));
-        } else {
-            $msg=str_replace(['PLAN-NAME','PRICE','DESCRIPTION'],[$name,$price,$desc],achbotCurrentMessage('buy_subscription_detail'));
+            $values['VOLUME']=(string)$q['volume'];$values['DAYS']=(string)$q['days'];
         }
+        $msg=rtrim(strtr($template,$values))."\n\n".
+            achbotInstanceMessage((array)($GLOBALS['botState']??[]),'purchase_note',$actor);
     }
     if (($noMethod && !$renew) || ($discountRejectedNoMethod && !$noMethod)) $msg.="\n\n".$notice;
     $sent=sendMessage($msg,json_encode(['inline_keyboard'=>$keyboard]),'HTML');

@@ -1,8 +1,8 @@
 # AChBot fresh installation
 
-This guide is for a **new bot with a new, empty database**. An existing bot, a copied live database or a partly migrated database must use its exact release's upgrade/recovery guide instead. There is no browser installer or automatic schema upgrade.
+This guide is for a **new bot with a new, empty database**. An existing bot, a copied live database or a partly migrated database is not a fresh installation. Use the exact installed release for diagnosis and the separately authorized Wallet-first manual data-transfer contract for a cutover. There is no browser installer or automatic schema upgrade.
 
-**Version boundary:** Select the [latest Stable release](https://github.com/ach1992/bot-refactor/releases/latest) and use the exact tagged runtime manifest and release-matched setup source. The Wallet-first runtime uses one current schema, one monetary ledger and one service engine. It does not upgrade or resume an earlier installation. Existing instances require a separately authorized manual database transfer and reconciliation; see [architecture](WALLET-FIRST-ARCHITECTURE.md#cutover-decision--controlled-manual-database-transfer-owner-2026-11-24).
+**Version boundary:** This guide describes Wallet-first. Select an explicitly published Wallet-first release from [GitHub Releases](https://github.com/ach1992/bot-refactor/releases), and use its exact tagged runtime manifest and release-matched setup source. If the latest published release predates Wallet-first, follow that release's own guide instead. The Wallet-first runtime uses one current schema, one monetary ledger and one service engine. It does not upgrade or resume an earlier installation. Existing instances require a separately authorized manual database transfer and reconciliation; see [architecture](WALLET-FIRST-ARCHITECTURE.md#cutover-decision--controlled-manual-database-transfer-owner-2026-11-24).
 
 ## 1. Prepare the installation
 
@@ -38,12 +38,21 @@ mariadb --user=INSTALL_DB_USER --password NEW_EMPTY_DB < database/current-schema
 
 Replace both placeholders. The consolidated schema contains no customer data,
 credentials, migrations, import decisions or automatic upgrade code.
-It contains the complete current InnoDB schema through 043, excluding five
+It contains the complete current InnoDB schema, excluding five
 unused historical tables (`admins`, `black_list`, `servers`,
 `bank_buy_invoice_claims`, `automatic_renewal_attempts`). Never apply it to an existing database.
-The disposable CI fresh-schema proof compares every retained table definition
-against the historical construction sequence, verifies the omitted tables and eight retired payment execution/review columns, plus nineteen obsolete Native/port/custom-plan/gift cursor columns
-and four retired payment-only delivery columns. It verifies mandatory current multipart
+The disposable [fresh-schema proof](../../tools/test_wallet_first_fresh_schema.py)
+constructs a reference from `database/legacy-schema.sql` and all tracked numbered
+`migrations/post-v9/[0-9][0-9][0-9]_*.sql` files in sorted order.
+The Wallet-first baseline has 46 numbered scripts ending at
+`050_message_action_cursor.sql`, including 044-045 (retired plan/category
+fields) and 046-047 (category reference and physical username indexes).
+It compares all 35 retained empty table definitions, verifies the omitted
+tables, eight retired payment execution/review columns, 27 obsolete Native,
+plan, category and gift cursor columns, and four retired payment-only delivery
+columns. The exact selected release's tracked roster and consolidated schema
+remain authoritative; the construction sequence is a disposable test, not
+an installation or upgrade procedure. The proof also verifies mandatory current multipart
 source/part identities, rejection of historical delivery rows before any construction-only
 column removal, and current money,
 identity, delivery and service schema prerequisites. No X-UI transport or local port settings are required; the Native provider owns connection configuration. Bot and gateway settings menus work on empty and partially configured documents without creating settings rows; payment methods remain off until configured.

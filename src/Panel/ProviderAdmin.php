@@ -40,7 +40,7 @@ function achbotPgServerAdminKeys(array $info,array $config,int $offset): string 
 /** Return to the edited object; never let generic cancel process a stale step. */
 function achbotPgAdminReturn(string $step,string $notice): void {
     global $removeKeyboard;
-    sendMessage($notice,$removeKeyboard??json_encode(['remove_keyboard'=>true]));
+    sendMessage($notice,$removeKeyboard??json_encode(['remove_keyboard'=>true]), 'HTML');
     $sid=0;$plan=0;
     if (preg_match('/^pg:groups:(plan|server):([1-9][0-9]*)$/D',$step,$m)) {
         if ($m[1]==='plan') $plan=(int)$m[2];else $sid=(int)$m[2];
@@ -146,7 +146,7 @@ function achbotHandleProviderAdmin(): bool {
             if (($r['success']??false)!==true) throw new RuntimeException('pg_groups_unverified');
             setUser('pg:groups:plan:'.$id);
             $names=[];foreach ($r['groups'] as $g) if (!$g['is_disabled']) $names[]=$g['id'].' = '.$g['name'];
-            sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.254f747510').implode("\n",$names),$cancelKey);return true;
+            sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.254f747510').htmlspecialchars(implode("\n",$names),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),$cancelKey,'HTML');return true;
         }
         // Configuration values and credentials are accepted only from a fresh private message.
         $msg=$update->message??null;

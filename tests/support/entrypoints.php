@@ -28,7 +28,7 @@ if(str_starts_with($variant,'health_')) {
     if($variant==='health_db_failure') $GLOBALS['ach_db_ping_fail']=true;
     require $root.'/health.php'; return;
 }
-$fixtureState += ['cartToCartAutoAcceptState'=>'off','sharedExistence'=>'off','individualExistence'=>'off'];
+$fixtureState += ['sharedExistence'=>'off','individualExistence'=>'off'];
 $fixtureUser += ['freetrial'=>null,'agent_date'=>0];
 if($variant==='bot_banned') $fixtureUser['step']='banned';
 if($variant==='bot_off') $fixtureState['botState']='off';

@@ -28,7 +28,7 @@ function achbotApiPaymentWithWorkerLock(mysqli $db,int $payId,callable $action):
 function achbotApiPaymentCanResume(mysqli $db,array $pay): bool {
     $id=(int)($pay['id']??0);$a=$pay['attempt']??null;
     if ($id<=0 || !$a ||
-        !is_string($a['wallet_invoice_sha256']??null) || $a['wallet_invoice_sha256']==='' ||
+        !achbotCurrentReceiptPin($a) ||
         !achbotCreditMethodHas($a['provider'],'api_checker')) return false;
     $proof=achbotPaymentEvidenceGetProof($db,$id);
     return ($proof['mode']??null)==='settle';
@@ -64,29 +64,6 @@ function achbotApiPaymentContext(mysqli $db,string $hash,int $actor=0): ?array {
 function achbotApiPaymentTerminal(array $pay): bool {
     return in_array((string)($pay['state']??''),['approved','paid','auto_cart_approved','paid_with_wallet'],true);
 }
-/** Original invoice callbacks, never inferred from an arbitrary submitted callback. */
-function achbotApiPaymentReceiptPrefixes(array $pay,string $method='bank_transfer'): array {
-    $t=(string)$pay['type'];$gift=$method==='gift_card';
-    if ($t==='INCREASE_WALLET') return [$gift?'sendIncreaseWalletGiftReceipt':'sendIncreaseWalletReceipt','cancelIncreaseWalletReceipt'];
-    if ($t==='RENEW_ACCOUNT') return [$gift?'sendRenewGiftReceipt':'sendRenewCartReceipt','cancelRenewCartReceipt'];
-    if (str_starts_with($t,'INCREASE_DAY_')) return [$gift?'sendIncreaseDayGiftReceipt':'sendIncreaseDayReceipt','cancelIncreaseDayReceipt'];
-    if (str_starts_with($t,'INCREASE_VOLUME_')) return [$gift?'sendIncreaseVolumeGiftReceipt':'sendIncreaseVolumeReceipt','cancelIncreaseVolumeReceipt'];
-    if ((int)$pay['day']>0 || (int)$pay['volume']>0) return [$gift?'sendCustomGiftReceipt':'sendCustomCartReceipt','cancelCustomCartReceipt'];
-    return [$gift?'sendBuyGiftReceipt':'sendBuyCartReceipt','cancelBuyCartReceipt'];
-}
-function achbotApiPaymentKeyboard(array $context,?string $sendPrefix=null,?string $cancelPrefix=null): string {
-    $pay=$context['pay'];$hash=(string)$pay['hash_id'];
-    if (achbotApiPaymentTerminal($pay) || !in_array($pay['state'],['pending','have_sent'],true))
-        return achbotPayUxStatusKeyboard($hash);
-    if ($pay['state']==='have_sent') return achbotPayUxStatusKeyboard($hash);
-    [$send,$cancel]=achbotApiPaymentReceiptPrefixes($pay,(string)$context['attempt']['provider']);
-    $send=$sendPrefix??$send;$cancel=$cancelPrefix??$cancel;
-    $gift=$context['attempt']['provider']==='gift_card';
-    $rows=[[['text'=>$gift?achbotMessage('payment.api_payment.code'):achbotMessage('telegram.markup.receipt_and_cancel.button.ae15b282fd'),'callback_data'=>$send.$hash]]];
-    if($gift){$intent=achbotManualIntentDecode((string)$context['attempt']['checkout_url'],'gift_card');$url=$intent['seller_url']??null;if(is_string($url)&&achbotManualGiftSellerUrlValid($url))$rows[0][]=['text'=>achbotMessage('telegram.markup.receipt_and_cancel.button.4595a70ab5'),'url'=>$url];}
-    $rows[]=[['text'=>achbotMessage('telegram.markup.receipt_and_cancel.button.cc357a4c9f'),'callback_data'=>$cancel.$hash]];
-    return inlineKeyboard($rows);
-}
 function achbotApiPaymentInvoiceText(array $c): string {
     $p=$c['pay'];
     if ($p['state']==='have_sent') return achbotManualAcknowledgement($p,(string)$c['attempt']['provider']);
@@ -121,13 +98,14 @@ function achbotApiPaymentSyncInvoiceLocked(mysqli $db,array $c): bool {
     $c=$current;$p=$c['pay'];$a=$c['attempt'];
     $chat=(int)($a['evidence_invoice_chat_id']??0);$message=(int)($a['evidence_invoice_message_id']??0);
     if ($chat!==(int)$p['user_id'] || $chat<=0 || $message<=0 || !function_exists('bot')) return false;
-    if (achbotApiPaymentTerminal($p) || !in_array($p['state'],['pending','have_sent'],true))
+    if (achbotApiPaymentTerminal($p) || !in_array($p['state'],['pending','have_sent'],true) ||
+        ($p['state']==='pending' && !achbotPayUxInvoiceOpen($a)))
         $body=achbotPayUxStatusText($p,$a);
     else {
         $body=achbotApiPaymentInvoiceText($c);
         if ($body==='') return false;
     }
-    $keys=achbotApiPaymentKeyboard($c);$digest=hash('sha256',$body."\n".$keys);
+    $keys=achbotManualReceiptKeyboard($p,$a);$digest=hash('sha256',$body."\n".$keys);
     if (($a['evidence_invoice_digest']??null)===$digest) return true;
     try {
         $response=bot('editMessageText',['chat_id'=>$chat,'message_id'=>$message,'text'=>$body,'parse_mode'=>'HTML','reply_markup'=>$keys,'disable_web_page_preview'=>true]);
@@ -372,7 +350,7 @@ function achbotApiPaymentCheckBank(mysqli $db,array $claim,callable $settle): st
         $proof=$r['proof']??achbotPaymentEvidenceGetProof($db,$id);
         return is_array($proof)?$settle($db,$id,$proof):'review';
     }
-    if(time()>(int)$profile['issued_at']+(int)$profile['horizon_seconds'])return 'manual';
+    if(time()>=(int)($profile['search_expires_at']??0))return 'manual';
     // Keep original proof/uniqueness/admission logic independent from search.
     $inspect=static function(array $rows) use ($db,$a,$profile,$id,$settle): ?string {
         foreach($rows as $raw) {
@@ -636,7 +614,7 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
         $apiMethods=achbotCreditMethodSqlList('api_checker');
         $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
                 WHERE a.evidence_profile IS NOT NULL AND a.provider IN ($apiMethods)
-                  AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>'' AND a.wallet_credit_entry_id IS NULL
+                  AND a.invoice_expires_at IS NOT NULL AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>'' AND a.wallet_credit_entry_id IS NULL
                   AND (a.evidence_next_check_at IS NULL OR a.evidence_next_check_at<=NOW())
                   AND (a.evidence_state='proven' OR
                        (p.state<>'declined' AND (a.evidence_state IS NULL OR a.evidence_state NOT IN ('invalid_code','manual')) AND
@@ -672,7 +650,7 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
         // UI convergence is independent of evidence polling/finality/leases.
         $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
             WHERE a.evidence_profile IS NOT NULL AND a.provider IN ($apiMethods)
-              AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>''
+              AND a.invoice_expires_at IS NOT NULL AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>''
             ORDER BY CASE WHEN p.state='paid'
                     AND (a.evidence_projection_checked_at IS NULL OR
                          a.updated_at>a.evidence_projection_checked_at)

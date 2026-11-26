@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import json
 from pathlib import Path
 import subprocess
@@ -59,17 +59,16 @@ $GLOBALS['botState']=$states+['cartToCartState'=>'on','giftCardState'=>'on','man
 if (array_key_exists('report_channel',$spec)) $GLOBALS['botState']['rewardChannel']=$spec['report_channel'];
 if (!($spec['api']??false)) {$GLOBALS['botState']['smsApiVerifyState']='off';$GLOBALS['botState']['giftApiVerifyState']='off';}
 try {
+    if (isset($spec['issued_time'])) $db->query('SET timestamp='.(int)$spec['issued_time']);
+    if (isset($spec['random_seed'])) mt_srand((int)$spec['random_seed']);
     $result=match ($spec['op']) {
         'attention'=>achbotGatewayAttentionCaseOpen($db,$id),
+        'expire'=>achbotPayUxExpireInvoice($db,$id,(int)$spec['clock']),
+        'receipt_deadline'=>achbotPayUxReceiptDeadline($spec['attempt']),
         'maintain'=>achbotApiPaymentMaintain($db,(int)($spec['limit']??1)),
         'duplicate_guard'=>(static function() use ($db,$pay,$spec) {
             $GLOBALS['botState']=array_replace($GLOBALS['botState'],$spec['policy']??[]);
             return duplicateReceiptGuard($db,$pay,(int)($spec['clock']??time()));
-        })(),
-        'timer_sweep'=>(static function() use ($db) {
-            $connection=$db;$botState=['cartToCartAutoAcceptState'=>'on'];
-            require dirname($GLOBALS['argv'][1]).'/AutomaticReceipts.php';
-            return true;
         })(),
         'reject'=>(static function() use ($db,$id,$pay,$spec) {
             $db->begin_transaction();
@@ -309,9 +308,10 @@ def main():
                 result(mode,'issue',pid,method='bank_transfer')
                 submit(mode,pid,'bank_transfer','fixture-timer')
                 b=balance()
-                assert result(mode,'approve',pid,basis='bank_timer',actor=0)['funding']=='wallet_only' and balance()==b+1000
+                assert run(mode,'approve',pid,basis='bank_timer',actor=0)['ok'] is False and balance()==b
+                assert result(mode,'approve',pid)['funding']=='wallet_only' and balance()==b+1000
                 assert roles(pid)=='customer,receipt_primary,service_admin,service_channel',roles(pid)
-                case('actual_explicit_timer')
+                case('retired_timer_cannot_credit')
                 # The real bank checker must find and consume exactly the
                 # provider-owned original SMS, then use the common funding
                 # transaction even when the local service is invalidated.
@@ -343,16 +343,13 @@ def main():
                             assert result(mode,'finish',pid,method=method,file='original-inflight-photo',token=token) is True
                         assert sql(f"SELECT state FROM pays WHERE id={pid}")=='service_superseded'
                         assert result(mode,'attention',pid) is True
-                        if method=='bank_transfer' and not lost:
-                            assert result(mode,'timer_sweep',pid)
-                            assert sql(f"SELECT wallet_credit_basis FROM payment_attempts WHERE pay_row_id={pid}")=='bank_timer'
-                        else:
-                            assert result(mode,'approve',pid)['funding']=='request_invalidated'
+                        assert run(mode,'approve',pid,basis='bank_timer',actor=0)['ok'] is False and balance()==b
+                        assert result(mode,'approve',pid)['funding']=='request_invalidated'
                         assert balance()==b+100 and result(mode,'approve',pid)['credit']['replayed']
                         assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
                         assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='service_debit' AND source_ref='{oid}'")=='0'
                 case('superseded_receiving_ack_and_recovery_all_photo_methods')
-                case('superseded_receipt_preserves_configured_timer_policy')
+                case('superseded_receipt_requires_verified_or_staff_approval')
                 # Typed gift code and receipt claim must commit atomically.
                 name=mode+'-atomic-typed-gift'
                 oid=result(mode,'quote',reference=name,request=q)
@@ -383,15 +380,52 @@ DELIMITER ;
                 assert result(mode,'approve',pid)['funding']=='request_invalidated' and balance()==b+100
                 assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+100
                 case('typed_gift_claim_atomic_and_superseded_recovery')
-                # No NEW evidence may start from an already-invalidated draft.
+                # A closed service can receive original late proof but never a new service.
                 name=mode+'-unstarted-superseded'
                 oid=result(mode,'quote',reference=name,request=q)
                 pid=seed(name,price=100,kind='BUY_SUB')
                 result(mode,'issue',pid,method='bank_transfer',service=oid)
-                sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}")
-                assert result(mode,'begin',pid,file='new-photo') is None
-                assert result(mode,'attention',pid) is False
-                case('superseded_unstarted_receipt_not_reopened')
+                sql(f"UPDATE pays SET state='service_superseded' WHERE id={pid}; UPDATE service_operations SET stage='cancelled' WHERE id={oid}")
+                assert result(mode,'issue',pid,method='bank_transfer',service=oid)['status']=='closed'
+                assert result(mode,'begin',pid,file='new-photo',owner=9002) is None
+                submit(mode,pid,'bank_transfer','original-late-photo')
+                assert result(mode,'attention',pid) is True
+                b=balance()
+                assert result(mode,'approve',pid)['funding']=='request_invalidated' and balance()==b+100
+                assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+100
+                assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
+                case('superseded_unstarted_late_evidence_wallet_only_never_reopens')
+
+                # Deadline is fixed on issuance; settings and repeated clicks do not move it.
+                # Inject only the clock into the genuine expiry transaction.
+                name=mode+'-invoice-expiry'
+                oid=result(mode,'quote',reference=name,request=q)
+                pid=seed(name,price=100,kind='BUY_SUB')
+                result(mode,'issue',pid,method='bank_transfer',service=oid)
+                issued,deadline,grace=map(int,sql(f"SELECT CONCAT(UNIX_TIMESTAMP(created_at),':',invoice_expires_at,':',receipt_grace_seconds) FROM payment_attempts WHERE pay_row_id={pid}").split(':'))
+                assert deadline-issued==21600 and grace==900
+                sql("UPDATE setting SET value=JSON_SET(value,'$.paymentManualHours',1,'$.paymentReceiptGraceMinutes',1) WHERE type='BOT_STATES'")
+                assert result(mode,'issue',pid,method='bank_transfer',service=oid)['status']=='issued'
+                assert result(mode,'start',pid,method='bank_transfer',owner=9002) is False
+                assert result(mode,'start',pid,method='bank_transfer') is True
+                start=int(sql(f"SELECT receipt_started_at FROM payment_attempts WHERE pay_row_id={pid}"))
+                assert result(mode,'start',pid,method='bank_transfer') is True
+                assert sql(f"SELECT CONCAT(invoice_expires_at,':',receipt_grace_seconds,':',receipt_started_at) FROM payment_attempts WHERE pay_row_id={pid}")==f'{deadline}:{grace}:{start}'
+                sql("UPDATE setting SET value=JSON_REMOVE(value,'$.paymentManualHours','$.paymentReceiptGraceMinutes') WHERE type='BOT_STATES'")
+                assert result(mode,'receipt_deadline',attempt={'invoice_expires_at':deadline,'receipt_grace_seconds':grace,'receipt_started_at':deadline-1})==deadline-1+grace
+                assert result(mode,'receipt_deadline',attempt={'invoice_expires_at':deadline,'receipt_grace_seconds':grace,'receipt_started_at':deadline})==deadline
+                assert result(mode,'expire',pid,clock=deadline-1) is False
+                assert result(mode,'expire',pid,clock=deadline) is True
+                assert result(mode,'expire',pid,clock=deadline+1) is False
+                assert sql(f"SELECT state FROM pays WHERE id={pid}")=='expired'
+                assert result(mode,'issue',pid,method='bank_transfer',service=oid)['status']=='closed'
+                assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
+                submit(mode,pid,'bank_transfer','late-expired-original-photo')
+                b=balance()
+                assert result(mode,'approve',pid)['funding']=='request_invalidated' and balance()==b+100
+                assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+100
+                assert sql(f"SELECT stage FROM service_operations WHERE id={oid}")=='cancelled'
+                case('pinned_deadline_nonextendable_grace_late_wallet_once')
                 for method in ('bank_transfer','gift_card'):
                     name=mode+'-started-superseded-'+method
                     oid=result(mode,'quote',reference=name,request=q)
@@ -521,29 +555,27 @@ DELIMITER ;
                 case('current_review_cooldown_does_not_block_original_recovery')
 
                 price+=100
-                old=seed(mode+'-cooldown-timer',price=price)
-                result(mode,'issue',old,method='bank_transfer')
-                submit(mode,old,'bank_transfer','cooldown-timer-photo')
-                result(mode,'approve',old,basis='bank_timer',actor=0)
                 historical=seed(mode+'-cooldown-historical',price=price)
                 sql(f"UPDATE pays SET state='approved',request_date={now-30} WHERE id={historical}")
                 fresh=seed(mode+'-cooldown-automatic-fresh',price=price)
                 result(mode,'issue',fresh,method='bank_transfer')
                 assert result(mode,'duplicate_guard',fresh,clock=now) is None
-                case('historical_and_automatic_payments_do_not_create_manual_cooldown')
+                case('historical_payments_do_not_create_manual_cooldown')
 
                 # A corrupt current profile can fail before obtaining a claim.
                 # It must not permanently occupy the only worker/projection
                 # slot while another legitimate payment is ready.
                 sql("UPDATE payment_attempts SET evidence_next_check_at=DATE_ADD(NOW(),INTERVAL 1 DAY),evidence_projection_checked_at=NOW() WHERE evidence_profile IS NOT NULL")
-                historic=seed(mode+'-historical-projection',price=7381)
+                queue_base=700000 if mode=='strict' else 800000
+                historic=seed(mode+'-historical-projection',price=queue_base+1000)
                 result(mode,'issue',historic,method='bank_transfer',api=True)
                 sql(f"UPDATE payment_attempts SET wallet_invoice_sha256=NULL WHERE pay_row_id={historic}")
-                bad=seed(mode+'-bad-profile',price=7382)
+                bad=seed(mode+'-bad-profile',price=queue_base+3000)
                 result(mode,'issue',bad,method='bank_transfer',api=True)
                 submit(mode,bad,'bank_transfer','bad-profile-photo',api=True)
                 sql(f"UPDATE payment_attempts SET evidence_profile='fixture-corrupt-profile',evidence_next_check_at=NOW()-INTERVAL 10 MINUTE WHERE pay_row_id={bad}")
-                good=seed(mode+'-healthy-behind-bad',price=7383)
+                good_price=queue_base+5000
+                good=seed(mode+'-healthy-behind-bad',price=good_price)
                 r=result(mode,'issue',good,method='bank_transfer',api=True)
                 submit(mode,good,'bank_transfer','healthy-profile-photo',api=True)
                 ident='102' if mode=='strict' else '202'
@@ -557,11 +589,69 @@ DELIMITER ;
                 assert balance()==b
                 assert sql(f"SELECT evidence_next_check_at>NOW() AND evidence_projection_checked_at IS NOT NULL FROM payment_attempts WHERE pay_row_id={bad}")=='1'
                 assert sql(f"SELECT evidence_projection_checked_at IS NULL FROM payment_attempts WHERE pay_row_id={historic}")=='1'
-                assert result(mode,'maintain',good)['checked']==1
-                assert balance()==b+7383 and server.consumes[ident]==1
+                queue_result=result(mode,'maintain',good)
+                assert queue_result['checked']==1,queue_result
+                actual_balance=balance()
+                assert actual_balance==b+good_price and server.consumes.get(ident,0)==1,(
+                    mode,queue_result,actual_balance,b+good_price,server.consumes.get(ident,0),
+                    sql(f"SELECT CONCAT_WS(':',stage,evidence_state,COALESCE(wallet_credit_entry_id,0)) FROM payment_attempts WHERE pay_row_id={good}"))
                 assert sql(f"SELECT evidence_projection_checked_at IS NOT NULL FROM payment_attempts WHERE pay_row_id={good}")=='1'
                 assert sql(f"SELECT wallet_credit_entry_id IS NULL AND evidence_profile='fixture-corrupt-profile' FROM payment_attempts WHERE pay_row_id={bad}")=='1'
                 case('api_maintenance_rotates_broken_pin_and_skips_historical_projection')
+
+                # Isolate the scheduler test above from random quote overlap,
+                # but explicitly preserve the independent collision guard. A
+                # matching SMS must not settle two original invoices, including
+                # when the competing original pin is no longer readable.
+                shared_price=queue_base+10000
+                competing=seed(mode+'-exact-sms-competing',price=shared_price)
+                candidate=seed(mode+'-exact-sms-candidate',price=shared_price)
+                collision_quotes=[result(mode,'issue',p,method='bank_transfer',api=True,random_seed=1729)
+                                  for p in (competing,candidate)]
+                assert collision_quotes[0]['amount']==collision_quotes[1]['amount'],collision_quotes
+                for p in (competing,candidate): submit(mode,p,'bank_transfer','collision-photo',api=True)
+                ident='32000' if mode=='strict' else '33000'
+                nowdt=datetime.now(timezone.utc)
+                server.messages[ident]=dict(id=int(ident),public_uid='UID'+ident,provider='BANK_FIXTURE',provider_sms_id='sms'+ident,
+                    sender='BANK',mobile_source='phone',bank_key='fixture',rule_id=7,amount=int(float(collision_quotes[1]['amount'])),display_unit='toman',
+                    sms_date=nowdt.strftime('%Y-%m-%d'),sms_time=nowdt.strftime('%H:%M:%S'),created_at=nowdt.strftime('%Y-%m-%d %H:%M:%S'),status='ready')
+                b=balance()
+                assert result(mode,'check',candidate)=='review'
+                assert balance()==b and server.consumes.get(ident,0)==0
+                sql(f"UPDATE payment_attempts SET evidence_profile='fixture-corrupt-overlapping-profile' WHERE pay_row_id={competing}")
+                sql(f"UPDATE payment_attempts SET evidence_next_check_at=NOW() WHERE pay_row_id={candidate}")
+                assert result(mode,'check',candidate)=='review'
+                assert balance()==b and server.consumes.get(ident,0)==0
+                del server.messages[ident]
+                case('same_exact_sms_amount_with_competing_or_corrupt_original_never_auto_credits')
+
+                # Source-issued old invoices: transfer may be timely even
+                # when first submitted after closure. The SMS search duration
+                # does not extend the actual transfer window.
+                for offset,expected in [(0,'settled'),(1,'monitoring')]:
+                    late=seed(mode+'-delayed-transfer-'+str(offset),price=queue_base+20000+offset*2000)
+                    issued_time=int(datetime.now(timezone.utc).timestamp())-7*3600
+                    r=result(mode,'issue',late,method='bank_transfer',api=True,issued_time=issued_time)
+                    deadline=int(sql(f"SELECT invoice_expires_at FROM payment_attempts WHERE pay_row_id={late}"))
+                    assert deadline==issued_time+21600 and r['status']=='closed'
+                    assert result(mode,'expire',late,clock=deadline) is True
+                    submit(mode,late,'bank_transfer','delayed-transfer-photo',api=True)
+                    ident=str((30000 if mode=='strict' else 31000)+offset)
+                    transfer=datetime.fromtimestamp(deadline+offset,timezone.utc)
+                    received=datetime.now(timezone.utc)
+                    server.messages[ident]=dict(id=int(ident),public_uid='UID'+ident,provider='BANK_FIXTURE',provider_sms_id='sms'+ident,
+                        sender='BANK',mobile_source='phone',bank_key='fixture',rule_id=7,amount=int(float(r['amount'])),display_unit='toman',
+                        sms_date=transfer.strftime('%Y-%m-%d'),sms_time=transfer.strftime('%H:%M:%S'),created_at=received.strftime('%Y-%m-%d %H:%M:%S'),status='ready')
+                    b=balance()
+                    assert result(mode,'check',late)==expected
+                    if offset==0:
+                        assert balance()==b+queue_base+20000 and server.consumes[ident]==1
+                        assert result(mode,'check',late)=='settled' and server.consumes[ident]==1
+                    else:
+                        assert balance()==b and server.consumes.get(ident,0)==0
+                        assert result(mode,'attention',late) is True
+                    del server.messages[ident]
+                case('source_issued_expiry_delayed_sms_exact_transfer_boundary_and_review')
 
                 # More than four exact-amount pages is a scheduling budget,
                 # never an operator-only threshold or permanent first-page loop.
@@ -571,7 +661,6 @@ DELIMITER ;
                 first=10000 if mode=='strict' else 20000
                 unit='toman' if mode=='strict' else 'rial'
                 multiplier=1 if unit=='toman' else 10
-                from datetime import timedelta
                 nowdt=datetime.now(timezone.utc).replace(microsecond=0)
                 older=nowdt-timedelta(minutes=10)
                 for n in range(401):
@@ -589,7 +678,7 @@ DELIMITER ;
                 assert result(mode,'check',scan)=='settled' and server.consumes[str(first+400)]==1
                 for n in range(401):del server.messages[str(first+n)]
                 case('bank_filtered_search_resumes_after_page_budget')
-            assert sum(server.consumes.values())==8 and server.gift_consumes==2
+            assert sum(server.consumes.values())==10 and server.gift_consumes==2
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
     report=dict(complete=True,cases=len(cases),checks=cases,owned_socket_mariadb=True,
         actual_protected_api_http=True,actual_manual_receipt_ack_contract=True,external_requests=0,production_effects=0)

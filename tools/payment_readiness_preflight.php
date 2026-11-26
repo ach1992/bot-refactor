@@ -218,10 +218,7 @@ function achbotPreflightApiReadiness(array $state,array $keys): void {
             ?base64_decode(substr($credential,7),true):false;
         $present=is_string($envelope) && strlen($envelope)>=29 &&
             is_string($url) && achbotPaymentEvidenceBaseUrl($url,$method)!==null;
-        if ($method==='bank_transfer') {
-            $hours=achbotPaymentEvidenceInteger($keys['smsApiHorizonHours']??null);
-            $present=$present && $hours!==null && $hours<=intdiv(PHP_INT_MAX,3600);
-        } else {
+        if ($method==='gift_card') {
             $id=$keys['giftApiKeyId']??null;
             $present=$present && is_string($id) && $id!=='' &&
                 achbotPaymentEvidenceNormalizeSetting('giftApiKeyId',$id)===$id &&

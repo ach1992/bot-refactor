@@ -12,15 +12,15 @@ $root=$argv[1];$socket=$argv[2];$dbName=$argv[3];$spec=json_decode($argv[4],true
 require $root.'/src/Admin/InstanceContent.php';
 if(($spec['mode']??'')==='pure'){
     $checks=[];$check=static function($ok,$label)use(&$checks){if(!$ok)throw new RuntimeException($label);$checks[]=$label;};
-    $check(achbotInstanceInputHtml('متن <b> & "')==='متن &lt;b&gt; &amp; &quot;','literal_html_escaped');
-    $check(achbotInstanceInputHtml('🔥 سلام & <tag>',[['type'=>'bold','offset'=>3,'length'=>4]])==='🔥 <b>سلام</b> &amp; &lt;tag&gt;','utf16_emoji_entities');
-    $check(achbotInstanceInputHtml('سلام',[['type'=>'bold','offset'=>0,'length'=>4],['type'=>'italic','offset'=>0,'length'=>4]])==='<b><i>سلام</i></b>','nested_entities');
-    $check(achbotInstanceInputHtml('abcd',[['type'=>'bold','offset'=>0,'length'=>3],['type'=>'italic','offset'=>1,'length'=>3]])===null,'crossing_entities_rejected');
-    $check(achbotInstanceInputHtml('🔥 متن',[['type'=>'bold','offset'=>1,'length'=>1]])===null,'surrogate_split_rejected');
-    $check(achbotInstanceInputHtml('لینک',[['type'=>'text_link','offset'=>0,'length'=>4,'url'=>'javascript:alert(1)']])===null,'unsafe_entity_url_rejected');
-    $check(achbotInstanceInputHtml('لینک',[['type'=>'text_link','offset'=>0,'length'=>4,'url'=>'https://example.com/?a=1&b=2']])==='<a href="https://example.com/?a=1&amp;b=2">لینک</a>','entity_url_attribute_escaped');
-    $check(achbotInstanceInputHtml('')===null&&achbotInstanceInputHtml(str_repeat('x',3001))===null,'input_bounds');
-    $check(achbotInstanceInputHtml(str_repeat('🔥',1501))===null,'utf16_input_bound');
+    $check(\AchBot\Telegram\Presentation\inputHtml('متن <b> & "')==='متن &lt;b&gt; &amp; &quot;','literal_html_escaped');
+    $check(\AchBot\Telegram\Presentation\inputHtml('🔥 سلام & <tag>',[['type'=>'bold','offset'=>3,'length'=>4]])==='🔥 <b>سلام</b> &amp; &lt;tag&gt;','utf16_emoji_entities');
+    $check(\AchBot\Telegram\Presentation\inputHtml('سلام',[['type'=>'bold','offset'=>0,'length'=>4],['type'=>'italic','offset'=>0,'length'=>4]])==='<b><i>سلام</i></b>','nested_entities');
+    $check(\AchBot\Telegram\Presentation\inputHtml('abcd',[['type'=>'bold','offset'=>0,'length'=>3],['type'=>'italic','offset'=>1,'length'=>3]])===null,'crossing_entities_rejected');
+    $check(\AchBot\Telegram\Presentation\inputHtml('🔥 متن',[['type'=>'bold','offset'=>1,'length'=>1]])===null,'surrogate_split_rejected');
+    $check(\AchBot\Telegram\Presentation\inputHtml('لینک',[['type'=>'text_link','offset'=>0,'length'=>4,'url'=>'javascript:alert(1)']])===null,'unsafe_entity_url_rejected');
+    $check(\AchBot\Telegram\Presentation\inputHtml('لینک',[['type'=>'text_link','offset'=>0,'length'=>4,'url'=>'https://example.com/?a=1&b=2']])==='<a href="https://example.com/?a=1&amp;b=2">لینک</a>','entity_url_attribute_escaped');
+    $check(\AchBot\Telegram\Presentation\inputHtml('')===''&&\AchBot\Telegram\Presentation\inputHtml(str_repeat('x',3001))===str_repeat('x',3001),'shared_input_no_template_limits');
+    $check(\AchBot\Telegram\Presentation\inputHtml(str_repeat('🔥',1501))===str_repeat('🔥',1501),'shared_utf16_input');
     $check(str_contains(achbotInstanceMessage(['supportID'=>str_repeat('x',1000),'instanceMessages'=>['start_message'=>str_repeat('SUPPORTID ',5)]],'start_message',1),'تنظیمات ربات'),'expanded_template_bound');
     $check(\AchBot\Presentation\Text\destinationUrl('@support_example')==='https://t.me/support_example','telegram_destination');
     $check(\AchBot\Presentation\Text\supportUrl([],'trusted-fallback')==='trusted-fallback','explicit_support_fallback_contract');

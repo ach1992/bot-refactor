@@ -113,7 +113,7 @@ def main():
         sql("INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled) VALUES(2,'https://fixture.invalid','pasarguard','fixture','fixture',2,REPEAT('a',32),'5.5.1',1)")
         def pay(uid,tag,price,state,typ='BUY_SUB',server=2,plan=7,stamp=None,context=None):
             ctx='NULL'
-            sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id,checkout_draft_context) VALUES ('{tag}',{uid},'{typ}',{price},{now if stamp is None else stamp},'{state}',{server},{plan},{ctx})")
+            sql(f"INSERT INTO pays(hash_id,user_id,type,price,request_date,state,server_id,plan_id,checkout_draft_context,draft_expires_at) VALUES ('{tag}',{uid},'{typ}',{price},{now if stamp is None else stamp},'{state}',{server},{plan},{ctx},{(now if stamp is None else stamp)+1800 if ctx!='NULL' else 'NULL'})")
             pid=int(sql(f"SELECT id FROM pays WHERE hash_id='{tag}'"))
             if context is not None: assert invoke('pin',pay=pid)
             return pid
