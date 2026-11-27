@@ -34,6 +34,7 @@ NATIVE_TESTS = (
     ("current_sales_discount", "test_current_sales_discount.py"),
     ("current_customer_routes", "test_current_customer_routes.py"),
     ("current_support", "test_current_support.py"),
+    ("current_subscription_actions", "test_current_subscription_actions.py"),
     ("manual_checkout_conversation", "test_manual_checkout_conversation.py"),
     ("wallet_first_hosted", "test_wallet_first_hosted.py"),
     ("wallet_first_manual", "test_wallet_first_manual.py"),
@@ -96,6 +97,17 @@ OTHER_TESTS = (
 # Replaced execution families must be covered by affirmative named cases,
 # not merely removed from the roster. See docs/post-v9/CI-VALIDATION.md.
 REQUIRED_CURRENT_CASES = {
+    "current_subscription_actions": (
+        "exact_owned","ambiguous_partial","literal_percent","literal_underscore",
+        "my_scope","inactive","unauthorized_staff","staff_duplicate_exact",
+        "stale_step","stale_temp","current_transition","protected_transition",
+    ),
+    "agency_current": (
+        "request_commits_before_send","independent_original_audience","request_known_failure_recovery_only",
+        "callback_text_not_typed","decision_committed_with_original_notice","approval_notice_retry_only",
+        "old_application_cannot_decide_new","unknown_not_blindly_resent","concurrent_exactly_one_decision",
+        "request_outbox_failure_atomic","discount_preserves_other_scope","old_role_controls_cannot_cancel_pending",
+    ),
     "current_support": (
         "atomic_ticket_body_and_outbox_rollback",
         "durable_private_independent_audience_unknown_not_resent",

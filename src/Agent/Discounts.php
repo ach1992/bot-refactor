@@ -10,7 +10,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
-require_once __DIR__.'/../Admin/Access.php';
+require_once __DIR__.'/State.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
@@ -24,7 +24,9 @@ if (is_string($data ?? null) && preg_match('/\AuserInfoDetails([1-9][0-9]*)\z/D'
     $details = getUserInfoKeys($target);
     if ($details !== null) {
         // A stale Back button may read the profile, but must not clear another wizard.
-        if (($userInfo['step'] ?? '') === 'editAgentDiscountNormal'.$target.'_userinfo') setUser();
+        if (preg_match('/^editAgentDiscountNormal'.(int)$target.'_userinfo_[1-9][0-9]*$/D',(string)($userInfo['step']??'')) &&
+            \AchBot\Telegram\Conversation\source($update??null,(int)$from_id,true))
+            \AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo);
         editText($message_id, \achbotMessage('bot.bot.user_reports.message.e55e5591d2', ['text'=>$target]),
             json_encode(['inline_keyboard'=>$details['inline_keyboard']], JSON_UNESCAPED_UNICODE));
     }
@@ -44,12 +46,12 @@ if(preg_match('/^agentDetails(\d+)/',$data,$match) && $agentDiscountAccess){
 
     editText($message_id,str_replace("AGENT-NAME", $fullName, \achbotMessage('legacy_messages.agent_details')), getAgentDetails($match[1]));
 }
-if(preg_match('/^removeAgent(\d+)/',$data,$match) && $agentDiscountAccess){
-    $stmt = $connection->prepare("UPDATE `users` SET `is_agent` = 0 WHERE `userid` = ?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $stmt->close();
-    
+if(preg_match('/^removeAgent([1-9][0-9]*)$/D',(string)$data,$match) && $agentDiscountAccess &&
+    \AchBot\Telegram\Conversation\source($update??null,(int)$from_id,true)){
+    $uid=achbotAgencyPositive($match[1]);
+    if (!$uid || !achbotAgencyReset($connection,(int)$from_id,$uid,1)) {
+        alert(achbotMessage('legacy_messages.config_not_found'));return;
+    }
     alert(\achbotMessage('legacy_messages.agent_deleted_successfuly'));
     $keys = getAgentsList();
     if($keys != null) editKeys($keys);
@@ -177,64 +179,42 @@ if(preg_match('/^nextAgentDiscountPlan(?<agentId>\d+)_(?<offset>\d+)/',$data,$ma
         editText($message_id,\achbotMessage('agent.discounts.agents_list.message.3c0d01e71b', ['userName' => $userName]),$keys);
     }else alert(\achbotMessage('agent.discounts.agents_list.alert.75b2cb38d6'));
 }
-if(preg_match('/^removePercentOfAgent(?<type>Server|Plan)(?<agentId>\d+)_(?<serverId>\d+)/',$data,$match) && $agentDiscountAccess){
-    $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid` = ?");
-    $stmt->bind_param('i',$match['agentId']);
-    $stmt->execute();
-    $info = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    
-    $discounts = json_decode($info['discount_percent'],true);
-    if($match['type'] == "Server") unset($discounts['servers'][$match['serverId']]);
-    elseif($match['type'] == "Plan") unset($discounts['plans'][$match['serverId']]);
-    
-    $discounts = json_encode($discounts,488);
-    $stmt = $connection->prepare("UPDATE `users` SET `discount_percent` = ? WHERE `userid` = ?");
-    $stmt->bind_param("si", $discounts, $match['agentId']);
-    $stmt->execute();
-    $stmt->close();
-    
+if(preg_match('/^removePercentOfAgent(?<type>Server|Plan)(?<agentId>[1-9][0-9]*)_(?<serverId>[1-9][0-9]*)$/D',(string)$data,$match) && $agentDiscountAccess &&
+    \AchBot\Telegram\Conversation\source($update??null,(int)$from_id,true)){
+    $uid=achbotAgencyPositive($match['agentId']);
+    $info=$uid?achbotAgencyDiscountWrite($connection,(int)$from_id,$uid,$match['type']==='Server'?'servers':'plans',$match['serverId'],null):null;
+    if (!$info) {alert(achbotMessage('legacy_messages.config_not_found'));return;}
+    $userName=htmlspecialchars((string)$info['name'],ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     alert(\achbotMessage('agent.discounts.agents_list.alert.e1e7245408'));
     editText($message_id, str_replace("AGENT-NAME", $userName, \achbotMessage('legacy_messages.agent_discount_settings')), getAgentDiscounts($match['agentId']));
 }
-if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$data,$match) && $agentDiscountAccess){
-    delMessage();
+if(preg_match('/^editAgentDiscount(Server|Plan|Normal)([1-9][0-9]*)_(0|userinfo|[1-9][0-9]*)$/D',(string)$data,$match) && $agentDiscountAccess){
+    $source=\AchBot\Telegram\Conversation\source($update??null,(int)$from_id,true);
+    $uid=achbotAgencyPositive($match[2]);
+    if (!$source || !$uid || ($match[1]==='Normal'?!in_array($match[3],['0','userinfo'],true):achbotAgencyPositive($match[3])===null)) return;
+    if (!\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,$data.'_'.$source->message_id)) return;
+    try {delMessage();}catch(Throwable $ignored){}
     $fromUserInfo = $match[1] === 'Normal' && $match[3] === 'userinfo';
     $editorKeys = $fromUserInfo ? json_encode(['inline_keyboard'=>[[
         ['text'=>\achbotMessage('legacy_buttons.back_button'), 'callback_data'=>'userInfoDetails'.$match[2]]
     ]]], JSON_UNESCAPED_UNICODE) : $cancelKey;
     sendMessage($fromUserInfo ? \achbotMessage('admin_settings.user_info.agent_percent_prompt')
         : \achbotMessage('legacy_messages.send_agent_discount_percent'), $editorKeys, 'html');
-    setUser($data);
+    return;
 }
-if(preg_match('/^editAgentDiscount(Server|Plan|Normal)(\d+)_(.*)/',$userInfo['step'],$match) && $agentDiscountAccess && !isset($update->callback_query) && $text != \achbotMessage('legacy_buttons.cancel')){
-    if(is_string($text) && preg_match('/\A[0-9]{1,3}\z/D', $text) && (int)$text <= 100){
-        $stmt = $connection->prepare("SELECT * FROM users WHERE userid = ? LIMIT 2");
-        $stmt->bind_param('i',$match[2]);
-        $stmt->execute();
-        $users = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
-        $stmt->close();
-        if (count($users) !== 1) {
+if(preg_match('/^editAgentDiscount(Server|Plan|Normal)([1-9][0-9]*)_(0|userinfo|[1-9][0-9]*)_([1-9][0-9]*)$/D',(string)$userInfo['step'],$match) && $agentDiscountAccess && !isset($update->callback_query) && $text != \achbotMessage('legacy_buttons.cancel')){
+    $source=\AchBot\Telegram\Conversation\source($update??null,(int)$from_id,false);
+    if (!$source || $source->message_id<=(int)$match[4]) return;
+    if(is_string($source->text??null) && preg_match('/\A[0-9]{1,3}\z/D',$source->text) && (int)$source->text<=100){
+        $uid=achbotAgencyPositive($match[2]);
+        $scope=match($match[1]) {'Server'=>'servers','Plan'=>'plans','Normal'=>'normal'};
+        $info=$uid?achbotAgencyDiscountWrite($connection,(int)$from_id,$uid,$scope,$scope==='normal'?'':$match[3],(int)$source->text,$userInfo):null;
+        if (!$info) {
             sendMessage(\achbotMessage('bot.bot.user_reports.message.c1d7ab477b'), null, 'HTML');
             return;
         }
-        $info = $users[0];
-        $userName = $info['name'];
-        $discountInfo = json_decode((string)$info['discount_percent'],true);
-        if (!is_array($discountInfo)) $discountInfo = [];
-        $discountInfo += ['normal'=>0, 'servers'=>[], 'plans'=>[]];
-        $percent = (string)(int)$text;
-        if($match[1] == "Server") $discountInfo['servers'][$match[3]] = $percent;
-        elseif($match[1] == "Plan") $discountInfo['plans'][$match[3]] = $percent;
-        elseif($match[1] == "Normal") $discountInfo['normal'] = $percent;
-        $encodedDiscount = json_encode($discountInfo);
-        $targetPk = (int)$info['id'];
-        $stmt = $connection->prepare("UPDATE users SET discount_percent = ? WHERE id = ?");
-        $stmt->bind_param("si", $encodedDiscount, $targetPk);
-        $stmt->execute();
-        $stmt->close();
+        $userName=$info['name'];
         sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
-        setUser();
         if ($match[1] === 'Normal' && $match[3] === 'userinfo') {
             $details = getUserInfoKeys($match[2]);
             if ($details !== null) sendMessage(

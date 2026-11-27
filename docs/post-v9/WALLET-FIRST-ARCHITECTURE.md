@@ -526,3 +526,29 @@ UX](PAYMENT-UX-LIFECYCLE.md), [Native API](PASARGUARD-CONTRACT.md) and
 delivery, not a second implementation roadmap. The approved implementation
 and historical design trail are available in [PR #234](https://github.com/ach1992/bot-refactor/pull/234)
 and its Git history.
+
+### Subscription credentials and user event boundary
+
+The current subscription view reads verified Native data under the existing
+physical account lease. The original purchase's stored links and sealed
+delivery packet are historical evidence, not a mutable current-link cache.
+A verified rotation records the canonical proxy-state digest in its
+existing provider mutation journal. Re-entering the exact verified
+rotation can recover a current read-only view only while the original
+identity and resulting proxy state still match; an uncertain write never
+authorizes a second rotation. The adapter-owned original delivery guard
+prevents a superseded credential packet from being delivered after a
+verified rotation. Actual current detail rendering uses the proven packet.
+Presentation failure is not a provider failure and does not repeat a write.
+
+Welcome and agency notices are source-specific original user events in
+the existing sealed operational followup journal, bound to the actual
+user row and, for an application, the original request generation.
+They share classified independent-recipient dispatch/recovery, not the
+payment/service mutation state machine. No new schema beyond the existing
+055 construction is required by these changes. Transfer planning must
+inventory unresolved agency applications and preserve their actual state;
+old decision buttons are not current executable commands. Any pending
+historical application without a current original event needs an explicit
+authorized current re-entry or separately approved reconciliation before
+activation. Previously sent historical welcome/report states are not replayed.

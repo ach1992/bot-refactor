@@ -197,3 +197,36 @@ transport identity, formatting, keyboard and known-rejection fallback
 without a real Telegram request. Current catalog and wire/HTML parity
 fixtures are part of [CI validation](CI-VALIDATION.md). HTML conversion and acceptance are tracked in [#209](https://github.com/ach1992/bot-refactor/issues/209).
 Any visible change or real transport activation needs separate approval.
+
+### Local conversation ownership and original user events
+
+Use `AchBot\\Telegram\\Conversation` for current private input identity, the
+actor-owned editor transition and transient screen replacement. A callback's
+message text is not new human input. Home/Cancel and migrated editors compare
+the current actor row, step and temp before consuming a draft; protected
+specialized flows retain their own mutation boundaries. A verified edit ACK
+must identify the target, or prove an identical numeric-message no-op.
+A definitely missing/uneditable transient target may be replaced once;
+old disposable prompt cleanup is best effort. Do not remove evidence or
+introduce a global history registry. Telegram reply-keyboard removal and
+inline markup are mutually exclusive; keep the necessary removal separate
+where used. Callback acknowledgements use the normal Bot API transport.
+
+Subscription search prefers a unique exact name and otherwise permits a
+unique literal substring within the current authorized active order scope.
+Ambiguous matches ask for refinement, not an arbitrary first result.
+A refresh is a verified Native observation, never a new purchase or
+rotation. Render the proven result before claiming the exact approved
+refresh/rotation success and retain both approved advice lines.
+
+First-start admission and original customer/staff/channel packets commit
+together in the existing followup journal. Ordinary Home is still available
+if staging is unavailable or another request has already claimed onboarding.
+The first-start flag means admission, not Telegram acceptance. Combined
+welcome and menu stay together unless the actual platform text limit
+requires multiple pages. Agency application controls are bound to the
+original application generation; decisions revalidate that generation and
+current authority and persist the original result notice in the same
+transaction. The existing report audience and worker are reused. Current
+recipient eligibility, classified retry and unknown-delivery handling are
+the same as for other original events. No new table or timer is needed.

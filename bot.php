@@ -30,6 +30,7 @@ define('ACHBOT_VERIFIED_WEBHOOK_ENTRYPOINT', true);
 
 require_once 'config.php';
 require_once __DIR__.'/src/Purchase/Core.php';
+require_once __DIR__.'/src/Telegram/Conversation.php';
 check();
 $robotState = $botState['botState']??"on";
 $inviteReward = achbotInviteReward($connection);
@@ -238,36 +239,20 @@ if($userInfo['phone'] == null && $from_id != $admin && $userInfo['isAdmin'] != t
 
 $paymentHomeMatch=[];
 $paymentHome=is_string($data) && preg_match('/^ph_([A-Za-z0-9_-]{1,50})$/D',$data,$paymentHomeMatch)===1;
-if (preg_match('/^\/([Ss]tart)/', $text) || $text == \achbotMessage('legacy_buttons.back_to_main') || $data == 'mainMenu' || $data == 'evidenceHome' || $paymentHome) {
+if (($isStart??false) || (!isset($update->callback_query) && ($text==='/start' ||
+    $text===\achbotMessage('legacy_buttons.back_to_main'))) ||
+    $data==='mainMenu' || $data==='evidenceHome' || $paymentHome) {
 
-    // Config has an early cached userInfo. A newer moderation ban or an
-    // active DirectGift wizard takes precedence over old menu callbacks.
     $menuActor=(int)$from_id;
-    $menu=$connection->prepare('SELECT id,step FROM users WHERE userid=? LIMIT 2');
-    if (!$menu) return;
-    $menu->bind_param('i',$menuActor);
-    $menuOk=$menu->execute();
-    $menuRows=$menuOk?$menu->get_result()->fetch_all(MYSQLI_ASSOC):[];
-    $menu->close();
-    if (!$menuOk || count($menuRows)!==1 ||
-        (string)$menuRows[0]['step']==='banned' ||
-        str_starts_with((string)$menuRows[0]['step'],'achbotDirectGift') ||
-        str_starts_with((string)$menuRows[0]['step'],'achbotExempt:')) return;
+    require_once __DIR__.'/src/Telegram/Conversation.php';
+    if (!\AchBot\Telegram\Conversation\source($update,$menuActor,isset($update->callback_query))) return;
+    $menuRow=\AchBot\Telegram\Conversation\transitionEditor($connection,$menuActor,$userInfo);
+    if ($menuRow===null) return;
 
     require_once __DIR__.'/src/Telegram/UserProfile.php';
-    achbotRefreshUserProfile($connection, $update ?? null, (int)$from_id);
-
-    require_once __DIR__.'/src/Support/Tickets.php';
-    if (achbotTicketEditor((string)($userInfo['step']??'')) ||
-        achbotTicketEditor((string)$menuRows[0]['step'])) {
-        if (!achbotTicketEditor((string)($userInfo['step']??'')) ||
-            !\AchBot\Telegram\Conversation\source($update,(int)$from_id,isset($update->callback_query)) ||
-            !achbotTicketLeaveStep($connection,(int)$from_id,$userInfo)) return;
+    achbotRefreshUserProfile($connection, $update ?? null, $menuActor);
+    if (!in_array($menuRow['step'],['','none'],true))
         sendMessage(\achbotMessage('legacy_messages.operation_canceled'),$removeKeyboard,'HTML');
-    } else {
-        setUser();
-        setUser("", "temp");
-    }
 
     if ($customerShortcut===null && isset($data) && ($data == "mainMenu" || $data == "evidenceHome" || $paymentHome)) {
         // Legacy Home buttons can be on untracked financial/support evidence.
@@ -277,61 +262,26 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == \achbotMessage('legacy_butt
 
     } else {
 
-        // The database, not an earlier cached userInfo, decides the one-time
-        // welcome/admin notice. Concurrent /start requests may both see an empty
-        // first_start before one of them has sent the welcome.
-        $isFirstStart = false;
-        if ($from_id != $admin && empty($userInfo['first_start'])) {
-            $firstStartId = (int)$menuRows[0]['id'];
-            $firstStart = $connection->prepare(
-                "UPDATE users SET first_start='sent' WHERE id=? AND userid=? "
-                . "AND (first_start IS NULL OR first_start='' OR first_start='0')"
-            );
-            if ($firstStart) {
-                $firstStart->bind_param('ii', $firstStartId, $menuActor);
-                $claimed = $firstStart->execute();
-                $isFirstStart = $claimed && $firstStart->affected_rows === 1;
-                $firstStart->close();
-                if (!$claimed) error_log('achbot_first_start_notice_claim_unverified');
-            }
+        $isFirstStart=false;
+        $home=\achbotCurrentMessage('start_message');
+        if ($from_id != $admin && empty($menuRow['first_start'])) {
+            require_once __DIR__.'/src/Telegram/UserEvents.php';
+            $reportKeys=json_encode(['inline_keyboard'=>[[[
+                'text'=>\achbotMessage('legacy_buttons.send_message_to_user'),
+                'callback_data'=>'sendMessageToUser'.$from_id]]]],JSON_THROW_ON_ERROR);
+            $report=strtr(\achbotCurrentMessage('new_member_joined'),[
+                'FULLNAME'=>"<a href='tg://user?id=$from_id'>$first_name</a>",
+                'USERNAME'=>$username,'USERID'=>(string)$from_id]);
+            $combined=\achbotCurrentMessage('user_welcome_message')."\n\n".$home;
+            $isFirstStart=achbotUserWelcomeClaim($connection,$menuActor,(int)$menuRow['id'],
+                $combined,getMainKeys(),$report,$reportKeys)==='claimed';
+            if ($isFirstStart)
+                achbotOperationalReportDispatch($connection,'welcome:'.(int)$menuRow['id'],8.0);
         }
-
-        if ($isFirstStart) {
-
-            $keys = json_encode([
-                'inline_keyboard' => [
-                    [
-                        ['text' => \achbotMessage('legacy_buttons.send_message_to_user'), 'callback_data' => 'sendMessageToUser' . $from_id]
-                    ]
-                ]
-            ]);
-
-            $msg = str_replace(
-                ["FULLNAME", "USERNAME", "USERID"],
-                [
-                    "<a href='tg://user?id=$from_id'>$first_name</a>",
-                    $username,
-                    $from_id
-                ],
-                \achbotCurrentMessage('new_member_joined')
-            );
-
-            achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
-        }
-
-        if ($customerShortcut===null || $isFirstStart) {
-            $home=\achbotCurrentMessage('start_message');
-            if ($isFirstStart) {
-                require_once __DIR__.'/src/Subscription/Presentation.php';
-                $welcome=\achbotCurrentMessage('user_welcome_message');
-                $combined=$welcome."\n\n".$home;
-                // Preserve both configured texts if their combined length exceeds
-                // Telegram's per-message limit. Ordinary onboarding is one message.
-                if (\AchBot\Subscription\Presentation\textLength($combined)<=4096) $home=$combined;
-                else sendMessage($welcome,null,'HTML');
-            }
+        // A failed or concurrent claim does not prevent ordinary navigation.
+        // The winning claim owns the single combined welcome/menu packet.
+        if (!$isFirstStart && $customerShortcut===null)
             sendMessage($home,getMainKeys(),'HTML');
-        }
     }
 
     if ($customerShortcut!==null) {
@@ -1258,7 +1208,7 @@ if($data=="availableServers2" && ($botState['individualExistence']??'off')==='on
     editText($message_id, \achbotMessage('bot.bot.process_callback_query.message.e8f25aae49'), json_encode(['inline_keyboard'=>$keys]));
     return;
 }
-require __DIR__ . '/src/Agent/Applications.php';
+if ((require __DIR__ . '/src/Agent/Applications.php') === null) return;
 if ((require __DIR__ . '/src/Plans/Intervals.php') === null) return;
 require __DIR__ . '/src/Admin/Bans.php';
 if($data=="mainMenuButtons" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -1802,8 +1752,8 @@ if($data == "managePanel" and (($from_id == $admin || $userInfo['isAdmin'] == tr
             $connection, (int)$from_id, $walletStepBeforePanel, (int)$admin
         );
     } else {
-        // Preserve the existing nonfinancial panel-navigation behavior.
-        setUser();
+        if (!\AchBot\Telegram\Conversation\source($update,(int)$from_id,true) ||
+            \AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo)===null) return;
     }
     $msg = \achbotMessage('bot.bot.manage_panel.msg.5db5d59c90', ['first_name' => $first_name]);
     if ($walletPanelOutcome === 'canceled') {
@@ -1830,22 +1780,13 @@ if($data == 'reciveApplications') {
     $keyboard = array_chunk($keyboard,1);
     editText($message_id, \achbotMessageHtml('bot.bot.recive_applications.message.ec86dead1a', ['supportID' => $supportID]), json_encode(['inline_keyboard'=>$keyboard]), "html");
 }
-if ($text == \achbotMessage('legacy_buttons.cancel')) {
-    // config.php loaded userInfo before any concurrent direct-gift callback.
-    // Never let a stale generic CANCEL erase a newer nonce-protected step.
-    try {
-        $legacyCancelAccepted=achbotDirectGiftGuardLegacyCancel(
-            $connection,(int)$from_id,$userInfo);
-    } catch (Throwable $e) {
-        error_log('legacy_cancel_commit_or_identity_unconfirmed');
-        return;
-    }
-    if (!$legacyCancelAccepted) {
-        error_log('legacy_cancel_stale_cached_step');
-        return;
-    }
-    // Cancellation never deletes other administrators' plan rows.
-    sendMessage(\achbotMessage('legacy_messages.waiting_message'), $removeKeyboard, 'HTML');
+if ($text===\achbotMessage('legacy_buttons.cancel') &&
+    \AchBot\Telegram\Conversation\source($update,(int)$from_id,false)) {
+    // Dedicated editors have already handled their own cancel. This ordinary
+    // navigation transition never deletes historical content or a newer step.
+    if (\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo)===null) return;
+    sendMessage(\achbotMessage('legacy_messages.operation_canceled'),$removeKeyboard,'HTML');
     sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');
 }
+
 ?>

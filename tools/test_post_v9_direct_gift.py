@@ -220,6 +220,7 @@ function editMarzbanConfig($sid,$change,?array $target=null): object {
     return $result;
 }
 require_once __DIR__.'/src/Purchase/Core.php';
+require_once __DIR__.'/src/Telegram/Conversation.php';
 require __DIR__.'/ingress-source.php';
 // The same source functions defined by the actual config.php are available
 // to every legacy administrative route in the real bot.
@@ -288,14 +289,14 @@ def setup(work: Path, env: dict) -> Path:
            'Current bot.php no longer uses strictly guarded direct-gift source')
     # Execute the *actual* final global CANCEL fallback after the protected
     # route; otherwise an obsolete config.php userInfo snapshot can bypass it.
-    legacy_start=bot.rfind("if ($text == \\achbotMessage('legacy_buttons.cancel')) {")
+    legacy_start=bot.rfind("if ($text===\\achbotMessage('legacy_buttons.cancel') &&")
     ensure(legacy_start>end,
            'Actual final legacy CANCEL fallback unavailable or unexpected')
     legacy_end=bot.index('\n?>',legacy_start)
     fallback=bot[legacy_start:legacy_end]
-    ensure(fallback.count('achbotDirectGiftGuardLegacyCancel(')==1 and
-           fallback.index('achbotDirectGiftGuardLegacyCancel(') <
-               fallback.index("sendMessage(\\achbotMessage('legacy_messages.waiting_message')"),
+    ensure(fallback.count('Conversation\\transitionEditor(')==1 and
+           fallback.index('Conversation\\transitionEditor(') <
+               fallback.index("sendMessage(\\achbotMessage('legacy_messages.operation_canceled')"),
            'Actual final CANCEL no longer guards persisted actor/step before feedback')
     ensure(re.search(r'\bDELETE\s+FROM\s+\x60?server_plans\x60?(?:\s|$)',
                      fallback,re.I) is None,
@@ -334,8 +335,8 @@ def setup(work: Path, env: dict) -> Path:
            'Exemption route precedes IP check')
     (stage/'exemption-route.php').write_text(
         '<?php\n'+config[exemption_start:moderation_start])
-    menu_start=bot.index("if (preg_match('/^\\/([Ss]tart)/'")
-    menu_end=bot.index("if(preg_match('/^sendMessageToUser",menu_start)
+    menu_start=bot.index("$paymentHomeMatch=[];")
+    menu_end=bot.index("if ((require __DIR__.'/src/Finance/Routes/ManualCheckout.php')",menu_start)
     (stage/'main-menu.php').write_text('<?php\n'+bot[menu_start:menu_end])
     manual=(ROOT/'src/Subscription/ManualAccounts.php').read_text()
     manual_start=manual.index('function achbotManualAccountConsumeSelection(')

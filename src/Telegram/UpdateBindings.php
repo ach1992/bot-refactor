@@ -26,12 +26,12 @@ if(isset($update->message)){
 if(isset($update->callback_query)){
     $callbackId = $update->callback_query->id;
     $data = $update->callback_query->data;
-    $text = $update->callback_query->message->text;
+    $text = $update->callback_query->message->text ?? null;
     $message_id = $update->callback_query->message->message_id;
     $chat_id = $update->callback_query->message->chat->id;
     $chat_type = $update->callback_query->message->chat->type;
-    $username = htmlspecialchars($update->callback_query->from->username)?? \achbotMessage('telegram.update_bindings.text.32f665d21c');
+    $username = isset($update->callback_query->from->username)?htmlspecialchars($update->callback_query->from->username): \achbotMessage('telegram.update_bindings.text.32f665d21c');
     $from_id = $update->callback_query->from->id;
-    $first_name = htmlspecialchars($update->callback_query->from->first_name);
-    $markup = json_decode(json_encode($update->callback_query->message->reply_markup->inline_keyboard),true);
+    $first_name = htmlspecialchars($update->callback_query->from->first_name??'');
+    $markup = json_decode(json_encode($update->callback_query->message->reply_markup->inline_keyboard??[]),true);
 }

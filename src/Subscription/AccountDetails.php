@@ -135,7 +135,7 @@ function orderPlanActions(\mysqli $db,array $order): array {
     }
 }
 
-function getUserOrderDetailKeys($id, $offset = 0){
+function getUserOrderDetailKeys($id, $offset = 0, ?object $provenRemote=null){
     global $botState, $botUrl;
     if (!canReadAdminOrderDetails()) return null;
     $order = findOrder($id);
@@ -149,7 +149,6 @@ function getUserOrderDetailKeys($id, $offset = 0){
 
     $remark      = $order['remark'];
     $uuid        = $order['uuid'] ?? "0";
-    $acc_link    = json_decode($order['link'], true);
     $token       = $order['token'];
     $server_id   = $order['server_id'];
     $inbound_id  = $order['inbound_id'];
@@ -170,8 +169,9 @@ function getUserOrderDetailKeys($id, $offset = 0){
     $panelUrl    = $server['panel_url'] ?? '';
     $subLinksRaw = $server['sub_links'] ?? '';
 
-    $renderRemote=achbotSupportsAccount($serverType,$inbound_id)?
-        achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null;
+    if ($provenRemote!==null && !achbotProviderRenderProofValid($provenRemote,$order,$serverType)) return null;
+    $renderRemote=$provenRemote??(achbotSupportsAccount($serverType,$inbound_id)?
+        achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null);
     $traffic     = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id,$renderRemote);
 
     $leftgb      = $traffic['leftgb'] ?? \achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d');
@@ -282,7 +282,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
 }
 
 
-function getOrderDetailKeys($from_id, $id, $offset = 0){
+function getOrderDetailKeys($from_id, $id, $offset = 0, ?object $provenRemote=null){
     global $botState, $botUrl, $userInfo;
     $actor=currentOrderDetailActor();
     if ($actor===null || ((int)$actor['userid']!==(int)$from_id && !canReadAdminOrderDetails())) return null;
@@ -295,7 +295,6 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
 
     $remark      = $order['remark'];
     $uuid        = $order['uuid'] ?? "0";
-    $acc_link    = json_decode($order['link'], true);
     $token       = $order['token'];
     $server_id   = $order['server_id'];
     $inbound_id  = $order['inbound_id'];
@@ -317,8 +316,9 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     $panelUrl    = $server['panel_url'] ?? '';
     $subLinksRaw = $server['sub_links'] ?? '';
 
-    $renderRemote=achbotSupportsAccount($serverType,$inbound_id)?
-        achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null;
+    if ($provenRemote!==null && !achbotProviderRenderProofValid($provenRemote,$order,$serverType)) return null;
+    $renderRemote=$provenRemote??(achbotSupportsAccount($serverType,$inbound_id)?
+        achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null);
     $traffic = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id,$renderRemote);
 
     $found      = $traffic['found'] ?? false;

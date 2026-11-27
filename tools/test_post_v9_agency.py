@@ -1,365 +1,207 @@
 #!/usr/bin/env python3
-"""Post-V9 Issue #12 agency authorization/state regression on owned MariaDB only.
-
-Run actual current src/Agent/Applications.php against the original 23-table
-schema. Telegram is mocked, external network APIs are disabled, and the
-source's unchanged setUser helper is extracted from config.php. Nothing
-contacts a production database, webhook, provider, or payment service.
-"""
+"""Current agency routes, original application generations and durable delivery."""
 from __future__ import annotations
-
 import argparse
-import concurrent.futures
+from concurrent.futures import ThreadPoolExecutor
+import itertools
 import json
+from pathlib import Path
 import subprocess
 import threading
-from pathlib import Path
 
 import database_fixture as owned
-import database_fixture as native
-
-ROOT = Path(__file__).resolve().parents[1]
-DB = owned.NAMES[1]
-
-PHP_DRIVER = r"""<?php
+ROOT=Path(__file__).resolve().parents[1]
+DB=owned.NAMES[1]
+PHP=r'''<?php
 error_reporting(E_ALL);
-set_error_handler(function($level, $message) {
-    throw new ErrorException($message, 0, $level);
-});
-$_SERVER['SCRIPT_FILENAME'] = __FILE__;
-$root = $argv[1];
-$socket = $argv[2];
-$dbname = $argv[3];
-$spec = json_decode($argv[4], true, 512, JSON_THROW_ON_ERROR);
-$connection = new mysqli('localhost', 'root', '', $dbname, 0, $socket);
+set_error_handler(static function($n,$m){throw new ErrorException($m,0,$n);});
+$root=$argv[1];$connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
-$from_id = (int)$spec['actor'];
-$admin = 9001;
-$data = (string)($spec['data'] ?? '');
-$text = (string)($spec['text'] ?? '');
-$message_id = 77;
-$time = 1800000000;
-$username = 'fixture';
-$first_name = 'Fixture';
-$botState = ['rewardChannel' => null];
-$buttonValues = [
-    'approve' => 'Approve', 'decline' => 'Decline', 'approved' => 'Approved',
-    'declined' => 'Declined', 'cancel' => 'Cancel'
-];
-$mainValues = [
-    'agent_setting_message' => 'settings',
-    'request_agency_message' => 'USERNAME NAME USERID',
-    'agency_request_sent' => 'requested',
-    'agency_request_already_sent' => 'already pending',
-    'agency_request_declined' => 'declined',
-    'agency_request_approved' => 'approved',
-    'send_agent_discount_percent' => 'enter percent',
-    'saved_successfuly' => 'saved',
-    'send_only_number' => 'number only',
-    'config_not_found' => 'invalid or stale',
-];
-$cancelKey = 'cancel';
-$GLOBALS['events'] = [];
-function getAgentKeys() { return 'agent'; }
-function getMainKeys() { return 'main'; }
-function alert($value) { $GLOBALS['events'][] = ['alert', $value]; }
-function editText(...$args) { $GLOBALS['events'][] = ['editText', $args]; }
-function editKeys(...$args) { $GLOBALS['events'][] = ['editKeys', $args]; }
-function sendMessage(...$args) {
-    $GLOBALS['events'][] = ['sendMessage', $args];
-}
-$error = null;
-try {
-    $stmt = $connection->prepare('SELECT * FROM users WHERE userid = ? LIMIT 1');
-    $stmt->bind_param('i', $from_id);
-    $stmt->execute();
-    $userInfo = $stmt->get_result()->fetch_assoc() ??
-        ['isAdmin' => 0, 'is_agent' => 0, 'step' => 'none'];
-    $stmt->close();
-    require $argv[5]; // Extracted ORIGINAL setUser only; no production config.
-    require $root . '/src/Agent/Applications.php';
-} catch (Throwable $e) {
-    $error = get_class($e) . ':' . $e->getMessage();
-    // Source-origin location is safe in this synthetic fixture and identifies
-    // which exact SQL site caused any future CI concurrency victim.
-    if ($e instanceof mysqli_sql_exception)
-        $error .= ' code='.(int)$e->getCode().' site='.basename($e->getFile()).':'.$e->getLine();
-}
-echo json_encode(['error' => $error, 'events' => $GLOBALS['events']],
-                 JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
-"""
-
-def sql(work: Path, env: dict, query: str) -> str:
-    return native.sql(work, env, query, DB)
-
-def agency_test_ddl(work: Path, env: dict, ddl: str) -> None:
-    # mariadb -e splits semicolons inside BEGIN/END; pass this single bounded
-    # synthetic DDL statement through mysqli so the whole trigger is atomic.
-    php='$c=new mysqli("localhost","root","",$argv[1],0,$argv[2]);$c->query($argv[3]);'
-    result=subprocess.run(['php','-n','-d','extension=mysqlnd',
-                           '-d','extension=mysqli','-r',php,
-                           DB,str(work/'mysql.sock'),ddl],
-                          cwd=work,env=env,capture_output=True,timeout=10)
-    if result.returncode or result.stderr:
-        raise RuntimeError('Owned trigger fixture DDL failed: '+
-                           repr((result.returncode,result.stderr[-400:])))
-
-def field(work: Path, env: dict, userid: int, column: str) -> str:
-    if column not in ('is_agent', 'isAdmin', 'step', 'discount_percent'):
-        raise ValueError('unapproved test column')
-    return sql(work, env, f'SELECT {column} FROM users WHERE userid={userid} ORDER BY id LIMIT 1').strip()
-
-def state(work: Path, env: dict) -> str:
-    return sql(work, env, '''SELECT id,userid,isAdmin,is_agent,step,
-      COALESCE(discount_percent, 'null'),agent_date FROM users ORDER BY id''')
-
-def execute(work: Path, env: dict, spec: dict) -> dict:
-    disable = ('curl_init,curl_exec,curl_setopt,curl_close,curl_multi_exec,'
-               'fsockopen,pfsockopen,stream_socket_client,file_get_contents,'
-               'shell_exec,exec,system,passthru,popen,proc_open,mail')
-    cmd = ['php', '-n', '-d', 'extension=mysqlnd', '-d', 'extension=mysqli',
-           '-d', 'allow_url_fopen=0', '-d', 'allow_url_include=0',
-           '-d', 'disable_functions=' + disable,
-           str(work / 'agency-driver.php'), str(ROOT),
-           str(work / 'mysql.sock'), DB, json.dumps(spec),
-           str(work / 'set-user.php')]
-    result = subprocess.run(cmd, cwd=work, env=env, capture_output=True, timeout=20)
-    if result.returncode or result.stderr:
-        raise RuntimeError('Native PHP failure: ' +
-                           repr((result.returncode, result.stdout[-400:], result.stderr[-500:])))
-    try:
-        parsed = json.loads(result.stdout)
-    except ValueError as exc:
-        raise RuntimeError('Invalid native PHP output: ' + repr(result.stdout[-800:])) from exc
-    if parsed.get('error'):
-        raise RuntimeError('Current agency handler error: ' + str(parsed['error']))
-    return parsed
-
-def outgoing(results: list[dict], target: int) -> int:
-    return sum(1 for result in results for event in result['events']
-               if event[0] == 'sendMessage' and len(event[1]) > 3
-               and event[1][3] == target)
-
-def main() -> None:
-    import notification_fixture
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--run-disposable', action='store_true', required=True)
-    parser.add_argument('--report', type=Path)
-    args = parser.parse_args()
-    checks = []
-    def passed(name: str, condition: bool) -> None:
-        if not condition:
-            raise RuntimeError('Agency regression: ' + name)
-        checks.append(name)
-
-    with owned.owned_database() as (work, env):
-        # Bootstrap only this current standalone run; imported PHP_DRIVER
-        # remains unchanged for fixtures that provide their own source stage.
-        (work / 'agency-driver.php').write_text(notification_fixture.with_router(PHP_DRIVER))
-        extract = ("require $argv[1]; echo '<?php'.PHP_EOL."
-                   "achbotExtractFunction($argv[2],'setUser');")
-        original_writer = subprocess.check_output(
-            ['php', '-n', '-d', 'extension=tokenizer', '-r', extract,
-             str(ROOT / 'tools/source_scan.php'), str(ROOT / 'config.php')],
-            cwd=work, env=env, timeout=10)
-        (work / 'set-user.php').write_bytes(original_writer)
-
-        tables = sql(work, env, 'SHOW TABLES').splitlines()
-        passed('original_23_table_schema', len(tables) == 23)
-        sql(work, env, """
-            INSERT INTO users (userid,name,username,refcode,wallet,date,isAdmin,first_start)
-            VALUES (1003,'Second applicant','second','0',0,'1700000000',0,'sent');
-            UPDATE users SET is_agent=2 WHERE userid=1003;
-        """)
-        run = lambda actor, data='', text='': execute(work, env,
-            {'actor': actor, 'data': data, 'text': text})
-        sql(work, env, 'UPDATE users SET is_agent=0,step="none" WHERE userid=1001')
-        requested = run(1001, 'requestAgency')
-        passed('existing_request_to_pending', field(work, env, 1001, 'is_agent') == '2'
-               and outgoing([requested], 9001) == 1)
-
-        baseline = state(work, env)
-        denied = run(1003, 'agencyDecline1001')
-        # The real access guard now sends one actor-local denial. No explicit
-        # destination may turn this notice into an applicant notification.
-        passed('nonadmin_decline_denied', state(work, env) == baseline
-               and denied['events'] == [['sendMessage',
-                   ['این بخش برای سطح دسترسی شما فعال نیست.', None, 'HTML']]])
-        for malformed in ('agencyDecline1001extra', 'agencyDecline0', 'agencyDecline-1',
-                          'agencyDecline999999999999999999999999999999',
-                          'agencyDecline1001\n'):
-            result = run(9001, malformed)
-            passed('malformed_' + repr(malformed), state(work, env) == baseline
-                   and outgoing([result], 1001) == 0)
-        missing = run(9001, 'agencyDecline7654321')
-        passed('unknown_applicant_denied', state(work, env) == baseline
-               and outgoing([missing], 7654321) == 0)
-
-        declined = run(9001, 'agencyDecline1001')
-        passed('decline_updates_only_pending_applicant',
-               field(work, env, 1001, 'is_agent') == '-1'
-               and field(work, env, 9001, 'is_agent') == '0'
-               and field(work, env, 9002, 'is_agent') == '0'
-               and outgoing([declined], 1001) == 1)
-        declined_state = state(work, env)
-        replay = run(9001, 'agencyDecline1001')
-        passed('decline_replay_no_side_effects',
-               state(work, env) == declined_state and outgoing([replay], 1001) == 0
-               and not any(e[0] == 'editKeys' for e in replay['events']))
-        sql(work, env, 'UPDATE users SET is_agent=1 WHERE userid=1001')
-        admin_approved_decline = run(9001, 'agencyDecline1001')
-        passed('approved_applicant_cannot_be_declined',
-               field(work, env, 1001, 'is_agent') == '1'
-               and outgoing([admin_approved_decline], 1001) == 0)
-        sql(work, env, 'UPDATE users SET is_agent=2 WHERE userid=1001')
-        delegated = run(9002, 'agencyDecline1001')
-        passed('delegated_admin_can_decline_without_self_mutation',
-               field(work, env, 1001, 'is_agent') == '-1'
-               and field(work, env, 9002, 'is_agent') == '0'
-               and outgoing([delegated], 1001) == 1)
-
-        sql(work, env, 'UPDATE users SET is_agent=2,discount_percent=NULL WHERE userid=1001')
-        start = run(9001, 'agencyApprove1001')
-        passed('approve_start_pending_only',
-               field(work, env, 9001, 'step') == 'agencyApprove1001_77'
-               and field(work, env, 1001, 'is_agent') == '2'
-               and any(e[0] == 'sendMessage' for e in start['events']))
-        approved = run(9001, text='12')
-        passed('approve_save_conditional_target',
-               field(work, env, 1001, 'is_agent') == '1'
-               and field(work, env, 9001, 'is_agent') == '0'
-               and field(work, env, 9001, 'step') == 'none'
-               and json.loads(field(work, env, 1001, 'discount_percent')) == {'normal': '12'}
-               and outgoing([approved], 1001) == 1)
-        replay_approval = run(9001, 'agencyApprove1001')
-        passed('stale_approve_start_denied',
-               field(work, env, 9001, 'step') == 'none'
-               and outgoing([replay_approval], 1001) == 0)
-        sql(work, env, "UPDATE users SET is_agent=2 WHERE userid=1001")
-        run(9001, 'agencyApprove1001')
-        run(9002, 'agencyDecline1001')
-        stale_save = run(9001, text='15')
-        passed('decline_wins_over_stale_approve_save',
-               field(work, env, 1001, 'is_agent') == '-1'
-               and field(work, env, 9001, 'step') == 'none'
-               and outgoing([stale_save], 1001) == 0)
-        sql(work, env, "UPDATE users SET is_agent=2,step='agencyApprove1001_77' WHERE userid=1001")
-        before_spoof = state(work, env)
-        spoof = run(1001, text='20')
-        passed('nonadmin_cannot_save_spoofed_approval_step',
-               state(work, env) == before_spoof and outgoing([spoof], 1001) == 0)
-        sql(work, env, "UPDATE users SET step='none' WHERE userid=1001")
-
-        sql(work, env, """UPDATE users SET is_agent=2 WHERE userid=1001;
-            UPDATE users SET step='agencyApprove1001_77' WHERE userid IN (9001,9002)""")
-        # Make callbacks genuinely enter at the same time rather than
-        # accidentally serializing process launch on a fast runner.
-        start_barrier=threading.Barrier(2)
-        def concurrent_save(actor):
-            start_barrier.wait(timeout=6)
-            return run(actor, '', '12')
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-            futures = [pool.submit(concurrent_save, actor) for actor in (9001,9002)]
-            competing = [future.result() for future in futures]
-        passed('concurrent_admin_approval_exactly_one',
-               field(work, env, 1001, 'is_agent') == '1'
-               and outgoing(competing, 1001) == 1
-               and field(work, env, 9001, 'is_agent') == '0'
-               and field(work, env, 9002, 'is_agent') == '0')
-
-        # V1 exact-head PHP8.4 CI saw mysql errno 1213 while two admins
-        # saved the same pending applicant. SQLSTATE from a REAL MariaDB
-        # BEFORE UPDATE trigger deterministically exercises both bounded
-        # retry success and persistent victim fail-closed. This models the
-        # database-reported error code (not a fabricated Python exception).
-        sql(work,env,"UPDATE users SET is_agent=2,discount_percent=NULL WHERE userid=1001;"
-                     "UPDATE users SET step='agencyApprove1001_77' WHERE userid=9001")
-        sql(work,env,"CREATE TABLE agency_fixture_deadlock_counter "
-                     "(n INT NOT NULL) ENGINE=MyISAM")
-        sql(work,env,"INSERT INTO agency_fixture_deadlock_counter (n) VALUES (0)")
-        trigger_name='agency_fixture_one_victim'
-        trigger_ddl=(
-            "CREATE TRIGGER "+trigger_name+" BEFORE UPDATE ON users FOR EACH ROW "
-            "BEGIN IF OLD.userid=1001 AND OLD.is_agent=2 AND NEW.is_agent=1 THEN "
-            "UPDATE agency_fixture_deadlock_counter SET n=n+1; "
-            "IF (SELECT n FROM agency_fixture_deadlock_counter LIMIT 1)=1 THEN "
-            "SIGNAL SQLSTATE '40001' SET MYSQL_ERRNO=1213, "
-            "MESSAGE_TEXT='synthetic_once_deadlock_victim'; END IF; "
-            "END IF; END"
-        )
-        try:
-            agency_test_ddl(work,env,trigger_ddl)
-            one_victim=run(9001,text='12')
-            passed('v1_single_database_deadlock_victim_retries_exact_once_before_effect',
-                field(work,env,1001,'is_agent')=='1' and
-                outgoing([one_victim],1001)==1 and
-                field(work,env,9001,'step')=='none' and
-                sql(work,env,'SELECT n FROM agency_fixture_deadlock_counter').strip()=='2')
-        finally:
-            sql(work,env,'DROP TRIGGER IF EXISTS '+trigger_name)
-            sql(work,env,'DROP TABLE IF EXISTS agency_fixture_deadlock_counter')
-
-        sql(work,env,"UPDATE users SET is_agent=2,discount_percent=NULL WHERE userid=1001;"
-                     "UPDATE users SET step='agencyApprove1001_77' WHERE userid=9001")
-        always_name='agency_fixture_persistent_victim'
-        always_ddl=(
-            "CREATE TRIGGER "+always_name+" BEFORE UPDATE ON users FOR EACH ROW "
-            "BEGIN IF OLD.userid=1001 AND OLD.is_agent=2 AND NEW.is_agent=1 THEN "
-            "SIGNAL SQLSTATE '40001' SET MYSQL_ERRNO=1213, "
-            "MESSAGE_TEXT='synthetic_persistent_deadlock_victim'; END IF; END"
-        )
-        try:
-            agency_test_ddl(work,env,always_ddl)
-            persistent=run(9001,text='12')
-            passed('v1_repeated_database_deadlock_victim_fails_closed_no_role_or_notice',
-                field(work,env,1001,'is_agent')=='2' and
-                outgoing([persistent],1001)==0 and
-                field(work,env,9001,'step')=='none')
-        finally:
-            sql(work,env,'DROP TRIGGER IF EXISTS '+always_name)
-        sql(work,env,"UPDATE users SET is_agent=2,discount_percent=NULL WHERE userid=1001;"
-                     "UPDATE users SET step='agencyApprove1001_77' WHERE userid=9001")
-        timeout_name='agency_fixture_lock_wait_timeout'
-        timeout_ddl=(
-            "CREATE TRIGGER "+timeout_name+" BEFORE UPDATE ON users FOR EACH ROW "
-            "BEGIN IF OLD.userid=1001 AND OLD.is_agent=2 AND NEW.is_agent=1 THEN "
-            "SIGNAL SQLSTATE 'HY000' SET MYSQL_ERRNO=1205, "
-            "MESSAGE_TEXT='synthetic_lock_wait_timeout'; END IF; END"
-        )
-        try:
-            agency_test_ddl(work,env,timeout_ddl)
-            timeout=run(9001,text='12')
-            passed('v1_database_lock_wait_timeout_no_role_or_notice',
-                field(work,env,1001,'is_agent')=='2' and
-                outgoing([timeout],1001)==0 and
-                field(work,env,9001,'step')=='none')
-        finally:
-            sql(work,env,'DROP TRIGGER IF EXISTS '+timeout_name)
-        passed('v1_synthetic_schema_restored_no_trigger_or_table_leak',
-            len(sql(work,env,'SHOW TABLES').splitlines())==23 and
-            not sql(work,env,'SHOW TRIGGERS').strip())
-
-        sql(work, env, """
-            UPDATE users SET is_agent=2 WHERE userid=1001;
-            INSERT INTO users (userid,name,username,refcode,wallet,date,isAdmin,first_start,is_agent)
-            VALUES (1001,'Duplicate','duplicate','0',0,'1700000000',0,'sent',2);
-        """)
-        before_duplicate = state(work, env)
-        duplicate = run(9001, 'agencyDecline1001')
-        passed('ambiguous_duplicate_userid_fails_closed',
-               state(work, env) == before_duplicate and outgoing([duplicate], 1001) == 0)
-
-    report = {
-        'complete': True, 'cases': len(checks), 'schema_tables': 23,
-        'original_setUser_extracted': True, 'actual_current_handler_executed': True,
-        'synthetic_socket_only': True, 'admin_decline_targeted': True,
-        'approval_stale_and_replay_guarded': True, 'concurrent_approval_guarded': True,
-        'real_telegram_marzban_payment_calls': 0, 'production_tested': False,
-        'details': checks,
+$spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
+mysqli_report(($spec['strict']??true)?MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT:MYSQLI_REPORT_OFF);
+$from_id=(int)$spec['actor'];$admin=9001;$data=$spec['data']??'';$text=$spec['text']??'';
+$telegramWebhookSecret='Synthetic_Agency_Event_2026';$botState=['rewardChannel'=>'@fixture_report','supportID'=>'@support_fixture'];
+$message_id=(int)($spec['message']??($data!==''?77:78));$time=time();$username='fixture';$first_name='Fixture';
+$cancelKey='{"keyboard":[]}';$removeKeyboard='{"remove_keyboard":true}';$events=[];
+$chat=(object)['id'=>(int)($spec['chat']??$from_id),'type'=>$spec['chat_type']??'private'];
+$sender=(object)['id'=>$from_id,'first_name'=>'Fixture'];
+$update=$data!==''?(object)['update_id'=>$spec['update'],'callback_query'=>(object)['id'=>'fixture',
+    'from'=>$sender,'data'=>$data,'message'=>(object)['message_id'=>$message_id,'chat'=>$chat,'text'=>$text]]]:
+    (object)['update_id'=>$spec['update'],'message'=>(object)['from'=>$sender,'chat'=>$chat,'message_id'=>$message_id,'text'=>$text]];
+$callbackId=$update->callback_query->id??null;
+function getAgentKeys(){return '{}';}
+function getAgentDiscounts($id){return '{}';}
+function getAgentsList(){return '{}';}
+function getRejectedAgentList(){return '{}';}
+function getUserInfoKeys($id){return ['inline_keyboard'=>[]];}
+function delMessage(){throw new RuntimeException('fixture disposable prompt unavailable');}
+function getMainKeys(){return '{}';}
+function alert($v,...$args){$GLOBALS['events'][]=['alert',$v];}
+function answerCallbackQuery(...$args){$GLOBALS['events'][]=['answer',$args];}
+function editText(...$args){$GLOBALS['events'][]=['editText',$args];}
+function editKeys(...$args){$GLOBALS['events'][]=['editKeys',$args];}
+function sendMessage($text,$keys=null,$mode=null,$uid=null){
+    $target=$uid??$GLOBALS['from_id'];$GLOBALS['events'][]=['send',$target,$text,$keys,$mode];
+    if (($GLOBALS['spec']['fail_recipient']??null)===$target) {
+        if (!empty($GLOBALS['spec']['unknown'])) return null;
+        return (object)['ok'=>false,'error_code'=>429,'description'=>'Too Many Requests','parameters'=>(object)['retry_after'=>1]];
     }
-    if args.report:
-        args.report.write_text(json.dumps(report, indent=2) + '\n')
-    print(json.dumps({key:value for key,value in report.items() if key != 'details'}))
-
-if __name__ == '__main__':
-    main()
+    return (object)['ok'=>true,'result'=>(object)['message_id'=>80+count($GLOBALS['events']),
+        'chat'=>(object)['id'=>is_int($target)?$target:-1001234567,'username'=>is_string($target)?ltrim($target,'@'):null]]];
+}
+require_once $root.'/src/Telegram/UserEvents.php';
+$userInfo=achbotProviderRow($connection,'SELECT * FROM users WHERE userid=?','i',[$from_id])??[];
+if (isset($spec['cached_step'])) $userInfo['step']=$spec['cached_step'];
+if (isset($spec['dispatch'])) achbotOperationalReportDispatch($connection,$spec['dispatch']);
+elseif (($spec['route']??'')==='discount') require $root.'/src/Agent/Discounts.php';
+elseif (($spec['route']??'')==='rejected') require $root.'/src/Agent/Rejected.php';
+else require $root.'/src/Agent/Applications.php';
+echo json_encode(['events'=>$events],JSON_THROW_ON_ERROR);
+'''
+def main():
+    p=argparse.ArgumentParser();p.add_argument('--run-disposable',action='store_true',required=True);p.add_argument('--report',type=Path)
+    a=p.parse_args();checks=[]
+    with owned.owned_database(ROOT/'database/current-schema.sql') as (w,env):
+        script=w/'agency.php';script.write_text(PHP)
+        counter=itertools.count(1000);lock=threading.Lock()
+        def sql(q):return owned.sql(w,env,q,DB)
+        def run(actor,data='',text='',**spec):
+            with lock:seq=next(counter)
+            spec=dict(actor=actor,data=data,text=text,update=seq,**spec)
+            if 'fixed_update' in spec:spec['update']=spec.pop('fixed_update')
+            proc=subprocess.run(['php','-d','allow_url_fopen=0','-d','disable_functions=curl_exec,fsockopen,pfsockopen,stream_socket_client,stream_socket_server',
+                '-d','log_errors=1','-d','error_log='+str(w/'agency-errors.log'),str(script),str(ROOT),str(w/'mysql.sock'),DB,json.dumps(spec)],
+                capture_output=True,text=True,timeout=25)
+            assert proc.returncode==0,(proc.stdout,proc.stderr,(w/'agency-errors.log').read_text()[-2000:] if (w/'agency-errors.log').exists() else '')
+            return json.loads(proc.stdout)['events'],seq
+        def check(label,ok):
+            assert ok,label
+            checks.append(label)
+        def field(user,col):
+            return sql(f'SELECT {col} FROM users WHERE userid={user}').strip()
+        row=int(field(1001,'id'))
+        def ref(gen,kind='request'):return f'agency-{kind}:{row}:{gen}'
+        def states(reference):return sql("SELECT recipient,state FROM payment_followup_intents WHERE operational_ref='"+reference+"' ORDER BY recipient").splitlines()
+        def outgoing(events,target):return sum(e[0]=='send' and e[1]==target for e in events)
+        def start(gen,actor=9001,**kw):return run(actor,f'agencyApprove1001_{gen}',**kw)[0]
+        def decline(gen,actor=9001,**kw):return run(actor,f'agencyDecline1001_{gen}',**kw)[0]
+        def request(**kw):
+            events,gen=run(1001,'requestAgency',**kw);return events,gen
+        def due(reference):sql("UPDATE payment_followup_intents SET next_attempt_at=NOW(6) WHERE state='pending' AND operational_ref='"+reference+"'")
+        def reset():sql("UPDATE users SET is_agent=0,step='none',temp=NULL WHERE userid=1001;UPDATE users SET step='none',temp=NULL WHERE userid IN (9001,9002)")
+        def trigger(ddl):
+            code='$c=new mysqli("localhost","root","",$argv[1],0,$argv[2]);$c->query($argv[3]);'
+            subprocess.run(['php','-r',code,DB,str(w/'mysql.sock'),ddl],check=True,capture_output=True,timeout=10)
+        sql("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start) VALUES(1003,'Other','other','0',0,'1700000000',0,'sent')")
+        for strict in (True,False):
+            tag='strict' if strict else 'off'
+            reset()
+            events,gen=request(strict=strict,fail_recipient=9001)
+            check(tag+':request_commits_before_send',field(1001,'is_agent')=='2' and outgoing(events,9001)==1)
+            check(tag+':independent_original_audience',states(ref(gen))==['9001\tpending','@fixture_report\tacknowledged'])
+            due(ref(gen))
+            events,_=run(9001,dispatch=ref(gen),strict=strict)
+            check(tag+':request_known_failure_recovery_only',outgoing(events,9001)==1 and outgoing(events,'@fixture_report')==0)
+            events,_=run(9001,dispatch=ref(gen),strict=strict)
+            check(tag+':original_request_not_resent',not events)
+            events,_=request(strict=strict)
+            check(tag+':already_pending_no_new_report',outgoing(events,9001)==0)
+            for bad in ('agencyDecline1001','agencyDecline1001_0','agencyDecline1001_999999999999999999999999','agencyDecline1001_'+str(gen)+'x'):
+                run(9001,bad,strict=strict)
+                check(tag+':malformed_'+bad,field(1001,'is_agent')=='2')
+            decline(gen,actor=1003,strict=strict)
+            check(tag+':nonadmin_denied',field(1001,'is_agent')=='2')
+            decline(gen,chat_type='group',strict=strict)
+            check(tag+':foreign_frame_denied',field(1001,'is_agent')=='2')
+            start(gen,strict=strict)
+            step=field(9001,'step')
+            check(tag+':approval_editor_pinned',step==f'agencyApprove1001_{gen}_77')
+            run(9001,'unrelated',text='12',strict=strict)
+            check(tag+':callback_text_not_typed',field(1001,'is_agent')=='2' and field(9001,'step')==step)
+            run(9001,text='101',strict=strict)
+            check(tag+':invalid_discount_no_role_change',field(1001,'is_agent')=='2' and field(9001,'step')==step)
+            events,_=run(9001,text='12',strict=strict,fail_recipient=1001)
+            check(tag+':decision_committed_with_original_notice',field(1001,'is_agent')=='1' and field(9001,'step')=='none' and
+                json.loads(field(1001,'discount_percent'))=={'normal':'12'} and states(ref(gen,'result'))==['1001\tpending'])
+            due(ref(gen,'result'))
+            events,_=run(9001,dispatch=ref(gen,'result'),strict=strict)
+            check(tag+':approval_notice_retry_only',outgoing(events,1001)==1 and states(ref(gen,'result'))==['1001\tacknowledged'])
+            decline(gen,strict=strict)
+            check(tag+':decided_replay_no_mutation',field(1001,'is_agent')=='1')
+            run(9001,'releaseRejectedAgent1001',route='rejected',strict=strict)
+            check(tag+':old_rejected_control_cannot_reset_agent',field(1001,'is_agent')=='1')
+            run(9001,'editAgentDiscountNormal1001_0',route='discount',strict=strict)
+            step=field(9001,'step')
+            check(tag+':discount_editor_survives_missing_prompt',step=='editAgentDiscountNormal1001_0_77')
+            run(9001,'unrelated',text='50',route='discount',strict=strict)
+            check(tag+':discount_callback_not_typed',field(9001,'step')==step and json.loads(field(1001,'discount_percent'))['normal']=='12')
+            sql("""UPDATE users SET discount_percent='{"normal":"12","plans":{"7":"5"}}' WHERE userid=1001""")
+            run(9001,text='35',route='discount',strict=strict)
+            check(tag+':discount_preserves_other_scope',field(9001,'step')=='none' and json.loads(field(1001,'discount_percent'))['normal']=='35' and json.loads(field(1001,'discount_percent'))['plans']=={'7':'5'})
+            run(9001,'removeAgent1001',route='discount',strict=strict)
+            check(tag+':remove_only_current_agent',field(1001,'is_agent')=='0')
+            reset()
+            events,new=request(strict=strict)
+            decline(gen,strict=strict)
+            check(tag+':old_application_cannot_decide_new',field(1001,'is_agent')=='2')
+            run(9001,'removeAgent1001',route='discount',strict=strict)
+            run(9001,'releaseRejectedAgent1001',route='rejected',strict=strict)
+            check(tag+':old_role_controls_cannot_cancel_pending',field(1001,'is_agent')=='2')
+            start(new,strict=strict)
+            decline(new,actor=9002,strict=strict,fail_recipient=1001,unknown=True)
+            events,_=run(9001,text='12',strict=strict)
+            check(tag+':decline_wins_and_consumes_stale_editor',field(1001,'is_agent')=='-1' and field(9001,'step')=='none' and outgoing(events,1001)==0)
+            events,_=run(9001,dispatch=ref(new,'result'),strict=strict)
+            check(tag+':unknown_not_blindly_resent',not events and states(ref(new,'result'))==['1001\tunknown'])
+            reset()
+            _,gen=request(strict=strict)
+            start(gen,strict=strict);start(gen,actor=9002,strict=strict)
+            barrier=threading.Barrier(2)
+            def save(actor):barrier.wait(timeout=5);return run(actor,text='15',strict=strict)
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                results=list(pool.map(save,[9001,9002]))
+            check(tag+':concurrent_exactly_one_decision',field(1001,'is_agent')=='1' and len(states(ref(gen,'result')))==1)
+            due(ref(gen,'result'))
+            run(9001,dispatch=ref(gen,'result'),strict=strict)
+            check(tag+':concurrent_original_notice_ack',states(ref(gen,'result'))==['1001\tacknowledged'])
+            reset()
+            _,gen=request(strict=strict);start(gen,strict=strict)
+            sql('CREATE TABLE fixture_agency_victim(n INT NOT NULL) ENGINE=MyISAM;INSERT INTO fixture_agency_victim VALUES(0)')
+            trigger("""CREATE TRIGGER fixture_agency_deadlock BEFORE UPDATE ON users FOR EACH ROW
+                BEGIN IF OLD.userid=1001 AND OLD.is_agent=2 AND NEW.is_agent=1 THEN
+                UPDATE fixture_agency_victim SET n=n+1;
+                IF (SELECT n FROM fixture_agency_victim LIMIT 1)=1 THEN SIGNAL SQLSTATE '40001' SET MYSQL_ERRNO=1213,MESSAGE_TEXT='fixture victim'; END IF;
+                END IF; END""")
+            try:
+                run(9001,text='12',strict=strict)
+                check(tag+':definite_deadlock_retried_before_effect',field(1001,'is_agent')=='1' and
+                    sql('SELECT n FROM fixture_agency_victim').strip()=='2' and len(states(ref(gen,'result')))==1)
+            finally:sql('DROP TRIGGER fixture_agency_deadlock;DROP TABLE fixture_agency_victim')
+            reset()
+            _,gen=request(strict=strict);start(gen,strict=strict)
+            for errno,sqlstate in ((1213,'40001'),(1205,'HY000')):
+                trigger(f"""CREATE TRIGGER fixture_agency_fail BEFORE UPDATE ON users FOR EACH ROW
+                    BEGIN IF OLD.userid=1001 AND OLD.is_agent=2 AND NEW.is_agent=1 THEN
+                    SIGNAL SQLSTATE '{sqlstate}' SET MYSQL_ERRNO={errno},MESSAGE_TEXT='fixture failure'; END IF; END""")
+                try:
+                    events,_=run(9001,text='12',strict=strict)
+                    check(tag+':sql_failure_preserves_original_pending_'+str(errno),
+                        field(1001,'is_agent')=='2' and not states(ref(gen,'result')) and outgoing(events,1001)==0 and
+                        field(9001,'step')==f'agencyApprove1001_{gen}_77')
+                finally:sql('DROP TRIGGER fixture_agency_fail')
+            reset()
+            # Original event and state both roll back if notification storage fails.
+            trigger("""CREATE TRIGGER fixture_agency_outbox BEFORE INSERT ON payment_followup_intents FOR EACH ROW
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture outbox failure'""")
+            try:
+                events,gen=request(strict=strict)
+                check(tag+':request_outbox_failure_atomic',field(1001,'is_agent')=='0' and not states(ref(gen)) and outgoing(events,9001)==0)
+            finally:sql('DROP TRIGGER fixture_agency_outbox')
+        # Explicit re-entry of a real pending historical applicant, no bulk replay.
+        sql("UPDATE users SET is_agent=2 WHERE userid=1003")
+        events,gen=run(1003,'requestAgency')
+        check('historical_pending_explicit_current_application',outgoing(events,9001)==1 and field(1003,'is_agent')=='2')
+        report={'complete':True,'cases':len(checks),'checks':checks,'schema_tables':35,'production_mutations':0,'external_requests':0}
+    if a.report:a.report.write_text(json.dumps(report))
+    print(json.dumps(report))
+if __name__=='__main__':main()

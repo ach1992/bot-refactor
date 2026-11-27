@@ -11,41 +11,39 @@ require_once __DIR__ . '/../Admin/Access.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
-function cancelSearchKeyboard() {
-    return json_encode([
-        'inline_keyboard' => [
-            [
-                ['text' => \achbotMessage('subscription.customer_routes.cancel_search_keyboard.button.cc357a4c9f'), 'callback_data' => 'cancelSearchConfig']
-            ]
-        ]
-    ]);
-}
-
-// ✅ هندلر دکمه لغو عملیات برای سرچ
-if ($data == "cancelSearchConfig") {
-    delMessage();
-    setUser();
-    sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');
-    exit;
+require_once __DIR__.'/Search.php';
+$searchActor=(int)$from_id;
+$searchStep=achbotSubscriptionSearchEditor((string)($userInfo['step']??''));
+if (preg_match('/^cancelSearchConfig_([1-9][0-9]*)$/D',(string)$data,$cancelSearch)) {
+    $source=\AchBot\Telegram\Conversation\source($update,$searchActor,true);
+    if ($source && $searchStep!==null && $searchStep['source']===(int)$cancelSearch[1] &&
+        \AchBot\Telegram\Conversation\transitionEditor($connection,$searchActor,$userInfo)!==null) {
+        // The no-result prompt is disposable. Keyboard removal is independent.
+        sendMessage(achbotMessage('legacy_messages.operation_canceled'),$removeKeyboard,'HTML');
+        \AchBot\Telegram\Conversation\replaceTransient($searchActor,$source->message_id,
+            achbotCurrentMessage('reached_main_menu'),getMainKeys());
+    }
+    return;
 }
 
 if (
     $data == 'mySubscriptions' ||
     $data == 'agentConfigsList' ||
-    preg_match('/(changeAgentOrder|changeOrdersPage)(\d+)/', $data, $match)
+    preg_match('/^(changeAgentOrder|changeOrdersPage)([1-9][0-9]*)$/D', (string)$data, $match)
 ) {
     $results_per_page = 50;
     $action = $match[1] ?? null;
     $page = $match[2] ?? 1;
 
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `userid`=? AND `status`=1");
+    $stmt = $connection->prepare("SELECT COUNT(*) AS total FROM `orders_list` WHERE `userid`=? AND `status`=1");
     $stmt->bind_param("i", $from_id);
     $stmt->execute();
-    $number_of_result = $stmt->get_result()->num_rows;
+    $number_of_result = (int)$stmt->get_result()->fetch_assoc()['total'];
     $stmt->close();
 
     $number_of_page = ceil($number_of_result / $results_per_page);
-    $page_first_result = ($page - 1) * $results_per_page;
+    if ((int)$page<1 || ((int)$page>max(1,$number_of_page))) return;
+    $page_first_result = ((int)$page - 1) * $results_per_page;
 
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `userid`=? AND `status`=1 ORDER BY `id` DESC LIMIT ?, ?");
     $stmt->bind_param("iii", $from_id, $page_first_result, $results_per_page);
@@ -127,73 +125,42 @@ if (
     exit;
 }
 
-if($data=="searchAgentConfig" || $data == "searchMyConfig" || $data=="searchUsersConfig"){
-    if ($data==='searchUsersConfig') {
-        require_once __DIR__ . '/AccountDetails.php';
-        if (!\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
-            alert(\achbotMessage('legacy_messages.no_order_found'),true);return;
-        }
+if (in_array($data,['searchAgentConfig','searchMyConfig','searchUsersConfig'],true)) {
+    $source=\AchBot\Telegram\Conversation\source($update,$searchActor,true);
+    if (!$source || ($data==='searchUsersConfig' && !achbotAdminCanFor($connection,$searchActor,(int)$admin,'orders'))) return;
+    if (\AchBot\Telegram\Conversation\transitionEditor($connection,$searchActor,$userInfo,$data.'_'.$source->message_id)!==null)
+        sendMessage(achbotMessage('legacy_messages.send_config_remark'),$cancelKey,'HTML');
+    return;
+}
+if ($searchStep!==null && !isset($update->callback_query) && $text!==achbotMessage('legacy_buttons.cancel')) {
+    $source=\AchBot\Telegram\Conversation\source($update,$searchActor,false);
+    if (!$source || !is_string($source->text??null) || $source->message_id<=$searchStep['source']) return;
+    $result=achbotSubscriptionSearch($connection,$searchActor,$searchStep['mode'],$source->text);
+    if ($result['status']==='denied') {achbotAdminDeny();return;}
+    if ($result['status']!=='found') {
+        sendMessage($result['status']==='ambiguous'
+            ?achbotMessage('subscription.customer_routes.search_ambiguous')
+            :achbotMessage('legacy_messages.no_order_found'),achbotSubscriptionSearchCancelKeys($searchStep['source']),'HTML');
+        return;
     }
-    //delMessage();
-    sendMessage(\achbotMessage('legacy_messages.send_config_remark'),$cancelKey, 'HTML');
-    setUser($data);
+    if (\AchBot\Telegram\Conversation\transitionEditor($connection,$searchActor,$userInfo)===null) return;
+    sendMessage(achbotMessage('legacy_messages.please_wait_message'),$removeKeyboard,'HTML');
+    $keys=$searchStep['mode']==='searchUsersConfig'?getUserOrderDetailKeys($result['id']):getOrderDetailKeys($searchActor,$result['id']);
+    if (is_array($keys)) \AchBot\Subscription\AccountDetails\showMessage($keys);
+    else sendMessage(achbotMessage('legacy_messages.no_order_found'),null,'HTML');
+    return;
+}
+if (preg_match('/^userOrderDetails([1-9][0-9]*)_([0-9]+)$/D',(string)$data,$adminOrderDetailMatch)) {
+    if (!\AchBot\Telegram\Conversation\source($update,$searchActor,true) ||
+        !\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) return;
+    $keys=getUserOrderDetailKeys((int)$adminOrderDetailMatch[1],(int)$adminOrderDetailMatch[2]);
+    if (is_array($keys)) \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
+    else alert(achbotMessage('legacy_messages.no_order_found'),true);
+    return;
 }
 
-
-if(($userInfo['step'] == "searchAgentConfig" || $userInfo['step'] == "searchMyConfig") && $text != \achbotMessage('legacy_buttons.cancel')){
-    sendMessage(\achbotMessage('legacy_messages.please_wait_message'), $removeKeyboard, 'HTML');
-
-    if($userInfo['step'] == "searchMyConfig") $condition = "AND `agent_bought` = 0";
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `userid` = ? AND `remark` LIKE CONCAT('%', ?, '%') $condition");
-    $stmt->bind_param("is", $from_id, $text);
-    $stmt->execute();
-    $orderId = $stmt->get_result()->fetch_assoc()['id'];
-    $stmt->close();
-    
-    $keys = getOrderDetailKeys($from_id, $orderId);
-
-    if($keys == null) sendMessage(\achbotMessage('legacy_messages.no_order_found'), cancelSearchKeyboard(), 'HTML');
-    else {
-        \AchBot\Subscription\AccountDetails\showMessage($keys);
-        setUser();
-    }
-}
-
-$adminOrderDetailCallback=preg_match('/^userOrderDetails(\d+)_(\d+)$/D',(string)($data??''),$adminOrderDetailMatch)===1;
-if(($userInfo['step'] == "searchUsersConfig" && $text != \achbotMessage('legacy_buttons.cancel')) || $adminOrderDetailCallback){
-    require_once __DIR__ . '/AccountDetails.php';
-    if (!\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
-        alert(\achbotMessage('legacy_messages.no_order_found'),true);return;
-    }
-    if($adminOrderDetailCallback){
-        $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-        $stmt->bind_param("i", $adminOrderDetailMatch[1]);
-    }
-    else{
-        sendMessage(\achbotMessage('legacy_messages.please_wait_message'), $removeKeyboard, 'HTML');
-        $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `remark` LIKE CONCAT('%', ?, '%')");
-        $stmt->bind_param("s", $text);
-    }
-
-    $stmt->execute();
-    $orderInfo = $stmt->get_result();
-    $stmt->close();
-
-    if($orderInfo->num_rows == 0) sendMessage(\achbotMessage('legacy_messages.no_order_found'), cancelSearchKeyboard(), 'HTML');
-    else {
-        $orderId = $orderInfo->fetch_assoc()['id'];
-        $keys = getUserOrderDetailKeys($orderId, $adminOrderDetailCallback?$adminOrderDetailMatch[2]:0);
-
-        if($keys == null) sendMessage(\achbotMessage('legacy_messages.no_order_found'), cancelSearchKeyboard(), 'HTML');
-        else{
-            if(!$adminOrderDetailCallback) \AchBot\Subscription\AccountDetails\showMessage($keys);
-            else \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
-            setUser();
-        }
-    }
-}
-
-if(preg_match('/^orderDetails(\d+)(_|)(?<offset>\d+|)/', $data, $match)){
+if(preg_match('/^orderDetails([1-9][0-9]*)(?:_(?<offset>[0-9]+))?$/D', (string)$data, $match)){
+    if (!\AchBot\Telegram\Conversation\source($update,$searchActor,true)) return;
     $keys = getOrderDetailKeys(
         $from_id,
         $match[1],
@@ -209,143 +176,35 @@ if(preg_match('/^orderDetails(\d+)(_|)(?<offset>\d+|)/', $data, $match)){
     }
 }
 
-if(preg_match('/updateConfigConnectionLink(\d+)/', $data,$match)){
-    alert(\achbotMessage('legacy_messages.please_wait_message'));
-    $oid = $match[1];
-
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id`=?");
-    $stmt->bind_param("i", $oid);
-    $stmt->execute();
-    $order = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    if (!$order || !achbotSupportsOrderObservation($connection, (int)$oid, \AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()?null:(int)$from_id)) {
-        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
-        return;
-    }
-    $remark = $order['remark'];
-    $inboundId=$order['inbound_id'];
-    $server_id=$order['server_id'];
-
-    $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id`=?");
-    $stmt->bind_param("i", $server_id);
-    $stmt->execute();
-    $server_config = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-    $serverType=$server_config['type']??'';
-    
-    $success = false; // Flag برای موفقیت آمیز بودن عملیات
-    
-    if (achbotSupportsAccount($serverType, $inboundId)) {
-        $info=achbotProviderRenderPacket($connection,(int)$server_id,(string)$remark);
-        if (is_array($info->links??null) && $info->links!==[]) {
-            $vraylink = $info->links;
-            $success = true;
-        } else {
-            $vraylink = \achbotMessage('subscription.customer_routes.cancel_search_keyboard.vraylink.cde59051f4');
-        }
+if (preg_match('/^(updateConfigConnectionLink|changAccountConnectionLink)([1-9][0-9]*)$/D',(string)$data,$m)) {
+    $source=\AchBot\Telegram\Conversation\source($update,$searchActor,true);
+    if (!$source) return;
+    require_once __DIR__.'/LinkActions.php';
+    $rotate=$m[1]==='changAccountConnectionLink';
+    alert(achbotMessage('legacy_messages.please_wait_message'));
+    $result=achbotSubscriptionLinkAction($connection,$searchActor,(int)$m[2],$rotate,
+        static function(array $order,object $remote) use ($searchActor,$source): bool {
+            $keys=(int)$order['userid']===$searchActor
+                ?\AchBot\Subscription\AccountDetails\getOrderDetailKeys($searchActor,(int)$order['id'],0,$remote)
+                :\AchBot\Subscription\AccountDetails\getUserOrderDetailKeys((int)$order['id'],0,$remote);
+            return is_array($keys) && \AchBot\Subscription\AccountDetails\showMessage($keys,$source->message_id);
+        });
+    if ($result==='shown') {
+        $heading=$rotate?achbotMessage('subscription.customer_routes.cancel_search_keyboard.success_message.eb1ae135ff'):
+            achbotMessage('subscription.customer_routes.cancel_search_keyboard.success_message.6d1ad0af39');
+        sendMessage($heading."\n\n".achbotMessage('subscription.customer_routes.link_update_advice'),null,'HTML');
+    } elseif ($result==='denied') {
+        alert(achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'),true);
+    } elseif ($result==='view_unconfirmed') {
+        sendMessage(achbotMessage('subscription.customer_routes.link_view_unconfirmed'),null,'HTML');
+    } elseif ($rotate) {
+        alert(achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.001c06ff23'),true);
     } else {
-        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
-        return;
-        }
-    
-    if($success) {
-        // Verified Native refresh is always available as a GET-only view,
-        // including while an original PasarGuard write is being reconciled.
-        // That observation must NOT grant permission to rewrite even local
-        // order metadata while the service is durably fenced as mutating.
-        if ($serverType!=='pasarguard' ||
-            achbotSupportsOrder($connection,(int)$oid,null,
-                \AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()
-                    ?null:(int)$from_id)) {
-            $vray_link=json_encode($vraylink);
-            $stmt=$connection->prepare("UPDATE `orders_list` SET `link`=? WHERE `id`=?");
-            $stmt->bind_param('si',$vray_link,$oid);
-            $stmt->execute();
-            $stmt->close();
-        }
-
-        // ارسال پیام موفقیت با HTML
-        $successMessage = \achbotMessage('subscription.customer_routes.cancel_search_keyboard.success_message.6d1ad0af39') . "\n\n" . \achbotMessage('subscription.customer_routes.link_update_advice');
-        
-        // استفاده از parse_mode: "HTML" برای نمایش متن بولد شده
-        sendMessage($successMessage, null, "HTML");
-        
-    } else {
-        // ارسال پیام خطا
-        $errorMessage = \achbotMessage('subscription.customer_routes.cancel_search_keyboard.error_message.496a7eede8')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.fd5bccf56e')
-            . \achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.0d78481f3e');
-        
-        sendMessage($errorMessage, null, "HTML");
+        sendMessage(achbotMessage('subscription.customer_routes.cancel_search_keyboard.error_message.496a7eede8').
+            achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.fd5bccf56e').
+            achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.0d78481f3e'),null,'HTML');
     }
-    
-    $keys=(int)$order['userid']===(int)$from_id?getOrderDetailKeys($from_id,$oid):
-        \AchBot\Subscription\AccountDetails\getUserOrderDetailKeys($oid);
-    if (!is_array($keys)) {
-        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.001c06ff23'),true);return;
-    }
-    \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
-}
-
-if(preg_match('/changAccountConnectionLink(\d+)/', $data,$match)){ 
-    alert(\achbotMessage('legacy_messages.please_wait_message'));
-    $oid = $match[1]; 
- 
-    $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id`=?"); 
-    $stmt->bind_param("i", $oid); 
-    $stmt->execute(); 
-    $order = $stmt->get_result()->fetch_assoc(); 
-    $stmt->close(); 
- 
-    if (!$order || !achbotSupportsOrder($connection, (int)$oid, null, \AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()?null:(int)$from_id)) {
-        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
-        return;
-    }
-    $remark = $order['remark']; 
-    $uuid = $order['uuid']??"0"; 
-    $inboundId = $order['inbound_id']; 
-    $acc_link = $order['link']; 
-    $server_id = $order['server_id']; 
-     
-    $stmt = $connection->prepare("SELECT * FROM server_config WHERE id=?"); 
-    $stmt->bind_param("i", $server_id); 
-    $stmt->execute(); 
-    $server_info = $stmt->get_result()->fetch_assoc(); 
-    $stmt->close(); 
-     
-    $serverType = $server_info['type']; 
- 
-    if (achbotSupportsAccount($serverType, $inboundId)) {
-        $res = achbotProviderRevoke($server_id, $remark);
-        if (($res->success??false)!==true || ($res->verified??false)!==true || !isset($res->links)) {
-            alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.001c06ff23'),true);return;
-        }
-        $vraylink = $res->links;
-        $newUuid=$order['uuid'];$newToken=$order['token'];
-
-    }else{
-        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
-        return;
-        } 
- 
-    $vray_link = json_encode($vraylink); 
-    $stmt = $connection->prepare("UPDATE `orders_list` SET `link`=?, `uuid` = ?, `token` = ? WHERE `id`=?"); 
-    $stmt->bind_param("sssi", $vray_link, $newUuid, $newToken, $oid); 
-    $stmt->execute(); 
-    $stmt->close(); 
-
-    // ✅ ارسال پیام به کاربر بعد از تغییر لینک
-    $successMessage = \achbotMessage('subscription.customer_routes.cancel_search_keyboard.success_message.eb1ae135ff') . "\n\n" . \achbotMessage('subscription.customer_routes.link_update_advice');
-
-    sendMessage($successMessage, null, "HTML"); 
- 
-    $keys=(int)$order['userid']===(int)$from_id?getOrderDetailKeys($from_id,$oid):
-        \AchBot\Subscription\AccountDetails\getUserOrderDetailKeys($oid);
-    if (!is_array($keys)) {
-        alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.001c06ff23'),true);return;
-    }
-    \AchBot\Subscription\AccountDetails\showMessage($keys,(int)$message_id);
+    return;
 }
 
 if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){

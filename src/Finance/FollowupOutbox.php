@@ -179,6 +179,10 @@ function achbotFollowupServicePurpose(int $id,string $stage,string $key): string
 }
 function achbotFollowupOperationalEventValid(array $event): bool {
     $keys=array_keys($event);
+    if (isset($event['user_row_id'])) {
+        require_once __DIR__.'/../Telegram/UserEvents.php';
+        return achbotUserEventValid($event);
+    }
     if ($keys===['reference','actor','capability','user','ticket_id','ticket_sha256']) {
         return is_int($event['ticket_id']) && $event['ticket_id']>0 &&
             is_string($event['reference']) &&
@@ -200,6 +204,12 @@ function achbotFollowupOperationalEventValid(array $event): bool {
         preg_match('/^(?:direct:[1-9][0-9]*|batch:[1-9][0-9]*:[0-9]+)$/D',$event['reference'])===1);
 }
 function achbotFollowupOperationalStage(string $stage,?array $event=null): bool {
+    if (preg_match('/^user_notice(?:_p[1-9][0-9]*)?$/D',$stage))
+        return $event===null || (isset($event['user_row_id']) &&
+            in_array($event['event'],['welcome','agency_approved','agency_declined'],true));
+    if (isset($event['user_row_id']))
+        return in_array($event['event'],['welcome','agency_request'],true) &&
+            preg_match('/^operational_report(?:_p[1-9][0-9]*)?$/D',$stage)===1;
     if (preg_match('/^ticket_notice(?:_p[1-9][0-9]*)?$/D',$stage))
         return $event===null || isset($event['ticket_id']);
     if (isset($event['ticket_id'])) return false;

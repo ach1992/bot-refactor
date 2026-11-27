@@ -86,10 +86,15 @@ function bot($method,$args=[]) {
     'status'=>$spec['membership'],'is_member'=>(bool)($spec['is_member']??false)]];
 }
 function sendMessage($text,$key=null,$parse='HTML',$ci=null) {
-  $GLOBALS['events'][]=['kind'=>'send','text'=>$text,'markup'=>$key,'chat'=>$ci];
-  return (object)['ok'=>true];
+  $target=$ci??$GLOBALS['actor'];
+  $kind=$target===$GLOBALS['actor']?'send':($target===9001?'admin':'channel');
+  $GLOBALS['events'][]=['kind'=>$kind,'text'=>$text,'markup'=>$key,'chat'=>$ci];
+  $chat=is_int($target)?$target:-100111111;
+  if (($GLOBALS['spec']['fail_notice']??null)===$kind)
+      return (object)['ok'=>false,'error_code'=>429,'description'=>'Too Many Requests','parameters'=>(object)['retry_after'=>1]];
+  return (object)['ok'=>true,'result'=>(object)['chat'=>(object)['id'=>$chat,'username'=>is_string($target)?ltrim($target,'@'):null],
+      'message_id'=>100+count($GLOBALS['events'])]];
 }
-function achbotNotifyAdmins($method,$args) {$GLOBALS['events'][]=['kind'=>'admin','method'=>$method];}
 function delMessage() {$GLOBALS['events'][]=['kind'=>'delete'];}
 function answerCallbackQuery($id) {$GLOBALS['events'][]=['kind'=>'ack','id'=>$id];}
 function alert($text) {$GLOBALS['events'][]=['kind'=>'alert','text'=>$text];}
@@ -123,7 +128,11 @@ register_shutdown_function(static function() {
       'registered'=>$GLOBALS['registration']['created']??null,
       'text'=>$GLOBALS['text']],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 });
-if(($spec['mode']??'flow')==='forbidden_wallet_set') {
+if(($spec['mode']??'flow')==='dispatch') {
+  require_once $root.'/src/Telegram/UserEvents.php';
+  $ref='welcome:'.(int)$userInfo['id'];
+  achbotOperationalReportDispatch($connection,$ref);
+} elseif(($spec['mode']??'flow')==='forbidden_wallet_set') {
   try {setUser(999999,'wallet');}
   catch(LogicException $e) {$GLOBALS['events'][]=['kind'=>'denied','reason'=>$e->getMessage()];}
 } elseif(($spec['mode']??'flow')==='helper') {
@@ -164,7 +173,7 @@ def write_runtime(w: Path) -> None:
             "if ((require __DIR__.'/src/Finance/Routes/ManualCheckout.php')"),
     }
     for file,body in files.items():
-        (w/file).write_text(body.replace('achbotCurrentMessage(', 'fixtureCurrentMessage(').replace("__DIR__ . '/src/Telegram/UserProfile.php'","$root . '/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Telegram/UserProfile.php'","$root.'/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Subscription/Presentation.php'","$root.'/src/Subscription/Presentation.php'").replace("__DIR__.'/src/Support/Tickets.php'","$root.'/src/Support/Tickets.php'"),encoding="utf-8")
+        (w/file).write_text(body.replace('achbotCurrentMessage(', 'fixtureCurrentMessage(').replace("__DIR__ . '/src/Telegram/UserProfile.php'","$root . '/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Telegram/UserProfile.php'","$root.'/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Subscription/Presentation.php'","$root.'/src/Subscription/Presentation.php'").replace("__DIR__.'/src/Telegram/Conversation.php'","$root.'/src/Telegram/Conversation.php'").replace("__DIR__.'/src/Telegram/UserEvents.php'","$root.'/src/Telegram/UserEvents.php'"),encoding="utf-8")
     for f in ("src/Telegram/UserProfile.php","src/Presentation/Text.php","src/Wallet/Ledger.php"):
         to=w/f;to.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(ROOT/f,to)
@@ -292,6 +301,16 @@ def main() -> None:
         r=run(actor=2401,callback='unknown_fixture_callback')
         yes(not r['events'] and int(r['rows'][0]['wallet'])==0,
             'unrelated_callback_does_not_activate_onboarding')
+        r=run(actor=2497,fail_notice='admin')
+        yes(r['rows'][0]['first_start']=='sent' and
+            [e['text'] for e in r['events'] if e['kind']=='send']==['WELCOME\n\nHOME'],
+            'welcome_and_admin_notice_independent')
+        native.sql(w,env,"UPDATE payment_followup_intents SET next_attempt_at=NOW(6) WHERE state='pending' AND operational_ref=CONCAT('welcome:',(SELECT id FROM users WHERE userid=2497))",DB)
+        r=run(actor=2497,mode='dispatch')
+        yes([e['kind'] for e in r['events']]==['admin'],
+            'welcome_original_failed_admin_notice_recovered_only')
+        r=run(actor=2497,mode='dispatch')
+        yes(not r['events'],'welcome_completed_event_not_resent')
         r=run(actor=2402,forced=True,membership='left')
         join_buttons=[button for row in json.loads(r['events'][0]['markup'])['inline_keyboard']
                       for button in row] if r['events'] and r['events'][0]['kind']=='send' else []
@@ -311,7 +330,7 @@ def main() -> None:
             "premature_join_button_denied_no_registration")
         r=run(actor=2405,forced=True,membership='member',callback='haveJoined/start')
         yes(len(r['rows'])==1 and
-            [e['kind'] for e in r['events']]==['delete','admin','send'] and
+            [e['kind'] for e in r['events']]==['delete','send','admin','channel'] and
             any(e['text'] in ('HOME','WELCOME\n\nHOME') for e in r['events'] if e['kind']=='send'),
             "joined_button_registers_then_shows_menu")
         r=run(actor=2406,forced=True,membership='restricted',is_member=True)

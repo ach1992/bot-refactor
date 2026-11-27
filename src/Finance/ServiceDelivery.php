@@ -191,6 +191,7 @@ function achbotNonpaidDeliveryBinding(mysqli $db,int $effectId,int $orderId): ar
         !is_string($o['provider_remote_created_at']) ||
         $o['provider_remote_created_at']!==$e['provider_remote_created_at'])
         throw new RuntimeException('delivery_nonpaid_source_conflict');
+    achbotProviderAssertOriginalCredentialsCurrent($e);
     return ['v'=>3,'service_id'=>null,'source_kind'=>$kind,'source_ref'=>$ref,'ordinal'=>$ordinal,
         'user_id'=>$owner,'effect_id'=>$effectId,'order_id'=>$orderId,
         'server_id'=>(int)$o['server_id'],'native_operation'=>$e['operation_id'],
@@ -266,6 +267,7 @@ function achbotServiceDeliveryValidateLocked(mysqli $db,array $op,array $quote,a
         $e=achbotProviderRow($db,'SELECT * FROM service_effects WHERE id=? FOR UPDATE','i',[(int)$d['effect_id']]);
         $o=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=? FOR UPDATE','i',[(int)$d['order_id']]);
         if (!$e || !$o) throw new RuntimeException('service_delivery_order_unavailable');
+        achbotProviderAssertOriginalCredentialsCurrent($e);
         $b=achbotServiceBuyDeliveryBinding($op,$quote,$e,$o);
     } else {
         $m=achbotProviderRow($db,'SELECT * FROM service_mutations WHERE service_operation_id=? FOR UPDATE','i',[(int)$op['id']]);

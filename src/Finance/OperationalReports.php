@@ -60,6 +60,10 @@ function achbotOperationalReportValidateLocked(mysqli $db,array $r): ?array {
     $event=null;
     $packet=achbotFollowupDecodePacket(null,$r,(string)$r['pay_fingerprint'],$event);
     if ($packet===null || $event===null) return null;
+    if (isset($event['user_row_id'])) {
+        require_once __DIR__.'/../Telegram/UserEvents.php';
+        return achbotUserEventValidateLocked($db,$r,$event,$packet);
+    }
     if (isset($event['ticket_id'])) {
         require_once __DIR__.'/../Support/Notices.php';
         return achbotTicketNoticeValidate($db,$r,$event,$packet);

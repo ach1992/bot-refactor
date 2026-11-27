@@ -106,7 +106,7 @@ case 'ticket':
 case 'menu':
     $events[]=['menu',achbotMainMenuForContext($connection,$userInfo,$from_id,$admin,$botState)];break;
 case 'capacity':
-    eval(fixtureSection('if($data=="availableServers2"', "require __DIR__ . '/src/Agent/Applications.php'"));break;
+    eval(fixtureSection('if($data=="availableServers2"', "if ((require __DIR__ . '/src/Agent/Applications.php'"));break;
 case 'entry':
     require $root.'/src/Purchase/EntryAndBulk.php';break;
 case 'trial_catalogue':

@@ -147,7 +147,10 @@ function achbotPasarGuardUserAdapter($serverId,$remark,bool $withLinks=true): ob
         if (($r['success']??false)!==true) return achbotProviderFailure($r['reason']??'pg_read_unverified');
         $u=$r['user'];
         $u['provider']='pasarguard';$u['provider_account_id']=$ctx['account']['id'];
-        if ($withLinks) $u['links']=($links['success']??false)===true?($links['links']??[]):[];
+        if ($withLinks) {
+            $u['provider_links_verified']=($links['success']??false)===true;
+            $u['links']=$u['provider_links_verified']?($links['links']??[]):[];
+        }
         return (object)$u;
     } catch (Throwable $e) { return achbotProviderFailure('pg_account_identity_unverified'); }
 }
@@ -266,9 +269,31 @@ function achbotProviderCanonicalValue($value) {
         foreach ($value as $k=>$v) $value[$k]=achbotProviderCanonicalValue($v);}
     return $value;
 }
+function achbotPgVerifiedRevokeReplay(mysqli $db,int $serverId,string $remark): ?object {
+    $key=achbotPgOperationKey('revoke');
+    $ctx=achbotPgRemarkContext($db,$serverId,$remark,false,true);
+    $account=$ctx['account'];
+    if ($account['state']!=='linked' || $account['mutation_key']!==$key) return null;
+    $history=achbotPgMutationHistory($account);
+    $intent=json_decode((string)$account['mutation_snapshot'],true,64,JSON_THROW_ON_ERROR);
+    if (!in_array($key,$history['consumed_keys'],true) ||
+        ($intent['action']??null)!=='revoke' || ($intent['result']??null)!=='verified' ||
+        ($intent['identity']??null)!==$ctx['identity'] ||
+        !is_string($intent['verified_proxy_sha256']??null))
+        throw new RuntimeException('pg_revoke_original_unverified');
+    $remote=achbotProviderRenderPacket($db,$serverId,$remark);
+    if (!is_string($remote->username??null) || ($remote->provider_links_verified??false)!==true ||
+        !hash_equals($intent['verified_proxy_sha256'],hash('sha256',json_encode(achbotProviderCanonicalValue($remote->proxy_settings??null),JSON_THROW_ON_ERROR))))
+        throw new RuntimeException('pg_revoke_original_view_unverified');
+    return (object)array_merge((array)$remote,['success'=>true,'verified'=>true,'reconciled'=>true]);
+}
 function achbotPasarGuardActionAdapter($serverId,$remark,string $action,?array $expectedTarget=null): object {
     global $connection;
     try {
+        if ($action==='revoke') {
+            $prior=achbotPgVerifiedRevokeReplay($connection,(int)$serverId,(string)$remark);
+            if ($prior!==null) return $prior;
+        }
         $admission=achbotPgActionPreflight($connection,(int)$serverId,(string)$remark,$action,$expectedTarget);
         $ctx=$admission['context'];$key=$admission['key'];
         $panel=$ctx['panel'];$identity=$ctx['identity'];
@@ -292,7 +317,8 @@ function achbotPasarGuardActionAdapter($serverId,$remark,string $action,?array $
         if (($r['success']??false)!==true) return achbotProviderFailure($r['reason']??'pg_action_unverified',(bool)($r['uncertain']??true));
         achbotPgFinishMutation($connection,$ctx,$intent,$r,$action==='delete'?'deleted':'linked');
         if ($action==='delete') return (object)['success'=>true,'verified'=>true];
-        $user=achbotProviderUser($serverId,$remark);
+        $user=$action==='revoke'?achbotPgVerifiedRevokeReplay($connection,(int)$serverId,(string)$remark):
+            achbotProviderUser($serverId,$remark);
         if (!isset($user->username)) return achbotProviderFailure('pg_action_delivery_unverified');
         return (object)array_merge((array)$user,['success'=>true,'verified'=>true]);
     } catch (Throwable $e) { return achbotProviderFailure('pg_action_requires_review'); }
@@ -798,6 +824,8 @@ function achbotPgFinishMutation(mysqli $db,array $ctx,array $intent,array $resul
     $id=(int)$ctx['account']['id'];$key=$intent['key'];
     $intent['verified_at']=gmdate('c');$intent['result']='verified';
     if (isset($result['user']['group_ids'])) $intent['current_group_ids']=$result['user']['group_ids'];
+    if (($intent['action']??null)==='revoke' && isset($result['user']['proxy_settings']))
+        $intent['verified_proxy_sha256']=hash('sha256',json_encode(achbotProviderCanonicalValue($result['user']['proxy_settings']),JSON_THROW_ON_ERROR));
     $json=json_encode($intent,JSON_THROW_ON_ERROR);
     $s=$db->prepare("UPDATE service_effects SET provider_state=?,provider_mutation_snapshot=?,provider_evidence_updated_at=UTC_TIMESTAMP(),updated_at=updated_at WHERE provider_reference_id=? AND provider_state='mutating' AND provider_mutation_key=?");
     $s->bind_param('ssis',$state,$json,$id,$key);
@@ -1094,6 +1122,23 @@ function achbotOrderPresentation(mysqli $db,array $order,array $server,array $st
  * real operations here; an unknown or partial implementation is never eligible
  * for a sale, wallet reservation or remote effect. No runtime plugin loading.
  */
+/** A queued original credential packet must not disclose superseded Native secrets. */
+function achbotProviderAssertOriginalCredentialsCurrent(array $effect): void {
+    $target=json_decode((string)$effect['provider_snapshot'],true,64,JSON_THROW_ON_ERROR);
+    $adapter=achbotProviderDefinition($target['provider']??null);
+    if (!isset($adapter['original_delivery_guard']))
+        throw new RuntimeException('service_delivery_provider_guard_unavailable');
+    ($adapter['original_delivery_guard'])($effect);
+}
+function achbotPgAssertOriginalCredentialsCurrent(array $effect): void {
+    $history=achbotPgMutationHistory([
+        'state'=>$effect['provider_state'],
+        'mutation_key'=>$effect['provider_mutation_key'],
+        'mutation_snapshot'=>$effect['provider_mutation_snapshot']]);
+    foreach ($history['consumed_keys'] as $key)
+        if (preg_match('/^telegram:[1-9][0-9]*:revoke$/D',$key))
+            throw new RuntimeException('service_delivery_credentials_rotated');
+}
 function achbotProviderRequiredOperations(): array {
     return ['plan','order','same_panel','user','user_info','username','deletion_target','action_preflight','action',
         'edit','pin_payment','target','reserve','dispatch','link'];
@@ -1116,6 +1161,7 @@ function achbotProviderRegistry(): array {
             'service_target'=>'achbotPasarGuardServiceTargetLocked',
             'service_checkout_pin'=>'achbotPasarGuardCheckoutPinMatches',
             'service_account_lock'=>'achbotPgServiceAccountLock',
+            'original_delivery_guard'=>'achbotPgAssertOriginalCredentialsCurrent',
             'service_resolution_lock'=>'achbotPgServiceResolutionLock',
             'service_resolution_check'=>'achbotPgServiceResolutionCheck',
             'service_resolution_release'=>'achbotPgServiceResolutionRelease',
@@ -1139,12 +1185,12 @@ function achbotProviderRegistryEntryValid($type,$adapter): bool {
         !is_array($adapter) || !is_string($adapter['label']??null) ||
         preg_match('/^[a-z][a-z0-9_.]+$/D',$adapter['label'])!==1) return false;
     $required=achbotProviderRequiredOperations();
-    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt','service_target','service_checkout_pin','service_execution','service_finalization','service_account_lock','service_auto_observe','service_auto_reserve','service_resolution_lock','service_resolution_check','service_resolution_release'],$required))) return false;
+    if (array_diff(array_keys($adapter),array_merge(['label','import_lookup','import_adopt','service_target','service_checkout_pin','service_execution','service_finalization','service_account_lock','original_delivery_guard','service_auto_observe','service_auto_reserve','service_resolution_lock','service_resolution_check','service_resolution_release'],$required))) return false;
     foreach ($required as $operation)
         if (!is_string($adapter[$operation]??null) || !is_callable($adapter[$operation]))
             return false;
     // A registered paid service kind must have both execution and finalization.
-    foreach (['service_target','service_checkout_pin','service_account_lock','service_auto_observe','service_auto_reserve','service_resolution_lock','service_resolution_check','service_resolution_release'] as $operation)
+    foreach (['service_target','service_checkout_pin','service_account_lock','original_delivery_guard','service_auto_observe','service_auto_reserve','service_resolution_lock','service_resolution_check','service_resolution_release'] as $operation)
         if (array_key_exists($operation,$adapter) &&
             (!is_string($adapter[$operation]) || !is_callable($adapter[$operation]))) return false;
     if (isset($adapter['service_auto_observe'])!==isset($adapter['service_auto_reserve']) ||

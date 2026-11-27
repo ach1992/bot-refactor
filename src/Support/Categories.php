@@ -62,10 +62,10 @@ function achbotTicketCategoryRoute(mysqli $db,int $actor,object $source,array $c
     }
     try {
         if (!$db->begin_transaction()) throw new RuntimeException('ticket_category_begin');
-        $row=achbotTicketActorLocked($db,$actor,$cached);
+        $row=\AchBot\Telegram\Conversation\lockEditor($db,$actor,$cached);
         if (!achbotAdminCanLocked($db,$actor,(int)$GLOBALS['admin'],'operations')) throw new DomainException('ticket_category_denied');
         $s=achbotProviderStatement($db,"INSERT INTO setting(type,value) VALUES('TICKETS_CATEGORY',?)",'s',[$title]);$s->close();
-        achbotTicketWriteStep($db,$row,'none',null);
+        \AchBot\Telegram\Conversation\writeEditorLocked($db,$row,'none',null);
         if (!$db->commit()) throw new RuntimeException('ticket_category_commit');
     } catch(Throwable $e) {
         try {$db->rollback();}catch(Throwable $ignored){}

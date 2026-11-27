@@ -69,7 +69,7 @@ function sendDocument($filePath, $caption = "", $ci = null){
 
 function answerCallbackQuery($callbackId, $text = "", $show_alert = false) {
     require_once __DIR__ . '/src/Telegram/Messages.php';
-    return \AchBot\Telegram\Messages\answerCallbackQuery('file_get_contents', $GLOBALS['botUrl'], $callbackId, $text, $show_alert);
+    return \AchBot\Telegram\Messages\answerCallbackQuery('bot', $callbackId, $text, $show_alert);
 }
 
 function editKeys($keys = null, $msgId = null, $ci = null){
