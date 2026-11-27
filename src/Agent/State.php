@@ -65,7 +65,7 @@ function achbotAgencyRequest(mysqli $db,int $uid,int $generation,string $name,st
  * locked. Only a definitely rolled-back deadlock can be attempted once
  * again; no Telegram side effect occurs until commit. */
 function achbotAgencyDecision(mysqli $db,int $actor,array $cached,int $uid,int $generation,
-    ?int $discount,string $notice,bool $consume): array {
+    ?string $discount,string $notice): array {
     for ($attempt=0;$attempt<2;$attempt++) {
         try {
             achbotOperationalReportRequireReady($db);
@@ -73,16 +73,21 @@ function achbotAgencyDecision(mysqli $db,int $actor,array $cached,int $uid,int $
             $staff=\AchBot\Telegram\Conversation\lockEditor($db,$actor,$cached);
             if (!achbotAdminCanLocked($db,$actor,(int)$GLOBALS['admin'],'agents'))
                 throw new DomainException('agency_permission_changed');
+            $consume=preg_match('/^agencyApprove'.$uid.'_'.$generation.'_[1-9][0-9]*$/D',$staff['step'])===1;
+            if ($discount!==null && !$consume) throw new DomainException('agency_editor_changed');
             $u=achbotAgencyApplicant($db,$uid,true);
             if (!$u || !achbotAgencyMatches($db,$u,$generation)) {
                 if ($consume) \AchBot\Telegram\Conversation\writeEditorLocked($db,$staff,'none',null);
                 if (!$db->commit()) throw new RuntimeException('agency_stale_commit');
-                return ['state'=>'stale'];
+                return ['state'=>'stale','editor_closed'=>$consume];
             }
             if ($discount!==null) {
-                if ($discount<0 || $discount>100) throw new DomainException('agency_discount_invalid');
+                if (preg_match('/^[0-9]{1,3}$/D',$discount)!==1 || (int)$discount>100) {
+                    $db->rollback();return ['state'=>'invalid'];
+                }
+                $percent=(int)$discount;
                 $s=achbotProviderStatement($db,'UPDATE users SET is_agent=1,discount_percent=?,agent_date=? WHERE id=? AND is_agent=2',
-                    'sii',[json_encode(['normal'=>(string)$discount],JSON_THROW_ON_ERROR),time(),(int)$u['id']]);
+                    'sii',[json_encode(['normal'=>(string)$percent],JSON_THROW_ON_ERROR),time(),(int)$u['id']]);
                 $kind='agency_approved';
             } else {
                 $s=achbotProviderStatement($db,'UPDATE users SET is_agent=-1 WHERE id=? AND is_agent=2','i',[(int)$u['id']]);
@@ -94,7 +99,7 @@ function achbotAgencyDecision(mysqli $db,int $actor,array $cached,int $uid,int $
             achbotUserEventStageLocked($db,achbotUserEvent($ref,$u,$kind,$actor),'user_notice',$notice,null,'plain');
             if ($consume) \AchBot\Telegram\Conversation\writeEditorLocked($db,$staff,'none',null);
             if (!$db->commit()) throw new RuntimeException('agency_decision_commit');
-            return ['state'=>'claimed','ref'=>$ref];
+            return ['state'=>'claimed','ref'=>$ref,'editor_closed'=>$consume];
         } catch(Throwable $e) {
             try {$db->rollback();}catch(Throwable $ignored){}
             $errno=$e instanceof AchbotProviderStorageException?$e->sqlErrno:

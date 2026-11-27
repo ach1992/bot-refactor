@@ -42,6 +42,8 @@ function editText(...$args){$GLOBALS['events'][]=['editText',$args];}
 function editKeys(...$args){$GLOBALS['events'][]=['editKeys',$args];}
 function sendMessage($text,$keys=null,$mode=null,$uid=null){
     $target=$uid??$GLOBALS['from_id'];$GLOBALS['events'][]=['send',$target,$text,$keys,$mode];
+    if (($GLOBALS['spec']['cleanup_fail']??false) && (json_decode($keys??'null',true)['remove_keyboard']??false))
+        throw new RuntimeException('fixture_cleanup_failure');
     if (($GLOBALS['spec']['fail_recipient']??null)===$target) {
         if (!empty($GLOBALS['spec']['unknown'])) return null;
         return (object)['ok'=>false,'error_code'=>429,'description'=>'Too Many Requests','parameters'=>(object)['retry_after'=>1]];
@@ -83,6 +85,7 @@ def main():
         def ref(gen,kind='request'):return f'agency-{kind}:{row}:{gen}'
         def states(reference):return sql("SELECT recipient,state FROM payment_followup_intents WHERE operational_ref='"+reference+"' ORDER BY recipient").splitlines()
         def outgoing(events,target):return sum(e[0]=='send' and e[1]==target for e in events)
+        def removed(events,target):return sum(e[0]=='send' and e[1]==target and bool(json.loads(e[3] or 'null') or {}) and bool(json.loads(e[3]).get('remove_keyboard')) for e in events)
         def start(gen,actor=9001,**kw):return run(actor,f'agencyApprove1001_{gen}',**kw)[0]
         def decline(gen,actor=9001,**kw):return run(actor,f'agencyDecline1001_{gen}',**kw)[0]
         def request(**kw):
@@ -149,10 +152,34 @@ def main():
             check(tag+':old_role_controls_cannot_cancel_pending',field(1001,'is_agent')=='2')
             start(new,strict=strict)
             decline(new,actor=9002,strict=strict,fail_recipient=1001,unknown=True)
-            events,_=run(9001,text='12',strict=strict)
-            check(tag+':decline_wins_and_consumes_stale_editor',field(1001,'is_agent')=='-1' and field(9001,'step')=='none' and outgoing(events,1001)==0)
+            events,_=run(9001,text='not a discount',strict=strict)
+            check(tag+':decline_wins_and_consumes_stale_editor',field(1001,'is_agent')=='-1' and field(9001,'step')=='none' and outgoing(events,1001)==0 and removed(events,9001)==1)
             events,_=run(9001,dispatch=ref(new,'result'),strict=strict)
             check(tag+':unknown_not_blindly_resent',not events and states(ref(new,'result'))==['1001\tunknown'])
+            reset()
+            _,gen=request(strict=strict)
+            start(gen,strict=strict)
+            events=decline(gen,strict=strict,cleanup_fail=True)
+            check(tag+':same_actor_decline_retires_editor_independent_cleanup',field(1001,'is_agent')=='-1' and field(9001,'step')=='none' and removed(events,9001)==1 and states(ref(gen,'result'))==['1001\tacknowledged'])
+            events=decline(gen,strict=strict)
+            check(tag+':decline_replay_no_second_notice_or_cleanup',not removed(events,9001) and outgoing(events,1001)==0)
+            reset()
+            _,gen=request(strict=strict)
+            start(gen,strict=strict)
+            stale=field(9001,'step')
+            sql("UPDATE users SET step='unrelated_newer_editor',temp='keep' WHERE userid=9001")
+            events=decline(gen,strict=strict)
+            check(tag+':decline_preserves_unrelated_editor',field(1001,'is_agent')=='-1' and field(9001,'step')=='unrelated_newer_editor' and removed(events,9001)==0)
+            events,_=run(9001,text='12',cached_step=stale,strict=strict)
+            check(tag+':stale_approval_preserves_newer_editor',field(9001,'step')=='unrelated_newer_editor' and removed(events,9001)==0)
+            reset()
+            _,gen=request(strict=strict)
+            start(gen,strict=strict);start(gen,actor=9002,strict=strict)
+            events,_=run(9002,text='12',strict=strict,cleanup_fail=True)
+            check(tag+':approval_cleanup_failure_does_not_block_result',field(1001,'is_agent')=='1' and field(9002,'step')=='none' and removed(events,9002)==1 and states(ref(gen,'result'))==['1001\tacknowledged'])
+            events=decline(gen,strict=strict)
+            expected=subprocess.check_output(['php','-r','require '+json.dumps(str(ROOT/'messages/loader.php'))+';echo achbotMessage("legacy_messages.config_not_found");'],text=True)
+            check(tag+':stale_decline_retires_editor_without_false_rejection',field(1001,'is_agent')=='1' and field(9001,'step')=='none' and removed(events,9001)==1 and any(e[0]=='send' and e[1]==9001 and e[2]==expected for e in events) and outgoing(events,1001)==0)
             reset()
             _,gen=request(strict=strict)
             start(gen,strict=strict);start(gen,actor=9002,strict=strict)

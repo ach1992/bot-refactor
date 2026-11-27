@@ -36,6 +36,9 @@ function transportFixture($kind,$body,$keys,$mode,$to,$message=null,$photo=null)
     $events[]=['kind'=>$kind,'body'=>$body,'keys'=>$keys,'mode'=>$mode,'to'=>$to,'message'=>$message,'photo'=>$photo,'journal'=>$ctx['followup_id']??null];
     if ($ctx && array_key_exists('response',$spec) && (!isset($spec['fail_to']) || $to===$spec['fail_to']))
         return json_decode(json_encode($spec['response']));
+    if ($kind==='send' && ($spec['cleanup_fail']??false) &&
+        (json_decode($keys??'null',true)['remove_keyboard']??false))
+        throw new RuntimeException('fixture_cleanup_failure');
     if ($kind==='edit' && isset($spec['edit_response'])) return json_decode(json_encode($spec['edit_response']));
     return (object)['ok'=>true,'result'=>(object)['message_id'=>$message??(100000+$counter),'chat'=>(object)['id'=>(int)$to]]];
 }
@@ -83,6 +86,7 @@ def main():
             assert all(l.startswith(('achbot_','[AChBot] ')) for l in r.stderr.splitlines()),r.stderr
             return json.loads(r.stdout)
         def wire(r):return [x for x in r['events'] if x.get('journal')]
+        def removed(r):return [x for x in r['events'] if x['kind']=='send' and json.loads(x.get('keys') or 'null') and json.loads(x['keys']).get('remove_keyboard')]
         for mode in ('strict','off'):
             base=1000 if mode=='strict' else 2000
             def case(n):checks.append(mode+':'+n)
@@ -162,13 +166,48 @@ def main():
             assert not [x for x in r['events'] if x['kind']=='delete']
             case('literal_json_not_photo_and_reply_reopens_staff_queue')
             run(mode,actor=9002,callback=f'reply_{t}',mid=base+16)
-            r=run(mode,callback=f'closeTicket_c_{t}',mid=base+17)
-            assert sql(f'SELECT state FROM chats WHERE id={t}')=='2'
+            run(mode,callback=f'replySupport_{t}',mid=base+17)
+            r=run(mode,callback=f'closeTicket_c_{t}',mid=base+18,cleanup_fail=True)
+            assert sql(f'SELECT state FROM chats WHERE id={t}')=='2' and step()=='none' and len(removed(r))==1,r
             assert [x['to'] for x in wire(r)]==[1001,9001,9002],r
-            assert not wire(run(mode,callback=f'closeTicket_c_{t}',mid=base+18))
-            run(mode,actor=9002,text='Late reply',mid=base+19)
-            assert msgs(t)==3 and sql(f'SELECT state FROM chats WHERE id={t}')=='2'
+            assert not any(x['kind']=='delete' for x in r['events'])
+            r=run(mode,callback=f'closeTicket_c_{t}',mid=base+19)
+            assert not wire(r) and not removed(r),r
+            assert step(9002)==f'answer_{t}_{base+16}'
+            r=run(mode,actor=9002,text='Late reply',mid=base+20)
+            assert msgs(t)==3 and sql(f'SELECT state FROM chats WHERE id={t}')=='2' and step(9002)=='none',r
+            assert len(removed(r))==1 and not wire(r) and not any(x['kind']=='delete' for x in r['events']),r
             case('closed_ticket_cannot_reopen_or_duplicate_rating_prompt')
+            case('customer_close_retires_matching_editor_despite_cleanup_failure')
+            case('other_actor_close_retires_obsolete_staff_reply_on_input')
+            # Staff closure consumes its own matching editor. Customer's
+            # editor remains until its own next input, even unsupported media.
+            sql("INSERT INTO chats(user_id,create_date,title,category,state,rate) VALUES(1001,1700000000,'Terminal editor','Technical',0,0)")
+            t_close=last_ticket()
+            run(mode,actor=9002,callback=f'reply_{t_close}',mid=base+190)
+            run(mode,callback=f'replySupport_{t_close}',mid=base+191)
+            r=run(mode,actor=9002,callback=f'closeTicket_s_{t_close}',mid=base+192)
+            assert step(9002)=='none' and len(removed(r))==1 and sql(f'SELECT state FROM chats WHERE id={t_close}')=='2',r
+            assert step()==f'sendMsg_{t_close}_{base+191}' and len(wire(r))==1,r
+            stale=step()
+            sql("UPDATE users SET step='unrelated_newer_editor',temp='keep' WHERE userid=1001")
+            r=run(mode,text='Late old reply',mid=base+193,cached_step=stale)
+            assert step()=='unrelated_newer_editor' and not removed(r) and not wire(r),r
+            sql(f"UPDATE users SET step='{stale}',temp=NULL WHERE userid=1001")
+            r=run(mode,mid=base+194)
+            assert step()=='none' and len(removed(r))==1 and msgs(t_close)==0 and not wire(r),r
+            case('staff_close_and_customer_obsolete_reply_only')
+            # Closing a different ticket must not clear a newer unrelated editor.
+            sql("INSERT INTO chats(user_id,create_date,title,category,state,rate) VALUES(1001,1700000000,'Other editor','Technical',0,0)")
+            t_other=last_ticket()
+            sql("UPDATE users SET step='unrelated_newer_editor',temp='keep' WHERE userid=1001")
+            r=run(mode,callback=f'closeTicket_c_{t_other}',mid=base+195)
+            assert step()=='unrelated_newer_editor' and sql(f'SELECT state FROM chats WHERE id={t_other}')=='2' and not removed(r),r
+            sql(f"UPDATE users SET step='sendMsg_99999999_{base+196}',temp=NULL WHERE userid=1001")
+            r=run(mode,text='Missing ticket',mid=base+197)
+            assert step()==f'sendMsg_99999999_{base+196}' and not removed(r) and not wire(r),r
+            sql("UPDATE users SET step='none',temp=NULL WHERE userid=1001")
+            case('closed_ticket_preserves_unrelated_and_unavailable_editor')
             r=run(mode,callback=f'rate_{t}_5',mid=base+20,update=base+20)
             assert sql(f'SELECT rate FROM chats WHERE id={t}')=='5' and len(wire(r))==2
             assert not wire(run(mode,callback=f'rate_{t}_5',mid=base+20,update=base+20))

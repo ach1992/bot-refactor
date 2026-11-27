@@ -1,5 +1,6 @@
 {
   "added_with_direct_send": [
+    "src/Admin/ReferralSettings.php",
     "src/Finance/ManualCheckoutPresentation.php",
     "src/Finance/PaymentMessages.php",
     "src/Finance/Routes/ManualCheckout.php",
@@ -54,11 +55,11 @@
   "baseline": "484c80e6ee030e8656da96edc3000311d10327b5",
   "changes": {
     "bot.php": {
-      "reason": "Classified disposable Home reuses the current screen; stale editor navigation and old wallet branches removed.",
+      "reason": "Classified disposable Home reuses the current screen; stale editor navigation and old wallet branches removed. #236 F02: move referral settings into the source-bound shared editor route.",
       "before_count": 200,
-      "after_count": 165,
+      "after_count": 151,
       "before_sha256": "cff48d8a700a865d62d8c96389da43e7a2d34431deff1f650f3bd4b107808baa",
-      "after_sha256": "2b2f3a60409f0301d51a19df011da00838cc2259c9ac5a662d1910e076b8ef99"
+      "after_sha256": "51d3aab84f6e2923ad938f4035ec9e69aa399b66ecf75df38df44eee1a2761e4"
     },
     "config.php": {
       "reason": "Current exemption editor cancel consumes nonce without policy write; actual input prompt carries cancel keyboard.",
@@ -75,11 +76,11 @@
       "reason": "The original NOWPayments notification preserves its recipient and keyboard and appends the actual pinned invoice deadline through the shared lifecycle renderer. Remove duplicate hosted notice; original customer reference owns projection; #236."
     },
     "src/Agent/Applications.php": {
-      "after_count": 6,
-      "after_sha256": "c9407014bcadcad637c74f47e3b1e1b0a8d81ef21a946f0f178859e25ed6a574",
+      "after_count": 5,
+      "after_sha256": "033f33d448491bb496dc456a953970a026c9b52c5b2b5a2ea15ecbbeb7206bf6",
       "before_count": 7,
       "before_sha256": "1f7071e908b6d577192a587ecc8243e9e0788ac0b394c198286c90d58a1b75d6",
-      "reason": "#236: Generation-bound agency routes, durable report and decision notifications; retained acknowledgement text."
+      "reason": "#236: Generation-bound agency routes, durable report and decision notifications; retained acknowledgement text. #236 F01: retire only matching terminal editor; keyboard removal is independent of result dispatch and stale decisions never announce rejection."
     },
     "src/Agent/Discounts.php": {
       "after_count": 14,
@@ -475,10 +476,10 @@
     },
     "src/Support/Routes.php": {
       "after_count": 11,
-      "after_sha256": "9391026ca167bb324f06a22ea6e9d8655f71353e693e36589bab7d584f2f60d5",
+      "after_sha256": "41596fc5661729aa47c0907f0783030303c37f9fd41c09e80d72d1e7e2ebea4e",
       "before_count": 0,
       "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
-      "reason": "#236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation."
+      "reason": "#236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation. #236 F01: distinguish closed, invalid and submitted replies; retire only matching current editor."
     },
     "src/Telegram/Messages.php": {
       "after_count": 1,
@@ -500,6 +501,13 @@
       "after_count": 73,
       "before_sha256": "b4eb8bec5d1aa1d4317012268e5e41d537181dd2bf4b7b50b2d3547b4783af23",
       "after_sha256": "61691c8a309b0f78ca73dfe00b258598443f2b5e387cb9ee44cd694ec2fa67e0"
+    },
+    "src/Admin/ReferralSettings.php": {
+      "before_count": 0,
+      "after_count": 8,
+      "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "after_sha256": "c58654a238cbb2e46f769d02d66d9e2eaa0abb430fe4e0bb0457120a614a37d3",
+      "reason": "#236 F02: one atomic source-bound referral settings editor; retain existing text, photo and inline presentation, terminal reply keyboard removal via shared helper."
     }
   },
   "removed": [

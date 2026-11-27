@@ -50,18 +50,36 @@ function achbotTicketAcceptTitle(mysqli $db,int $actor,array $cached,int $catego
         return true;
     } catch(Throwable $e) {try {$db->rollback();}catch(Throwable $ignored){} return false;}
 }
+/** Match only an existing reply editor for this exact ticket. */
+function achbotTicketReplyEditor(array $row,int $id): bool {
+    return preg_match('/^(?:sendMsg|answer)_'.$id.'_[1-9][0-9]*$/D',$row['step'])===1;
+}
 function achbotTicketMessageReference(int $ticket,int $message): string {return 'ticket:'.$ticket.':message:'.$message;}
 
 /** Ticket/message, state, consumed editor and recipient packets commit together.
  * Telegram calls are never inside this transaction. The original incoming
  * chat/message pair prevents replay even after entering a different wizard. */
-function achbotTicketSubmit(mysqli $db,int $actor,array $cached,string $kind,int $id,object $source,array $input): ?string {
+function achbotTicketSubmit(mysqli $db,int $actor,array $cached,string $kind,int $id,object $source,?array $input): ?array {
     $staff=$kind==='answer';$new=$kind==='sendTicket';$mid=$source->message_id;
     try {
         achbotPaymentEvidenceRequireAutocommit($db);
-        achbotOperationalReportRequireReady($db);
         if (!$db->begin_transaction()) throw new RuntimeException('ticket_begin');
         $row=\AchBot\Telegram\Conversation\lockEditor($db,$actor,$cached);
+        // A definitive closure retires only this exact current reply editor,
+        // including when another actor closed the ticket. A missing/failed
+        // lookup is not evidence of closure.
+        if (!$new) {
+            $ticket=achbotTicketRow($db,$actor,$id,$staff,true);
+            if (!$ticket) throw new DomainException('ticket_unavailable');
+            if ((int)$ticket['state']===2) {
+                if (!achbotTicketReplyEditor($row,$id)) throw new DomainException('ticket_editor_changed');
+                \AchBot\Telegram\Conversation\writeEditorLocked($db,$row,'none',null);
+                if (!$db->commit()) throw new RuntimeException('ticket_closed_editor_commit');
+                return ['state'=>'closed'];
+            }
+        }
+        if ($input===null) {$db->rollback();return ['state'=>'invalid'];}
+        achbotOperationalReportRequireReady($db);
         if (achbotProviderRow($db,'SELECT id FROM chats_info WHERE source_chat_id=? AND source_message_id=?','ii',[$actor,$mid]))
             throw new DomainException('ticket_message_replayed');
         if ($new) {
@@ -72,9 +90,9 @@ function achbotTicketSubmit(mysqli $db,int $actor,array $cached,string $kind,int
             $s=achbotProviderStatement($db,'INSERT INTO chats(user_id,create_date,title,category,state,rate) VALUES(?,?,?,?,0,0)',
                 'iiss',[$actor,time(),$title,$category['value']]);
             $id=$s->insert_id;$s->close();
+            $ticket=achbotTicketRow($db,$actor,$id,false,true);
+            if (!$ticket) throw new RuntimeException('ticket_create_unconfirmed');
         }
-        $ticket=achbotTicketRow($db,$actor,$id,$staff,true);
-        if (!$ticket || (int)$ticket['state']===2) throw new DomainException('ticket_closed');
         $s=achbotProviderStatement($db,'INSERT INTO chats_info(chat_id,sent_date,msg_type,text,source_chat_id,source_message_id,content_kind) VALUES(?,?,?,?,?,?,?)',
             'iissiis',[$id,time(),$staff?'ADMIN':'USER',$input['stored'],$actor,$mid,$input['kind']]);
         $msgId=$s->insert_id;$s->close();
@@ -86,7 +104,7 @@ function achbotTicketSubmit(mysqli $db,int $actor,array $cached,string $kind,int
             achbotTicketPackets($body,achbotTicketReplyKeys($id,!$staff),$input['photo']),!$staff,$message);
         \AchBot\Telegram\Conversation\writeEditorLocked($db,$row,'none',null);
         if (!$db->commit()) throw new RuntimeException('ticket_commit_unknown');
-        return $ref;
+        return ['state'=>'submitted','ref'=>$ref];
     } catch (Throwable $e) {
         try {$db->rollback();}catch(Throwable $ignored){}
         error_log('achbot_ticket_submit_unconfirmed actor='.$actor.' class='.get_class($e));
@@ -96,13 +114,20 @@ function achbotTicketSubmit(mysqli $db,int $actor,array $cached,string $kind,int
 
 /** Closure is a single transition under the same ticket row lock as replies.
  * Replayed close does not send duplicate rating prompts. */
-function achbotTicketClose(mysqli $db,int $actor,int $id,bool $staff,array $cached): ?string {
+function achbotTicketClose(mysqli $db,int $actor,int $id,bool $staff,array $cached): ?array {
     try {
-        achbotPaymentEvidenceRequireAutocommit($db);achbotOperationalReportRequireReady($db);
+        achbotPaymentEvidenceRequireAutocommit($db);
         if (!$db->begin_transaction()) throw new RuntimeException('ticket_begin');
         $row=\AchBot\Telegram\Conversation\lockEditor($db,$actor,$cached);
         $ticket=achbotTicketRow($db,$actor,$id,$staff,true);
-        if (!$ticket || (int)$ticket['state']===2) throw new DomainException('ticket_closed');
+        if (!$ticket) throw new DomainException('ticket_unavailable');
+        $retire=achbotTicketReplyEditor($row,$id);
+        if ($retire) \AchBot\Telegram\Conversation\writeEditorLocked($db,$row,'none',null);
+        if ((int)$ticket['state']===2) {
+            if (!$db->commit()) throw new RuntimeException('ticket_closed_editor_commit');
+            return ['ref'=>null,'editor_closed'=>$retire];
+        }
+        achbotOperationalReportRequireReady($db);
         $s=achbotProviderStatement($db,'UPDATE chats SET state=2 WHERE id=? AND state<>2','i',[$id]);
         $n=$s->affected_rows;$s->close();
         if ($n!==1) throw new RuntimeException('ticket_close_conflict');
@@ -121,7 +146,7 @@ function achbotTicketClose(mysqli $db,int $actor,int $id,bool $staff,array $cach
             achbotTicketStageLocked($db,$ticket,$actor,$ref,achbotTicketPackets(achbotMessage('support.customer_conversation.user_all_tickets.message.2baf15e3c0'),$keys),true);
         }
         if (!$db->commit()) throw new RuntimeException('ticket_close_commit_unknown');
-        return $ref;
+        return ['ref'=>$ref,'editor_closed'=>$retire];
     } catch(Throwable $e) {try {$db->rollback();}catch(Throwable $ignored){}return null;}
 }
 /** Keep existing ability to change a rating from a new click, never allow

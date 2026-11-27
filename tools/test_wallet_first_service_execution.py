@@ -126,6 +126,7 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
         $latest=achbotProviderRow($db,'SELECT MAX(id) AS id FROM pays WHERE user_id=?','i',[$actor]);
         return (object)['ok'=>true,'result'=>(object)['message_id'=>200000+(int)$latest['id'],'chat'=>(object)['id'=>$actor]]];
     }
+    if ($x['op']==='referral_config') return fixtureMessageAck((int)$uid,12345);
     if (in_array($x['op'],['checkout_discount','rotate_key'],true)) return (object)['ok'=>true];
     return fixtureDeliverySend('text',$uid,$text,$keys,$mode);
 }
@@ -404,6 +405,21 @@ try {
         if (achbotFollowupDispatchOne($db,(int)$notice['id'])!=='acknowledged')
             throw new RuntimeException('fixture_manual_receipt');
         $r=achbotCheckoutSettleReceipt($db,$pid,1001,'manual',[],(int)($x['actor']??9001),9001);
+    }
+    elseif ($x['op']==='referral_config') {
+        require_once $argv[1].'/src/Admin/ReferralSettings.php';
+        $actor=9001;$GLOBALS['from_id']=$actor;
+        $chat=(object)['id'=>$actor,'type'=>'private'];$sender=(object)['id'=>$actor];
+        $cached=achbotProviderRow($db,'SELECT * FROM users WHERE userid=?','i',[$actor]);
+        $start=(object)['update_id'=>12340,'callback_query'=>(object)['data'=>'editInviteAmount','from'=>$sender,
+            'message'=>(object)['message_id'=>12340,'chat'=>$chat,'from'=>(object)['is_bot'=>true]]]];
+        if (!achbotReferralSettingsRoute($db,$actor,$start,$cached,'{"keyboard":[]}'))
+            throw new RuntimeException('fixture_referral_start');
+        $cached=achbotProviderRow($db,'SELECT * FROM users WHERE userid=?','i',[$actor]);
+        $input=(object)['update_id'=>12341,'message'=>(object)['from'=>$sender,'chat'=>$chat,'message_id'=>12341,'text'=>$x['value']]];
+        if (!achbotReferralSettingsRoute($db,$actor,$input,$cached,'{"keyboard":[]}'))
+            throw new RuntimeException('fixture_referral_save');
+        $r=achbotPurchaseReferralPolicyAmount($db);
     }
     elseif ($x['op']==='referral') $r=achbotServiceReferralComplete($db,$x['id'],9001);
     elseif ($x['op']==='maintain_referrals') $r=achbotServiceReferralMaintainPending($db,9001,$x['limit'],10.0);
@@ -915,8 +931,9 @@ def main():
                 # finalization owns the decision; no simulated award writer.
                 # A zero-discount agent, including bulk purchases, is excluded.
                 sql("UPDATE users SET refered_by=9002,is_agent=1 WHERE userid=1001; "
-                    "UPDATE users SET is_agent=0 WHERE userid=9002; "
-                    "INSERT INTO setting(type,value) VALUES ('INVITE_BANNER_AMOUNT','75')")
+                    "UPDATE users SET is_agent=0 WHERE userid=9002")
+                assert php(mode,'referral_config',value='00075')==75
+                assert sql("SELECT value FROM setting WHERE type='INVITE_BANNER_AMOUNT'")=='75'
                 before=int(sql("SELECT wallet FROM users WHERE userid=9002"))
                 for label,quantity,pinned,demote in (
                     ('current-agent',1,False,False),
@@ -953,6 +970,7 @@ def main():
                 assert int(sql("SELECT wallet FROM users WHERE userid=9002"))==before+75
                 assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='purchase_referral' AND source_ref='{op}'")=='1'
                 cases.append(mode+'_referral_customer_purchase_agent_inviter_eligible')
+                cases.append(mode+'_referral_actual_setting_route_purchase_completion')
                 # Reuse the actual receipt-funded BUY engine; no fabricated
                 # actor for the automatic reward, but retain the real funding actor.
                 prior_role=sql("SELECT value FROM setting WHERE type='ADMIN_ROLE_9002'")

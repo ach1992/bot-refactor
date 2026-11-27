@@ -240,6 +240,23 @@ Discount creation and typed edits use the same local editor transaction
 and one detail presenter. Concurrent creation of the same valid code is
 serialized by code; no new schema or durable queue is required.
 
+Closing a ticket or deciding an agency application consumes only the
+actor's matching current editor in the same transaction as the decision.
+If another actor already completed the target, the next matching typed
+input retires the obsolete editor without repeating the effect. A failed
+or unavailable lookup is not evidence of closure. Unrelated or newer
+editors and retained conversation/report records are not cleared.
+ReplyKeyboardRemove is sent separately from inline presentation and
+is best effort after commit.
+
+Purchase referral amount and invitation banner administration share the
+source-bound editor transaction and the existing singleton setting
+writer-lock pattern. The financial reader and editor use the same canonical
+integer amount domain, including zero to disable rewards; no new cap is
+introduced. The current actor and editor generation, exact setting row and
+write result are checked before commit. Concurrent creation is serialized;
+ambiguous existing rows are not silently overwritten or deduplicated.
+
 
 Subscription search prefers a unique exact name and otherwise permits a
 unique literal substring within the current authorized active order scope.
