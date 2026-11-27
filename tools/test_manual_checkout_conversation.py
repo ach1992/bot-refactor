@@ -59,7 +59,8 @@ def main():
         assert not any(e[0]=='send' for e in r['events']),r
         cases.append('committed_topup_selector_recovery_exact_owner_no_second_draft')
         r=run('cancel_idle',actor=2002,text=subprocess.check_output(['php','-r',"require 'messages/loader.php';echo achbotMessage('legacy_buttons.cancel');"],cwd=ROOT,text=True))
-        assert r['user']['step']=='none' and not any('لغو شد' in str(e[1]) for e in r['events'] if e[0]=='send'),r
+        canceled=subprocess.check_output(['php','-r',"require 'messages/loader.php';echo achbotMessage('legacy_messages.operation_canceled');"],cwd=ROOT,text=True)
+        assert r['user']['step']=='none' and not any(canceled in str(e[1]) for e in r['events'] if e[0]=='send'),r
         cases.append('completed_topup_is_not_cancelled_editor')
         sql(f"UPDATE users SET step='achbotWalletTopup:amount:100000:81:{int(time.time())}' WHERE userid=2001")
         r=run('topup',sent_id=201)
@@ -129,17 +130,17 @@ def main():
             return [b for e in r['events'] if e[0]=='markup' and e[2]
                     for row in json.loads(e[2]).get('inline_keyboard',[]) for b in row]
         sql(f"UPDATE payment_attempts SET evidence_state='monitoring' WHERE pay_row_id={pid}")
-        r=run('staff_notice',pay=int(pid))
-        bs=staff_buttons(r)
-        assert 'declineAction_'+h in [b['callback_data'] for b in bs],r
-        assert any(b['callback_data']=='attentionOpenCase_'+pid and 'در انتظار بررسی خودکار' in b['text'] for b in bs),r
+        staff=run('staff_notice',pay=int(pid))
+        bs=staff_buttons(staff)
+        assert {'pa_'+h,'declineAction_'+h} <= {b['callback_data'] for b in bs},staff
+        assert any(b['callback_data']=='attentionOpenCase_'+pid and 'در انتظار بررسی خودکار' in b['text'] for b in bs),staff
         aid=sql(f"SELECT id FROM payment_attempts WHERE pay_row_id={pid}")
         sql(f"INSERT INTO payment_transactions(attempt_id,provider,payment_id,evidence_operation,evidence_state) VALUES ({aid},'bank_transfer','fixture-pending',REPEAT('b',64),'dispatched')")
         sql(f"UPDATE payment_attempts SET evidence_state='uncertain' WHERE pay_row_id={pid}")
-        r=run('staff_notice',pay=int(pid))
-        bs=staff_buttons(r)
-        assert bs and 'declineAction_'+h not in [b['callback_data'] for b in bs],r
-        assert any(b['callback_data']=='attentionOpenCase_'+pid for b in bs),r
+        staff=run('staff_notice',pay=int(pid))
+        bs=staff_buttons(staff)
+        assert bs and 'pa_'+h in [b['callback_data'] for b in bs] and 'declineAction_'+h not in [b['callback_data'] for b in bs],staff
+        assert any(b['callback_data']=='attentionOpenCase_'+pid for b in bs),staff
         sql(f"DELETE FROM payment_transactions WHERE attempt_id={aid}")
         sql(f"UPDATE payment_attempts SET evidence_state=NULL WHERE id={aid}")
         cases.append('staff_monitoring_actions_and_original_evidence_negative_fence')

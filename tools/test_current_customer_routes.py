@@ -974,6 +974,8 @@ def main():
             assert int(sql("SELECT COUNT(*) FROM pays"))==before+1,rr
             pid,h,price,_=latest(2001)
             assert price=='100000',rr
+            sends=[e for e in rr['events'] if e[0]=='send']
+            assert len(sends)==1 and sends[0][3]=='HTML' and '100,000' in sends[0][1],rr
             actual=set()
             for b in buttons(rr):
                 cb=b.get('callback_data','');url=b.get('url','')

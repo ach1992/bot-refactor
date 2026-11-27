@@ -28,11 +28,10 @@ TARGETS = (
     ('src/Plans/Intervals.php', 'admin_settings.management.review_required'),
     ('src/Plans/AddonAdmin.php', 'addon_scopes.unavailable&addon_scopes.filter_blocked'),
     ('src/Subscription/ServerDisplaySettings.php', 'handle_server_display_admin.text.ed95738546'),
-    ('src/Finance/WalletStart.php', 'start_wallet_payment.message.1f46b2b87f'),
     ('src/Purchase/EntryAndBulk.php', 'bulk_reporting.delivery_needs_review'),
 )
-EXPECTED_SOURCE_SHA256 = 'e54b3aac06f09041ffb68cea6a070cea10a75d3e4fcfc279f2f9c13b4ae20b8e'
-EXPECTED_GOLDEN_SHA256 = '20a9afd6ba65922867597336c13a0ed7a393759c32996d782461f32809b58f20'
+EXPECTED_SOURCE_SHA256 = '2a219ed9d39d6649bbb8c31ef8ddccbc3fd7dd0ff5000a09f0d5d2263e09d9e7'
+EXPECTED_GOLDEN_SHA256 = 'f5374536119d86f56fea2d53b40f68aae375eb28a70649c91d2bc5d2d00ece64'
 HTML_UNSAFE = re.compile(r'[<>&*_`\[\]\\]|https?://|tg://|\bt\.me/', re.I)
 
 
@@ -156,8 +155,6 @@ def mutators(sources:dict[str,str], reference:str) -> int:
         ('parser',file,source[:first['start']]+fragment.replace("'HTML'","'MarkDown'",1)+source[first['end']+1:]),
     ]
     for label,key,old,new in (
-        ('unsafe_wallet_amount','start_wallet_payment.message.1f46b2b87f',
-         'number_format($amount)','$text'),
         ('unsafe_bulk_count','bulk_reporting.delivery_needs_review',
          'count($deliveryReview)','$text'),
     ):
@@ -192,6 +189,12 @@ def main() -> None:
         if marker in retired or any(marker in (ROOT/'messages/fa'/name).read_text(encoding='utf-8')
                                     for name in ('user.php','admin.php')):
             raise AssertionError('retired pre-payment notice reintroduced: '+marker)
+    # #236 replaced the old numeric-fragment top-up producer with the
+    # acknowledged selector renderer; actual no-method, amount and HTML
+    # wire behavior is covered in the source-real conversation suite.
+    for marker in ('start_wallet_payment.message.1f46b2b87f','start_wallet_payment.message.64ab796d01'):
+        assert marker not in (ROOT/'src/Finance/WalletStart.php').read_text()
+        assert marker not in (ROOT/'messages/fa/user.php').read_text()
     sources={file:(ROOT/file).read_text(encoding='utf-8') for file,_ in TARGETS}
     items=inventory(sources,html_required=not args.print_audit)
     origin=source_digest(items)
