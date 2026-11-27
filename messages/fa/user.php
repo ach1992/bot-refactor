@@ -213,8 +213,9 @@ return [
         'wallet_settlement.process_wallet_payment.alert.4092b19ef1' => '💰 موجودی فعلی: ',
         'wallet_settlement.process_wallet_payment.alert.f82b5605a9' => '🔺 مورد نیاز: ',
         'wallet_settlement.process_wallet_payment.alert.0b74ab3f2e' => '⛔️ ظرفیت این سفارش کافی نیست؛ مبلغی از کیف پول کسر نشد.',
-        'wallet_start.start_wallet_payment.message.1f46b2b87f' => '🧾 اطلاعات شارژ:' . "\n" . '💰 مبلغ: ',
-        'wallet_start.start_wallet_payment.message.64ab796d01' => ' تومان' . "\n" . '' . "\n" . '💳 لطفاً روش پرداخت را انتخاب کنید:',
+        'wallet_start.selector_amount' => ['text' => "<b>🧾 اطلاعات شارژ</b>\n💰 مبلغ: {amount} تومان", 'parameters' => ['amount']],
+        'wallet_start.amount_registered' => '✅ مبلغ شارژ ثبت شد.',
+        'wallet_start.selector_delivery_pending' => '⚠️ درخواست شارژ ثبت شده اما نمایش روش‌های پرداخت هنوز تأیید نشده است. دوباره گزینه شارژ کیف پول را انتخاب کنید.',
     ],
 
     // ── ساخت و خرید اشتراک ──
@@ -437,7 +438,7 @@ return [
         'extensions.alert.ae271a2d1d' => '⚠️ ثبت پیش‌نویس به‌طور قطعی تأیید نشد؛ از ایجاد پرداخت مجدد پرهیز کنید.',
         // extensions.button
         // extensions.message
-        'extensions.message.48930749a9' => ['text'=>"<b>🧾 روش پرداخت سفارش را انتخاب کنید.</b>\n💵 مبلغ: {amount} تومان",'parameters'=>['amount']],
+        'extensions.amount' => ['text' => "<b>🧾 اطلاعات سفارش</b>\n💵 مبلغ: {amount} تومان", 'parameters' => ['amount']],
         // extensions.alert
         // extensions.text
         'extensions.text.9699c34220' => 'زمان',
@@ -520,6 +521,8 @@ return [
         'agent_discounts.get_agent_discounts.button.d15a8dbd6d' => '🎁 افزودن تخفیف پلن',
         'agent_discounts.get_agent_discounts.button.82aaebb083' => '🎁 افزودن تخفیف سرور',
         // discounts.apply_discount_to_pay
+        'select_method' => '💳 لطفاً روش پرداخت را انتخاب کنید:',
+        'no_available_method' => '⚠️ در حال حاضر هیچ روش پرداختی برای این درخواست در دسترس نیست.',
         'discounts.no_monetary_method' => '⚠️ هیچ روش پرداختی برای این سفارش در دسترس نیست. در این شرایط فقط کد تخفیفی که مبلغ نهایی را صفر کند قابل استفاده است.',
         'discounts.apply_discount_to_pay.text.2cc98f7f7c' => ' تومان',
         'discounts.apply_discount_to_pay.button.16e81418a3' => '❤️',
@@ -533,7 +536,8 @@ return [
         'payment_lifecycle.progress_completed' => '✅ درخواست انجام شد و اطلاعات آن ارسال شده است.',
         'payment_lifecycle.progress_delivery_unconfirmed' => 'درخواست انجام شده، اما ارسال اطلاعات هنوز تأیید نشده است. لطفاً وضعیت همین سفارش را پیگیری کنید.',
         'payment_lifecycle.progress_wallet_credited' => '✅ مبلغ تأییدشده به کیف پول شما اضافه شد.',
-        'payment_lifecycle.progress_resolved' => 'رسیدگی به این درخواست پایان یافته است؛ برای جزئیات، وضعیت سفارش را از پشتیبانی پیگیری کنید.',
+        'payment_lifecycle.progress_resolved_refunded' => '✅ رسیدگی پایان یافت و بازگشت وجه تعیین‌شده ثبت شد. جزئیات نتیجه به‌صورت جداگانه اعلام می‌شود.',
+        'payment_lifecycle.progress_resolved_closed' => 'رسیدگی به این درخواست بدون بازگشت وجه پایان یافت. جزئیات نتیجه به‌صورت جداگانه اعلام می‌شود.',
         'payment_lifecycle.progress_unverified' => 'نتیجه نهایی هنوز قابل تأیید نیست. پرداخت را تکرار نکنید و وضعیت همین سفارش را پیگیری کنید.',
         'payment_lifecycle.draft_closed' => '<b>⌛️ مهلت انتخاب روش پرداخت پایان یافت.</b> لطفاً درخواست خود را دوباره ثبت کنید.',
         'payment_lifecycle.pay_ux_status_text.text.a1026d7b85' => '⌛️ مهلت این درخواست پرداخت پایان یافته است.',

@@ -65,6 +65,14 @@
       "before": "⚠️ پرداخت فقط پس از تأیید درگاه و ثبت نتیجه در ربات نهایی است؛ ",
       "after": null
     },
+    "manual_payment.api_payment.current_monitoring": {
+      "before": null,
+      "after": "⏳ در انتظار بررسی خودکار"
+    },
+    "manual_payment.api_payment.current_verifying": {
+      "before": null,
+      "after": "⏳ در حال تأیید شواهد پرداخت"
+    },
     "manual_payment.receipt_helpers.manual_acknowledgement.label.a5f27211f7": {
       "before": "📥 تصویر ",
       "after": null
@@ -81,9 +89,74 @@
       "before": "🔄 بررسی وضعیت",
       "after": null
     },
+    "operational_reports.receipt_credit": {
+      "before": "<b>💳 اعتبار پرداخت ثبت‌شده</b>",
+      "after": null
+    },
+    "operational_reports.service_wallet": {
+      "before": {
+        "text": "شناسهٔ کسر از کیف پول: <code>W{entry}</code>\nموجودی پیش از کسر: {before} تومان\nموجودی پس از کسر: {after} تومان\n📅 تاریخ ثبت کسر (ایران): {date}",
+        "parameters": [
+          "entry",
+          "before",
+          "after",
+          "date"
+        ]
+      },
+      "after": null
+    },
+    "operational_reports.service_wallet_balance": {
+      "before": null,
+      "after": {
+        "text": "موجودی قبل: {before} تومان\nموجودی بعد: {after} تومان",
+        "parameters": [
+          "before",
+          "after"
+        ]
+      }
+    },
+    "operational_reports.service_wallet_credit": {
+      "before": null,
+      "after": {
+        "text": "➕ اعتبار پرداخت: {amount} تومان | <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}",
+        "parameters": [
+          "entry",
+          "amount",
+          "date"
+        ]
+      }
+    },
+    "operational_reports.service_wallet_debit": {
+      "before": null,
+      "after": {
+        "text": "➖ کسر بابت سرویس: {amount} تومان | <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}",
+        "parameters": [
+          "entry",
+          "amount",
+          "date"
+        ]
+      }
+    },
+    "operational_reports.service_wallet_net": {
+      "before": null,
+      "after": {
+        "text": "خالص تغییر موجودی: {net} تومان",
+        "parameters": [
+          "net"
+        ]
+      }
+    },
+    "operational_reports.service_wallet_title": {
+      "before": null,
+      "after": "<b>💰 گردش کیف پول</b>"
+    },
     "payment.api_payment.code_acknowledgement": {
       "before": "✅ کد گیفت‌کارت دریافت شد.\n⏳ درخواست در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.",
       "after": null
+    },
+    "payment.no_available_method": {
+      "before": null,
+      "after": "⚠️ در حال حاضر هیچ روش پرداختی برای این درخواست در دسترس نیست."
     },
     "payment.payment_lifecycle.gift_not_verified": {
       "before": null,
@@ -144,6 +217,18 @@
       },
       "after": null
     },
+    "payment.payment_lifecycle.progress_resolved": {
+      "before": "رسیدگی به این درخواست پایان یافته است؛ برای جزئیات، وضعیت سفارش را از پشتیبانی پیگیری کنید.",
+      "after": null
+    },
+    "payment.payment_lifecycle.progress_resolved_closed": {
+      "before": null,
+      "after": "رسیدگی به این درخواست بدون بازگشت وجه پایان یافت. جزئیات نتیجه به‌صورت جداگانه اعلام می‌شود."
+    },
+    "payment.payment_lifecycle.progress_resolved_refunded": {
+      "before": null,
+      "after": "✅ رسیدگی پایان یافت و بازگشت وجه تعیین‌شده ثبت شد. جزئیات نتیجه به‌صورت جداگانه اعلام می‌شود."
+    },
     "payment.payment_lifecycle.receipt_instruction_retired": {
       "before": null,
       "after": "🧾 اطلاعات پرداخت قبلی دیگر قابل استفاده نیست. وضعیت سفارش را از پیام ثبت رسید بررسی کنید."
@@ -174,6 +259,53 @@
     },
     "payment.pre_payment.alert.fdf0d1d6f9": {
       "before": "وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.",
+      "after": null
+    },
+    "payment.select_method": {
+      "before": null,
+      "after": "💳 لطفاً روش پرداخت را انتخاب کنید:"
+    },
+    "renewal.extensions.amount": {
+      "before": null,
+      "after": {
+        "text": "<b>🧾 اطلاعات سفارش</b>\n💵 مبلغ: {amount} تومان",
+        "parameters": [
+          "amount"
+        ]
+      }
+    },
+    "renewal.extensions.message.48930749a9": {
+      "before": {
+        "text": "<b>🧾 روش پرداخت سفارش را انتخاب کنید.</b>\n💵 مبلغ: {amount} تومان",
+        "parameters": [
+          "amount"
+        ]
+      },
+      "after": null
+    },
+    "wallet.wallet_start.amount_registered": {
+      "before": null,
+      "after": "✅ مبلغ شارژ ثبت شد."
+    },
+    "wallet.wallet_start.selector_amount": {
+      "before": null,
+      "after": {
+        "text": "<b>🧾 اطلاعات شارژ</b>\n💰 مبلغ: {amount} تومان",
+        "parameters": [
+          "amount"
+        ]
+      }
+    },
+    "wallet.wallet_start.selector_delivery_pending": {
+      "before": null,
+      "after": "⚠️ درخواست شارژ ثبت شده اما نمایش روش‌های پرداخت هنوز تأیید نشده است. دوباره گزینه شارژ کیف پول را انتخاب کنید."
+    },
+    "wallet.wallet_start.start_wallet_payment.message.1f46b2b87f": {
+      "before": "🧾 اطلاعات شارژ:\n💰 مبلغ: ",
+      "after": null
+    },
+    "wallet.wallet_start.start_wallet_payment.message.64ab796d01": {
+      "before": " تومان\n\n💳 لطفاً روش پرداخت را انتخاب کنید:",
       "after": null
     }
   }

@@ -1926,8 +1926,12 @@ DELIMITER ;
                 assert 'nextpay' in wire.lower() and all(row.split('\t')[2] in wire for row in rows(op)),wire
                 debit=sql(f"SELECT w.id,w.balance_before,w.balance_after FROM service_operations s JOIN wallet_entries w ON w.id=s.debit_entry_id WHERE s.id={op}").split('\t')
                 assert f'P{first[0]}' in wire and f'W{debit[0]}' in wire,wire
-                assert f"موجودی پیش از کسر: {int(debit[1]):,} تومان" in wire,wire
-                assert f"موجودی پس از کسر: {int(debit[2]):,} تومان" in wire,wire
+                credit=sql(f"SELECT id,balance_before,balance_after,delta_toman FROM wallet_entries WHERE source_kind='payment_credit' AND source_ref='{first[0]}'").split('\t')
+                assert f'W{credit[0]}' in wire and f"اعتبار پرداخت: {int(credit[3]):,} تومان" in wire,wire
+                assert f"موجودی قبل: {int(credit[1]):,} تومان" in wire,wire
+                assert f"موجودی بعد: {int(debit[2]):,} تومان" in wire,wire
+                assert wire.count('موجودی قبل:')==1 and wire.count('موجودی بعد:')==1,wire
+                assert 'خالص تغییر موجودی: 0 تومان' in wire,wire
                 cases.append(mode+'_service_report_original_receipt_and_wallet_debit')
                 credit_id=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={late[0]} AND stage='wallet_credit' AND role='customer'"))
                 assert php(mode,'followup',id=credit_id,response=dict(ok=False,error_code=429,description='Too Many Requests',parameters=dict(retry_after=35)))=='pending'
@@ -2450,9 +2454,9 @@ DELIMITER ;
                 rop=rr['operation']
                 plan=php(mode,'resolution_preview',id=rop,decision='refunded')
                 assert plan and php(mode,'resolve',id=rop,decision='refunded',token=plan['token'])['status']=='refunded'
-                assert php(mode,'receipt_outcome',pay=rpid)=='resolved'
+                assert php(mode,'receipt_outcome',pay=rpid)=='resolved_refunded'
                 assert php(mode,'checkout_approve',hash=rh)['credit']['replayed']
-                assert php(mode,'receipt_outcome',pay=rpid)=='resolved'
+                assert php(mode,'receipt_outcome',pay=rpid)=='resolved_refunded'
                 assert php(mode,'sales_snapshot')==external_sales
                 cases.append(mode+'_actual_full_refund_not_service_sale')
                 cases.append(mode+'_receipt_projection_resolved_original_never_reopened')

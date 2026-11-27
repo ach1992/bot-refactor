@@ -314,6 +314,9 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         achbotMessage('legacy_messages.saved_successfuly'),(int)$from_id);
     // An edit exception never suppresses independent customer/staff notices.
     // Missing ACK is UNKNOWN, not permission for a duplicate message.
+    // The reason/retry instruction is independent meaningful information.
+    // The acknowledged receipt status still converges on the same decision.
+    achbotPayUxSyncMessages($connection,$payId);
     achbotFollowupDispatchPending($connection,$payId,'manual_reject');
 
 }

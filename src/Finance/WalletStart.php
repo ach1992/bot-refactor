@@ -11,9 +11,9 @@ require_once __DIR__ . '/PaymentLifecycle.php';
 require_once __DIR__.'/../Telegram/Conversation.php';
 
 /** All transient stages fit the existing users.step column; no migration. */
-function achbotWalletTopupStage(string $kind, int $updateId, int $messageId = 0): string {
+function achbotWalletTopupStage(string $kind, int $updateId, int $reference = 0): string {
     // Timestamp handles Telegram's random update_id reset after >=7 idle days.
-    return 'achbotWalletTopup:' . $kind . ':' . $updateId . ':' . $messageId . ':' . time();
+    return 'achbotWalletTopup:' . $kind . ':' . $updateId . ':' . $reference . ':' . time();
 }
 
 /**
@@ -51,7 +51,7 @@ function achbotWalletTopupAdvance(mysqli $db, int $actorId, ?string $expected,
             return 'stale';
         }
         if ($expected === null && preg_match(
-            '/\AachbotWalletTopup:(?:opening|choose|prompting|amount|done):([1-9][0-9]*):[0-9]+:([1-9][0-9]*)\z/D',
+            '/\AachbotWalletTopup:(?:opening|choose|prompting|amount|committed):([1-9][0-9]*):[0-9]+:([1-9][0-9]*)\z/D',
             $stored, $match
         )) {
             $age = time() - (int)$match[2];
@@ -123,15 +123,6 @@ function startWalletPayment(mysqli $connection, $botUrl,
             return 'stale';
         }
         $id = (int)$rows[0]['id'];
-        $done = achbotWalletTopupStage('done', $updateId, $sourceMessageId);
-        $stmt = $connection->prepare('UPDATE users SET step=? WHERE id=? AND step=?');
-        if (!$stmt) throw new RuntimeException('topup_claim_unavailable');
-        $stmt->bind_param('sis', $done, $id, $expectedStep);
-        if (!$stmt->execute()) throw new RuntimeException('topup_claim_failed');
-        $claimed = $stmt->affected_rows;
-        $stmt->close();
-        if ($claimed !== 1) throw new RuntimeException('topup_claim_unconfirmed');
-
         require_once __DIR__.'/CheckoutAdmission.php';
         achbotCheckoutRequireSchema($connection);
         $hash_id = RandomString();
@@ -140,13 +131,23 @@ function startWalletPayment(mysqli $connection, $botUrl,
         $deadline=$time+achbotPayUxDraftDeadlineSeconds(achbotPayUxCurrentStatesLocked($connection)??[]);
         $stmt = $connection->prepare("INSERT INTO pays
             (hash_id,user_id,type,plan_id,volume,day,price,request_date,state,checkout_draft_context,draft_expires_at)
-            VALUES (?,?,'INCREASE_WALLET','0','0','0',?,?,'pending',JSON_OBJECT('version',1),?)");
+            VALUES (?,?,'INCREASE_WALLET','0','0','0',?,?,'pending',JSON_OBJECT('version',1,'topup_prompt',?),?)");
         if (!$stmt) throw new RuntimeException('topup_insert_unavailable');
-        $stmt->bind_param('siiii', $hash_id, $actor, $amount, $time,$deadline);
+        $promptId=(int)explode(':',$expectedStep)[3];
+        $stmt->bind_param('siiiii', $hash_id, $actor, $amount, $time,$promptId,$deadline);
         if (!$stmt->execute()) throw new RuntimeException('topup_insert_failed');
         if ($stmt->affected_rows !== 1) throw new RuntimeException('topup_insert_unconfirmed');
         $draftId=(int)$stmt->insert_id;
         $stmt->close();
+        $done = achbotWalletTopupStage('committed', $updateId, $draftId);
+        $stmt = $connection->prepare('UPDATE users SET step=? WHERE id=? AND step=?');
+        if (!$stmt) throw new RuntimeException('topup_claim_unavailable');
+        $stmt->bind_param('sis', $done, $id, $expectedStep);
+        if (!$stmt->execute()) throw new RuntimeException('topup_claim_failed');
+        $claimed = $stmt->affected_rows;
+        $stmt->close();
+        if ($claimed !== 1) throw new RuntimeException('topup_claim_unconfirmed');
+
         if (!$connection->commit()) throw new RuntimeException('topup_commit_unknown');
         $started = false;
     } catch (Throwable $failure) {
@@ -159,22 +160,75 @@ function startWalletPayment(mysqli $connection, $botUrl,
         return 'review';
     }
 
-    require_once __DIR__.'/../Purchase/CheckoutPresentation.php';
-    $methods=array_keys(achbotCheckoutDraftPaymentOptions($connection,$draftId,$actor));
-    $keyboard=achbotCheckoutPaymentKeyboard('topup',$hash_id,$amount,$methods,$botUrl);
-    $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cancel'), 'callback_data' => 'dc_'.$hash_id]];
-    $keys = json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);
+    return achbotWalletTopupPresentSelector($connection,$draftId,$actor,$botUrl);
+}
+
+/** A committed draft and its Telegram delivery are separate facts.
+ * The original payment lease serializes presentation and explicit recovery.
+ * No automatic resend after an ambiguous Telegram response. */
+function achbotWalletTopupPresentSelector(mysqli $db,int $draftId,int $actor,string $botUrl): string {
     try {
-        $reply = sendMessage(\achbotMessage('wallet.wallet_start.start_wallet_payment.message.1f46b2b87f') . number_format($amount) .
-            \achbotMessage('wallet.wallet_start.start_wallet_payment.message.64ab796d01'), $keys, 'HTML');
-        require_once __DIR__ . '/PaymentLifecycle.php';
-        achbotPayUxTrackByHash($connection,$hash_id,$actor,$reply,'selector');
-        if (!is_object($reply) || ($reply->ok ?? false) !== true) {
-            error_log('achbot_wallet_topup_delivery_deferred update_id=' . $updateId);
-        }
+        return achbotPayUxWithLease($db,$draftId,static function() use($db,$draftId,$actor,$botUrl): string {
+            $pay=achbotProviderRow($db,"SELECT * FROM pays WHERE id=? AND user_id=? AND type='INCREASE_WALLET'",'ii',[$draftId,$actor]);
+            if (!$pay || !achbotPayUxCurrentDraft($pay) || !achbotPayUxUnclaimedDraftUsable($db,$pay) ||
+                !achbotPayUxDraftWithoutEvidence($db,$draftId,$actor)) return 'stale';
+            $context=json_decode((string)$pay['checkout_draft_context'],true);
+            $prompt=$context['topup_prompt']??null;
+            if (!is_int($prompt) || $prompt<=0) return 'stale';
+            $known=achbotProviderRow($db,"SELECT id FROM payment_message_refs
+                WHERE pay_row_id=? AND chat_id=? AND purpose='selector' AND retired_reason IS NULL LIMIT 1",'ii',[$draftId,$actor]);
+            if ($known) return 'created';
+            require_once __DIR__.'/../Purchase/CheckoutPresentation.php';
+            $amount=(int)$pay['price'];$hash=(string)$pay['hash_id'];
+            $methods=array_keys(achbotCheckoutDraftPaymentOptions($db,$draftId,$actor));
+            $keyboard=achbotCheckoutPaymentKeyboard('topup',$hash,$amount,$methods,$botUrl);
+            $body=achbotMessageHtml('wallet.wallet_start.selector_amount',['amount'=>number_format($amount)])."\n\n".
+                achbotMessage($keyboard?'payment.select_method':'payment.no_available_method');
+            $keyboard[]=[['text'=>achbotMessage('legacy_buttons.cancel'),'callback_data'=>'dc_'.$hash]];
+            $reply=sendMessage($body,json_encode(['inline_keyboard'=>$keyboard],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR),'HTML',$actor);
+            $sentId=\AchBot\Telegram\Conversation\acknowledgedMessage($reply,$actor);
+            if ($sentId===null || $sentId===$prompt || !achbotPayUxRegister($db,$draftId,$actor,$sentId,'selector')) {
+                error_log('achbot_wallet_topup_delivery_unconfirmed pay_id='.$draftId);
+                return 'delivery_pending';
+            }
+            // The exact stored bot prompt is now obsolete. Do not delete the
+            // customer-authored amount or any retained financial evidence.
+            try {delMessage($prompt,$actor);} catch (Throwable $ignored) {}
+            return 'created';
+        },'delivery_pending');
     } catch (Throwable $failure) {
-        // The durable draft is already committed. Never create another one.
-        error_log('achbot_wallet_topup_delivery_deferred update_id=' . $updateId);
+        error_log('achbot_wallet_topup_delivery_deferred pay_id='.$draftId.' class='.get_class($failure));
+        return 'delivery_pending';
     }
-    return 'created';
+}
+
+/** A deliberate fresh private click can recover only the same committed,
+ * still-unissued draft. Known delivery allows an ordinary new menu entry.
+ * Claim the fresh update before sending; a replay is not a retry. */
+function achbotWalletTopupRecoverSelector(mysqli $db,int $actor,string $step,int $updateId,string $botUrl,?int $prompt=null,?int $amount=null): ?string {
+    if (!preg_match('/\AachbotWalletTopup:committed:([1-9][0-9]*):([1-9][0-9]*):([1-9][0-9]*)\z/D',$step,$m))
+        return null;
+    $id=(int)$m[2];
+    if ($updateId===(int)$m[1] || ($updateId<(int)$m[1] && time()-(int)$m[3]<7*86400)) return 'stale';
+    try {
+        return achbotPayUxWithLease($db,$id,static function() use($db,$actor,$step,$updateId,$botUrl,$prompt,$amount,$id): ?string {
+            $pay=achbotProviderRow($db,"SELECT * FROM pays WHERE id=? AND user_id=? AND type='INCREASE_WALLET'",'ii',[$id,$actor]);
+            if (!$pay || !achbotPayUxCurrentDraft($pay) || !achbotPayUxUnclaimedDraftUsable($db,$pay) ||
+                !achbotPayUxDraftWithoutEvidence($db,$id,$actor)) return null;
+            $context=json_decode((string)$pay['checkout_draft_context'],true);
+            if (!is_int($context['topup_prompt']??null) ||
+                ($prompt!==null && $context['topup_prompt']!==$prompt) ||
+                ($amount!==null && (int)$pay['price']!==$amount)) return null;
+            $known=achbotProviderRow($db,"SELECT id FROM payment_message_refs
+                WHERE pay_row_id=? AND chat_id=? AND retired_reason IS NULL LIMIT 1",'ii',[$id,$actor]);
+            if ($known) return null;
+            $next=achbotWalletTopupStage('committed',$updateId,$id);
+            $claimed=achbotWalletTopupAdvance($db,$actor,$step,$next,$updateId);
+            if ($claimed!=='applied') return $claimed;
+            return achbotWalletTopupPresentSelector($db,$id,$actor,$botUrl);
+        },'delivery_pending');
+    } catch (Throwable $failure) {
+        error_log('achbot_wallet_topup_recovery_deferred pay_id='.$id.' class='.get_class($failure));
+        return 'delivery_pending';
+    }
 }

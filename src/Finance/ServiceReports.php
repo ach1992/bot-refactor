@@ -118,17 +118,42 @@ function achbotServiceReportFundingLocked(mysqli $db,array $op,array $quote): ar
         'credit'=>$credit===null?null:achbotWalletReportFingerprint($credit),
         'debit'=>$debit===null?null:achbotWalletReportFingerprint($debit)
     ]));
-    return compact('reference','actor','receipt','credit','debit','fingerprint');
+    // The owner row is locked. Global ledger IDs can interleave other
+    // accounts, so verify continuity on this exact owner's ledger only.
+    // Equality of balances alone does not prove adjacent movements.
+    $contiguous=$credit!==null && $debit!==null &&
+        (int)$credit['id']<(int)$debit['id'] &&
+        (int)$credit['user_row_id']===(int)$debit['user_row_id'] &&
+        (int)$credit['userid']===(int)$debit['userid'] &&
+        (int)$credit['balance_after']===(int)$debit['balance_before'] &&
+        !achbotProviderRow($db,'SELECT id FROM wallet_entries
+            WHERE userid=? AND user_row_id=? AND id>? AND id<? LIMIT 1',
+            'iiii',[$uid,(int)$owner['id'],(int)$credit['id'],(int)$debit['id']]);
+    return compact('reference','actor','receipt','credit','debit','fingerprint','contiguous');
 }
 /** Rendering is deliberately separate from the evidence readers used by
  * customer status and delivery validation. A copy error cannot falsify them. */
 function achbotServiceReportFundingFacts(array $funding): string {
     $credit=$funding['credit'];$debit=$funding['debit'];$actor=$funding['actor'];
     $facts='';
-    if ($credit!==null) $facts.="\n\n".achbotMessage('operational_reports.receipt_credit')."\n".achbotWalletReportFacts($credit);
-    if ($debit!==null) $facts.="\n".achbotMessageHtml('operational_reports.service_wallet',[
-        'entry'=>$debit['id'],'before'=>number_format((int)$debit['balance_before']),
-        'after'=>number_format((int)$debit['balance_after']),'date'=>achbotWalletReportDate($debit)]);
+    if ($credit!==null || $debit!==null)
+        $facts.="\n\n".achbotMessage('operational_reports.service_wallet_title');
+    $balance=static fn(array $first,array $last):string=>achbotMessageHtml('operational_reports.service_wallet_balance',[
+        'before'=>number_format((int)$first['balance_before']),
+        'after'=>number_format((int)$last['balance_after'])]);
+    $contiguous=$funding['contiguous'];
+    foreach ([$credit,$debit] as $entry) {
+        if ($entry===null) continue;
+        $delta=(int)$entry['delta_toman'];
+        $facts.="\n".achbotMessageHtml($delta>0?'operational_reports.service_wallet_credit':'operational_reports.service_wallet_debit',[
+            'entry'=>$entry['id'],'amount'=>number_format(abs($delta)),'date'=>achbotWalletReportDate($entry)]);
+        if (!$contiguous) $facts.="\n".$balance($entry,$entry);
+    }
+    if ($contiguous) {
+        $net=(int)$credit['delta_toman']+(int)$debit['delta_toman'];
+        $facts.="\n".$balance($credit,$debit)."\n".achbotMessageHtml('operational_reports.service_wallet_net',[
+            'net'=>($net>0?'+':'').number_format($net)]);
+    }
     if ($actor>0) $facts.="\n".achbotMessageHtml('operational_reports.actor',['actor'=>$actor]);
     return $facts;
 }

@@ -179,6 +179,8 @@ case 'topup':
     $events[]=['topup',startWalletPayment($connection,$botUrl,$from_id,
         100000,(string)$userInfo['step'],(int)$update->update_id,$message_id)];
     break;
+case 'wallet_recharge':
+    require $root.'/src/Finance/Routes/WalletRecharge.php';break;
 case 'manual_checkout':
     require $root.'/src/Finance/Routes/ManualCheckout.php';break;
 case 'manual_claim':
@@ -193,6 +195,9 @@ case 'dispatch_fixture':
     require_once $root.'/src/Finance/FollowupOutbox.php';
     $events[]=['dispatch',achbotFollowupDispatchOne($connection,(int)$spec['intent'])];
     break;
+case 'staff_notice':
+    require_once $root.'/src/Finance/ApiPayments.php';
+    $events[]=['staff_notice',achbotApiPaymentNotice($connection,(int)$spec['pay'])];break;
 case 'projection':
     $events[]=['projection',achbotPayUxSyncMessages($connection,(int)$spec['pay'])];break;
 case 'payment_status':
@@ -982,6 +987,8 @@ def main():
                     assert url in urls,(b,rr)
                     actual.add(urls[url])
             assert actual==expected and 'dc_'+h in callbacks(rr),(expected,actual,rr)
+            if not expected:
+                assert any('هیچ روش پرداختی' in e[1] for e in rr['events'] if e[0]=='send'),rr
             assert not any(x.startswith('haveDiscountCheckout_') for x in callbacks(rr)),rr
         for flag,method,keys,_ in methods:
             sql("UPDATE setting SET value='"+json.dumps(base_keys|keys)+"' WHERE type='PAYMENT_KEYS'")

@@ -111,19 +111,18 @@ if (!function_exists('achbotWalletTopupRetirePrompt')) {
     }
 }
 
-/** Use the confirmed sent message ID as the actual reply/selection boundary. */
-if (!function_exists('achbotWalletTopupSentMessageId')) {
-    function achbotWalletTopupSentMessageId($reply): ?int {
-        return \AchBot\Telegram\Conversation\acknowledgedMessage($reply,(int)$GLOBALS['from_id']);
-    }
-}
-
 require_once __DIR__.'/../WalletStart.php';
 
 // A fresh, private menu callback reserves a unique update identity BEFORE
 // sending choices. Only the sent bot prompt's message_id authorizes buttons.
 if ($data === 'increaseMyWallet') {
     $updateId = $update->update_id;
+    $recovered=achbotWalletTopupRecoverSelector($connection,(int)$from_id,(string)($userInfo['step']??''),$updateId,$botUrl);
+    if ($recovered!==null) {
+        if ($recovered==='delivery_pending' || $recovered==='review')
+            alert(achbotMessage('wallet.wallet_start.selector_delivery_pending'),true);
+        return;
+    }
     $opening = achbotWalletTopupStage('opening', $updateId, $message_id);
     $result = achbotWalletTopupAdvance($connection, (int)$from_id, null,
                                       $opening, $updateId);
@@ -159,7 +158,7 @@ if ($data === 'increaseMyWallet') {
     } catch (Throwable $failure) {
         $reply = null;
     }
-    $sentId = achbotWalletTopupSentMessageId($reply);
+    $sentId = \AchBot\Telegram\Conversation\acknowledgedMessage($reply,(int)$from_id);
     if ($sentId === null) {
         error_log('achbot_wallet_topup_menu_delivery_unconfirmed');
         return; // A fresh menu invocation is the safe recovery action.
@@ -190,17 +189,21 @@ if (strpos($data, 'increaseWallet_') === 0) {
         return;
     }
     if (!$canSelect) {
-        sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.778b5776b6'), null, 'HTML');
+        $recovered=achbotWalletTopupRecoverSelector($connection,(int)$from_id,$selectStep,$update->update_id,$botUrl,$message_id,$amount);
+        if ($recovered==='delivery_pending' || $recovered==='review')
+            alert(achbotMessage('wallet.wallet_start.selector_delivery_pending'),true);
+        elseif ($recovered===null)
+            alert(achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.778b5776b6'),true);
         return;
     }
     $result = startWalletPayment($connection, $botUrl,
         $from_id, $amount, $selectStep,
         $update->update_id, $message_id);
-    if ($result === 'created') {
-        achbotWalletTopupRetirePrompt();
+    if ($result === 'delivery_pending') {
+        alert(achbotMessage('wallet.wallet_start.selector_delivery_pending'),true);
     } elseif ($result === 'review') {
         sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.983d706c66'), null, 'HTML');
-    } else {
+    } elseif ($result!=='created') {
         sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.d0531e17b9'), null, 'HTML');
     }
     return;
@@ -222,7 +225,7 @@ if ($data === 'increaseWalletCustom') {
     } catch (Throwable $failure) {
         $reply = null;
     }
-    $sentId = achbotWalletTopupSentMessageId($reply);
+    $sentId = \AchBot\Telegram\Conversation\acknowledgedMessage($reply,(int)$from_id);
     if ($sentId === null) {
         error_log('achbot_wallet_topup_amount_prompt_unconfirmed');
         return; // No unverified prompt may authorize a future amount message.
@@ -258,9 +261,12 @@ if ($text != (\achbotMessage('legacy_buttons.cancel') ?? null) &&
     $result = startWalletPayment($connection, $botUrl,
         $from_id, $amount, $amountStep,
         $update->update_id, $message_id);
-    if ($result === 'review') {
+    if (in_array($result,['created','delivery_pending'],true)) {
+        \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage($result==='created'
+            ?'wallet.wallet_start.amount_registered':'wallet.wallet_start.selector_delivery_pending'),(int)$from_id);
+    } elseif ($result === 'review') {
         sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.983d706c66'), null, 'HTML');
-    } elseif ($result !== 'created') {
+    } else {
         sendMessage(\achbotMessage('wallet.wallet_recharge.wallet_topup_amount_problem.message.d0531e17b9'), null, 'HTML');
     }
     return;

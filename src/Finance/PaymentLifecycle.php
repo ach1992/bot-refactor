@@ -848,7 +848,8 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
             'completed'=>achbotMessage('payment.payment_lifecycle.progress_completed'),
             'delivery_unconfirmed'=>achbotMessage('payment.payment_lifecycle.progress_delivery_unconfirmed'),
             'wallet_credited'=>achbotMessage('payment.payment_lifecycle.progress_wallet_credited'),
-            'resolved'=>achbotMessage('payment.payment_lifecycle.progress_resolved'),
+            'resolved_refunded'=>achbotMessage('payment.payment_lifecycle.progress_resolved_refunded'),
+            'resolved_closed'=>achbotMessage('payment.payment_lifecycle.progress_resolved_closed'),
             default=>achbotMessage('payment.payment_lifecycle.progress_unverified'),
         };
     }

@@ -602,7 +602,7 @@ if (preg_match('/^gatewayReview_([ARV])_([1-9][0-9]{0,17})$/D',
             :achbotGatewayReviewCommit($connection,(int)$from_id,$attempt,$mode,(int)$admin);
         $status=(string)($result['status']??'unavailable');
         $text=match($status) {
-            'wallet_credited','service_pending','completed','delivery_unconfirmed','resolved'=>achbotCheckoutReceiptOutcomeText($status),
+            'wallet_credited','service_pending','completed','delivery_unconfirmed','resolved_refunded','resolved_closed'=>achbotCheckoutReceiptOutcomeText($status),
             'rejected'=>achbotMessage('automatic_gateway_review.status_rejected'),
             'busy'=>achbotMessage('automatic_gateway_review.status_busy'),
             'unknown'=>achbotMessage('automatic_gateway_review.status_unknown'),

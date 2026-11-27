@@ -31,6 +31,36 @@ def main():
         sql("""INSERT INTO setting(type,value) VALUES ('BOT_STATES','{"walletState":"on","cartToCartState":"on","sellState":"on"}'),('PAYMENT_KEYS','{"bankAccount":"fixture-bank","holderName":"fixture-holder"}');
         INSERT INTO users(userid,name,username,refcode,wallet,date) VALUES (2001,'Fixture <&','fixture','0',0,'1700000000'),(2002,'Foreign','foreign','0',0,'1700000000');
         """)
+        # A committed top-up with an ambiguous/mismatched Telegram send
+        # is recoverable via a fresh exact customer action, not a new draft.
+        now=int(time.time())
+        sql(f"UPDATE users SET step='achbotWalletTopup:choose:90000:80:{now}' WHERE userid=2002")
+        r=run('wallet_recharge',actor=2002,callback='increaseWallet_100000',
+              message_id=80,update_id=90001,send_result=None,record_delete=True)
+        assert not any(e[0]=='delete' for e in r['events']),r
+        pending_id,pending_hash=sql("SELECT id,hash_id FROM pays WHERE user_id=2002").split('\t')
+        assert r['user']['step'].startswith(f'achbotWalletTopup:committed:90001:{pending_id}:'),r
+        assert sql(f"SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id={pending_id}")=='0'
+        r=run('wallet_recharge',actor=2002,callback='increaseWallet_100000',
+              message_id=80,update_id=90001,record_delete=True)
+        assert not any(e[0] in ('send','delete') for e in r['events']),r
+        r=run('wallet_recharge',actor=2002,callback='increaseWallet_100000',
+              message_id=80,update_id=90002,send_result={'ok':True,'result':{'message_id':91,'chat':{'id':2001}}},record_delete=True)
+        assert not any(e[0]=='delete' for e in r['events']),r
+        assert sql(f"SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id={pending_id}")=='0'
+        r=run('wallet_recharge',actor=2002,callback='increaseMyWallet',
+              message_id=79,update_id=90003,sent_id=90,record_delete=True)
+        assert 'pm_b_'+pending_hash in callbacks(r) and ['delete',80,2002] in r['events'],r
+        assert sql(f"SELECT message_id FROM payment_message_refs WHERE pay_row_id={pending_id}")=='90'
+        assert sql("SELECT COUNT(*) FROM pays WHERE user_id=2002")=='1'
+        assert sql("SELECT COUNT(*) FROM wallet_entries")=='0'
+        r=run('wallet_recharge',actor=2002,callback='increaseMyWallet',
+              message_id=79,update_id=90003,record_delete=True)
+        assert not any(e[0]=='send' for e in r['events']),r
+        cases.append('committed_topup_selector_recovery_exact_owner_no_second_draft')
+        r=run('cancel_idle',actor=2002,text=subprocess.check_output(['php','-r',"require 'messages/loader.php';echo achbotMessage('legacy_buttons.cancel');"],cwd=ROOT,text=True))
+        assert r['user']['step']=='none' and not any('لغو شد' in str(e[1]) for e in r['events'] if e[0]=='send'),r
+        cases.append('completed_topup_is_not_cancelled_editor')
         sql(f"UPDATE users SET step='achbotWalletTopup:amount:100000:81:{int(time.time())}' WHERE userid=2001")
         r=run('topup',sent_id=201)
         assert ['topup','created'] in r['events'],r
@@ -93,6 +123,27 @@ def main():
         assert sql(f"SELECT stage FROM payment_attempts WHERE pay_row_id={pid}")=='review'
         assert sql('SELECT COUNT(*) FROM wallet_entries')=='0'
         cases.append('original_receipt_routes_to_staff_without_credit_or_human_delete')
+        # Actual admitted receipt: normal monitoring preserves staff actions,
+        # but a dispatched external operation fences negative decisions.
+        def staff_buttons(r):
+            return [b for e in r['events'] if e[0]=='markup' and e[2]
+                    for row in json.loads(e[2]).get('inline_keyboard',[]) for b in row]
+        sql(f"UPDATE payment_attempts SET evidence_state='monitoring' WHERE pay_row_id={pid}")
+        r=run('staff_notice',pay=int(pid))
+        bs=staff_buttons(r)
+        assert 'declineAction_'+h in [b['callback_data'] for b in bs],r
+        assert any(b['callback_data']=='attentionOpenCase_'+pid and 'در انتظار بررسی خودکار' in b['text'] for b in bs),r
+        aid=sql(f"SELECT id FROM payment_attempts WHERE pay_row_id={pid}")
+        sql(f"INSERT INTO payment_transactions(attempt_id,provider,payment_id,evidence_operation,evidence_state) VALUES ({aid},'bank_transfer','fixture-pending',REPEAT('b',64),'dispatched')")
+        sql(f"UPDATE payment_attempts SET evidence_state='uncertain' WHERE pay_row_id={pid}")
+        r=run('staff_notice',pay=int(pid))
+        bs=staff_buttons(r)
+        assert bs and 'declineAction_'+h not in [b['callback_data'] for b in bs],r
+        assert any(b['callback_data']=='attentionOpenCase_'+pid for b in bs),r
+        sql(f"DELETE FROM payment_transactions WHERE attempt_id={aid}")
+        sql(f"UPDATE payment_attempts SET evidence_state=NULL WHERE id={aid}")
+        cases.append('staff_monitoring_actions_and_original_evidence_negative_fence')
+
         assert ['delete',201,2001] in r['events'],r
         assert sql(f"SELECT purpose FROM payment_message_refs WHERE pay_row_id={pid} AND message_id=215")=='receipt_view'
         assert sql(f"SELECT retired_reason FROM payment_message_refs WHERE pay_row_id={pid} AND message_id=201")=='receipt_replaced'

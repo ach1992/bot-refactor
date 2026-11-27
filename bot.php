@@ -252,24 +252,26 @@ if (($isStart??false) || (!isset($update->callback_query) && ($text==='/start' |
 
     require_once __DIR__.'/src/Telegram/UserProfile.php';
     achbotRefreshUserProfile($connection, $update ?? null, $menuActor);
-    if (!in_array($menuRow['step'],['','none'],true))
-        \AchBot\Telegram\Conversation\removeReplyKeyboard(\achbotMessage('legacy_messages.operation_canceled'));
+    $abandoned=\AchBot\Telegram\Conversation\abandonedEditorPresentation($menuRow,$menuActor);
+    $home=achbotCurrentMessage('start_message');
+    if ($abandoned==='reply')
+        \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.operation_canceled'));
+    elseif ($abandoned==='inline') $home=achbotMessage('legacy_messages.operation_canceled')."\n\n".$home;
 
     if ($customerShortcut===null && $data==='navHome') {
         // This button is produced only for disposable catalogue/list screens.
-        if (\AchBot\Telegram\Conversation\verifiedCallback($update,$menuActor,(int)$message_id))
-            \AchBot\Telegram\Conversation\replaceTransient($menuActor,(int)$message_id,achbotCurrentMessage('start_message'),getMainKeys());
-        else sendMessage(achbotCurrentMessage('start_message'),getMainKeys(),'HTML');
+        if ($abandoned!=='inline' && \AchBot\Telegram\Conversation\verifiedCallback($update,$menuActor,(int)$message_id))
+            \AchBot\Telegram\Conversation\replaceTransient($menuActor,(int)$message_id,$home,getMainKeys());
+        else sendMessage($home,getMainKeys(),'HTML');
     } elseif ($customerShortcut===null && isset($data) && ($data == "mainMenu" || $data == "evidenceHome" || $paymentHome)) {
         // Legacy Home buttons can be on untracked financial/support evidence.
         // Always send the actor's own menu; never edit/delete the source or
         // read another customer's invoice merely to navigate Home.
-        sendMessage(\achbotCurrentMessage('start_message'), getMainKeys(), 'HTML');
+        sendMessage($home, getMainKeys(), 'HTML');
 
     } else {
 
         $isFirstStart=false;
-        $home=\achbotCurrentMessage('start_message');
         if ($from_id != $admin && empty($menuRow['first_start'])) {
             require_once __DIR__.'/src/Telegram/UserEvents.php';
             $reportKeys=json_encode(['inline_keyboard'=>[[[
@@ -1648,10 +1650,12 @@ if ($text===\achbotMessage('legacy_buttons.cancel') &&
     \AchBot\Telegram\Conversation\source($update,(int)$from_id,false)) {
     $closed=\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,update:$update);
     if ($closed===null) return;
-    $idle=in_array($closed['step'],['','none'],true);
-    \AchBot\Telegram\Conversation\removeReplyKeyboard($idle
+    $abandoned=\AchBot\Telegram\Conversation\abandonedEditorPresentation($closed,(int)$from_id);
+    $home=achbotCurrentMessage('start_message');
+    if ($abandoned==='inline') $home=achbotMessage('legacy_messages.operation_canceled')."\n\n".$home;
+    else \AchBot\Telegram\Conversation\removeReplyKeyboard($abandoned==='idle'
         ?achbotCurrentMessage('reached_main_menu'):achbotMessage('legacy_messages.operation_canceled'));
-    sendMessage(\achbotCurrentMessage('start_message'), getMainKeys(), 'HTML');
+    sendMessage($home, getMainKeys(), 'HTML');
     return;
 }
 

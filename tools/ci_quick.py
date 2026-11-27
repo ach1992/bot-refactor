@@ -383,6 +383,9 @@ REQUIRED_SCENARIOS = {
         "current_service_history_funding_only_excluded_auto_renew_counted_once",
     ),
     "manual_checkout_conversation": (
+        "committed_topup_selector_recovery_exact_owner_no_second_draft",
+        "completed_topup_is_not_cancelled_editor",
+        "staff_monitoring_actions_and_original_evidence_negative_fence",
         "unified_method_issue_exact_owner_and_retained_invoice",
         "prompt_reuse_and_exact_cancel_no_financial_cancellation",
         "chronological_evidence_feedback_exact_ack_retires_only_previous_prompt",

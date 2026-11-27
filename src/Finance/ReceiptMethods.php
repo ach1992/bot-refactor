@@ -194,6 +194,12 @@ function achbotManualAdmittedEvidence(array $pay,array $attempt): ?array {
         return ['kind'=>'photo','value'=>$file,'fingerprint'=>hash('sha256',$attempt['wallet_invoice_sha256'].':photo:'.hash('sha256',$file))];
     } catch (Throwable $e) {return null;}
 }
+/** The original consumption journal, not a transient checker label,
+ * determines whether a negative human decision would conflict. */
+function achbotManualReceiptEvidenceOperationExists(mysqli $db,int $attemptId,bool $locked=false): bool {
+    return achbotProviderRow($db,"SELECT id FROM payment_transactions WHERE attempt_id=?
+        AND evidence_operation IS NOT NULL LIMIT 1".($locked?' FOR UPDATE':''),'i',[$attemptId])!==null;
+}
 function achbotCreditValidateManualReceiptLocked(mysqli $db,array $pay,array $attempt): void {
     if (!in_array($pay['state'],['have_sent','service_superseded'],true) || $attempt['stage']!=='review')
         throw new RuntimeException('payment_credit_manual_receipt');

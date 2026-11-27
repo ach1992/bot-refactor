@@ -171,6 +171,14 @@ function achbotReceiptNoticeValidateLocked(mysqli $db,array $pay,array $r): ?arr
     // evidence with read-only controls, not obsolete approval actions.
     $terminal=achbotReceiptTerminalMarkupLocked($db,$pay,$a);
     if ($terminal!==null) $packet['keys']=$terminal;
+    elseif ($a['evidence_profile']!==null) {
+        // A delayed first staff ACK must not restore stale controls after
+        // an API claim or a changed evidence state.
+        require_once __DIR__.'/ApiPayments.php';
+        $label=achbotApiPaymentStatusLabel($pay,$a);
+        $packet['keys']=achbotApiPaymentReviewKeyboard($db,$pay,$a,$label,
+            achbotGatewayAttentionCaseOpen($db,(int)$pay['id']))??$packet['keys'];
+    }
     return $packet;
 }
 

@@ -180,6 +180,24 @@ function transitionEditor(\mysqli $db,int $actor,array $cached,string $next='non
     }
 }
 
+/** A committed top-up is not an active amount editor. The stored prompt
+ * of a cancelled receipt/amount editor is disposable, unlike an invoice,
+ * a shared menu entry or the customer's authored input. */
+function abandonedEditorPresentation(array $row,int $actor): string {
+    $step=(string)($row['step']??'');
+    if (in_array($step,['','none'],true) || str_starts_with($step,'achbotWalletTopup:committed:')) return 'idle';
+    $prompt=0;$inline=false;
+    if (str_starts_with($step,'receipt:')) {
+        require_once __DIR__.'/../Finance/ManualCheckoutPresentation.php';
+        $receipt=\achbotReceiptStep($step);
+        $prompt=(int)($receipt['prompt']??0);$inline=$receipt!==null;
+    } elseif (preg_match('/\AachbotWalletTopup:(choose|amount):[1-9][0-9]*:([1-9][0-9]*):[1-9][0-9]*\z/D',$step,$m)) {
+        $prompt=(int)$m[2];$inline=$m[1]==='choose';
+    }
+    if ($prompt>0) try {\delMessage($prompt,$actor);} catch (\Throwable $ignored) {}
+    return $inline?'inline':'reply';
+}
+
 /** Completion feedback is a new message, not an edit: Telegram only accepts
  * ReplyKeyboardRemove on a send. The next inline menu remains independent.
  * Never send this for validation failures or unrelated asynchronous notices. */

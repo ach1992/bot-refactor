@@ -112,7 +112,15 @@ function achbotCheckoutReceiptOutcomeLocked(mysqli $db,int $payId,int $uid): str
  * same command, local result and exact delivery evidence.
  */
 function achbotCheckoutServiceOutcomeLocked(mysqli $db,array $op,array $quote,?int $receiptId): string {
-    if ($op['resolution_kind']!==null) return 'resolved';
+    if ($op['resolution_kind']!==null) {
+        require_once __DIR__.'/ServiceReports.php';
+        $resolution=achbotServiceResolutionEvidenceLocked($db,$op,$quote);
+        $receipt=achbotServiceFundingReceiptLocked($db,$op);
+        if (($receiptId===null && $receipt!==null) ||
+            ($receiptId!==null && ($receipt===null || (int)$receipt['pay']['id']!==$receiptId)))
+            throw new RuntimeException('payment_outcome_original_receipt_conflict');
+        return $resolution['amount']>0?'resolved_refunded':'resolved_closed';
+    }
     if (in_array($op['stage'],['funded','prepared','dispatching','applied'],true)) return 'service_pending';
     if ($op['stage']!=='completed') throw new RuntimeException('payment_outcome_service_conflict');
     require_once __DIR__.'/ServiceReports.php';
@@ -154,7 +162,8 @@ function achbotCheckoutReceiptOutcomeText(string $status): string {
         'service_pending'=>'manual_receipt_final.status_service_pending',
         'completed'=>'manual_receipt_final.status_completed',
         'delivery_unconfirmed'=>'manual_receipt_final.status_delivery_unconfirmed',
-        'resolved'=>'automatic_gateway_review.status_stale',
+        'resolved_refunded'=>'payment.payment_lifecycle.progress_resolved_refunded',
+        'resolved_closed'=>'payment.payment_lifecycle.progress_resolved_closed',
         default=>'manual_receipt_final.status_unknown',
     });
 }
@@ -218,8 +227,7 @@ function achbotCheckoutRejectReceiptLocked(mysqli $db,int $id,int $uid,int $acto
         !achbotAdminCanLocked($db,$actor,$primary,'payments'))
         throw new DomainException('manual_reject_stale');
     achbotCreditValidateManualReceiptLocked($db,$pay,$attempt);
-    if (achbotProviderRow($db,"SELECT id FROM payment_transactions WHERE attempt_id=?
-        AND evidence_operation IS NOT NULL LIMIT 1 FOR UPDATE",'i',[(int)$attempt['id']]))
+    if (achbotManualReceiptEvidenceOperationExists($db,(int)$attempt['id'],true))
         throw new DomainException('manual_reject_original_evidence_pending');
     return achbotCheckoutRejectUnfundedLocked($db,$pay,$attempt,$actor,$primary);
 }

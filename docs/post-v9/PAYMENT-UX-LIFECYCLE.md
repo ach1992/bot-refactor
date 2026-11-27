@@ -64,6 +64,14 @@ positive absence of original financial evidence and commits under the same
 original pay row lock as browser admission. Navigation does not cancel
 an external invoice or change the payment state.
 
+A Wallet top-up draft and its committed editor reference are written in the same
+transaction. Telegram delivery is a separate acknowledged fact. A fresh private
+menu action or matching old amount callback can recover that exact unissued draft
+without inserting a second one; the same update cannot retry an unknown send.
+The original exact prompt is retired only after a new selector is acknowledged.
+A completed editor is not a cancellation. A selector with no eligible payment
+method states that fact rather than inviting an impossible choice.
+
 Manual issuance promotes the existing selector to the invoice in place.
 A committed original whose selector was not promoted is recovered by the
 same projector. A stale method or crypto network click reconciles an
@@ -98,6 +106,11 @@ retirement and retry deadline; a failed or removed staff message does
 not force repeated edits of healthy recipients. Recheck current staff
 authorization and the original payment state under the existing target
 lease. Unknown and rate-limited results are not acknowledgements.
+Normal API monitoring is distinct from exceptional review. Staff retain
+currently admissible manual actions and the actual review-case link. A persisted
+external evidence operation fences the negative decision; the renderer and
+server-side rejection guard share this predicate. Delayed first staff delivery
+uses current controls rather than obsolete ones.
 Historical aggregate staff digests do not acknowledge a new per-target
 projection. No schema expansion, duplicate receipt report or new
 worker is needed.
@@ -105,7 +118,13 @@ worker is needed.
 A recorded Wallet debit or receipt credit is not proof of delivery. Use the
 original command and service completion evidence to distinguish pending
 service, completed delivery, completed service with unconfirmed delivery,
-Wallet credit only, resolved and unverified outcomes.
+Wallet credit only, verified resolution with or without returned funds, and
+unverified outcomes. An actual rejection updates the receipt view immediately;
+its reason and retry instruction remain a separate meaningful notice. Service
+reports group the original credit and debit by verified Wallet entries. A shared
+opening/closing balance and net change are rendered only when the same owner
+has no intervening entry and the balances connect exactly. Otherwise each
+entry retains its own balance pair. No sealed financial evidence is rewritten.
 
 ## Existing-instance transfer boundary
 
