@@ -100,13 +100,12 @@ OTHER_TESTS = (
 # Replaced execution families must be covered by affirmative named cases,
 # not merely removed from the roster. See docs/post-v9/CI-VALIDATION.md.
 REQUIRED_CURRENT_CASES = {
-    "current_storage_transfer": ("unmapped_nonzero_inbound_refused","group_collision_and_dangling_membership_refused",
-        "complete_source_dump_restores_original_evidence","all_table_common_values_and_generated_columns_preserved",
-        "strict:current_groups_and_original_sealed_identity","off:current_groups_and_original_sealed_identity"),
-    "current_database_isolation": tuple(mode+":"+case for mode in ("strict","off") for case in (
+    "current_storage_transfer": ("current_groups_and_original_sealed_identity",),
+    "current_database_isolation": (
         "bot_states_cross_db_same_db","payment_keys_cross_db_same_db","panel_groups_cross_db_same_db",
         "server_display_cross_db_same_db","start_cross_db_same_db","writer_failure_release",
-        "physical_journal_independence","selected_database_required")),
+        "physical_journal_independence","selected_database_required",
+        "actual_persisted_writers_own_scoped_lock","existing_execution_and_projection_lease_scope"),
     "current_subscription_actions": (
         "exact_owned","ambiguous_partial","literal_percent","literal_underscore",
         "my_scope","inactive","unauthorized_staff","staff_duplicate_exact",
@@ -302,6 +301,11 @@ REQUIRED_CURRENT_CASES = {
 
 # These suites expose single-scenario evidence rather than strict/off pairs.
 REQUIRED_SCENARIOS = {
+    "current_storage_transfer": ("unmapped_nonzero_inbound_refused","group_collision_and_dangling_membership_refused",
+        "complete_source_dump_restores_original_evidence","all_table_common_values_and_generated_columns_preserved",
+        "ambiguous_or_malformed_payment_setting_refused","identity_allocation_counters_preserved",
+        "all_declared_foreign_key_relationships_verified"),
+
     "broadcast_delivery": (
         "killed_after_outbound_before_ack_never_replays_recipient",
         "actual_html_text_and_raw_history_unchanged",

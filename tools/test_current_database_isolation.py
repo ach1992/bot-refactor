@@ -28,6 +28,7 @@ function lock($db,$name) {return (int)row($db,'SELECT GET_LOCK(?,0) AS acquired'
 function free($db,$name) {return (int)row($db,'SELECT IS_FREE_LOCK(?) AS free','s',[$name])['free']===1;}
 function release($db,$name) {yes((int)row($db,'SELECT RELEASE_LOCK(?) AS released','s',[$name])['released']===1,'release');}
 function fails($fn) {try {$fn();} catch (Throwable $e) {return true;} return false;}
+function message($id,$text) {return (object)['update_id'=>$id,'message'=>(object)['message_id'=>92,'text'=>$text,'from'=>(object)['id'=>9001],'chat'=>(object)['id'=>9001,'type'=>'private']]];}
 function update($id,$data) {return (object)['update_id'=>$id,'callback_query'=>(object)['data'=>$data,'from'=>(object)['id'=>9001],
     'message'=>(object)['message_id'=>91,'chat'=>(object)['id'=>9001,'type'=>'private']]]];}
 $a=db('lock_a');$b=db('lock_b');$peer=db('lock_a');$connection=$b;$botState=[];$checks=[];
@@ -38,13 +39,34 @@ foreach ([$a,$b] as $d) {
     $d->query("INSERT INTO server_info(id,title,ucount,remark,flag,active) VALUES(1,'fixture','10','','',1)");
     $d->query("INSERT INTO server_config(id,panel_url,type,username,password) VALUES(1,'https://fixture.invalid','pasarguard','fixture','fixture')");
 }
+// Assert lock ownership at the actual persisted writes, not just in a
+// separate GET_LOCK probe. A writer using the wrong name cannot pass.
+$resources=['BOT_STATES'=>'settings:BOT_STATES','PAYMENT_KEYS'=>'settings:PAYMENT_KEYS',
+    'ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE'=>'settings:PAYMENT_KEYS',
+    'ACHBOT_PANEL_GROUP'=>'settings:panel-groups','ACHBOT_SERVER_DISPLAY_1'=>'settings:server-display'];
+foreach (['INSERT','UPDATE'] as $event) {
+    $checksSql=[];
+    foreach ($resources as $type=>$resource) {
+        $name=achbotDatabaseLockName($b,$resource);
+        $checksSql[]="IF NEW.type='$type' AND COALESCE(IS_USED_LOCK('$name')=CONNECTION_ID(),0)=0 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='incorrect writer lease'; END IF;";
+    }
+    $b->query("CREATE TRIGGER fixture_lease_".strtolower($event)." BEFORE $event ON setting FOR EACH ROW BEGIN ".implode(' ',$checksSql)." END");
+}
+$startName=achbotDatabaseLockName($b,'start:9002');
+$b->query("CREATE TRIGGER fixture_signup_lease BEFORE INSERT ON users FOR EACH ROW BEGIN IF NEW.userid=9002 AND COALESCE(IS_USED_LOCK('$startName')=CONNECTION_ID(),0)=0 THEN SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='incorrect signup lease'; END IF; END");
 foreach ([
     'bot_states'=>['settings:BOT_STATES',fn()=>achbotMutateBotStates(fn($x)=>['fixture'=>1])],
-    'payment_keys'=>['settings:PAYMENT_KEYS',fn()=>achbotAdminPaymentKeyChange(update(501,'changePaymentKeysbankAccount'),9001,9001,91,9001,'start','bankAccount')],
+    'payment_keys'=>['settings:PAYMENT_KEYS',function() use($b) {
+        yes(achbotAdminPaymentKeyChange(update(501,'changePaymentKeysbankAccount'),9001,9001,91,9001,'start','bankAccount'),'payment_start');
+        yes(achbotAdminPaymentKeyChange(message(502,'fixture-account'),9001,9001,92,9001,'save','bankAccount','fixture-account'),'payment_save');
+        return json_decode(row($b,"SELECT value FROM setting WHERE type='PAYMENT_KEYS'")['value'],true)['bankAccount']==='fixture-account';
+    }],
     'panel_groups'=>['settings:panel-groups',fn()=>achbotCreatePanelGroupRecord($b,'fixture')>0],
     'server_display'=>['settings:server-display',function() use($b) {
         $b->query("UPDATE users SET step='none' WHERE userid=9001");
-        achbotServerDisplayEdit($b,1,9001,9001,502,'start');return true;
+        achbotServerDisplayEdit($b,1,9001,9001,503,'set','flip','dcfg',0);
+        $doc=json_decode(row($b,"SELECT value FROM setting WHERE type='ACHBOT_SERVER_DISPLAY_1'")['value'],true);
+        return $doc['updated_source']===503 && $doc['display']['policy']['delivery']['show_configs']===false;
     }],
     'start'=>['start:9002',fn()=>achbotRegisterStartUser($b,(object)['message'=>(object)['from'=>(object)['id'=>9002,'first_name'=>'fixture'],'chat'=>(object)['type'=>'private','id'=>9002],'text'=>'/start']],9002,0,0)!==null],
 ] as $case=>[$resource,$write]) {
@@ -72,6 +94,37 @@ yes(free($b,achbotDatabaseLockName($b,'settings:PAYMENT_KEYS')),'payment_failure
 yes(fails(fn()=>achbotServerDisplayEdit($b,1,9001,9001,502,'start')),'display_replay_failed');
 yes(free($b,achbotDatabaseLockName($b,'settings:server-display')),'display_failure_released');
 $checks[]='writer_failure_release';
+$checks[]='actual_persisted_writers_own_scoped_lock';
+require_once $root.'/src/Finance/GatewayClient.php';
+require_once $root.'/src/Finance/FollowupOutbox.php';
+require_once $root.'/src/Finance/OperationalReports.php';
+require_once $root.'/src/Services/Execution.php';
+$receipt=['kind'=>'edit','role'=>'receipt_primary','recipient'=>'9001','message_id'=>91];
+$otherReceipt=$receipt;$otherReceipt['role']='receipt_mirror';
+foreach ([
+    fn($d)=>achbotHostedWorkerLockName($d,23),
+    fn($d)=>achbotServiceExecutionLock($d,23),
+    fn($d)=>achbotFollowupLeaseName($d,$receipt),
+    fn($d)=>achbotOperationalReportLock($d,'fixture:23')
+] as $nameFor) {
+    $name=$nameFor($a);$other=$nameFor($b);
+    yes($name!==$other && lock($a,$name),'existing_lease_scope');
+    try {
+        yes(!lock($peer,$name) && lock($b,$other),'existing_lease_exclusion');
+        release($b,$other);
+    } finally {release($a,$name);}
+}
+yes(achbotFollowupLeaseName($b,$receipt)===achbotFollowupLeaseName($b,$otherReceipt),'same_receipt_destination_lease');
+yes(achbotOriginalDispatchLeaseBegin($a,23)==='owned','hosted_original_a');
+try {
+    yes(achbotOriginalDispatchLeaseBegin($peer,23)==='busy','hosted_original_peer');
+    yes(achbotOriginalDispatchLeaseBegin($a,23)==='borrowed','hosted_original_borrowed');
+    yes(achbotOriginalDispatchLeaseBegin($b,23)==='owned','hosted_original_b');
+    achbotOriginalDispatchLeaseEnd($b,23,'owned');
+    achbotOriginalDispatchLeaseEnd($a,23,'borrowed');
+    yes(!free($a,achbotHostedWorkerLockName($a,23)),'borrowed_not_released');
+} finally {achbotOriginalDispatchLeaseEnd($a,23,'owned');}
+$checks[]='existing_execution_and_projection_lease_scope';
 $key='achbot-plan-'.str_repeat('a',40);
 foreach ([$a,$b] as $d)
     $d->query("INSERT INTO service_plan_changes(lock_key,source_order_id,plan_id,server_id,provider,state,intent_json) VALUES('$key',1,1,1,'pasarguard','prepared','{}')");

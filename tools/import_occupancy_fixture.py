@@ -42,8 +42,8 @@ function fixtureImportOccupancy(mysqli $db,array $spec): array {
         $s=achbotProviderStatement($db,'INSERT INTO add_link(remark,token,added_by) VALUES (?,?,?)',
             'ssi',[$remote->username,$proof['token'],$actor]);$s->close();
         $s=achbotProviderStatement($db,"INSERT INTO orders_list
-            (userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date,autoRenew)
-            VALUES (?,?,'',0,?,0,?,'',?,'[]',0,1,?,'off')",
+            (userid,token,transid,fileid,server_id,remark,uuid,expire_date,link,amount,status,date,autoRenew)
+            VALUES (?,?,'',0,?,?, '',?,'[]',0,1,?,'off')",
             'isisis',[$owner,$proof['token'],$server,$remote->username,$proof['expiry']??0,(string)time()]);
         $order=(int)$s->insert_id;$s->close();
         achbotProviderAdoptExistingLocked($db,$server,$remote,$proof,$owner,$order,$actor,9001);

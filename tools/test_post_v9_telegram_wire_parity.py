@@ -86,7 +86,7 @@ def canonical(sources):
             for name, rows in calls(sources).items()}
 
 
-def compare(before, after):
+def compare_accepted(before, after):
     assert sorted(after.keys() - before.keys()) == sorted(AUDIT["added_without_direct_send"]+AUDIT["added_with_direct_send"])
     assert sorted(before.keys() - after.keys()) == AUDIT["removed"]
     assert all(not after[name] for name in AUDIT["added_without_direct_send"])
@@ -110,6 +110,35 @@ def compare(before, after):
     return dict(counts)
 
 
+# Keep the integrated #237 proof intact. The hygiene step permits only the
+# catalog-equivalent expressions and a direct callback inside a proven
+# removed, unreferenced helper. Every other call/argument remains exact.
+HYGIENE=json.loads((ROOT / "tools/current_storage_copy_mapping.json").read_text())
+
+def compare_hygiene(before, after):
+    assert not before.keys()-after.keys()
+    added=after.keys()-before.keys()
+    assert added=={"src/Database/Lock.php"},added
+    assert all(not after[name] for name in added)
+    def mapped(arg):
+        for old,new in HYGIENE["equal"].items():
+            arg=arg.replace("\\achbotMessage('"+old+"')",
+                php_args.canonical_expression("\\achbotMessage('"+new+"')"))
+        for old in ("bot.bot.edit_lock_channel.message.949fda751f",
+                    "subscription.account_transfers.text.b233883d0d"):
+            arg=arg.replace("??\\achbotMessage('"+old+"')","")
+        return arg
+    expected={name:[[method,[mapped(arg) for arg in args]] for method,args in rows]
+              for name,rows in before.items()}
+    dead=["answerCallbackQuery",["$callbackId"]]
+    assert expected["src/Finance/ReceiptHelpers.php"].count(dead)==1
+    expected["src/Finance/ReceiptHelpers.php"].remove(dead)
+    for name in added: expected[name]=[]
+    assert expected.keys()==after.keys()
+    for name,rows in expected.items():
+        assert rows==after[name],("unapproved_hygiene_wire_delta",name)
+    return dict(Counter(method for rows in after.values() for method,_ in rows))
+
 def main():
     def accepted(name):
         return (name.endswith(".php") and not name.startswith("messages/fa/")
@@ -124,7 +153,14 @@ def main():
            if accepted(name)}
     previous = canonical(old)
     current = canonical(now)
-    total = compare(previous, current)
+    integrated_names = subprocess.check_output(
+        ["git", "ls-tree", "-r", "--name-only", HYGIENE["baseline"]],
+        cwd=ROOT, text=True).splitlines()
+    integrated = canonical({name:subprocess.check_output(
+        ["git","show",HYGIENE["baseline"]+":"+name],cwd=ROOT,text=True)
+        for name in integrated_names if accepted(name)})
+    compare_accepted(previous,integrated)
+    total = compare_hygiene(integrated,current)
 
     # Mutate an actual current call, not a hand-written parser fixture.
     bot = now["bot.php"]
@@ -143,14 +179,14 @@ def main():
         assert replacement != bot
         mutation = dict(now, **{"bot.php": replacement})
         try:
-            compare(previous, canonical(mutation))
+            compare_hygiene(integrated, canonical(mutation))
         except AssertionError:
             pass
         else:
             raise AssertionError("wire_mutation_not_detected")
     mutation = dict(now, **{"bot.php": bot.replace(
         "<?php", "<?php\n// sendMessage('inactive comment');", 1)})
-    assert compare(previous, canonical(mutation)) == total
+    assert compare_hygiene(integrated, canonical(mutation)) == total
     print(json.dumps({"complete": True, "status": "PASS", "baseline": BASE,
         "calls": total, "cases": sum(total.values()),
         "exact_unchanged_paths_and_pinned_deltas": True,

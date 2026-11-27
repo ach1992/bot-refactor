@@ -380,7 +380,7 @@ return [
         'bot.add_panel_group.alert.2b2b180a96' => 'گروه استفاده‌نشده حذف شد.',
         'bot.add_panel_group.alert.cc8538eba9' => 'گروه پیدا نشد یا هنوز به سرور متصل است؛ ابتدا سرورها را از آن خارج کنید.',
         'bot.add_panel_group.message.def9f141f2' => '🗂 مدیریت گروه‌های مشترک پنل',
-        // bot.add_new_marzban_panel
+        // historical catalogue section; current Native panel
         'bot.addserver_name.alert.27e6f9c466' => '⚠️ نوع پنل این سرور برای گروه‌بندی پشتیبانی نمی‌شود.',
         'bot.addserver_name.message.c31e264971' => '🏷 گروه پنل این سرور را انتخاب کنید. این گروه را مدیر برای سرورهای متعلق به یک پنل فیزیکی یکسان تعیین می‌کند؛ حتی اگر آدرس یا اطلاعات ورود آن‌ها متفاوت باشد.',
         'bot.addserver_name.alert.48259ae799' => '⚠️ شناسه سرور معتبر نیست.',

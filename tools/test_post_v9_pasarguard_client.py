@@ -386,6 +386,8 @@ INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,rema
     native.sql(work,env,"UPDATE service_effects SET provider_reference_id=NULL,provider_connection_id=NULL,provider_operation_marker=NULL,provider_entitlement_snapshot=NULL,provider_state=NULL WHERE id=2",db)
     negative=work/'negative-source';(negative/'src/Panel').mkdir(parents=True)
     (negative/'src/Panel/PasarGuard.php').write_bytes((ROOT/'src/Panel/PasarGuard.php').read_bytes())
+    (negative/'src/Database').mkdir(parents=True)
+    (negative/'src/Database/Lock.php').write_bytes((ROOT/'src/Database/Lock.php').read_bytes())
     text=(ROOT/'src/Panel/ProviderStorage.php').read_text()
     old="'SELECT * FROM service_effects WHERE id=? FOR UPDATE','i',[$effectId]"
     assert text.count(old)==1

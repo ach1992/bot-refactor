@@ -25,7 +25,8 @@ NEW='ACHBOT_PANEL_GROUP'
 SEED="""
 INSERT INTO setting(id,type,value) VALUES (71,'ACHBOT_MARZBAN_PANEL_GROUP','Physical fixture'),
  (72,'PAYMENT_KEYS','{"manualUsdtRateToman":"100000","usdtAgentRateToman":"200000"}'),
- (73,'ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE','{"version":1,"last_update_id":701,"actor_id":9001,"field_versions":{"manualUsdtRateToman":701,"usdtAgentRateToman":700}}');
+ (73,'ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE','{"version":1,"last_update_id":701,"actor_id":9001,"field_versions":{"manualUsdtRateToman":701,"usdtAgentRateToman":700}}'),
+ (75,'FIXTURE_UNCLASSIFIED_SETTING','{"keep":"unchanged"}');
 INSERT INTO server_config(id,panel_url,type,username,password,sub_links,provider_connection_id,provider_instance_key,provider_version,provider_enabled)
  VALUES(3,'https://fixture.invalid','pasarguard','fixture','fixture-key','fixture-sub',3,REPEAT('a',32),'5.5.1',1);
 INSERT INTO server_info(id,title,ucount,remark,flag,panel_group_id,active) VALUES(3,'fixture','100','fixture','',71,1);
@@ -85,12 +86,32 @@ def main():
             def execute(data,db=source):
                 return subprocess.run(cli+[db],input=data,text=True,env=env,capture_output=True,check=True,timeout=45)
             execute(SEED)
+            sql('ALTER TABLE setting AUTO_INCREMENT=1000; ALTER TABLE orders_list AUTO_INCREMENT=1000')
+            def unique_object(pairs):
+                out={}
+                for key,value in pairs:
+                    if key in out: raise ValueError('duplicate JSON key')
+                    out[key]=value
+                return out
             def preflight():
                 if any(sql('SELECT COUNT(*) FROM '+t+' WHERE inbound_id<>0')!='0' for t in ('orders_list','server_plans','increase_order')):
                     return False
                 if sql("SELECT COUNT(*) FROM setting WHERE type='"+NEW+"'")!='0':return False
                 if sql("SELECT COUNT(*) FROM (SELECT value FROM setting WHERE type='"+OLD+"' GROUP BY value HAVING COUNT(*)>1) AS d")!='0':return False
-                return sql("SELECT COUNT(*) FROM server_info i LEFT JOIN setting g ON g.id=i.panel_group_id AND g.type='"+OLD+"' WHERE i.panel_group_id IS NOT NULL AND g.id IS NULL")=='0'
+                if sql("SELECT COUNT(*) FROM server_info i LEFT JOIN setting g ON g.id=i.panel_group_id AND g.type='"+OLD+"' WHERE i.panel_group_id IS NOT NULL AND g.id IS NULL")!='0':
+                    return False
+                for kind in ('PAYMENT_KEYS','ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE'):
+                    raw=sql("SELECT HEX(value) FROM setting WHERE type='"+kind+"'").splitlines()
+                    if len(raw)>1: return False
+                    if not raw: continue
+                    try:
+                        doc=json.loads(bytes.fromhex(raw[0]),object_pairs_hook=unique_object)
+                        if not isinstance(doc,dict): return False
+                        if kind=='ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE' and not isinstance(doc.get('field_versions',{}),dict):
+                            return False
+                    except (ValueError,TypeError,UnicodeError):
+                        return False
+                return True
             assert preflight()
             for t in ('orders_list','server_plans','increase_order'):
                 sql('UPDATE '+t+' SET inbound_id=9')
@@ -104,6 +125,16 @@ def main():
             sql('UPDATE server_info SET panel_group_id=999')
             assert not preflight();sql('UPDATE server_info SET panel_group_id=71')
             checks.append('group_collision_and_dangling_membership_refused')
+            original_keys=sql("SELECT HEX(value) FROM setting WHERE type='PAYMENT_KEYS'")
+            for bad in ('not json','[]','{"manualUsdtRateToman":"100","manualUsdtRateToman":"200"}'):
+                sql("UPDATE setting SET value=UNHEX('"+bad.encode().hex()+"') WHERE type='PAYMENT_KEYS'")
+                assert not preflight()
+            sql("UPDATE setting SET value=UNHEX('"+original_keys+"') WHERE type='PAYMENT_KEYS'")
+            sql("INSERT INTO setting(type,value) VALUES('PAYMENT_KEYS','{}')")
+            assert not preflight()
+            sql("DELETE FROM setting WHERE type='PAYMENT_KEYS' AND id<>72")
+            assert preflight()
+            checks.append('ambiguous_or_malformed_payment_setting_refused')
             # A complete dump and independent restore are required before any
             # column can be omitted. Preserve exact original rows, not merely
             # a digest of values that would be impossible to recover.
@@ -117,8 +148,13 @@ def main():
                 # Ordered, binary-safe exact values with distinct NULLs.
                 expressions=','.join('IFNULL(HEX(CAST(`'+c+'` AS BINARY)),\'NULL\')' for c in cols)
                 return sorted(sql('SELECT '+expressions+' FROM `'+t+'`',db).splitlines())
+            def counters(db):
+                return dict(line.split('\t') for line in sql(
+                    "SELECT TABLE_NAME,AUTO_INCREMENT FROM information_schema.TABLES WHERE TABLE_SCHEMA='"+db+"' AND AUTO_INCREMENT IS NOT NULL",db).splitlines())
+            original_counters=counters(source)
             original={t:rows(source,t,columns(source,t)) for t in tables}
             assert all(rows(archive,t,columns(source,t))==original[t] for t in tables)
+            assert counters(archive)==original_counters
             checks.append('complete_source_dump_restores_original_evidence')
             sql('CREATE DATABASE '+target+' CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci')
             execute((ROOT/'database/current-schema.sql').read_text(),target)
@@ -139,7 +175,11 @@ def main():
                         "WHEN type='ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE' THEN JSON_REMOVE(value,'$.field_versions.usdtAgentRateToman') ELSE value END"
                         if c=='value' else '`'+c+'`' for c in cols)
                 statements.append('INSERT INTO `'+target+'`.`'+t+'` ('+quoted+') SELECT '+select+' FROM `'+source+'`.`'+t+'`;')
+            # There is a real cyclic attempt/transaction reference. Copy the
+            # complete row set, then explicitly verify every declared FK below.
             statements.append('SET FOREIGN_KEY_CHECKS=1;')
+            for t,value in original_counters.items():
+                statements.append('ALTER TABLE `'+target+'`.`'+t+'` AUTO_INCREMENT='+value+';')
             execute('\n'.join(statements),target)
             for t in tables:
                 cols=columns(target,t)
@@ -157,8 +197,8 @@ def main():
                             assert new[id]==[NEW,value]
                         elif kind in ('PAYMENT_KEYS','ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE'):
                             parsed=json.loads(value)
-                            if kind=='PAYMENT_KEYS': del parsed['usdtAgentRateToman']
-                            else: del parsed['field_versions']['usdtAgentRateToman']
+                            if kind=='PAYMENT_KEYS': parsed.pop('usdtAgentRateToman',None)
+                            else: parsed.get('field_versions',{}).pop('usdtAgentRateToman',None)
                             assert new[id][0]==kind and json.loads(new[id][1])==parsed
                         else: assert new[id]==[kind,value]
                     assert set(old)==set(new)
@@ -166,12 +206,28 @@ def main():
                 assert rows(target,t,cols)==expected,t
             assert all(rows(source,t,columns(source,t))==original[t] for t in tables)
             checks.append('all_table_common_values_and_generated_columns_preserved')
+            assert counters(source)==original_counters==counters(target)
+            assert int(original_counters['setting'])>=1000 and int(original_counters['orders_list'])>=1000
+            checks.append('identity_allocation_counters_preserved')
+            # SQL FK checks are not retroactive after enabling them. Verify
+            # all declared relationships explicitly, including composite
+            # references and SQL's nullable child semantics.
+            fks={}
+            for line in sql("SELECT TABLE_NAME,CONSTRAINT_NAME,COLUMN_NAME,REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE WHERE TABLE_SCHEMA='"+target+"' AND REFERENCED_TABLE_NAME IS NOT NULL ORDER BY TABLE_NAME,CONSTRAINT_NAME,ORDINAL_POSITION",target).splitlines():
+                table,name,col,ref,refcol=line.split('\t')
+                fks.setdefault((table,name,ref),[]).append((col,refcol))
+            assert fks
+            for (table,name,ref),pairs in fks.items():
+                on=' AND '.join('c.`'+col+'`=p.`'+refcol+'`' for col,refcol in pairs)
+                present=' AND '.join('c.`'+col+'` IS NOT NULL' for col,_ in pairs)
+                assert sql('SELECT COUNT(*) FROM `'+table+'` c WHERE '+present+' AND NOT EXISTS (SELECT 1 FROM `'+ref+'` p WHERE '+on+')',target)=='0',name
+            checks.append('all_declared_foreign_key_relationships_verified')
             script=work/'transfer.php';script.write_text(PHP)
             for mode in ('strict','off'):
                 p=subprocess.run(['php',str(script),str(ROOT),str(work/'mysql.sock'),target,mode],env=env,capture_output=True,text=True,timeout=30)
                 assert p.returncode==0 and p.stdout=='PASS',(mode,p.stdout,p.stderr)
                 checks.append(mode+':current_groups_and_original_sealed_identity')
-    result={'complete':True,'status':'PASS','checks':checks,'cases':len(checks),'tables':len(tables),'installed_mutations':0}
+    result={'complete':True,'status':'PASS','checks':checks,'scenarios':[case for case in checks if ':' not in case],'cases':len(checks),'tables':len(tables),'installed_mutations':0}
     if args.report:args.report.write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(result))
 if __name__=='__main__':main()
