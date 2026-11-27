@@ -170,8 +170,13 @@ function policyCheck(array $state): bool {
  * a method key (including []) overrides the legacy audience for that method.
  */
 function achbotPreflightPolicyPotential(array $state, string $method): bool {
-    // policyCheck already validated the complete documents. An exemption
-    // is a possible audience, not proof that the user exists or can pay.
+    // policyCheck already validated the audience documents. An exemption
+    // or positive fallback is a possible audience, not proof that the user
+    // exists or can pay. Invalid amount policy cannot advertise potential.
+    $amountMode=achbotGatewayAmountMode($state,$method);
+    $amount=achbotGatewayAmountLimit($state,$method);
+    if ($amountMode===null || $amount===null) return false;
+    if ($amountMode==='fallback' && $amount>0) return true;
     if (!empty($state['gatewayRuleExemptUsers'][$method])) return true;
     if (array_key_exists('gatewayRules', $state)) {
         $document = achbotGatewayRulesDecode($state['gatewayRules']);

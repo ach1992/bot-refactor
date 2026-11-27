@@ -108,9 +108,14 @@ function achbotGatewayAmountLimit(array $states,string $method): ?int {
     if (!is_array($map) || ($map && array_is_list($map))) return null;
     return achbotGatewayAmountNumber($map[$method]??0);
 }
-function achbotGatewayAmountAllowed(array $states,string $method,int $price): bool {
-    $limit=achbotGatewayAmountLimit($states,$method);
-    return $price>=0 && $limit!==null && ($limit===0 || $price<=$limit);
+/** The existing scalar limit remains authoritative. An omitted mode
+ * preserves the installed cap policy; an explicit invalid mode denies
+ * this method rather than silently changing its eligibility. */
+function achbotGatewayAmountMode(array $states,string $method): ?string {
+    $map=array_key_exists('gatewayAmountMode',$states)?$states['gatewayAmountMode']:[];
+    if (!is_array($map) || ($map && array_is_list($map))) return null;
+    $mode=array_key_exists($method,$map)?$map[$method]:'cap';
+    return in_array($mode,['cap','fallback'],true)?$mode:null;
 }
 
 function achbotGatewayRuleMatchesUser(mysqli $db,int $userId,array $rule,

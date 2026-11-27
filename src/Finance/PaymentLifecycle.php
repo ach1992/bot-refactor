@@ -571,15 +571,18 @@ function achbotPayUxAudienceAllowed(mysqli $db, string $method, int $userId,
 }
 
 /** A shared snapshot is supplied only by a caller owning the current
- * settings lock when $final is true; never pass request state for admission. */
+ * settings lock when $final is true; never pass request state for admission.
+ * $amountFallback is an independently satisfied, positive invoice threshold
+ * from the locked checkout decision, not permission to skip policy or identity
+ * validation. No category/history query is required for that alternative. */
 function achbotPayUxAudienceAllowedInState(mysqli $db,string $method,int $userId,array $states,
-    bool $final=false,?string $subjectType=null): bool {
+    bool $final=false,?string $subjectType=null,bool $amountFallback=false): bool {
     if ($userId<=0 || !array_key_exists($method,achbotPayUxAudienceMethods())) return false;
     try {
         // Gateway availability is independent from the audience rule.
         // Only a final financial authorization requires persisted flags;
         // preview/menu checks remain presentation-only.
-        if ($final) {
+        if ($final || $amountFallback) {
             $primaryFlag=achbotPayUxMethodFlag($method,$subjectType);
             if ($primaryFlag===null || ($states[$primaryFlag]??null)!=='on')
                 return false;
@@ -595,27 +598,31 @@ function achbotPayUxAudienceAllowedInState(mysqli $db,string $method,int $userId
             array_key_exists('gatewayRuleExemptUsers',$states)
                 ? $states['gatewayRuleExemptUsers'] : []);
         if ($exempt===null) return false;
-        if (in_array($userId,$exempt[$method]??[],true)) {
-            // Explicit policy exemption never grants an ambiguous/nonexistent
+        $hasRulePolicy=$rules!==null && array_key_exists($method,$rules['methods']);
+        // An amount alternative may bypass an ordinary negative audience
+        // decision (including off/empty rules), not malformed policy.
+        if (!$hasRulePolicy) {
+            $configured=array_key_exists('gatewayAudience',$states)?$states['gatewayAudience']:[];
+            if (!is_array($configured)) return false;
+            $mode=array_key_exists($method,$configured)?$configured[$method]:'all';
+            if (!is_string($mode) || !array_key_exists($mode,achbotPayUxAudienceModes()))
+                return false;
+        }
+        if ($amountFallback || in_array($userId,$exempt[$method]??[],true)) {
+            // Neither explicit alternative grants an ambiguous/nonexistent
             // customer access or revives a disabled gateway flag.
             $stmt=$db->prepare('SELECT id FROM users'.
                 ($final?' FORCE INDEX (idx_users_userid_v1)':'').
                 ' WHERE userid=? LIMIT 2'.($final?' FOR UPDATE':''));
-            if (!$stmt) throw new RuntimeException('exempt_identity_prepare');
+            if (!$stmt) throw new RuntimeException('audience_alternative_identity_prepare');
             $stmt->bind_param('i',$userId);
-            if (!$stmt->execute()) throw new RuntimeException('exempt_identity_read');
+            if (!$stmt->execute()) throw new RuntimeException('audience_alternative_identity_read');
             $people=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
             return count($people)===1;
         }
-        if ($rules!==null && array_key_exists($method,$rules['methods']))
+        if ($hasRulePolicy)
             return achbotGatewayRulesAllow($db,$userId,
                 $rules['methods'][$method],$final);
-        $configured=array_key_exists('gatewayAudience',$states)
-            ? $states['gatewayAudience'] : [];
-        if (!is_array($configured)) return false;
-        $mode=array_key_exists($method,$configured) ? $configured[$method] : 'all';
-        if (!is_string($mode) || !array_key_exists($mode,achbotPayUxAudienceModes()))
-            return false;
         if ($mode==='off') return false;
         if ($mode==='all') return true;
         // Definitive current reads must remain indexed by customer, even on

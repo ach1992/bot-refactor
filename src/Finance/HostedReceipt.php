@@ -158,7 +158,8 @@ function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
             $pay=achbotCheckoutPayLocked($db,$payId,$userId);
             if (achbotPayUxHasNewer($db,$pay,true)) throw new DomainException('checkout_draft_unavailable');
             $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
-            if ($a!==null && !achbotPayUxAudienceAllowed($db,$method,$userId,true,$pay['type']))
+            if ($a!==null && !achbotCheckoutMethodAllowedLocked($db,$method,$userId,
+                achbotPayUxCurrentStatesLocked($db)??[],$pay['type'],(int)$pay['price'],true))
                 throw new DomainException('checkout_method_unavailable');
             $operationId=achbotCheckoutAdmitDraftLocked($db,$pay,$a,$method,$draftStates);
             if ($a===null) {

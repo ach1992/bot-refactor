@@ -39,20 +39,37 @@ historical backfill**.
   null is invalid and is rejected in previews, final payment authorization,
   administrator pages and authenticated policy writes without advancing
   their source watermark.
-- Optional `BOT_STATES.gatewayMaxAmountToman` is a map of independent
-  method ceilings, e.g. `{"bank_transfer":500000}`. Missing/null/zero means
-  unlimited. Positive integral Toman values (including decimal strings
-  directly edited in JSON) are inclusive maximums. Invalid explicit values
-  deny the affected method; a malformed map denies new monetary checkout
-  rather than silently bypassing configured policy. The cap is an AND
-  condition outside audience rules and exemptions, applied to the final
-  discounted original invoice amount (bulk total, recharge amount, renewal
-  or extension), not the randomized bank transfer amount, converted currency
-  or individual item price. Zero-price service paths remain nonmonetary.
-  Display and first admission use the same locked current setting; a prior
-  admitted/issued invoice retains original settlement eligibility. Scheduled
-  automatic renewal is a separate no-invoice wallet service command under
-  its existing independently configured policy, not method selection.
+- Optional `BOT_STATES.gatewayMaxAmountToman` holds independent method
+  amounts, e.g. `{"bank_transfer":500000}`. Positive integral Toman values
+  (including decimal strings directly edited in JSON) are inclusive.
+  Optional `BOT_STATES.gatewayAmountMode` holds per-method `cap` or
+  `fallback`, e.g. `{"bank_transfer":"fallback"}`. Omission defaults to
+  the established `cap` behavior, so existing configured ceilings remain
+  effective. Invalid explicit amounts/modes deny the affected method;
+  a malformed map denies new monetary checkout rather than silently
+  bypassing configured policy.
+  - Cap: eligible audience (including exempt users) AND amount at or
+    below the limit. Missing/null/zero amount means no monetary cap.
+  - Fallback: eligible audience (including exempt users) OR a positive
+    final invoice amount at or below the explicitly positive threshold.
+    Missing/null/zero disables only this alternative. Eligible customers
+    have no monetary ceiling in this mode. Empty/paused category rules
+    or audience `off` can still admit the explicit amount alternative;
+    the real method enable flag remains mandatory. Neither alternative
+    rescues malformed active policy, missing/ambiguous identity, or
+    other financial/provider/checkout checks. Independently satisfied
+    amount eligibility does not need a category/history query.
+  Both modes use the final discounted original invoice amount (bulk
+  total, recharge amount, renewal or extension), not the randomized
+  bank transfer amount, converted currency or individual item price.
+  Zero-price service paths remain nonmonetary. Display and first admission
+  use the same locked current setting; a prior admitted/issued invoice
+  retains original settlement eligibility. Hosted original-link reopens
+  keep their existing current audience/flag recheck, including the new
+  alternative when applicable; cap mode does not reapply a newly reduced
+  ceiling to a previously issued link. Scheduled automatic renewal is a
+  separate no-invoice wallet service command under its existing policy,
+  not method selection.
 - `BOT_STATES.gatewayRules` is optional and versioned:
   `{"version":1,"methods":{"wallet":[{"category":"non_agents","enabled":true,"registration_age_days":90,"metrics":{"buy":{"count":5,"days":90,"direction":"older"},"renew":{"count":0,"days":0,"direction":"older"},"volume":{"count":0,"days":0,"direction":"older"},"time":{"count":0,"days":0,"direction":"older"},"topup":{"count":0,"days":0,"direction":"older"}}}]}}`.
   **The example numbers are not defaults or UI limits.** All count and day

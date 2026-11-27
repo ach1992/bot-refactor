@@ -515,6 +515,57 @@ def main():
         assert amount_allowed({**initial,'gatewayMaxAmountToman':{'nowpayments':100}},100,'nowpayments','INCREASE_WALLET')
         assert not amount_allowed({**initial,'gatewayMaxAmountToman':{'nowpayments':100}},101,'nowpayments','INCREASE_WALLET')
         cases.append('amount_caps_all_methods_inclusive_exemption_independent_and_bad_value_isolation')
+        # Amount alternative is explicit and per method: the same amount
+        # that denies an ordinary cap grants a separate OR path in fallback.
+        for method in ('nowpayments','zarinpal','nextpay','bank_transfer','gift_card',
+                       'manual_usdt','manual_trx','wallet'):
+            s=policy(method,[blank('buyers')],gatewayMaxAmountToman={method:500000},
+                     gatewayAmountMode={method:'fallback'})
+            for subject in (('BUY_SUB','INCREASE_WALLET') if method=='nowpayments' else ('BUY_SUB',)):
+                for amount in (1,499999,500000,500001):
+                    assert amount_allowed(s,amount,method,subject,who=1001)
+                    assert amount_allowed(s,amount,method,subject,who=1002)==(amount<=500000)
+            cap={**s,'gatewayAmountMode':{method:'cap'}}
+            assert amount_allowed(cap,500000,method)
+            assert not amount_allowed(cap,500001,method)
+            assert not amount_allowed(cap,500000,method,who=1002)
+        s=policy('bank_transfer',[],gatewayAmountMode={'bank_transfer':'fallback'},
+                 gatewayMaxAmountToman={'bank_transfer':500000})
+        assert amount_allowed(s,500000,'bank_transfer',who=1002)
+        assert not amount_allowed(s,500001,'bank_transfer',who=1002)
+        assert not amount_allowed(s,0,'bank_transfer',who=1002)
+        assert not amount_allowed({**s,'cartToCartState':'off'},1,'bank_transfer')
+        assert not amount_allowed(s,1,'bank_transfer',who=999999)
+        # Exemption remains an independent audience authorization, not a cap.
+        ex={**s,'gatewayRuleExemptUsers':{'bank_transfer':[1002]}}
+        assert amount_allowed(ex,500001,'bank_transfer',who=1002)
+        for raw in (None,0,'0','000'):
+            z={**s,'gatewayMaxAmountToman':{'bank_transfer':raw}}
+            assert not amount_allowed(z,1,'bank_transfer',who=1002)
+            assert amount_allowed({**z,'gatewayRuleExemptUsers':{'bank_transfer':[1002]}},
+                                  500001,'bank_transfer',who=1002)
+        for bad in (None,True,'unknown',1,[],{}):
+            z={**s,'gatewayAmountMode':{'bank_transfer':bad}}
+            assert not amount_allowed(z,1,'bank_transfer')
+            assert amount_allowed(z,1,'wallet')
+        for bad in (None,True,'fallback',[1]):
+            assert not amount_allowed({**s,'gatewayAmountMode':bad},1,'bank_transfer')
+        for bad in (-1,True,1.5,'-1','1e3',{},[]):
+            assert not amount_allowed({**s,'gatewayMaxAmountToman':{'bank_transfer':bad}},1,'bank_transfer')
+        assert not amount_allowed({**s,'gatewayRules':{'version':2,'methods':{}}},1,'bank_transfer')
+        assert not amount_allowed({**s,'gatewayRuleExemptUsers':None},1,'bank_transfer')
+        legacy={k:v for k,v in s.items() if k!='gatewayRules'}
+        for mode in ('off','buyers'):
+            z={**legacy,'gatewayAudience':{'bank_transfer':mode}}
+            assert amount_allowed(z,500000,'bank_transfer',who=1002)
+            assert not amount_allowed(z,500001,'bank_transfer',who=1002)
+        assert not amount_allowed({**legacy,'gatewayAudience':{'bank_transfer':'invalid'}},1,'bank_transfer')
+        assert not amount_allowed({**legacy,'gatewayAudience':None},1,'bank_transfer')
+        sql(w,e,f"INSERT INTO users(userid,name,username,refcode,wallet,date,is_agent) "
+            f"VALUES(1002,'Duplicate','duplicate_gateway_fixture','0',0,'{now}',1)")
+        assert not amount_allowed(s,1,'bank_transfer',who=1002)
+        sql(w,e,"DELETE FROM users WHERE username='duplicate_gateway_fixture'")
+        cases.append('amount_fallback_all_methods_inclusive_disabled_zero_identity_policy_and_exemptions')
         # Rest of operator suite uses original source route and writer.
         store(initial)
         sequence=[1000]

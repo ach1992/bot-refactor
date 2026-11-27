@@ -112,6 +112,16 @@ def main():
         seed({"walletState":"on","gatewayAudience":None},{})
         assert has(invoke(3),"gateway_policies","BLOCK")
         cases.append("explicit_exemptions_are_potential_not_actual_authorization")
+        fallback={"walletState":"on","gatewayRules":{"version":1,"methods":{"wallet":[]}},
+                  "gatewayAmountMode":{"wallet":"fallback"},"gatewayMaxAmountToman":{"wallet":100}}
+        seed(fallback,{})
+        assert invoke(0)["methods"]["wallet"]["offerability"]=="potentially_offerable"
+        for invalid in (0,-1,None):
+            seed({**fallback,"gatewayMaxAmountToman":{"wallet":invalid}},{})
+            assert invoke(3)["methods"]["wallet"]["offerability"]=="configured_but_policy_denied"
+        seed({**fallback,"gatewayAmountMode":{"wallet":"unknown"}},{})
+        assert invoke(3)["methods"]["wallet"]["offerability"]=="configured_but_policy_denied"
+        cases.append("explicit_positive_amount_alternative_is_potential_not_actual_authorization")
         seed({"manualUsdtState":"on"},{"manualUsdtWalletBEP20":"0x"+"a"*40,"manualUsdtRateToman":"1000"})
         r=invoke(0)
         assert r["methods"]["manual_trx"]["offerability"]=="not_offered"
