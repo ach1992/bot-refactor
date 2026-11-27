@@ -703,7 +703,16 @@ DELIMITER ;
                 assert actual_balance==b+good_price and server.consumes.get(ident,0)==1,(
                     mode,queue_result,actual_balance,b+good_price,server.consumes.get(ident,0),
                     sql(f"SELECT CONCAT_WS(':',stage,evidence_state,COALESCE(wallet_credit_entry_id,0)) FROM payment_attempts WHERE pay_row_id={good}"))
-                assert sql(f"SELECT evidence_projection_checked_at IS NOT NULL FROM payment_attempts WHERE pay_row_id={good}")=='1'
+                # Once credited, the durable Wallet followups, not the API
+                # evidence projection sweep, own the original receipt edit.
+                assert sql(f"SELECT evidence_projection_checked_at IS NULL FROM payment_attempts WHERE pay_row_id={good}")=='1'
+                assert roles(good)=='customer,receipt_primary,service_admin,service_channel',roles(good)
+                rid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={good} AND stage='wallet_credit' AND role='receipt_primary' AND kind='edit' AND recipient='9001' AND message_id=222"))
+                final_receipt=result(mode,'report',good,report=rid)
+                assert final_receipt['status']=='acknowledged',final_receipt
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_attempts WHERE intent_id={rid} AND result='acknowledged' AND ack_chat_id=9001 AND ack_message_id=222")=='1'
+                assert result(mode,'report',good,report=rid)['sends']==[]
+                assert balance()==b+good_price and server.consumes.get(ident,0)==1
                 assert sql(f"SELECT wallet_credit_entry_id IS NULL AND evidence_profile='fixture-corrupt-profile' FROM payment_attempts WHERE pay_row_id={bad}")=='1'
                 case('api_maintenance_rotates_broken_pin_and_skips_historical_projection')
 
