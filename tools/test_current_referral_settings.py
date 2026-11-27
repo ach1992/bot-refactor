@@ -193,7 +193,7 @@ def main():
         sql("INSERT INTO server_categories(id,title,parent,active) VALUES (1,'Category',0,1); "
             "INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (2,'Server','100','fixture','',1,1); "
             "INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled) VALUES (2,'https://fixture.invalid','pasarguard','fixture','fixture',2,REPEAT('a',32),'5.5.1',1); "
-            "INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES (7,1,2,0,'Plan',30,2,100,'description',1,'fixture','[1]'); "
+            "INSERT INTO server_plans(id,catid,server_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES (7,1,2,'Plan',30,2,100,'description',1,'fixture','[1]'); "
             "INSERT INTO send_list(id,type,title,text,state) VALUES (70,'text','Fixture','Old',3)")
         for mode in ('strict','off'):
             def case(name):checks.append(mode+':'+name)

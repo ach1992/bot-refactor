@@ -34,9 +34,11 @@ merely because its historic `payment_attempts.stage=review` or
 `provider_status=receipt_started` remains intact. Reconcile original
 `pays.state=auto_cart_approved`, the proven SMS transaction, the linked
 service effect, original order and acknowledged delivery separately from
-`evidence_staff_digest` and customer
-`payment_message_refs.synced_digest`. The latter only prove that Telegram
-presentation was acknowledged. After an actual original settlement, update
+current staff followup attempt acknowledgements and customer
+`payment_message_refs.synced_digest`. These only prove that Telegram
+presentation was acknowledged. The retired `evidence_staff_digest` and
+`review_notice_claimed_at` are retained in verified historical source
+archives, not in the current runtime schema. After an actual original settlement, update
 that payment's registered messages immediately; if Telegram is unavailable,
 retain unsynced references for the bounded fair recovery queues, without
 re-consuming the SMS or altering the financial evidence. When Telegram reports

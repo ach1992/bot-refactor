@@ -56,7 +56,7 @@ function achbotAdminIntentEntityDigest(mysqli $db,string $kind,int $id,bool $loc
     } else {
         $q=$db->prepare('SELECT * FROM server_plans WHERE id=?'.$suffix);
         $q->bind_param('i',$id);$q->execute();$plan=$q->get_result()->fetch_assoc();$q->close();
-        if (!$plan || (int)$plan['inbound_id']!==0 || !in_array((int)$plan['active'],[0,1],true))return null;
+        if (!$plan || !in_array((int)$plan['active'],[0,1],true))return null;
         $q=$db->prepare('SELECT type FROM server_config WHERE id=?'.$suffix);
         $sid=(int)$plan['server_id'];$q->bind_param('i',$sid);$q->execute();$server=$q->get_result()->fetch_assoc();$q->close();
         if (!$server || $server['type']!=='pasarguard')return null;
@@ -154,9 +154,9 @@ function achbotAdminPlanStateSet(mysqli $db,int $actor,int $primary,int $planId,
     try {
         if (!$db->begin_transaction())throw new RuntimeException('management_begin');$begun=true;
         achbotAdminIntentActor($db,$actor,$primary,'plans');
-        $q=$db->prepare('SELECT active,inbound_id FROM server_plans WHERE id=? FOR UPDATE');
+        $q=$db->prepare('SELECT active FROM server_plans WHERE id=? FOR UPDATE');
         $q->bind_param('i',$planId);$q->execute();$plan=$q->get_result()->fetch_assoc();$q->close();
-        if (!$plan || (int)$plan['inbound_id']!==0 || (int)$plan['active']!==1-$desired ||
+        if (!$plan || (int)$plan['active']!==1-$desired ||
             !hash_equals(achbotAdminPlanStateRevision($db,$planId,true),$revision))
             throw new RuntimeException('management_stale');
         $previous=1-$desired;

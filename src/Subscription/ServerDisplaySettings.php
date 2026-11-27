@@ -6,6 +6,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__.'/Presentation.php';
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
+require_once __DIR__.'/../Database/Lock.php';
 
 function achbotServerDisplayDefault(): array {
     return ['mode'=>'native','policy'=>[]];
@@ -200,8 +201,9 @@ function achbotServerDisplayEdit(mysqli $db,int $serverId,int $actor,int $primar
     if (!in_array($field,['document','cfg','sub','qr',
         'max','threshold','select','protocols','names','dselect','vselect','dprotocols','vprotocols','dnames','vnames',
         'dcfg','dsub','daux','dqr','dconfigs','vcfg','vsub','vaux','vconfigs'],true)) throw new RuntimeException('display_field_invalid');
-    $name='achbot_server_display_writer';$owns=false;$begun=false;
+    $name=null;$owns=false;$begun=false;
     try {
+        $name=achbotDatabaseLockName($db,'settings:server-display');
         $s=$db->prepare('SELECT GET_LOCK(?,5) AS acquired');$s->bind_param('s',$name);$s->execute();
         $owns=(int)($s->get_result()->fetch_assoc()['acquired']??0)===1;$s->close();
         if (!$owns) throw new RuntimeException('display_write_busy');

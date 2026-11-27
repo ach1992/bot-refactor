@@ -148,8 +148,11 @@ def php_literals(source: str) -> set[str]:
 
 def finite_dynamic_keys(sources: dict[str, str]) -> set[str]:
     """Follow source-proven finite producer domains, never prefix wildcards."""
+    bot_toggles=php_function(sources["config.php"],"achbotBotToggleDefinitions")
+    labels=re.findall(r"'label'\s*=>\s*'([^']+)'",bot_toggles)
+    check(len(labels)==19 and len(set(labels))==19,"current_bot_toggle_labels")
     # API receipt labels are now literal catalog references.
-    keys: set[str] = set()
+    keys: set[str] = set(labels)
 
     admin = sources["src/Finance/PaymentApiAdmin.php"]
     rows = php_function(admin, "achbotPaymentApiAdminRows")
@@ -269,7 +272,8 @@ def indirect_legacy_keys(sources: dict[str, str],
     check("array $traffic,string $serverType): string" in status and
           "achbotMessage('legacy_buttons.active')" in status and
           "achbotMessage('legacy_buttons.deactive')" in status and
-          detail.count("getOrderStatusText($traffic,$serverType)") == 2 and
+          detail.count("getOrderStatusText($traffic,$serverType)") == 1 and
+          detail.count("prepareOrderDetail($GLOBALS['connection'],$order,$botState,$provenRemote)") == 2 and
           re.search(r"getOrderStatusText\(\s*\$observation.{0,160}?\$match\['type'\]\)",
                     external, re.S) is not None,
           "subscription_status_direct_catalog_binding_changed")
@@ -406,7 +410,8 @@ def unresolved_copy_orphans(groups: dict[str, dict],
 def verify_live_subscription_status_labels(sources: dict[str, str]) -> int:
     """Run the real status renderer with the loaded catalog; no config/DB/HTTP."""
     detail = sources["src/Subscription/AccountDetails.php"]
-    check(detail.count("getOrderStatusText($traffic,$serverType)") == 2,
+    check(detail.count("getOrderStatusText($traffic,$serverType)") == 1
+          and detail.count("prepareOrderDetail($GLOBALS['connection'],$order,$botState,$provenRemote)") == 2,
           "customer_admin_status_callsite_changed")
     script = r"""
     error_reporting(E_ALL);
@@ -455,11 +460,12 @@ def main() -> None:
     scans = source_call_inventory(sources)
     literal = set().union(*(set(row["literal"]) for row in scans.values()))
     dynamic = set().union(*(set(row["dynamic"]) for row in scans.values()))
-    assert_bound(literal, all_keys)
+    finite_proof = finite_dynamic_keys(sources)
+    assert_bound(literal | finite_proof, all_keys)
     # These source-owned administrative topics are fully statically bound;
     # a new orphan here should be treated as retired rather than stockpiled.
     for topic in ("admin_settings", "plans"):
-        orphans = {topic + "." + key for key in groups[topic]} - literal
+        orphans = {topic + "." + key for key in groups[topic]} - literal - finite_proof
         check(not orphans, "orphan_static_catalog:" + str(sorted(orphans)[:12]))
     check(dynamic == DYNAMIC_PREFIXES, "unexpected_dynamic_copy_key:" +
           str(sorted(dynamic ^ DYNAMIC_PREFIXES)))
@@ -473,7 +479,6 @@ def main() -> None:
           str(sorted(main_keys | button_keys)))
     check(button_keys <= set(groups["legacy_buttons"]),
           "buttonValues_unknown_source")
-    finite_proof = finite_dynamic_keys(sources)
     check({"manual_payment.api_payment.status_review",
            "manual_payment.api_payment.code_used"} <= set(scans["src/Finance/ApiPayments.php"]["literal"]),
           "manual_status_literal_provenance_lost")

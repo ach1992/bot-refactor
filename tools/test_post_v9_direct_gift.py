@@ -1950,9 +1950,9 @@ def main() -> None:
         q(work,env,'ALTER TABLE server_info ADD COLUMN panel_group_id INT NULL')
         try:
             q(work,env,"INSERT INTO setting (type,value) "
-              "VALUES ('ACHBOT_MARZBAN_PANEL_GROUP','{}')")
+              "VALUES ('ACHBOT_PANEL_GROUP','{}')")
             groupid=q(work,env,"SELECT id FROM setting WHERE type="
-                      "'ACHBOT_MARZBAN_PANEL_GROUP' ORDER BY id DESC LIMIT 1")
+                      "'ACHBOT_PANEL_GROUP' ORDER BY id DESC LIMIT 1")
             ensure(groupid.isdigit(),'Synthetic panel group identity was not persisted')
             q(work,env,'UPDATE server_info SET panel_group_id='+groupid+
                      ' WHERE id IN (2,4)')
@@ -1968,7 +1968,7 @@ def main() -> None:
             passed.append('shared_panel_group_two_urls_cross_admin_hold')
         finally:
             q(work,env,'ALTER TABLE server_info DROP COLUMN panel_group_id')
-            q(work,env,"DELETE FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP'")
+            q(work,env,"DELETE FROM setting WHERE type='ACHBOT_PANEL_GROUP'")
 
         reset(work,env);stage.joinpath('effects.jsonl').unlink(missing_ok=True)
         prepare_final(work,env,stage)

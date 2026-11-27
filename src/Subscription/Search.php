@@ -33,6 +33,6 @@ function achbotSubscriptionSearchEditor(string $step): ?array {
 }
 function achbotSubscriptionSearchCancelKeys(int $source): string {
     return json_encode(['inline_keyboard'=>[[[
-        'text'=>achbotMessage('subscription.customer_routes.cancel_search_keyboard.button.cc357a4c9f'),
+        'text'=>achbotMessage('legacy_buttons.cancel'),
         'callback_data'=>'cancelSearchConfig_'.$source]]]],JSON_THROW_ON_ERROR);
 }

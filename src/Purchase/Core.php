@@ -7,6 +7,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__.'/../Panel/ProviderRuntime.php';
+require_once __DIR__.'/../Panel/ProviderStorage.php';
 require_once __DIR__.'/../Plans/Addons.php';
 
 if (!function_exists('getPlanDetails')) {
@@ -49,15 +50,8 @@ if (!function_exists('ensureServerCapacity')) {
     }
 }
 
-// Shared read-only preflight for current purchase/manual approval/wallet.
-// Type + inbound are validated as one provider contract before settlement.
-// Post-V9: read-only order and payment-subject validation at *entrance*.
-// All consumers use the same current provider and 23-table schema; R4 adds
-// only one separately migrated nullable server_info column.
-// R4: physical panel is explicitly identified by an admin-managed group.
-// Different API URLs and admin users can access the SAME backend.
-// Only a nullable server_info.panel_group_id column is added by separate SQL
-// migration; historical V9 DDL remains frozen.
+// Physical Panel Groups are administrator-declared identities. Different
+// connection endpoints and credentials may address the same physical panel.
 if (!function_exists('achbotGroupNameValid')) {
     function achbotGroupNameValid($name) {
         $name = is_string($name) ? $name : '';
@@ -71,7 +65,7 @@ if (!function_exists('achbotGroupNameValid')) {
 if (!function_exists('achbotListPanelGroups')) {
     function achbotListPanelGroups($connection) {
         $stmt = $connection->prepare(
-            "SELECT id, value AS name FROM setting WHERE type = 'ACHBOT_MARZBAN_PANEL_GROUP' ORDER BY id"
+            "SELECT id, value AS name FROM setting WHERE type = 'ACHBOT_PANEL_GROUP' ORDER BY id"
         );
         $stmt->execute();
         $result = $stmt->get_result();
@@ -91,48 +85,35 @@ if (!function_exists('achbotCreatePanelGroupRecord')) {
         // advisory lock serializes ALL group-name checks and inserts.
         // This helper owns its transaction: release the lock only AFTER
         // commit/rollback so another creator cannot observe uncommitted data.
-        $lockName = 'achbot_post_v9_marzban_group_create';
-        $stmt = $connection->prepare('SELECT GET_LOCK(?, 10) AS acquired');
-        $stmt->bind_param('s', $lockName);
-        $stmt->execute();
-        $acquired = $stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        if ((int)($acquired['acquired'] ?? 0) !== 1) {
-            throw new \RuntimeException('panel_group_create_lock_unavailable');
-        }
+        $lockName = achbotDatabaseLockName($connection,'settings:panel-groups');
+        $held = false;
+        $begun = false;
         try {
-            $connection->begin_transaction();
-            try {
-                $stmt = $connection->prepare(
-                    "SELECT id FROM setting WHERE type = 'ACHBOT_MARZBAN_PANEL_GROUP' AND value = ? LIMIT 1"
-                );
-                $stmt->bind_param('s', $name);
-                $stmt->execute();
-                $exists = $stmt->get_result()->num_rows > 0;
-                $stmt->close();
-                if ($exists) {
-                    $connection->rollback();
-                    return null;
-                }
-                $stmt = $connection->prepare(
-                    "INSERT INTO setting (type,value) VALUES ('ACHBOT_MARZBAN_PANEL_GROUP', ?)"
-                );
-                $stmt->bind_param('s', $name);
-                $stmt->execute();
-                $id = (int)$stmt->insert_id;
-                $stmt->close();
-                if ($id <= 0) throw new \RuntimeException('panel_group_insert_failed');
-                $connection->commit();
-                return $id;
-            } catch (\Throwable $e) {
-                $connection->rollback();
-                throw $e;
-            }
-        } finally {
-            $stmt = $connection->prepare('SELECT RELEASE_LOCK(?)');
-            $stmt->bind_param('s', $lockName);
-            $stmt->execute();
+            $row = achbotProviderRow($connection,'SELECT GET_LOCK(?,10) AS acquired','s',[$lockName]);
+            $held = (int)($row['acquired']??0)===1;
+            if (!$held) throw new RuntimeException('panel_group_create_lock_unavailable');
+            if (!$connection->begin_transaction()) throw new RuntimeException('panel_group_begin_failed');
+            $begun = true;
+            $row = achbotProviderRow($connection,
+                "SELECT id FROM setting WHERE type='ACHBOT_PANEL_GROUP' AND value=? LIMIT 1",'s',[$name]);
+            if ($row) return null;
+            $stmt = achbotProviderStatement($connection,
+                "INSERT INTO setting(type,value) VALUES ('ACHBOT_PANEL_GROUP',?)",'s',[$name]);
+            $id = (int)$stmt->insert_id;
+            $count = $stmt->affected_rows;
             $stmt->close();
+            if ($id<=0 || $count!==1) throw new RuntimeException('panel_group_insert_failed');
+            if (!$connection->commit()) throw new RuntimeException('panel_group_commit_uncertain');
+            $begun = false;
+            return $id;
+        } finally {
+            if ($begun) {
+                try {$connection->rollback();} catch (Throwable $ignored) {}
+            }
+            if ($held) {
+                try {achbotProviderRow($connection,'SELECT RELEASE_LOCK(?) AS released','s',[$lockName]);}
+                catch (Throwable $ignored) {}
+            }
         }
     }
 }
@@ -146,7 +127,7 @@ if (!function_exists('achbotSetPanelGroupRecord')) {
         }
         if ($groupId !== null) {
             $stmt = $connection->prepare(
-                "SELECT id FROM setting WHERE id = ? AND type = 'ACHBOT_MARZBAN_PANEL_GROUP' FOR UPDATE"
+                "SELECT id FROM setting WHERE id = ? AND type = 'ACHBOT_PANEL_GROUP' FOR UPDATE"
             );
             $stmt->bind_param('i', $groupId);
             $stmt->execute();
@@ -176,7 +157,7 @@ if (!function_exists('achbotDeletePanelGroupRecord')) {
         if ($groupId <= 0) return false;
         $stmt = $connection->prepare(
             "DELETE FROM setting WHERE id = ?
-               AND type = 'ACHBOT_MARZBAN_PANEL_GROUP'
+               AND type = 'ACHBOT_PANEL_GROUP'
                AND NOT EXISTS (SELECT 1 FROM server_info WHERE panel_group_id = ?)"
         );
         $stmt->bind_param('ii', $groupId, $groupId);
@@ -186,28 +167,25 @@ if (!function_exists('achbotDeletePanelGroupRecord')) {
         return $success;
     }
 }
-// Panel grouping is a permission to remap the bot's logical server label,
-// not an authorization to modify or migrate the actual Marzban account.
-// Physical panel membership is administrator-declared, provider-neutral.
-// Keep the original setting.type and nullable column to preserve all installed
-// group IDs and pre-existing Marzban API compatibility without a data migration.
+// Group membership declares physical identity; it does not authorize a
+// Native account mutation. The stable group ID remains the setting row PK.
 if (!function_exists('achbotPanelGroups')) {
     function achbotPanelGroups($db): array { return achbotListPanelGroups($db); }
     function achbotPanelGroup($db,int $serverId): ?array {
         if ($serverId<=0) return null;
-        $s=$db->prepare("SELECT g.id,g.value AS name FROM server_info i
+        $s=$db->prepare("SELECT g.id,g.value AS name,c.type FROM server_info i
             JOIN server_config c ON c.id=i.id
-            JOIN setting g ON g.id=i.panel_group_id AND g.type='ACHBOT_MARZBAN_PANEL_GROUP'
-            WHERE i.id=? AND c.type='pasarguard' LIMIT 1");
+            JOIN setting g ON g.id=i.panel_group_id AND g.type='ACHBOT_PANEL_GROUP'
+            WHERE i.id=? LIMIT 1");
         $s->bind_param('i',$serverId);$s->execute();
         $row=$s->get_result()->fetch_assoc();$s->close();
-        return $row ? ['id'=>(int)$row['id'],'name'=>(string)$row['name']] : null;
+        return $row && achbotSupportsProviderType($row['type']) ? ['id'=>(int)$row['id'],'name'=>(string)$row['name']] : null;
     }
     function achbotSetPanelGroup($db,int $serverId,int $groupId): void {
         $s=$db->prepare("SELECT c.type FROM server_config c
             JOIN server_info i ON i.id=c.id WHERE c.id=? FOR UPDATE");
         $s->bind_param('i',$serverId);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
-        if (!$row || $row['type']!=='pasarguard')
+        if (!$row || !achbotSupportsProviderType($row['type']))
             throw new \RuntimeException('panel_group_server_unavailable');
         achbotSetPanelGroupRecord($db,$serverId,$groupId);
     }
@@ -271,7 +249,7 @@ if (!function_exists('achbotApplyServiceEdit')) {
         $type=(string)($panel['type']??'');
         if ($giftTarget!==null) {
             require_once __DIR__ . '/../Subscription/GiftBatch.php';
-            if (!achbotSupportsAccount($type,0) ||
+            if (!achbotSupportsProviderType($type) ||
                 !achbotGiftTargetMatches($db,$serverId,$giftTarget))
                 return (object)['success'=>false,'uncertain'=>true,
                                 'msg'=>'gift_service_target_changed'];
@@ -372,7 +350,7 @@ function achbotAvailablePlans(mysqli $db,?int $server=null,?int $category=null,s
     if ($category!==null) {$sql.=' AND p.catid=?';$types.='i';$values[]=$category;}
     $s=achbotProviderStatement($db,$sql.' ORDER BY p.id',$types,$values);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
-    return array_values(array_filter($rows,static fn($p)=>achbotSupportsPlan($db,(int)$p['id'],(int)$p['inbound_id'],(int)$p['server_id'])));
+    return array_values(array_filter($rows,static fn($p)=>achbotSupportsPlan($db,(int)$p['id'],(int)$p['server_id'])));
 }
 
 /** Existing custom purchasing is a separate enabled offering, with configured

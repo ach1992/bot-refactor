@@ -42,8 +42,8 @@ def run() -> list[str]:
                "INSERT INTO server_info(id,title,ucount,remark,flag,active,state)"
                " VALUES(2,'Fixture purchase server',10,'buyfixture','',1,1);"
                "INSERT INTO server_categories(id,title,parent,active) VALUES(1,'Fixture category',0,1);"
-               "INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)"
-               " VALUES(7,1,2,0,'Fixture',30,2,100,'description',1,'fixture','[1,2]');")
+               "INSERT INTO server_plans(id,catid,server_id,title,days,volume,price,descr,active,date,provider_group_ids)"
+               " VALUES(7,1,2,'Fixture',30,2,100,'description',1,'fixture','[1,2]');")
             db("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start,step)"
                " VALUES (1002,'B','b','0',50000,'1700000000',0,'sent','none'),"
                "(1003,'C','c','0',50000,'1700000000',0,'sent','none'),"
@@ -52,9 +52,9 @@ def run() -> list[str]:
                " VALUES(5,'Shared alias',10,'alias','',1,1);"
                + storage.clone(5, 2, current=True) +
                "INSERT INTO setting(type,value) VALUES"
-               "('ACHBOT_MARZBAN_PANEL_GROUP','reviewed shared panel');"
+               "('ACHBOT_PANEL_GROUP','reviewed shared panel');"
                "UPDATE server_info SET panel_group_id=(SELECT MAX(id) FROM setting"
-               " WHERE type='ACHBOT_MARZBAN_PANEL_GROUP') WHERE id IN (2,5);")
+               " WHERE type='ACHBOT_PANEL_GROUP') WHERE id IN (2,5);")
             db(storage.connection(2, 1, url) + storage.connection(5, 1, url))
             remark = 'existing_user_41'
             bearer = vendor.users[41]['subscription_url']

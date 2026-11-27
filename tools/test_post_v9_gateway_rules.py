@@ -315,9 +315,9 @@ def main():
             assert allowed(policy('wallet',[blank(category)])) is expected,category
             cases.append('new_category_'+category)
         sql(w,e,("INSERT INTO orders_list "
-            "(userid,token,transid,fileid,server_id,inbound_id,remark,uuid,"
+            "(userid,token,transid,fileid,server_id,remark,uuid,"
             "expire_date,link,amount,status,date) "
-            "VALUES(1001,'synthetic','',7,2,0,'rules-active-order',"
+            "VALUES(1001,'synthetic','',7,2,'rules-active-order',"
             "'rules-active-uuid',2000000000,'[]',100,1,'synthetic')"))
         assert allowed(policy('wallet',[blank('has_active_order')]))
         assert not allowed(policy('wallet',[blank('no_active_order')]))

@@ -477,8 +477,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     $maxDiscount    = isset($dInfo['max_discount'])     ? (int)$dInfo['max_discount'] : 0;
 
     $actor=(int)$from_id;
-    $dbName=achbotProviderRow($connection,'SELECT DATABASE() AS name')['name'];
-    $lease='discount-code:'.substr(hash('sha256',$dbName.':'.strtolower($hashId)),0,48);
+    $lease=achbotDatabaseLockName($connection,'discount-code:'.strtolower($hashId));
     $acquired=achbotProviderRow($connection,'SELECT GET_LOCK(?,0) AS acquired','s',[$lease]);
     if ((int)($acquired['acquired']??0)!==1) {
         sendMessage(achbotMessage('instance_content.save_unavailable'),null,'HTML');
@@ -523,7 +522,7 @@ if(preg_match('/^delDiscountConfirm(\d+)/', $data, $m) && achbotAdminCanFor($con
         'inline_keyboard' => [
             [
                 ['text' => \achbotMessage('payment.discount_administration.add_discount_code.button.689da8336a'), 'callback_data' => "delDiscount" . $discountId],
-                ['text' => \achbotMessage('payment.discount_administration.add_discount_code.button.a766691671'), 'callback_data' => "discount_codes"],
+                ['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "discount_codes"],
             ]
         ]
     ];

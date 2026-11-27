@@ -1,0 +1,39 @@
+{
+  "baseline": "90a9d79e2f8b4814db08c00d5a52c4e5a5d842f7",
+  "equal": {
+    "subscription.order_management.show_order_management_panel.button.b35a2352f5": "legacy_buttons.back_button",
+    "renewal.extensions.button.8405a4154f": "legacy_buttons.back_button",
+    "payment.discount_administration.add_discount_code.button.a766691671": "legacy_buttons.back_button",
+    "payment_settings.api.back": "legacy_buttons.back_button",
+    "payment_settings.gateway_rule_admin.gateway_admin_page.button.b233883d0d": "legacy_buttons.back_button",
+    "payment_settings.gateway_rule_admin.gateway_admin_page.button.b35a2352f5": "legacy_buttons.back_button",
+    "broadcast.routes.message2_all.button.b233883d0d": "legacy_buttons.back_button",
+    "broadcast.routes.pm_noop.button.b35a2352f5": "legacy_buttons.back_button",
+    "subscription.customer_routes.cancel_search_keyboard.button.cc357a4c9f": "legacy_buttons.cancel",
+    "telegram.markup.receipt_and_cancel.button.cc357a4c9f": "legacy_buttons.cancel",
+    "admin_settings.management.cancel": "legacy_buttons.cancel",
+    "bot.bot.manage_marzban_panel_groups.message.59d5170317": "bot.bot.manage_panel_groups.message.59d5170317",
+    "bot.bot.add_marzban_panel_group.message.01f02c2ac6": "bot.bot.add_panel_group.message.01f02c2ac6",
+    "bot.bot.add_marzban_panel_group.message.31116063c0": "bot.bot.add_panel_group.message.31116063c0",
+    "bot.bot.add_marzban_panel_group.message.c697bdb683": "bot.bot.add_panel_group.message.c697bdb683",
+    "bot.bot.add_marzban_panel_group.message.cfb10ede6f": "bot.bot.add_panel_group.message.cfb10ede6f",
+    "bot.bot.add_marzban_panel_group.message.7c6b361e59": "bot.bot.add_panel_group.message.7c6b361e59",
+    "bot.bot.add_marzban_panel_group.message.1de4f68601": "bot.bot.add_panel_group.message.1de4f68601",
+    "bot.bot.add_marzban_panel_group.alert.a77f2c705d": "bot.bot.add_panel_group.alert.a77f2c705d",
+    "bot.bot.add_marzban_panel_group.alert.2b2b180a96": "bot.bot.add_panel_group.alert.2b2b180a96",
+    "bot.bot.add_marzban_panel_group.alert.cc8538eba9": "bot.bot.add_panel_group.alert.cc8538eba9",
+    "bot.bot.add_marzban_panel_group.message.def9f141f2": "bot.bot.add_panel_group.message.def9f141f2",
+    "admin_settings.config.get_marzban_panel_group_keys.button.62b58eccfe": "admin_settings.config.get_panel_group_keys.button.62b58eccfe",
+    "admin_settings.config.get_marzban_panel_group_keys.button.9bdffdaedc": "admin_settings.config.get_panel_group_keys.button.9bdffdaedc",
+    "admin_settings.config.get_marzban_panel_groups_management_keys.button.eb25cfbc94": "admin_settings.config.get_panel_groups_management_keys.button.eb25cfbc94",
+    "admin_settings.config.get_marzban_panel_groups_management_keys.button.d376787114": "admin_settings.config.get_panel_groups_management_keys.button.d376787114",
+    "admin_settings.config.get_marzban_panel_groups_management_keys.button.a6b2138672": "admin_settings.config.get_panel_groups_management_keys.button.a6b2138672"
+  },
+  "dead": [
+    "bot.bot.edit_lock_channel.message.949fda751f",
+    "subscription.account_transfers.text.b233883d0d",
+    "admin_settings.config.get_marzban_panel_group_keys.text.b35a2352f5",
+    "purchase.order_writes.ensure_account_creation_succeeded.admin_message.inbound_missing",
+    "purchase.order_writes.ensure_account_creation_succeeded.user_message.7a64d65208"
+  ]
+}

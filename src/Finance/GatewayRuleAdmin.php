@@ -330,13 +330,13 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
     $state=achbotGatewayAdminCurrent();
     if ($state===null) return [
         'text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.36e4da5935'),
-        'keyboard'=>achbotGatewayAdminMarkup([[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.b233883d0d'),'callback_data'=>'managePanel']]])
+        'keyboard'=>achbotGatewayAdminMarkup([[['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'managePanel']]])
     ];
     $policy=isset($state['gatewayRules'])
         ? achbotGatewayRulesDecode($state['gatewayRules'])['methods'] : [];
     $legacy=$state['gatewayAudience']??[];
     $p=explode('|',$data);
-    $back=[[['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.b35a2352f5'),'callback_data'=>'managePanel']]];
+    $back=[[['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>'managePanel']]];
     if ($data==='gr|l' || $data==='gatewayAudienceSettings') {
         $rows=[];$text=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.778e46431a');
         $text.=\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.557fcc0258');

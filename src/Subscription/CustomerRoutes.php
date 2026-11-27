@@ -220,8 +220,6 @@ if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
     
     if (!$order || !achbotSupportsOrder($connection,(int)$oid,null,$stateActorAdmin?null:(int)$from_id)) {alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.627f7fad2f'),true);return;}
     $userId = $order['userid'];
-    $uuid = $order['uuid']??"0";
-    $inboundId = $order['inbound_id'];
     $server_id = $order['server_id'];
     $remark = $order['remark'];
     
@@ -233,7 +231,7 @@ if(preg_match('/changeUserConfigState(\d+)/', $data,$match)){
     $serverType = $server_info['type'];
 
     
-    if (!achbotSupportsPanel($serverType) || (int)$inboundId !== 0) {
+    if (!achbotSupportsPanel($serverType)) {
         alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
         return;
     }
@@ -273,8 +271,6 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
         return;
     }
 
-    $uuid = $order['uuid'] ?? "0";
-    $inboundId = $order['inbound_id'];
     $server_id = $order['server_id'];
     $remark = $order['remark'];
 
@@ -292,9 +288,7 @@ if (preg_match('/agentChangeUserConfigState(\d+)/', $data, $match)) {
 
     $serverType = $server_info['type'];
 
-    // Marzban-only: refuse obsolete inbound metadata instead of altering a
-    // different panel/account by guesswork.
-    if (!achbotSupportsPanel($serverType) || (int)$inboundId !== 0) {
+    if (!achbotSupportsPanel($serverType)) {
         alert(\achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'), true);
         return;
     }

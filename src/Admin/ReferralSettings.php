@@ -24,9 +24,7 @@ function achbotReferralSettingSave(mysqli $db,int $actor,array $cached,string $v
     if ($type==='INVITE_BANNER_AMOUNT' && achbotPurchaseReferralAmount($value)===null) return false;
     $lock=null;$held=false;
     try {
-        $dbName=achbotProviderRow($db,'SELECT DATABASE() AS name')['name']??null;
-        if (!is_string($dbName) || $dbName==='') return false;
-        $lock='referral-setting:'.substr(hash('sha256',$dbName.':'.$type),0,40);
+        $lock=achbotDatabaseLockName($db,'referral-setting:'.$type);
         $held=(int)(achbotProviderRow($db,'SELECT GET_LOCK(?,10) AS acquired','s',[$lock])['acquired']??0)===1;
         if (!$held) return false;
         return \AchBot\Telegram\Conversation\transitionEditor($db,$actor,$cached,'none',null,

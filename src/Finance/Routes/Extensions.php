@@ -54,7 +54,7 @@ if(preg_match('/\AincreaseADay([1-9][0-9]{0,9})\z/D', $data, $match)){
         else $price = (string)$price . \achbotMessage('renewal.extensions.text.2cc98f7f7c');
         $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.fbb9f61105', ['title' => $title, 'price' => $price]), 'callback_data' => "selectPlanDayIncrease{$match[1]}_$id"]];
     }
-    $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.8405a4154f'), 'callback_data' => "orderDetails{$match[1]}"]];
+    $keyboard[] = [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "orderDetails{$match[1]}"]];
     editText($message_id, \achbotMessage('renewal.extensions.message.c2bde2a3e0'), json_encode([
             'inline_keyboard' => $keyboard
         ]));
@@ -153,7 +153,7 @@ if (is_string($data) && preg_match('/^changePlan_([1-9][0-9]{0,9})$/D', $data, $
             alert(\achbotMessage('renewal.extensions.alert.65fc393064'),true);return;
         }
         $serverId=(int)$orderInfo['server_id'];
-        $stmt=$connection->prepare('SELECT id,title FROM server_plans WHERE server_id=? AND active=1 AND price>0 AND inbound_id=0 ORDER BY id');
+        $stmt=$connection->prepare('SELECT id,title FROM server_plans WHERE server_id=? AND active=1 AND price>0 ORDER BY id');
         $stmt->bind_param('i',$serverId);$stmt->execute();$plans=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
         $buttons=[];
         foreach ($plans as $plan) {
@@ -254,7 +254,7 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
 
         $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.249377f2b7', ['title' => $title, 'price' => $price]), 'callback_data' => "increaseVolumePlan{$match[1]}_{$id}"]];
     }
-    $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.8405a4154f'), 'callback_data' => "orderDetails{$match[1]}"]];
+    $keyboard[] = [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "orderDetails{$match[1]}"]];
     $res = editText($message_id, \achbotMessage('renewal.extensions.message.ab954c63e6'), json_encode([
         'inline_keyboard' => $keyboard
     ]));

@@ -138,7 +138,7 @@ function achbotPaymentApiAdminPage(string $method,bool $advanced=false): array {
             'callback_data'=>$sms?'changePaymentKeysApiSmsAdvanced':'changePaymentKeysApiGiftAdvanced'
         ]];
     }
-    $rows[]=[['text'=>achbotMessage('payment_settings.api.back'),
+    $rows[]=[['text'=>achbotMessage('legacy_buttons.back_button'),
         'callback_data'=>$advanced
             ? ($sms?'changePaymentKeysApiSms':'changePaymentKeysApiGift') : 'gateWays_Channels']];
     return ['text'=>$text,'keyboard'=>json_encode(['inline_keyboard'=>$rows],

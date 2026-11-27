@@ -22,7 +22,7 @@ if (preg_match('/^switchLocation([0-9]+)_([0-9]+)_[^_]{1,40}_[^_]{1,40}$/D', (st
     $orderId = (int)$match[1];
     $sourceId = (int)$match[2];
     $stmt = $connection->prepare(
-        "SELECT `id`, `server_id`, `inbound_id` FROM `orders_list`
+        "SELECT `id`, `server_id` FROM `orders_list`
          WHERE `id` = ? AND `status` = 1 LIMIT 1"
     );
     $stmt->bind_param('i', $orderId);
@@ -30,7 +30,6 @@ if (preg_match('/^switchLocation([0-9]+)_([0-9]+)_[^_]{1,40}_[^_]{1,40}$/D', (st
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     if (!$order || (int)$order['server_id'] !== $sourceId ||
-        (int)$order['inbound_id'] !== 0 ||
         !achbotSupportsOrder($connection, $orderId)) {
         alert(\achbotMessage('subscription.account_transfers.alert.2c082acb46'), true);
         return;
@@ -51,7 +50,7 @@ if (preg_match('/^switchLocation([0-9]+)_([0-9]+)_[^_]{1,40}_[^_]{1,40}$/D', (st
                       'callback_data'=>'switchServer' . (int)$server['id'] . '_' . $orderId];
     }
     $keyboard = array_chunk($buttons, 2);
-    $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.back_button') ?? \achbotMessage('subscription.account_transfers.text.b233883d0d'),
+    $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),
                     'callback_data'=>'quickUserOrderDetails_' . $orderId]];
     editText($message_id,
         \achbotMessage('subscription.account_transfers.message.3f6bd6c3c8'),
@@ -78,7 +77,7 @@ if (preg_match('/^switchServer([0-9]+)_([0-9]+)$/D', (string)($data ?? ''), $mat
         json_encode(['inline_keyboard'=>[
             [['text'=>\achbotMessage('subscription.account_transfers.choose_destination_plan'),
               'callback_data'=>'changeFileId_'.$orderId.'_'.$targetId]],
-            [['text'=>\achbotMessage('legacy_buttons.back_button') ?? \achbotMessage('subscription.account_transfers.text.b233883d0d'),
+            [['text'=>\achbotMessage('legacy_buttons.back_button'),
               'callback_data'=>'quickUserOrderDetails_'.$orderId]]
         ]],JSON_UNESCAPED_UNICODE));
     return;

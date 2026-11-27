@@ -33,25 +33,22 @@ function achbotServerCommerceAvailable(mysqli $db,int $serverId,bool $newPurchas
     } catch (Throwable $error) {return false;}
 }
 
-function achbotSupportsAccount($type,$inbound): bool {
-    return achbotSupportsProviderType($type) && (int)$inbound===0;
-}
-function achbotSupportsPlan($db,$planId,$inbound=0,$serverId=null,bool $lock=false,bool $allowInactive=false): bool {
-    if (!($db instanceof mysqli) || (int)$planId<=0 || (int)$inbound!==0) return false;
+function achbotSupportsPlan($db,$planId,$serverId=null,bool $lock=false,bool $allowInactive=false): bool {
+    if (!($db instanceof mysqli) || (int)$planId<=0) return false;
     try {
         $s=$db->prepare('SELECT c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=?');
         $s->bind_param('i',$planId);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
         $adapter=achbotProviderDefinition($row['type']??null);
-        return $adapter!==null && ($adapter['plan'])($db,$planId,$inbound,$serverId,$lock,$allowInactive)===true;
+        return $adapter!==null && ($adapter['plan'])($db,$planId,$serverId,$lock,$allowInactive)===true;
     } catch (Throwable $error) {return false;}
 }
-function achbotPasarGuardSupportsPlan($db,$planId,$inbound=0,$serverId=null,bool $lock=false,bool $allowInactive=false): bool {
-    if ((int)$planId<=0 || (int)$inbound!==0) return false;
+function achbotPasarGuardSupportsPlan($db,$planId,$serverId=null,bool $lock=false,bool $allowInactive=false): bool {
+    if ((int)$planId<=0) return false;
     try {
-        $s=$db->prepare('SELECT p.server_id,p.inbound_id,p.active,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=?'.($lock?' FOR UPDATE':''));
+        $s=$db->prepare('SELECT p.server_id,p.active,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=?'.($lock?' FOR UPDATE':''));
         $s->bind_param('i',$planId);$s->execute();$r=$s->get_result()->fetch_assoc();$s->close();
         if (!$r || (!$allowInactive && (int)$r['active']!==1) ||
-            $r['type']!=='pasarguard' || (int)$r['inbound_id']!==0 ||
+            $r['type']!=='pasarguard' ||
             ($serverId!==null && (int)$serverId!==0 && (int)$serverId!==(int)$r['server_id'])) return false;
         achbotPgPlanSnapshot($db,(int)$r['server_id'],(int)$planId,$lock);
         return true;
@@ -68,13 +65,13 @@ function achbotPasarGuardSupportsPlan($db,$planId,$inbound=0,$serverId=null,bool
 function achbotSupportsOrderObservation(mysqli $db,int $orderId,?int $userId=null): bool {
     if ($orderId<=0 || ($userId!==null && $userId<=0)) return false;
     try {
-        $s=$db->prepare('SELECT o.id,o.userid,o.status,o.inbound_id,o.server_id,c.type
+        $s=$db->prepare('SELECT o.id,o.userid,o.status,o.server_id,c.type
             FROM orders_list o JOIN server_config c ON c.id=o.server_id
             WHERE o.id=? LIMIT 1');
         $s->bind_param('i',$orderId);$s->execute();
         $order=$s->get_result()->fetch_assoc();$s->close();
         if (!$order || (int)$order['status']!==1 ||
-            !achbotSupportsAccount($order['type'],$order['inbound_id']) ||
+            !achbotSupportsProviderType($order['type']) ||
             ($userId!==null && (int)$order['userid']!==$userId))
             return false;
         if ($order['type']==='pasarguard') {
@@ -98,14 +95,14 @@ function achbotSupportsOrder($db,$orderId,$planId=null,$userId=null,bool $lock=f
 }
 function achbotPasarGuardSupportsOrder($db,$orderId,$planId=null,$userId=null,bool $lock=false): bool {
     try {
-        $s=$db->prepare('SELECT o.*,c.type,p.server_id AS plan_server,p.inbound_id AS plan_inbound FROM orders_list o JOIN server_config c ON c.id=o.server_id LEFT JOIN server_plans p ON p.id=o.fileid WHERE o.id=?'.($lock?' FOR UPDATE':''));
+        $s=$db->prepare('SELECT o.*,c.type,p.server_id AS plan_server FROM orders_list o JOIN server_config c ON c.id=o.server_id LEFT JOIN server_plans p ON p.id=o.fileid WHERE o.id=?'.($lock?' FOR UPDATE':''));
         $s->bind_param('i',$orderId);$s->execute();$r=$s->get_result()->fetch_assoc();$s->close();
-        if (!$r || $r['type']!=='pasarguard' || (int)$r['inbound_id']!==0 ||
+        if (!$r || $r['type']!=='pasarguard' ||
             ($planId!==null && (int)$r['fileid']!==(int)$planId) ||
             ($userId!==null && (int)$r['userid']!==(int)$userId)) return false;
         achbotPgOrderContext($db,(int)$orderId,$lock);
         return (int)$r['fileid']===0 ? $planId===null :
-            (int)$r['plan_inbound']===0 && achbotSameProviderPanel($db,(int)$r['server_id'],(int)$r['plan_server']);
+            achbotSameProviderPanel($db,(int)$r['server_id'],(int)$r['plan_server']);
     } catch (Throwable $e) { return false; }
 }
 function achbotSameProviderPanel(mysqli $db,int $a,int $b): bool {
@@ -709,7 +706,7 @@ function achbotPgLinkEffect(mysqli $db,int $effectId,int $orderId): bool {
     $pay=(int)($e['pay_row_id']??0);$s->bind_param('ii',$pay,$orderId);$s->execute();$o=$s->get_result()->fetch_assoc();$s->close();
     $owner=$pay>0?(int)($o['paid_user']??0):(int)$e['actor_userid'];
     if (!$o || (int)$o['userid']!==$owner || (int)$o['fileid']!==(int)$e['plan_id'] ||
-        (int)$o['server_id']!==(int)$e['target_server_id'] || (int)$o['inbound_id']!==0 ||
+        (int)$o['server_id']!==(int)$e['target_server_id'] ||
         (int)$o['expire_date']!==(int)$e['requested_expire'] ||
         $o['remark']!==$e['remote_username']) throw new RuntimeException('pg_effect_order_mismatch');
     achbotProviderPanelForSnapshot($db,$e['provider_snapshot']);
@@ -972,7 +969,7 @@ function achbotProviderRelocationTargets(mysqli $db,int $sourceId): array {
     try {
         $source=achbotPanelGroup($db,$sourceId);
         $type=achbotProviderType($db,$sourceId);
-        if ($source===null || !achbotSupportsAccount($type,0)) return [];
+        if ($source===null || !achbotSupportsProviderType($type)) return [];
         $gid=(int)$source['id'];
         $s=$db->prepare('SELECT i.id,i.title FROM server_info i JOIN server_config c ON c.id=i.id
             WHERE i.panel_group_id=? AND i.id<>? AND c.type=?
@@ -1075,7 +1072,7 @@ function achbotReassignLogicalServer(mysqli $db,int $orderId,int $targetId,int $
 
 /** PG gifts operate only on the bot's exact owned identities; never a vendor username search. */
 function achbotProviderGiftUsers(mysqli $db,int $serverId,array $target): object {
-    if (!achbotSupportsAccount(achbotProviderType($db,$serverId),0)) return achbotProviderFailure('unsupported_provider',false);
+    if (!achbotSupportsProviderType(achbotProviderType($db,$serverId))) return achbotProviderFailure('unsupported_provider',false);
     try {
         if (!achbotGiftTargetMatches($db,$serverId,$target)) throw new RuntimeException('pg_gift_target_changed');
         $s=$db->prepare("SELECT id,remark FROM orders_list WHERE server_id=? AND status=1 ORDER BY id");
@@ -1318,7 +1315,7 @@ function achbotProviderDispatchReservedAccount(
     $adapter=achbotProviderDefinition($type);
     if ($adapter===null) throw new RuntimeException('unsupported_effect_provider');
     // This one short admission is AFTER reservation, BEFORE any outbound
-    // CREATE, for both Marzban and PasarGuard. No lock spans provider HTTP.
+    // Native CREATE. No lock spans provider HTTP.
     // Only source-owned non-payment creates use this adapter entry point.
     $q=$db->prepare('SELECT pay_row_id,source_kind,state FROM service_effects WHERE id=?');
     if (!$q) throw new RuntimeException('effect_dispatch_missing');

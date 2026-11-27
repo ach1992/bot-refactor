@@ -2,6 +2,8 @@
 /** AChBot: refresh the authenticated actor's existing profile on /start only. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 
+require_once __DIR__.'/../Database/Lock.php';
+
 /**
  * Keep the existing users.name HTML-encoded storage convention. Read the raw
  * Telegram actor once, encode once, and never infer identity from cached text,
@@ -85,7 +87,7 @@ function achbotCustomerShortcut($update,int $actor): ?string {
  * Nothing here calls Telegram, providers or external services.
  */
 function achbotRegisterStartUser(
-    mysqli $db, $update, int $actor, int $inviter, int $inviteReward, string $databaseName
+    mysqli $db, $update, int $actor, int $inviter, int $inviteReward
 ): ?array {
     if ($actor <= 0 || !is_object($update) || !function_exists('achbotWebhookIngressAuthenticated') ||
         !achbotWebhookIngressAuthenticated()) return null;
@@ -126,11 +128,12 @@ function achbotRegisterStartUser(
         ? $sender->username : ' ';
 
     // GET_LOCK is session-scoped, not transactional. Keep the name <=64 bytes.
-    $lockName = 'achbot_start_' . substr(hash('sha256', $databaseName . ':' . $actor), 0, 40);
+    $lockName = null;
     $ownsLock = false;
     $begun = false;
     $stage = 'lock';
     try {
+        $lockName = achbotDatabaseLockName($db,'start:'.$actor);
         $stmt = $db->prepare('SELECT GET_LOCK(?,5) AS acquired');
         $stmt->bind_param('s', $lockName);
         $ok = $stmt->execute();

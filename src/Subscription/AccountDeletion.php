@@ -22,7 +22,7 @@ if (preg_match('/^(?:delUserConfig|yesDeleteUserConfig)/',(string)$data) &&
 
 /**
  * Only an explicitly resumable PasarGuard interruption may invite a second
- * confirmation. Protected state, invalid authority and Marzban's fenced
+ * confirmation. Protected state, invalid authority and fenced
  * unknown DELETE outcome must retain their existing review/support route.
  */
 function achbotSubscriptionDeleteRetryable(string $reason): bool {
@@ -52,7 +52,6 @@ function achbotSubscriptionDeleteConfirmed(mysqli $db,array $original,bool $owne
         $s->bind_param('i',$orderId);$s->execute();$fresh=$s->get_result()->fetch_assoc();$s->close();
         if (!$fresh || (int)$fresh['userid']!==(int)$original['userid'] ||
             (int)$fresh['server_id']!==$serverId || $fresh['remark']!==$remark ||
-            (int)$fresh['inbound_id']!==0 ||
             achbotPhysicalLockName($db,$fresh)!==$lease)
             return 'blocked';
         if (achbotProviderType($db,$serverId)!==$provider) return 'review';
@@ -145,10 +144,8 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
         alert(\achbotMessage('subscription.account_deletion.alert.a370755120'), true);
         exit;
     }
-    $inbound_id = $order['inbound_id'];
     $server_id = $order['server_id'];
     $remark = $order['remark'];
-    $uuid = $order['uuid']??"0";
     $fileid = $order['fileid'];
     
     $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id` = ?");
@@ -159,7 +156,7 @@ elseif(preg_match('/^yesDeleteConfig(\d+)/',$data,$match)){
     $serverType = $serverConfig['type']??'';
 
 	
-    if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
+    if (!achbotSupportsPanel($serverType)) {
         alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.739703d8ae'), true);
         exit;
     }
@@ -207,10 +204,8 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
     $stmt->close();
     if (!$order) { alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.bd8e953385'), true); exit; }
     $userId = $order['userid'];
-    $inbound_id = $order['inbound_id'];
     $server_id = $order['server_id'];
     $remark = $order['remark'];
-    $uuid = $order['uuid']??"0";
     
     $stmt = $connection->prepare("SELECT * FROM `server_config` WHERE `id` = ?");
     $stmt->bind_param('i', $server_id);
@@ -220,7 +215,7 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
     $serverType = $serverConfig['type']??'';
     
 	
-    if (!achbotSupportsPanel($serverType) || (int)$inbound_id !== 0) {
+    if (!achbotSupportsPanel($serverType)) {
         alert(\achbotMessage('subscription.account_deletion.no_dont_delete.alert.739703d8ae'), true);
         exit;
     }

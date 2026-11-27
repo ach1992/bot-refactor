@@ -26,7 +26,6 @@ if (!function_exists('insertOrder')) {
         $token,
         $fid,
         $server_id,
-        $inbound_id,
         $remark,
         $uniqid,
         $expire_date,
@@ -37,15 +36,14 @@ if (!function_exists('insertOrder')) {
         $requireConfirmed = false
     ) {
         $stmt = $connection->prepare("INSERT INTO `orders_list`
-            (`userid`, `token`, `transid`, `fileid`, `server_id`, `inbound_id`, `remark`, `uuid`, `expire_date`, `link`, `amount`, `status`, `date`, `notif`, `agent_bought`)
-            VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 0, ?);");
+            (`userid`, `token`, `transid`, `fileid`, `server_id`, `remark`, `uuid`, `expire_date`, `link`, `amount`, `status`, `date`, `notif`, `agent_bought`)
+            VALUES (?, ?, '', ?, ?, ?, ?, ?, ?, ?, 1, ?, 0, ?);");
         $stmt->bind_param(
-            "ssiiissisiii",
+            "ssiissisiii",
             $uid,
             $token,
             $fid,
             $server_id,
-            $inbound_id,
             $remark,
             $uniqid,
             $expire_date,
@@ -66,7 +64,7 @@ if (!function_exists('insertOrder')) {
 }
 
 if (!function_exists('ensureAccountCreationSucceeded')) {
-    function ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin, $throwOnError = false)
+    function ensureAccountCreationSucceeded($response, $serverInfo, $admin, $throwOnError = false)
     {
         $hasError = false;
         $errorCode = '';
@@ -77,13 +75,6 @@ if (!function_exists('ensureAccountCreationSucceeded')) {
             $hasError    = true;
             $errorCode   = 'server_connection_null';
             $userMessage = \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.user_message.7eb9410072');
-
-        } elseif ($response === "inbound not Found") {
-            $hasError    = true;
-            $errorCode   = 'inbound_not_found';
-            $userMessage = \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.user_message.7a64d65208');
-            $title = $serverInfo['title'] ?? \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.text.f07a81a062');
-            $adminMessage = \achbotMessage('purchase.order_writes.ensure_account_creation_succeeded.admin_message.inbound_missing', ['title' => $title, 'inbound_id' => $inbound_id]);
 
         } else {
             $success = false;
@@ -281,7 +272,7 @@ if (!function_exists('achbotImportedOrderOrigin')) {
         $order=$q->get_result()->fetch_assoc();$q->close();
         if (!$order || (int)$order['userid']!==$ownerId || (int)$order['server_id']!==$initialServerId ||
             $order['remark']!==$remark || (int)$order['fileid']!==0 || (int)$order['amount']!==0 ||
-            (int)$order['inbound_id']!==0 || (int)$order['status']!==1 || ($order['autoRenew']??null)!=='off')
+            (int)$order['status']!==1 || ($order['autoRenew']??null)!=='off')
             throw new RuntimeException('service_origin_order_invalid');
         $q=$db->prepare('SELECT c.type FROM server_config c JOIN server_info i ON i.id=c.id WHERE c.id=?');
         if (!$q) throw new RuntimeException('service_origin_server_unavailable');
@@ -323,10 +314,10 @@ function achbotValidPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock
         WHERE p.id=? AND p.price>0'.($historical?'':' AND p.active=1').($lock?' FOR UPDATE':''));
     $stmt->bind_param('i',$planId);$stmt->execute();$plan=$stmt->get_result()->fetch_assoc();$stmt->close();
     if (!$plan || (int)$plan['server_active']!==1 ||
-        !achbotSupportsAccount($plan['provider_type'], $plan['inbound_id']) ||
+        !achbotSupportsProviderType($plan['provider_type']) ||
         achbotWholeServiceUnits($plan['days'],achbotServiceDaysMax())===null ||
         achbotWholeServiceUnits($plan['volume'],achbotServiceVolumeMax(),$allowUnlimitedVolume)===null ||
-        !achbotSupportsPlan($db,$planId,0,(int)$plan['server_id'],$lock,$historical) ||
+        !achbotSupportsPlan($db,$planId,(int)$plan['server_id'],$lock,$historical) ||
         !in_array((int)$plan['server_state'],[1,2],true))
         return null;
     $orderServer=(int)($order['server_id']??0);$planServer=(int)$plan['server_id'];
@@ -335,7 +326,7 @@ function achbotValidPlanForOrder(\mysqli $db,array $order,int $planId,bool $lock
     $stmt=$db->prepare('SELECT i.active,i.state,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=?'.($lock?' FOR UPDATE':''));
     $stmt->bind_param('i',$orderServer);$stmt->execute();$server=$stmt->get_result()->fetch_assoc();$stmt->close();
     if (!$server || (int)$server['active']!==1 ||
-        !achbotSupportsAccount($server['type'],$order['inbound_id']??null) ||
+        !achbotSupportsProviderType($server['type']) ||
         !in_array((int)$server['state'],[1,2],true)) return null;
     return $plan;
 }

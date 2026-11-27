@@ -231,8 +231,7 @@ function achbotCreateNonPaymentAccount(
         !preg_match('/^(trial|trial_admin|bulk):[1-9][0-9]*(?::[1-9][0-9]*)?$/D',$sourceRef) ||
         $actor<=0 || $ordinal<1 || $count<1 || $ordinal>$count ||
         ($kind==='free_trial' && $count!==1) ||
-        $serverId<=0 || $planId<=0 || !achbotSupportsAccount($p['server_type']??'',0) ||
-        (int)($p['inbound_id']??-1)!==0 ||
+        $serverId<=0 || $planId<=0 || !achbotSupportsProviderType($p['server_type']??'') ||
         $volume===null || $days===null ||
         !achbotEffectValidUsername($remark,(string)($p['server_type']??''))) {
         throw new RuntimeException('nonpaid_effect_invalid_request');
@@ -270,7 +269,7 @@ function achbotCreateNonPaymentAccount(
         }
 
         achbotEffectLockTargetRows($db,$serverId,$planId);
-        $plan=$db->prepare("SELECT s.server_id,s.inbound_id,s.price,s.days,s.volume,cat.active AS category_active,cat.parent AS category_parent,c.type,c.panel_url
+        $plan=$db->prepare("SELECT s.server_id,s.price,s.days,s.volume,cat.active AS category_active,cat.parent AS category_parent,c.type,c.panel_url
             FROM server_plans s
             JOIN server_info i ON i.id=s.server_id
             JOIN server_categories cat ON cat.id=s.catid
@@ -283,7 +282,7 @@ function achbotCreateNonPaymentAccount(
         $locked=$plan->get_result()->fetch_assoc();$plan->close();
         if (!$locked || (int)$locked['server_id']!==$serverId ||
             $locked['type']!==$p['server_type'] ||
-            (int)$locked['inbound_id']!==0 || !achbotSupportsAccount($locked['type'],0) ||
+            !achbotSupportsProviderType($locked['type']) ||
             (string)$locked['panel_url']==='')
             throw new RuntimeException('nonpaid_effect_target_changed');
         if ((int)$locked['category_active']!==1 || (int)$locked['category_parent']!==0 ||

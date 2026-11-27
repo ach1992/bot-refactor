@@ -50,8 +50,8 @@ source-literal catalog references, duplicate declared keys, both legacy
 array bindings and dynamic-key prefixes, and rejects uncatalogued Persian
 PHP literals in the bot and finance runtime (except two explicitly classified
 non-copy locale/protocol constants). It also rejects retired plan editor
-callbacks and current catalog entries while leaving Native Marzban/PasarGuard
-settings untouched. Negative fixtures prove that new literals and retired
+callbacks and current catalog entries while preserving the current PasarGuard capability
+contract and authentic historical Native evidence. Negative fixtures prove that new literals and retired
 routes cannot silently pass. It runs in current `php85-validation` CI.
 
 The standalone `index.php` web-login page uses the `web_login` topic in

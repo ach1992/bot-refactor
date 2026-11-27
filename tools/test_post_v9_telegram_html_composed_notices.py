@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 TARGETS = (
     ('bot.php', 'gateway_audience_settings.message.56c51082c2'),
     ('bot.php', 'payment_settings.gateway_rule_admin.exempt_saved'),
-    ('bot.php', 'add_marzban_panel_group.message.01f02c2ac6'),
+    ('bot.php', 'add_panel_group.message.01f02c2ac6'),
     ('src/Finance/Routes/WalletTransfer.php', 'wallet_transfer_restart.message.1286cd29ed'),
     ('src/Finance/Routes/ManualReceipts.php', 'broadcast.routes.pm_noop.message.72fe3f7c5d'),
     ('src/Plans/Intervals.php', 'admin_settings.management.review_required'),
@@ -73,8 +73,12 @@ def inventory(sources: dict[str,str], html_required: bool) -> list[dict]:
 
 
 def source_digest(rows: list[dict]) -> str:
-    return sha([[row['file'],row['marker'],
-                lexical.canonical_expression(row['args'][0]),
+    # The mapped panel-group key has exact catalog-byte equivalence.
+    # Retain the original source digest, not a newly accepted renderer.
+    def original_key(text):
+        return text.replace('add_panel_group.message.','add_marzban_panel_group.message.')
+    return sha([[row['file'],original_key(row['marker']),
+                original_key(lexical.canonical_expression(row['args'][0])),
                 lexical.canonical_expression(row['args'][1])]
                for row in rows])
 
@@ -200,6 +204,7 @@ def main() -> None:
     original_sources={path:subprocess.check_output(
         ['git','show',accepted+':'+path],cwd=ROOT).decode('utf-8')
         for path in sources}
+    original_sources['bot.php']=original_sources['bot.php'].replace('add_marzban_panel_group.message.','add_panel_group.message.')
     original_items=inventory(original_sources,True)
     raw=render(items)
     before=render(original_items)

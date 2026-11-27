@@ -44,8 +44,8 @@ unused historical tables (`admins`, `black_list`, `servers`,
 The disposable [fresh-schema proof](../../tools/test_wallet_first_fresh_schema.py)
 constructs a reference from `database/legacy-schema.sql` and all tracked numbered
 `migrations/post-v9/[0-9][0-9][0-9]_*.sql` files in sorted order.
-The Wallet-first baseline has 51 numbered scripts ending at
-`055_support_message_identity.sql`, including 044-045 (retired plan/category
+The Wallet-first baseline has 52 numbered scripts ending at
+`056_current_storage_hygiene.sql`, including 044-045 (retired plan/category
 fields) and 046-047 (category reference and physical username indexes).
 The support identity construction adds nullable original chat/message and
 content-kind fields to existing history, plus scoped queue/history indexes.
@@ -54,14 +54,17 @@ require a separately approved, verified schema transfer preserving all ticket
 rows and historical photo payloads; obsolete unfinished support editors and
 callback keyboards are not replayed.
 It compares all 35 retained empty table definitions, verifies the omitted
-tables, eleven retired payment execution/review/projection columns, 27 obsolete Native,
-plan, category and gift cursor columns, and four retired payment-only delivery
+tables, thirteen retired payment execution/review/projection columns, 30 obsolete Native,
+plan, category, order and gift cursor columns, and four retired payment-only delivery
 columns. The exact selected release's tracked roster and consolidated schema
 remain authoritative; the construction sequence is a disposable test, not
 an installation or upgrade procedure. The proof also verifies mandatory current multipart
 source/part identities, rejection of historical delivery rows and customer invoice references before any construction-only
 column removal, and current money,
 identity, delivery and service schema prerequisites. No X-UI transport or local port settings are required; the Native provider owns connection configuration. Bot and gateway settings menus work on empty and partially configured documents without creating settings rows; payment methods remain off until configured.
+
+See [current storage and isolation](CURRENT-STORAGE-HYGIENE.md) for the
+explicit 056 mapping and verified source-archive requirement.
 
 No legacy migration sequence, opening-balance import or prior invoice
 compatibility step is needed for a new empty bot. Its new users and new

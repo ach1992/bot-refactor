@@ -5,7 +5,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(40
 function achbotPlanWizardServer(mysqli $db,int $id,bool $lock=false): array {
     $r=achbotManagementRow($db,'SELECT i.id,i.title,i.active,c.type,c.panel_url,c.username,c.password
         FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=?'.($lock?' FOR UPDATE':''),'i',[$id]);
-    if (!$r || (int)$r['active']!==1 || !achbotSupportsAccount($r['type'],0))
+    if (!$r || (int)$r['active']!==1 || !achbotSupportsProviderType($r['type']))
         throw new RuntimeException('management_targets');
     return $r;
 }
@@ -120,8 +120,8 @@ function achbotPlanWizardAdvance(mysqli $db,array &$d,string $action,string $inp
     if (!$selected || array_diff($selected,$allowed))
         throw new RuntimeException('management_targets');
     $groups=json_encode(achbotPgGroupsCanonical($selected),JSON_THROW_ON_ERROR);
-    $sql="INSERT INTO server_plans(catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)
-        VALUES(?,?,0,?,?,?,?,?,1,?,?)";
+    $sql="INSERT INTO server_plans(catid,server_id,title,days,volume,price,descr,active,date,provider_group_ids)
+        VALUES(?,?,?,?,?,?,?,1,?,?)";
     $args=[$v['category'],$v['server'],$v['title'],$v['days'],$v['volume'],$v['price'],$v['description'],(string)time(),$groups];
     $types='iisiiisss';
     $s=achbotManagementSql($db,$sql,$types,$args);$id=(int)$s->insert_id;$s->close();

@@ -132,8 +132,8 @@ def main():
             VALUES (2,'https://fixture.invalid','pasarguard','fixture','fixture');
             INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES(2,'Fixture','100','fixture','',1,1);
             UPDATE server_config SET provider_connection_id=2,provider_instance_key=REPEAT('a',32),provider_version='5.5.1',provider_enabled=1 WHERE id=2;
-            INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)
-            VALUES(7,1,2,0,'Fixture',30,2,100,'description',1,'fixture','[1,2]');""")
+            INSERT INTO server_plans(id,catid,server_id,title,days,volume,price,descr,active,date,provider_group_ids)
+            VALUES(7,1,2,'Fixture',30,2,100,'description',1,'fixture','[1,2]');""")
         calls=[];responses={};errors=[];lock=threading.Lock()
         class Handler(BaseHTTPRequestHandler):
             def log_message(self,*a):pass

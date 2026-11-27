@@ -25,7 +25,7 @@ function achbotManagementText(string $key,array $params=[]): string {
     return match($key) {
         'intro'=>achbotMessage('admin_settings.management.intro',$params),
         'back'=>achbotMessage('admin_settings.management.back',$params),
-        'cancel'=>achbotMessage('admin_settings.management.cancel',$params),
+        'cancel'=>achbotMessage('legacy_buttons.cancel',$params),
         'canceled'=>achbotMessage('admin_settings.management.canceled',$params),
         'server_list'=>achbotMessage('admin_settings.management.server_list',$params),
         'plan_list'=>achbotMessage('admin_settings.management.plan_list',$params),
@@ -336,7 +336,7 @@ function achbotHandleManagementFields(): bool {
             achbotAdminIntentConsumeLocked($connection,$actor,(int)$admin,'server',
                 $entity,$deletion[2],$update,$cb);
             $server=achbotManagementRow($connection,'SELECT i.id,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? AND i.active=1 FOR UPDATE','i',[$entity]);
-            if (!$server || !achbotSupportsAccount($server['type'],0)) throw new RuntimeException('management_targets');
+            if (!$server || !achbotSupportsProviderType($server['type'])) throw new RuntimeException('management_targets');
             // Administrator confirmed a LOCAL hard delete, accepting that
             // existing orders and pending claims can no longer reach this server.
             // Do not rewrite historical orders, payments, plans, or Native effects.
@@ -359,7 +359,7 @@ function achbotHandleManagementFields(): bool {
             $field=$context==='plan'?strtolower($match[3]):strtolower($match[2]);
             $row=$context==='plan'?achbotManagementRow($connection,'SELECT p.*,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=? AND p.active=1 FOR UPDATE','i',[$entity]):
                 achbotManagementRow($connection,'SELECT i.*,c.type FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE','i',[$entity]);
-            if (!$row || !achbotSupportsAccount($row['type'],0))
+            if (!$row || !achbotSupportsProviderType($row['type']))
                 throw new RuntimeException('management_targets');
             $d=['nonce'=>bin2hex(random_bytes(6)),'source'=>$source,'context'=>$context,'id'=>$entity,
                 'field'=>$field,'stage'=>$field,

@@ -86,7 +86,6 @@ foreach ($deletions as $order) {
     // outbound owner. Manual recovery already uses this physical-account lease;
     // hold the SAME lease from the original Cron fence until remote/local
     // finality, not merely through the SQL claim. Never auto-replay a timeout.
-    // Marzban keeps its existing guarded Cron policy unchanged.
     $deleteLease=null;$deletionComplete=false;
     try {
         require_once __DIR__.'/../Finance/OperationalReports.php';

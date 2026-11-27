@@ -7,7 +7,7 @@ require_once __DIR__.'/../Services/EditFinalization.php';
  * No credentials or mutable usernames are part of the lock name. */
 function achbotPgServiceAccountLock(mysqli $db,int $orderId): string {
     $ctx=achbotPgOrderContext($db,$orderId,false,true);
-    return 'achbot-plan-'.substr(hash('sha256','pg:'.$ctx['account']['id']),0,40);
+    return achbotPhysicalJournalKey((int)$ctx['account']['id']);
 }
 
 /** Fresh identity-pinned observation for a scheduled renewal, outside the
@@ -47,7 +47,7 @@ function achbotPgServiceEditContext(mysqli $db,array $op,array $quote,bool $lock
     $o=$ctx['order'];$p=$ctx['panel'];$a=$ctx['account'];
     if ((int)$o['userid']!==(int)$op['userid'] || (int)$o['status']!==1 ||
         (int)$o['server_id']!==$q['server_id'] || (int)$o['fileid']!==$q['plan_id'] ||
-        (int)$o['inbound_id']!==0 || $o['remark']!==$q['remark'] ||
+        $o['remark']!==$q['remark'] ||
         (string)$o['uuid']!==$q['uuid'] ||
         $t['account']['native']!==$ctx['identity'] ||
         $t['account']['remark']!==$o['remark'] ||
@@ -193,7 +193,7 @@ function achbotPgServiceEditPerform(mysqli $db,array $op,array $quote,array $row
     }
     $beforeWrite=static function() use ($db,$op,$quote,&$row,$ctx,$first,$intent): void {
         if (!achbotServiceExecutionOwnsLock($db,achbotServiceExecutionLock($db,(int)$op['id'])) ||
-            !achbotServiceExecutionOwnsLock($db,achbotPgServiceAccountLock($db,$quote['request']['order_id'])))
+            !achbotServiceExecutionOwnsLock($db,achbotPhysicalSessionLockName($db,achbotPgServiceAccountLock($db,$quote['request']['order_id']))))
             throw new RuntimeException('service_worker_ownership_lost');
         $current=achbotPgServiceEditContext($db,$op,$quote);
         achbotPgServiceEditClaimMatches($op,$current,$row);

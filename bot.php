@@ -164,7 +164,7 @@ if ($isStart) {
     }
     require_once __DIR__ . '/src/Telegram/UserProfile.php';
     $registration = achbotRegisterStartUser($connection, $update ?? null,
-        (int)$from_id, $inviteFromStart, $inviteReward, (string)$dbName);
+        (int)$from_id, $inviteFromStart, $inviteReward);
     if ($registration === null) {
         sendMessage(\achbotMessage('bot.bootstrap.unavailable'), null, 'HTML');
         return;
@@ -411,22 +411,12 @@ if (achbotHandleInstanceContent($update ?? null,$data ?? null,$text ?? null,$use
 if(($data=="botSettings" or preg_match('/^changeBot([A-Za-z0-9_]+)$/D',$data,$match)) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if($data!="botSettings"){
         // Never persist callback-provided arbitrary BOT_STATES keys.
-        // Keep this explicit list in sync with getBotSettingKeys().
-        $editableBotToggles=[
-            'agencyState','agencyPlanDiscount','individualExistence',
-            'testAccount','changePlanState',
-            'renewAccountState','renewAutoState','plandelkhahState',
-            'increaseTimeState','increaseVolumeState',
-            'requirePhone','requireIranPhone','sellState','botState',
-            'searchState',
-            'renewConfigLinkState','updateConfigLinkState','qrConfigState',
-            'qrSubState'
-        ];
-        if (!in_array($match[1],$editableBotToggles,true)) {
+        $currentValue=achbotBotToggleValue($botState,$match[1]);
+        if ($currentValue===null) {
             answerCallbackQuery($callbackId,\achbotMessage('bot.bot.webhook_ingress_authenticated.alert.c0889a8ad7'),true);
             return;
         }
-        $newValue = ($botState[$match[1]] ?? (in_array($match[1],['changePlanState','botState'],true) ? 'on' : 'off')) === "on" ? "off" : "on";
+        $newValue = $currentValue==="on"?"off":"on";
         setSettings($match[1], $newValue);
     }
     editText($message_id,\achbotMessage('legacy_messages.change_bot_settings_message'),getBotSettingKeys());
@@ -443,12 +433,7 @@ if(($data=="gateWays_Channels" or preg_match('/^changeGateWays([A-Za-z0-9_]+)$/D
     if($data!="gateWays_Channels"){
         // Only currently displayed, supported gateway flags are editable.
         // Unknown or cross-surface callback identifiers cannot mutate BOT_STATES.
-        $editableGatewayToggles=[
-            'giftCardState','manualUsdtState','cartToCartState',
-            'nextpay','zarinpal','nowPaymentWallet','nowPaymentOther',
-            'walletState','smsApiVerifyState','giftApiVerifyState'
-        ];
-        if (!in_array($match[1],$editableGatewayToggles,true)) {
+        if (!in_array($match[1],achbotGatewayToggleFields(),true)) {
             answerCallbackQuery($callbackId,\achbotMessage('bot.bot.webhook_ingress_authenticated.alert.9eac3467d5'),true);
             return;
         }
@@ -999,7 +984,7 @@ if (
         exit;
     }
 
-    sendMessage(\achbotMessage('legacy_messages.the_bot_in_not_admin') ?? \achbotMessage('bot.bot.edit_lock_channel.message.949fda751f'), null, 'HTML');
+    sendMessage(\achbotMessage('legacy_messages.the_bot_in_not_admin'), null, 'HTML');
 }
 // End Edited by ACh
 
@@ -1474,41 +1459,41 @@ if(preg_match('/^showServerSettings(\d+)_(\d+)/',$data,$match) and ($from_id == 
 }
 // Define real-panel identity groups centrally, before assigning them to
 // logical server entries. A group is trusted admin configuration, never
-// inferred from endpoint aliases or Marzban admin credential equality.
+// inferred from endpoint aliases or credential equality.
 if ($data === 'managePanelGroups' &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
-    editText($message_id, \achbotMessage('bot.bot.manage_marzban_panel_groups.message.59d5170317'),
+    editText($message_id, \achbotMessage('bot.bot.manage_panel_groups.message.59d5170317'),
         getPanelGroupsManagementKeys());
     return;
 }
 if ($data === 'addPanelGroup' &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     if (!setUser('newPanelGroup')) return;
-    sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.01f02c2ac6')
-        . \achbotMessage('bot.bot.add_marzban_panel_group.message.31116063c0'), $cancelKey, 'HTML');
+    sendMessage(\achbotMessage('bot.bot.add_panel_group.message.01f02c2ac6')
+        . \achbotMessage('bot.bot.add_panel_group.message.31116063c0'), $cancelKey, 'HTML');
     return;
 }
 if (isset($update->message->text) && !isset($update->callback_query) && ($userInfo['step'] ?? '') === 'newPanelGroup' &&
     $text != \achbotMessage('legacy_buttons.cancel') &&
     ($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
     if (!achbotGroupNameValid((string)$text)) {
-        sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.c697bdb683'), null, 'HTML');
+        sendMessage(\achbotMessage('bot.bot.add_panel_group.message.c697bdb683'), null, 'HTML');
         return;
     }
     try {
         // Creation owns the transaction and cross-connection catalog lock.
         $groupId = achbotCreatePanelGroupRecord($connection, $text);
         if ($groupId === null) {
-            sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.cfb10ede6f'), null, 'HTML');
+            sendMessage(\achbotMessage('bot.bot.add_panel_group.message.cfb10ede6f'), null, 'HTML');
             return;
         }
     } catch (\Throwable $e) {
-        sendMessage(\achbotMessage('bot.bot.add_marzban_panel_group.message.7c6b361e59'), null, 'HTML');
+        sendMessage(\achbotMessage('bot.bot.add_panel_group.message.7c6b361e59'), null, 'HTML');
         return;
     }
     if (!setUser()) return;
-    \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('bot.bot.add_marzban_panel_group.message.1de4f68601'));
-    sendMessage(\achbotMessage('bot.bot.manage_marzban_panel_groups.message.59d5170317'), getPanelGroupsManagementKeys(), 'HTML');
+    \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('bot.bot.add_panel_group.message.1de4f68601'));
+    sendMessage(\achbotMessage('bot.bot.manage_panel_groups.message.59d5170317'), getPanelGroupsManagementKeys(), 'HTML');
     return;
 }
 if (preg_match('/^deletePanelGroup_(\d+)$/D', (string)($data ?? ''), $groupMatch) &&
@@ -1516,7 +1501,7 @@ if (preg_match('/^deletePanelGroup_(\d+)$/D', (string)($data ?? ''), $groupMatch
     $connection->begin_transaction();
     try {
         $stmt = $connection->prepare(
-            "SELECT id FROM setting WHERE id = ? AND type = 'ACHBOT_MARZBAN_PANEL_GROUP' FOR UPDATE"
+            "SELECT id FROM setting WHERE id = ? AND type = 'ACHBOT_PANEL_GROUP' FOR UPDATE"
         );
         $gid = (int)$groupMatch[1];
         $stmt->bind_param('i', $gid);
@@ -1527,12 +1512,12 @@ if (preg_match('/^deletePanelGroup_(\d+)$/D', (string)($data ?? ''), $groupMatch
         $connection->commit();
     } catch (\Throwable $e) {
         $connection->rollback();
-        alert(\achbotMessage('bot.bot.add_marzban_panel_group.alert.a77f2c705d'), true);
+        alert(\achbotMessage('bot.bot.add_panel_group.alert.a77f2c705d'), true);
         return;
     }
-    alert($removed ? \achbotMessage('bot.bot.add_marzban_panel_group.alert.2b2b180a96') :
-        \achbotMessage('bot.bot.add_marzban_panel_group.alert.cc8538eba9'), true);
-    editText($message_id, \achbotMessage('bot.bot.add_marzban_panel_group.message.def9f141f2'), getPanelGroupsManagementKeys());
+    alert($removed ? \achbotMessage('bot.bot.add_panel_group.alert.2b2b180a96') :
+        \achbotMessage('bot.bot.add_panel_group.alert.cc8538eba9'), true);
+    editText($message_id, \achbotMessage('bot.bot.add_panel_group.message.def9f141f2'), getPanelGroupsManagementKeys());
     return;
 }
 // Server creation uses the actor-owned management wizard above.

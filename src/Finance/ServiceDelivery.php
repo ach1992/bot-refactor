@@ -73,7 +73,7 @@ function achbotServiceBuyDeliveryBinding(array $op,array $quote,array $e,array $
         (int)$o['status']!==1 || (int)$o['userid']!==$owner ||
         (int)$o['server_id']!==$q['server_id'] || (int)$e['target_server_id']!==$q['server_id'] ||
         (int)$o['fileid']!==$q['plan_id'] || (int)$e['plan_id']!==$q['plan_id'] ||
-        (int)$o['inbound_id']!==0 || $o['remark']!==$e['remote_username'] ||
+        $o['remark']!==$e['remote_username'] ||
         (int)$o['provider_effect_id']!==(int)$e['id'] ||
         (int)$o['provider_remote_user_id']<=0 ||
         (int)$o['provider_remote_user_id']!==(int)$e['provider_remote_user_id'] ||
@@ -127,7 +127,7 @@ function achbotServiceEditDeliveryBindingLocked(mysqli $db,array $op,array $quot
         throw new RuntimeException('service_delivery_edit_evidence_conflict');
     $audit=achbotProviderRow($db,'SELECT * FROM increase_order WHERE id=? FOR UPDATE','i',[(int)$m['audit_id']]);
     if (!$audit || (int)$audit['userid']!==$owner || (int)$audit['server_id']!==$q['server_id'] ||
-        (int)$audit['inbound_id']!==0 || $audit['remark']!==$q['remark'] ||
+        $audit['remark']!==$q['remark'] ||
         (int)$audit['amount']!==$q['price'] ||
         ($kind==='ADD_TIME'?(int)$audit['day']!==$q['days']:$audit['day']!==null) ||
         ($kind==='ADD_VOLUME'?(int)$audit['volume']!==$q['volume']:$audit['volume']!==null))
@@ -184,7 +184,7 @@ function achbotNonpaidDeliveryBinding(mysqli $db,int $effectId,int $orderId): ar
         (int)$e['actor_userid']!==$owner || $e['state']!=='local_recorded' ||
         $e['provider_state']!=='linked' || (int)$e['order_id']!==$orderId ||
         (int)$o['status']!==1 || (int)$o['server_id']!==(int)$e['target_server_id'] ||
-        (int)$o['fileid']!==(int)$e['plan_id'] || (int)$o['inbound_id']!==0 ||
+        (int)$o['fileid']!==(int)$e['plan_id'] ||
         $o['remark']!==$e['remote_username'] || (int)$o['provider_effect_id']!==$effectId ||
         (int)$o['provider_remote_user_id']<=0 ||
         (int)$o['provider_remote_user_id']!==(int)$e['provider_remote_user_id'] ||
@@ -367,7 +367,7 @@ function achbotServiceDeliveryDispatch(mysqli $db,int $id,int $actor=0,int $part
                 if ($nonpaid && !isset($adapter['service_account_lock']))
                     throw new RuntimeException('delivery_nonpaid_provider_lock_missing');
                 if (isset($adapter['service_account_lock'])) {
-                    $name=($adapter['service_account_lock'])($db,(int)$d['order_id']);
+                    $name=achbotPhysicalSessionLockName($db,($adapter['service_account_lock'])($db,(int)$d['order_id']));
                     $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
                     if ((int)($held['acquired']??0)!==1) {$db->rollback();return 'busy';}
                     $physicalLock=$name;

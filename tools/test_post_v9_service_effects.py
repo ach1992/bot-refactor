@@ -555,7 +555,7 @@ def main():
         # logical Marzban server entries. Username uniqueness must be
         # scoped to the group identity, not accidentally to logical IDs.
         query(work,env,"INSERT INTO setting (id,type,value) VALUES "
-                       "(9009,'ACHBOT_MARZBAN_PANEL_GROUP','shared-test-panel')")
+                       "(9009,'ACHBOT_PANEL_GROUP','shared-test-panel')")
         query(work,env,"UPDATE server_info SET panel_group_id=9009 WHERE id=2")
         query(work,env,"INSERT INTO server_info "
             "(id,title,ucount,remark,flag,active,state,panel_group_id) "

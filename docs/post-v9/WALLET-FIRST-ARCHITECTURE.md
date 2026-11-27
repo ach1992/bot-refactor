@@ -556,3 +556,9 @@ old decision buttons are not current executable commands. Any pending
 historical application without a current original event needs an explicit
 authorized current re-entry or separately approved reconciliation before
 activation. Previously sent historical welcome/report states are not replayed.
+
+### Current storage and database isolation
+
+The [current storage contract](CURRENT-STORAGE-HYGIENE.md) owns the 056
+source-to-target projection, database-scoped writer leases, retained original
+evidence and the separately authorized transfer boundary.

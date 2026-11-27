@@ -8,6 +8,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/PaymentApiAdmin.php';
+require_once __DIR__.'/../Database/Lock.php';
 require_once __DIR__.'/../Telegram/Conversation.php';
 
 
@@ -131,7 +132,7 @@ function achbotAdminPaymentKeyChange($update,int $actor,int $chat,int $message,
                                     int $primary,string $kind,string $field,
                                     ?string $input=null): bool {
     global $connection;
-    $lock='achbot_payment_keys_write';
+    $lock=null;
     $owns=false;$begun=false;
     try {
         if ($actor<=0 || $primary<=0 || $chat!==$actor || $message<=0 ||
@@ -168,6 +169,7 @@ function achbotAdminPaymentKeyChange($update,int $actor,int $chat,int $message,
             return (int)$rows[0]['id'];
         };
         $pk=$findActor();
+        $lock=achbotDatabaseLockName($connection,'settings:PAYMENT_KEYS');
         $stmt=$connection->prepare('SELECT GET_LOCK(?,10) AS acquired');
         if (!$stmt) throw new RuntimeException('payment_key_lock_prepare');
         $stmt->bind_param('s',$lock);
@@ -244,10 +246,7 @@ function achbotAdminPaymentKeyChange($update,int $actor,int $chat,int $message,
         if (!is_array($revisions)) throw new RuntimeException('payment_key_revisions_invalid');
         foreach ($revisions as $revisionField=>$revision) {
             if (!is_string($revisionField) ||
-                // RC12 may retain a revision for this retired field. Accept only
-                // its validated history; it is never an editable setting.
-                (!in_array($revisionField,achbotPaymentKeyAdminFields(),true) &&
-                 $revisionField!=='usdtAgentRateToman') ||
+                !in_array($revisionField,achbotPaymentKeyAdminFields(),true) ||
                 !is_int($revision) || $revision<=0)
                 throw new RuntimeException('payment_key_revisions_invalid');
         }

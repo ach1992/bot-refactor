@@ -95,3 +95,8 @@ agency decisions, atomic rollback, and preserving independent discount
 scopes. Onboarding covers the original notice's recipient-specific recovery
 and no repeated completed event. These are disposable-source proofs, not
 an installed Telegram or provider acceptance.
+
+Current storage validation includes two independent databases on the same
+MariaDB instance in MySQLi strict/off modes, and a synthetic, independently
+restored pre-hygiene source projected into the consolidated current schema.
+See [current storage and isolation](CURRENT-STORAGE-HYGIENE.md).

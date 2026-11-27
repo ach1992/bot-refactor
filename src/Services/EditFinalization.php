@@ -84,7 +84,7 @@ function achbotServiceEditCommitLocalLocked(mysqli $db,array $op,array $quote,ar
     $day=$op['kind']==='ADD_TIME'?$q['days']:null;
     $volume=$op['kind']==='ADD_VOLUME'?$q['volume']:null;
     $s=achbotProviderStatement($db,"INSERT INTO increase_order
-        (userid,server_id,inbound_id,remark,amount,date,volume,day) VALUES (?,?,0,?,?,?,?,?)",
+        (userid,server_id,remark,amount,date,volume,day) VALUES (?,?,?,?,?,?,?)",
         'iisiiii',[(int)$op['userid'],$q['server_id'],$q['remark'],$q['price'],time(),$volume,$day]);
     $audit=(int)$s->insert_id;$n=$s->affected_rows;$s->close();
     if ($n!==1 || $audit<=0) throw new RuntimeException('service_edit_audit_write');

@@ -270,7 +270,7 @@ function showOrderManagementPanel($order, $msgId = null,string $notice=''){
             $order['expire_date'],static fn(int $timestamp)=>jdate('Y-m-d H:i',$timestamp,'','Asia/Tehran','en'),
             \achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'),
             \achbotMessage('admin_settings.config.get_bot_report_keys.text.f07a81a062'),
-            achbotSupportsAccount($provider,$order['inbound_id']))
+            achbotSupportsProviderType($provider))
     ]);
 
     if ($notice!=='') $msg.="\n\n".$notice;
@@ -457,7 +457,7 @@ if (preg_match('/^changeServerId_(\d+)$/D', (string)($data ?? ''), $match)) {
         $keyboard[] = [['text'=>$server['title'],
             'callback_data'=>'selectServerId_' . $id . '_' . (int)$server['id']]];
     }
-    $keyboard[] = [['text'=>\achbotMessage('subscription.order_management.show_order_management_panel.button.b35a2352f5'), 'callback_data'=>'returnToPanel_' . $id]];
+    $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.back_button'), 'callback_data'=>'returnToPanel_' . $id]];
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.557fb66856'),
         json_encode(['inline_keyboard'=>$keyboard], JSON_UNESCAPED_UNICODE), 'HTML');
     return;
@@ -499,7 +499,7 @@ if (preg_match('/^changeFileId_(\\d+)_(\\d+)$/', (string) ($data ?? ''), $match)
         "SELECT p.`id`, p.`title` FROM `server_plans` p
          INNER JOIN `server_config` c ON c.`id` = p.`server_id`
          INNER JOIN `orders_list` o ON o.`id` = ? AND o.`server_id` = p.`server_id`
-         WHERE p.`server_id` = ? AND p.`active`=1 AND p.`inbound_id` = 0 AND c.`type` IN (".achbotProviderSqlTypes().")"
+         WHERE p.`server_id` = ? AND p.`active`=1 AND c.`type` IN (".achbotProviderSqlTypes().")"
     );
     $stmt->bind_param("ii", $id, $serverId);
     $stmt->execute();
@@ -509,7 +509,7 @@ if (preg_match('/^changeFileId_(\\d+)_(\\d+)$/', (string) ($data ?? ''), $match)
         $keyboard[] = [["text" => $row['title'], "callback_data" => "selectFileId_{$id}_{$row['id']}"]];
     }
     $stmt->close();
-    $keyboard[] = [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.b35a2352f5'), "callback_data" => "returnToPanel_$id"]];
+    $keyboard[] = [["text" => \achbotMessage('legacy_buttons.back_button'), "callback_data" => "returnToPanel_$id"]];
     sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.877fdebc48'), json_encode(['inline_keyboard' => $keyboard]), 'HTML');
 }
 
@@ -526,7 +526,7 @@ if (preg_match('/^reviewPlanCorrection_([1-9][0-9]*)_([1-9][0-9]*)$/D',
     $keyboard=['inline_keyboard'=>[
         [[ 'text'=>\achbotMessage('subscription.service_plan_correction.confirm'),
             'callback_data'=>'confirmPlanCorrection_'.$journalId.'_'.$orderId ]],
-        [[ 'text'=>\achbotMessage('legacy_buttons.back_button')??\achbotMessage('subscription.order_management.show_order_management_panel.button.b35a2352f5'),
+        [[ 'text'=>\achbotMessage('legacy_buttons.back_button'),
             'callback_data'=>'returnToPanel_'.$orderId ]]
     ]];
     sendMessage(\achbotMessage('subscription.service_plan_correction.warning'),

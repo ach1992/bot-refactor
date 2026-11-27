@@ -124,7 +124,7 @@ function achbotServiceSubjectWorkSettledLocked(mysqli $db,array $peers,bool $ret
 /** A prepared current journal proves no possible outbound write. Only
  * the holder of the exact physical lease can retire an abandoned intent. */
 function achbotServiceRetirePreparedPlansLocked(mysqli $db,string $lock): void {
-    $owner=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$lock]);
+    $owner=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[achbotPhysicalSessionLockName($db,$lock)]);
     if ((int)($owner['owned']??0)!==1)
         throw new RuntimeException('service_plan_lease_required');
     $s=achbotProviderStatement($db,"UPDATE service_plan_changes FORCE INDEX(idx_shared_plan_lock_state)
@@ -149,15 +149,16 @@ function achbotServicePlanChangePendingLocked(mysqli $db,string $lock): bool {
     if ($row['state']!=='prepared') return true;
     // A lease owned by this connection can be the live original plan
     // preflight; only a genuinely free lease permits automatic retirement.
-    $free=achbotProviderRow($db,'SELECT IS_FREE_LOCK(?) AS free','s',[$lock]);
+    $sessionLock=achbotPhysicalSessionLockName($db,$lock);
+    $free=achbotProviderRow($db,'SELECT IS_FREE_LOCK(?) AS free','s',[$sessionLock]);
     if ((int)($free['free']??0)!==1) return true;
-    $lease=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$lock]);
+    $lease=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$sessionLock]);
     if ((int)($lease['acquired']??0)!==1) return true;
     try {
         achbotServiceRetirePreparedPlansLocked($db,$lock);
         return $pending()!==null;
     } finally {
-        $s=achbotProviderStatement($db,'SELECT RELEASE_LOCK(?)','s',[$lock]);$s->close();
+        $s=achbotProviderStatement($db,'SELECT RELEASE_LOCK(?)','s',[$sessionLock]);$s->close();
     }
 }
 
