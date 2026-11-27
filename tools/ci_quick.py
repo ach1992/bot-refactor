@@ -142,6 +142,10 @@ REQUIRED_CURRENT_CASES = {
         "fresh_navigation_and_cleanup_failure_are_independent",
         "idle_reset_and_malformed_editor_escape","demoted_actor_can_leave_but_cannot_save",
         "replacement_editor_starts_share_opening_generation",
+        "actual_ordinary_starts_require_admission_before_prompt",
+        "failed_ordinary_start_never_publishes_prompt",
+        "actual_typed_advances_require_current_editor",
+        "panel_terminal_cleanup_exact_actor_and_idle_truth",
     ),
     "wallet_first_service_execution": (
         "missing_current_report_attempt_no_legacy_fallback",

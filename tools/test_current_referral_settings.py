@@ -28,6 +28,11 @@ function wire($kind,$body,$keys,$mode,$to,$mid=null) {
     global $events,$connection,$spec,$from_id;
     if ((int)achbotProviderRow($connection,'SELECT @@in_transaction AS tx')['tx']!==0)
         throw new RuntimeException('fixture_wire_inside_transaction');
+    if ($kind==='send' && isset($spec['expected_prompt_step'])) {
+        $row=achbotProviderRow($connection,'SELECT step FROM users WHERE userid=?','i',[$from_id]);
+        if ($row['step']!==$spec['expected_prompt_step'])
+            throw new RuntimeException('fixture_prompt_before_editor_admission');
+    }
     $events[]=['kind'=>$kind,'body'=>$body,'keys'=>$keys,'to'=>$to??$from_id,'mode'=>$mode];
     if (($spec['cleanup_fail']??false) && (json_decode($keys??'null',true)['remove_keyboard']??false))
         throw new RuntimeException('fixture_cleanup_failure');
@@ -38,6 +43,7 @@ function sendPhoto($file,$body,$keys=null,$mode=null,$to=null){return wire('phot
 function editText($mid,$body,$keys=null,$mode=null,$to=null){return wire('edit',$body,$keys,$mode,$to,$mid);}
 function delMessage(...$args){$GLOBALS['events'][]=['kind'=>'delete','args'=>$args];if ($GLOBALS['spec']['delete_fail']??false) throw new RuntimeException('fixture_delete_fail');}
 function answerCallbackQuery(...$args){$GLOBALS['events'][]=['kind'=>'ack','body'=>$args[1]??''];}
+function alert(...$args){$GLOBALS['events'][]=['kind'=>'ack','body'=>$args[0]??''];}
 function getMainKeys(){return '{"inline_keyboard":[]}';}
 function getAdminKeys(){return '{"inline_keyboard":[]}';}
 require_once $root.'/tools/source_scan.php';
@@ -48,11 +54,25 @@ eval(achbotExtractFunction($root.'/bot.php','achbotWebhookIngressAuthenticated')
 $telegramWebhookSecret='Synthetic_Referral_Settings_2026';
 $_SERVER['REQUEST_METHOD']='POST';$_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']=$telegramWebhookSecret;
 $first_name='Fixture';$username='fixture';$removeKeyboard='{"remove_keyboard":true}';$botToken='999999:fixture';
-function section($start,$end) {
-    $source=file_get_contents($GLOBALS['root'].'/bot.php');
+eval(section('$cancelKey=json_encode(', '$removeKeyboard =', 'config.php'));
+function section($start,$end,$path='bot.php') {
+    $file=$GLOBALS['root'].'/'.$path;
+    $source=file_get_contents($file);
     $a=strpos($source,$start);$b=strpos($source,$end,$a);
     if ($a===false || $b===false) throw new RuntimeException('fixture_navigation_boundary');
-    return str_replace('__DIR__',var_export($GLOBALS['root'],true),substr($source,$a,$b-$a));
+    return str_replace('__DIR__',var_export(dirname($file),true),substr($source,$a,$b-$a));
+}
+/** Extract the actual single route's if-block using the existing PHP
+ * tokenizer. The fixture never reimplements the production conditions. */
+function routeBlock(string $path,string $marker): string {
+    $file=$GLOBALS['root'].'/'.$path;$source=file_get_contents($file);
+    if (substr_count($source,$marker)!==1) throw new RuntimeException('fixture_route_marker');
+    $start=strpos($source,$marker);$tokens=achbotTokens($source);
+    foreach ($tokens as $i=>$token) if ($token[3]>=$start && $token[0]==='{') {
+        $end=$tokens[achbotBodyEnd($tokens,$i)];
+        return str_replace('__DIR__',var_export(dirname($file),true),substr($source,$start,$end[3]+strlen($end[1])-$start));
+    }
+    throw new RuntimeException('fixture_route_block');
 }
 $userInfo=achbotProviderRow($connection,'SELECT * FROM users WHERE userid=?','i',[$from_id]);
 if (isset($spec['cached_step'])) $userInfo['step']=$spec['cached_step'];
@@ -74,7 +94,9 @@ register_shutdown_function(static function() use ($connection,&$status,&$result,
         'saved_text'=>achbotMessage('legacy_messages.saved_successfuly'),
         'number_text'=>achbotMessage('legacy_messages.send_only_number'),
         'canceled_text'=>achbotMessage('legacy_messages.operation_canceled'),
-        'home_text'=>achbotCurrentMessage('start_message')],JSON_THROW_ON_ERROR);
+        'home_text'=>achbotCurrentMessage('start_message'),
+        'user_report_prompt'=>achbotMessage('bot.bot.user_reports.message.b1c793c917'),
+        'cancel_keys'=>$GLOBALS['cancelKey']],JSON_THROW_ON_ERROR);
 });
 // The real ingress permission gate permits a demoted actor to abandon their
 // own stale settings editor without granting settings-write authority.
@@ -84,7 +106,43 @@ if (\AchBot\Telegram\Conversation\homeRequested($update,$from_id)) {
     eval(section('$paymentHomeMatch=[];',"if ((require __DIR__.'/src/Finance/Routes/ManualCheckout.php')"));
     return;
 }
-$status=achbotReferralSettingsRoute($connection,$from_id,$update,$userInfo,'{"keyboard":[]}');
+// The early actual userReports and other ordinary starts are exercised
+// with the same state, authorization, and real setter as bot.php. Later
+// route blocks are selected only for their exact callback/typed input.
+if (isset($spec['ordinary_route'])) {
+    $route=$spec['ordinary_route'];
+    $routes=[
+        'userReports'=>['bot.php','if ($data == "userReports"'],
+        'editRewaredTime'=>['bot.php',"if(preg_match('/^edit(RewaredTime)"],
+        'editRewardChannel'=>['bot.php','if($data=="editRewardChannel"'],
+        'editLockChannel'=>['bot.php','if ($data == "editLockChannel"'],
+        'editSupportID'=>['bot.php','if($data=="editSupportID"'],
+        'messageToSpeceficUser'=>['bot.php','if($data=="messageToSpeceficUser"'],
+        'addNewMainButton'=>['bot.php','if($data == "addNewMainButton"'],
+        'giftToAll'=>['bot.php',"if(preg_match('/^giftToAll"],
+        'addNewAdmin'=>['src/Admin/Roles.php',"if ((\$data??null)==='addNewAdmin')"],
+        'chooseSendGroup'=>['src/Broadcast/Routes.php',"if(preg_match('/^chooseSendGroup_"],
+        'editBroadcastAsk'=>['src/Broadcast/Routes.php',"if(preg_match('/^editBroadcastAsk_"],
+        'editCustomPrice'=>['src/Plans/Administration.php',"if(preg_match('/^editCustom(gbPrice|dayPrice)"],
+        'wizwizplanname'=>['src/Plans/Administration.php',"if(preg_match('/^wizwizplanname"],
+        'wizwizplaneditdes'=>['src/Plans/Administration.php',"if(preg_match('/^wizwizplaneditdes"],
+        'wizwizplanrial'=>['src/Plans/Administration.php',"if(preg_match('/^wizwizplanrial"],
+        'createAccPlan'=>['src/Purchase/EntryAndBulk.php',"if(preg_match('/\AcreateAccPlan"],
+        'messageAdvance'=>['bot.php','if(isset($update->message->text) && !isset($update->callback_query) && $userInfo[\'step\'] == "messageToSpeceficUser"'],
+        'buttonAdvance'=>['bot.php','if(isset($update->message->text) && !isset($update->callback_query) && $userInfo[\'step\'] == "addNewMainButton"'],
+        'giftAdvance'=>['bot.php',"if(preg_match('/^giftServerDay"],
+        'bulkDays'=>['src/Purchase/EntryAndBulk.php',"if(isset(\$update->message->text) && !isset(\$update->callback_query) && preg_match('/^createAccDate"],
+        'bulkVolume'=>['src/Purchase/EntryAndBulk.php',"if(isset(\$update->message->text) && !isset(\$update->callback_query) && preg_match('/^createAccVolume"],
+    ];
+    if ($route==='wallet') require $root.'/src/Finance/Routes/AdminWallet.php';
+    else {
+        require_once $root.'/src/Purchase/Core.php';
+        if (!isset($routes[$route])) throw new RuntimeException('fixture_unknown_ordinary_route');
+        eval(routeBlock(...$routes[$route]));
+    }
+    return;
+}
+$status=achbotReferralSettingsRoute($connection,$from_id,$update,$userInfo,$cancelKey);
 if ($status) return;
 if ($data==='managePanel') {
     eval(section('if($data == "managePanel"','if($data == \'reciveApplications\')'));
@@ -132,6 +190,11 @@ def main():
             assert row(actor)[0].startswith(action+'_'),r
             return row(actor)
         sql("INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9002','manager')")
+        sql("INSERT INTO server_categories(id,title,parent,active) VALUES (1,'Category',0,1); "
+            "INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (2,'Server','100','fixture','',1,1); "
+            "INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled) VALUES (2,'https://fixture.invalid','pasarguard','fixture','fixture',2,REPEAT('a',32),'5.5.1',1); "
+            "INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES (7,1,2,0,'Plan',30,2,100,'description',1,'fixture','[1]'); "
+            "INSERT INTO send_list(id,type,title,text,state) VALUES (70,'text','Fixture','Old',3)")
         for mode in ('strict','off'):
             def case(name):checks.append(mode+':'+name)
             sql("DELETE FROM setting WHERE type IN ('INVITE_BANNER_AMOUNT','INVITE_BANNER_TEXT'); UPDATE users SET step='none',temp=NULL WHERE userid IN (9001,9002); INSERT INTO setting(type,value) VALUES('INVITE_BANNER_AMOUNT','100')")
@@ -260,7 +323,9 @@ def main():
                     r=run(mode,**nav,mid=int(g[0].rsplit('_',1)[1]),cleanup_fail=cleanup_fail)
                     assert row()==['none',''],(nav,r)
                     if nav.get('callback')=='managePanel':
-                        assert len(r['events'])==1 and r['events'][0]['kind']=='edit',(nav,r)
+                        assert len(r['events'])==2 and r['events'][0]=={
+                            'kind':'send','body':r['canceled_text'],'keys':'{"remove_keyboard":true}',
+                            'to':9001,'mode':'HTML'} and r['events'][1]['kind']=='edit',(nav,r)
                     else:
                         # The relocated Home cancellation send has exactly
                         # the prior body, parse mode, target and keyboard.
@@ -307,6 +372,102 @@ def main():
                 assert sql('SELECT step FROM users WHERE userid=9001').startswith(expected) and r['result'] in (True,'applied'),(callback,r)
                 sql("UPDATE users SET step='none',temp=NULL WHERE userid=9001")
             case('replacement_editor_starts_share_opening_generation')
+            # All newly corrected callback starts execute the real route,
+            # not a synthetic call to setUser. Each must leave a newer
+            # referral editor and its intended next input intact.
+            starts=[
+                ('userReports','userReports','userReports'),
+                ('editRewaredTime','editRewaredTime','editRewaredTime'),
+                ('editRewardChannel','editRewardChannel','editRewardChannel'),
+                ('editLockChannel','editLockChannel','editLockChannel'),
+                ('editSupportID','editSupportID','editSupportID'),
+                ('messageToSpeceficUser','messageToSpeceficUser','messageToSpeceficUser'),
+                ('addNewMainButton','addNewMainButton','addNewMainButton'),
+                ('giftToAll','giftToAll2','giftServerDay2'),
+                ('addNewAdmin','addNewAdmin','addNewAdmin'),
+                ('chooseSendGroup','chooseSendGroup_all','s2a_title_all'),
+                ('editBroadcastAsk','editBroadcastAsk_70','bc_edit_70'),
+                ('wallet','increaseUserWallet','increaseUserWallet'),
+                ('wallet','decreaseUserWallet','decreaseUserWallet'),
+                ('editCustomPrice','editCustomgbPrice','editCustomgbPrice'),
+                ('editCustomPrice','editCustomdayPrice','editCustomdayPrice'),
+                ('wizwizplanname','wizwizplanname7','wizwizplanname7'),
+                ('wizwizplaneditdes','wizwizplaneditdes7','wizwizplaneditdes7'),
+                ('wizwizplanrial','wizwizplanrial7','wizwizplanrial7'),
+                ('createAccPlan','createAccPlan7','createAccDate7'),
+            ]
+            for route,callback,expected in starts:
+                for action,kind,payload in (
+                    ('editInviteAmount','AMOUNT','246'),
+                    ('editInviteBannerText','TEXT','Current LINK')):
+                    g=start(mode,action=action);gen=int(g[1].split(':')[0]);mid=int(g[0].rsplit('_',1)[1])
+                    before=value(kind)
+                    r=run(mode,callback=callback,ordinary_route=route,update=gen-1,mid=mid)
+                    assert row()==g and value(kind)==before and not r['events'],(route,action,r)
+                    r=run(mode,text=payload)
+                    assert row()==['none',''] and len(saved(r))==1,(route,action,r)
+                    assert (value(kind) if kind=='AMOUNT' else json.loads(value(kind))['text'])==payload
+                # Fresh start, including a throwing optional delete, must
+                # present the actual prompt only after the accepted state.
+                g=start(mode)
+                r=run(mode,callback=callback,ordinary_route=route,delete_fail=True,expected_prompt_step=expected)
+                sends=[e for e in r['events'] if e['kind']=='send']
+                assert row()==[expected,''] and len(sends)==1,(route,callback,r)
+                assert sends[0]['to']==9001 and sends[0]['keys']==r['cancel_keys'] and sends[0]['body'],(route,r)
+                if route=='userReports':assert sends[0]['body']==r['user_report_prompt'],r
+                run(mode,cancel=True)
+                assert row()==['none',''],(route,row())
+            case('actual_ordinary_starts_require_admission_before_prompt')
+            # A genuine SQL rejection and cached-row mismatch are distinct
+            # from a stale update ID. Neither can display an unadmitted prompt.
+            g=start(mode);before=value()
+            sql("CREATE TRIGGER fixture_editor_start_fail BEFORE UPDATE ON users FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture editor start failure'")
+            try:
+                r=run(mode,callback='userReports',ordinary_route='userReports')
+                assert row()==g and value()==before and not r['events'],r
+            finally:sql('DROP TRIGGER fixture_editor_start_fail')
+            r=run(mode,callback='userReports',ordinary_route='userReports',cached_step='none',cached_temp=None)
+            assert row()==g and value()==before and not r['events'],r
+            r=run(mode,text='357')
+            assert row()==['none',''] and value()=='357' and len(saved(r))==1,r
+            case('failed_ordinary_start_never_publishes_prompt')
+            # Typed advances also must not emit the next prompt if their
+            # cached editor has been replaced while the request is in flight.
+            advances=[
+                ('messageAdvance','messageToSpeceficUser','1001','sendMessageToUser1001'),
+                ('buttonAdvance','addNewMainButton','Fixture','setMainButtonAnswerFixture'),
+                ('giftAdvance','giftServerDay2','3','giftServerVolume2_3'),
+                ('bulkDays','createAccDate7','30','createAccVolume7_30'),
+                ('bulkVolume','createAccVolume7_30','2','createAccAmount7_30_2'),
+                ('wallet','increaseUserWallet','1001','increaseWalletUser1001'),
+            ]
+            for route,old_step,typed,expected in advances:
+                g=start(mode,action='editInviteBannerText');before=value('TEXT')
+                r=run(mode,text=typed,ordinary_route=route,cached_step=old_step,cached_temp=None)
+                assert row()==g and value('TEXT')==before and not r['events'],(route,r)
+                sql(f"UPDATE users SET step='{old_step}',temp=NULL WHERE userid=9001")
+                r=run(mode,text=typed,ordinary_route=route,expected_prompt_step=expected)
+                assert row()==[expected,''] and any(e['kind']=='send' for e in r['events']),(route,r)
+                sql("UPDATE users SET step='none',temp=NULL WHERE userid=9001")
+            case('actual_typed_advances_require_current_editor')
+            # The actual persistent keyboard is used at entry. Both kinds
+            # and both actor identities must get a removal attempt only
+            # after a confirmed panel abandonment, even if cleanup fails.
+            for actor in (9001,9002):
+                for action in ('editInviteAmount','editInviteBannerText'):
+                    for cleanup_fail in (False,True):
+                        g=start(mode,actor,action=action)
+                        gen=int(g[1].split(':')[0]);mid=int(g[0].rsplit('_',1)[1])
+                        old=run(mode,actor,callback='managePanel',update=gen-1,mid=mid)
+                        assert row(actor)==g and not old['events'],old
+                        r=run(mode,actor,callback='managePanel',mid=mid,cleanup_fail=cleanup_fail)
+                        assert row(actor)==['none',''] and len(r['events'])==2,r
+                        assert r['events'][0]=={'kind':'send','body':r['canceled_text'],'keys':'{"remove_keyboard":true}','to':actor,'mode':'HTML'},r
+                        assert r['events'][1]['kind']=='edit' and r['events'][1]['to']==actor,r
+                    idle=run(mode,actor,callback='managePanel')
+                    assert row(actor)==['none',''] and len(idle['events'])==1 and idle['events'][0]['kind']=='edit',idle
+            case('panel_terminal_cleanup_exact_actor_and_idle_truth')
+
 
     result={'complete':True,'cases':len(checks),'checks':checks,'external_requests':0,'production_effects':0}
     if a.report:a.report.write_text(json.dumps(result))

@@ -97,7 +97,7 @@ if (array_key_exists('bound_text_override',$spec)) {
     $text=$spec['bound_text_override'];
 }
 $events=[];
-$stmt=$connection->prepare('SELECT userid,step,isAdmin,wallet FROM users WHERE userid=?');
+$stmt=$connection->prepare('SELECT * FROM users WHERE userid=?');
 $stmt->bind_param('i',$from_id);
 $stmt->execute();
 $userInfo=$stmt->get_result()->fetch_assoc() ?: ['step'=>'none','isAdmin'=>0];
@@ -113,6 +113,8 @@ $cancelKey='cancel';
 $removeKeyboard='remove';
 function sendMessage(...$args) {
     $GLOBALS['events'][]=['kind'=>'sendMessage','args'=>$args];
+    if (($GLOBALS['spec']['cleanup_failure']??false) && ($args[1]??null)==='{"remove_keyboard":true}')
+        throw new RuntimeException('owned_cleanup_failure');
     if ($GLOBALS['spec']['notification_failure']??false) return null;
     return isset($GLOBALS['achbotTelegramDiagnosticContext']['followup_id'])?fixtureMessageAck($args[3]):(object)['ok'=>true];
 }
@@ -123,11 +125,13 @@ function editText(...$args) {
     $GLOBALS['events'][]=['kind'=>'editText','args'=>$args];
     return (object)['ok'=>true];
 }
+require_once $root.'/src/Telegram/Conversation.php';
 function setUser($step='none') {
-    $stmt=$GLOBALS['connection']->prepare('UPDATE users SET step=? WHERE userid=?');
-    $stmt->bind_param('si',$step,$GLOBALS['from_id']);
-    $stmt->execute();$stmt->close();
+    $closed=\AchBot\Telegram\Conversation\transitionEditor(
+        $GLOBALS['connection'],(int)$GLOBALS['from_id'],$GLOBALS['userInfo'],$step,update:$GLOBALS['update']);
+    if ($closed===null) return false;
     $GLOBALS['events'][]=['kind'=>'setUser','step'=>$step];
+    return true;
 }
 if (!empty($spec['barrier'])) {
     $barrier=(string)$spec['barrier'];
@@ -244,6 +248,10 @@ def finish_paused_worker(process, barrier):
 
 def messages(result):
     return [str(e['args'][0]) for e in result['events'] if e['kind']=='sendMessage']
+
+def keyboard_removals(result):
+    return [e['args'] for e in result['events']
+            if e['kind']=='sendMessage' and e['args'][1:2]==['{"remove_keyboard":true}']]
 
 def move_to_reason(work,env,kind,amount,actor=9001,target=1001,
                    amount_message_id=90,amount_update_id=1):
@@ -810,6 +818,7 @@ def main():
         edited=[e['args'][1] for e in canceled['events'] if e['kind']=='editText']
         assert len(edited)==1 and 'لغو شد' in edited[0],edited
         assert not any('✅' in m for m in messages(canceled))
+        assert len(keyboard_removals(canceled))==1 and keyboard_removals(canceled)[0][2:]==['HTML',9001]
         stale_reason=execute(work,env,text='Should be canceled',
             update_id=821,message_id=91)
         assert_state(work,env,current_wallet,current_rows)
@@ -828,12 +837,13 @@ def main():
         ]):
             setstep(work,env,9001,pending_step)
             out=execute(work,env,update_kind='callback',
-                data='managePanel',update_id=830+idx,
+                data='managePanel',update_id=830+idx,cleanup_failure=True,
                 run_real_manage_panel_route=True)
             assert_state(work,env,current_wallet,current_rows)
             assert step(work,env)=='none'
             edits=[e['args'][1] for e in out['events'] if e['kind']=='editText']
             assert len(edits)==1 and 'لغو شد' in edits[0],pending_step
+            assert len(keyboard_removals(out))==1 and keyboard_removals(out)[0][2:]==['HTML',9001]
             assert not any('✅' in m for m in messages(out))
         cases.append('r2_actual_managepanel_cancels_every_financial_stage')
         # Fresh installation must not re-enter removed debt alias routes.
@@ -888,6 +898,7 @@ def main():
                     if e['kind']=='editText']
             assert len(edited)==1 and 'در حال بررسی' in edited[0],edited
             assert 'مبلغی از این درخواست اعمال نشد' not in edited[0],edited
+            assert not keyboard_removals(nav_after)
             assert not any('✅' in m for m in messages(nav_after))
             assert_state(work,env,before_balance+23,before_rows+1)
         finally:
@@ -956,6 +967,7 @@ def main():
                          if e['kind']=='editText']
             assert len(first_edit)==1 and 'لغو شد' in first_edit[0]
             assert len(second_edit)==1 and 'در حال بررسی' in second_edit[0]
+            assert not keyboard_removals(second_navigation)
             assert 'مبلغی از این درخواست اعمال نشد' not in second_edit[0]
             assert_state(work,env,before_balance,before_rows)
             assert step(work,env)=='none'
@@ -985,6 +997,7 @@ def main():
                     if e['kind']=='editText']
             assert len(edited)==1 and 'در حال بررسی' in edited[0],edited
             assert 'مبلغی از این درخواست اعمال نشد' not in edited[0]
+            assert not keyboard_removals(failed)
             assert 'achbot_admin_wallet_cancellation_review' in failed['stderr']
         finally:
             sql(work,env,'DROP TRIGGER achbot_cancel_owned_failure')
@@ -1013,6 +1026,7 @@ def main():
             if nav3.poll() is None:
                 nav3.kill()
                 nav3.wait(timeout=4)
+        assert not keyboard_removals(stale_nav)
         cases.append('r3_stale_navigation_does_not_clobber_new_operator_step')
 
         # A revoked delegated administrator may have a stale in-memory
@@ -1035,6 +1049,7 @@ def main():
             assert 'مبلغی از این درخواست اعمال نشد' not in edited[0]
         finally:
             sql(work,env,'UPDATE users SET isAdmin=1 WHERE userid=9002')
+        assert not keyboard_removals(revoked_cancel)
         cases.append('r3_delegated_admin_revocation_guarded_cancellation')
 
 

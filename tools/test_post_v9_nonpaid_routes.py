@@ -76,7 +76,7 @@ function setUser($value='none',$field='step'){
     $stmt=$connection->prepare("UPDATE users SET `$field`=? WHERE userid=?");
     $stmt->bind_param('si',$value,$from_id);
     if (!$stmt->execute()) throw new RuntimeException('step_write_failed');
-    $stmt->close();
+    $stmt->close();return true;
 }
 function fixtureDeliveryTransport($to) {
     global $connection;

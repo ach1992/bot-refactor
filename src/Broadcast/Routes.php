@@ -95,8 +95,9 @@ if(preg_match('/^cancelBroadcast(\d+)/', $data, $m) && ($from_id == $admin || $u
 
 if(preg_match('/^chooseSendGroup_(all|has|none|agents)$/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $group = $match[1];
-    setUser("s2a_title_$group");
+    if (!setUser("s2a_title_$group")) return;
     sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.f7c7bcfe5e'), $cancelKey, 'HTML');
+    return;
 }
 
 if (isset($update->message->text) && !isset($update->callback_query) && preg_match('/^s2a_title_(all|has|none|agents)$/', $userInfo['step'], $match)
@@ -107,18 +108,18 @@ if (isset($update->message->text) && !isset($update->callback_query) && preg_mat
     $title = trim(preg_replace('/\s+/u', ' ', (string)$text));
 
     if (mb_strlen($title, 'UTF-8') > 255) {
+        if (!setUser("s2a_title_$group")) return;
         sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.adb061a104'), $cancelKey, 'HTML');
-        setUser("s2a_title_$group");
         return;
     }
 
     if (!preg_match('/^[\p{L}\p{N}\p{P}\p{S} \-_\+\(\)=\/\\\\!]+$/u', $title)) {
+        if (!setUser("s2a_title_$group")) return;
         sendMessage(
             \achbotMessage('broadcast.routes.broadcast_start.message.9df7171b87').
             \achbotMessage('broadcast.routes.broadcast_start.message.b6d57f844e'),
             $cancelKey, 'HTML'
         );
-        setUser("s2a_title_$group");
         return;
     }
 
@@ -136,13 +137,14 @@ if (isset($update->message->text) && !isset($update->callback_query) && preg_mat
     $stmt->close();
 
     if ($draftId <= 0) {
+        if (!setUser("s2a_title_$group")) return;
         sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.0c01c8169a'), $cancelKey, 'HTML');
-        setUser("s2a_title_$group");
         return;
     }
 
-    setUser("s2a_msg_$draftId");
+    if (!setUser("s2a_msg_$draftId")) return;
     sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.45cbfc9bc3'), $cancelKey, 'HTML');
+    return;
 }
 
 if(isset($update->message) && !isset($update->callback_query) && preg_match('/^s2a_msg_(\d+)$/', $userInfo['step'], $match)
@@ -585,7 +587,7 @@ if(preg_match('/^editBroadcastAsk_(\d+)$/', $data, $m) && ($from_id == $admin ||
         return;
     }
 
-    setUser("bc_edit_$bid");
+    if (!setUser("bc_edit_$bid")) return;
     sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.656de1721c'), $cancelKey, null);
     return;
 }
@@ -698,8 +700,8 @@ if(isset($update->message) && !isset($update->callback_query) && preg_match('/^b
     }
 
     if(trim($input) === ''){
+        if (!setUser("bc_edit_$bid")) return;
         sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.272345cd68'), $cancelKey, null);
-        setUser("bc_edit_$bid");
         return;
     }
 
@@ -742,8 +744,8 @@ if(isset($update->message) && !isset($update->callback_query) && preg_match('/^b
     // The stored HTML is rendered once at admission, never truncated as markup.
     $limit = $info['type']==='text' ? 4096 : 1024;
     if(mb_strlen($input,'UTF-8') > $limit){
+        if (!setUser("bc_edit_$bid")) return;
         sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.72fe3f7c5d'), $cancelKey, null);
-        setUser("bc_edit_$bid");
         return;
     }
     $entities = isset($text) ? ($update->message->entities??[]) : ($update->message->caption_entities??[]);

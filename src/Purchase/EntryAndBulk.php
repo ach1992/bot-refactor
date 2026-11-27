@@ -109,16 +109,18 @@ if(preg_match('/\AcreateAccPlan([1-9][0-9]*)\z/D',$data,$match) && $text != \ach
         alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.d3fb64c4d9'), true);
         return;
     }
-    delMessage();
+    if (!setUser('createAccDate' . $match[1])) return;
+    try {delMessage();} catch(Throwable $ignored){}
     sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.c754e347bf'),$cancelKey, 'HTML');
-    setUser('createAccDate' . $match[1]);
+    return;
 }
 if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/^createAccDate(\d+)$/D',$userInfo['step'],$match) && $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $dayUnits=achbotWholeServiceUnits($text,achbotServiceDaysMax(),true);
     if($dayUnits!==null){
         if($dayUnits>0){
+            if (!setUser('createAccVolume' . $match[1] . "_" . $dayUnits)) return;
             sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f018216ab3'), null, 'HTML');
-            setUser('createAccVolume' . $match[1] . "_" . $dayUnits);
+            return;
         }else{
             sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.9cc4de866d'), null, 'HTML');
         }
@@ -135,8 +137,9 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
         sendMessage(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.f30d6ad265'), null, 'HTML');
         exit();
     }
+    if (!setUser("createAccAmount" . $match[1] . "_" . $match[2] . "_" . $volumeUnits)) return;
     sendMessage(\achbotMessage('legacy_messages.enter_account_amount'), null, 'HTML');
-    setUser("createAccAmount" . $match[1] . "_" . $match[2] . "_" . $volumeUnits);
+    return;
 }
 
 if (

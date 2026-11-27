@@ -49,7 +49,7 @@ DAY=r'''<?php
 require __DIR__.'/config.php';
 $userInfo=['step'=>'giftServerDay2','isAdmin'=>true];
 $from_id=9002;$text=$argv[1];
-function setUser($step){echo json_encode(['step'=>$step]);}
+function setUser($step){echo json_encode(['step'=>$step]);return true;}
 require __DIR__.'/day-route.php';
 '''
 

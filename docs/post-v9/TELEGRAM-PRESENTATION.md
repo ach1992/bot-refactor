@@ -262,8 +262,13 @@ decision is enforced on the locked current actor row when Cancel, Home,
 admin-panel navigation or another editor actually abandons or replaces
 the referral editor. Fresh navigation does not depend on deleting the old
 prompt or holding settings-write permission; malformed state can be
-abandoned but cannot authorize a setting save. Independent retained
-business effects keep their own ownership boundaries. Concurrent creation is serialized
+abandoned but cannot authorize a setting save. An editor start or advance
+must confirm its state transition before emitting the corresponding input
+prompt; retirement of an obsolete disposable message is best effort.
+Admin-panel navigation removes the persistent reply keyboard only on an
+actual confirmed editor exit, independently of the inline panel edit.
+Independent retained business effects keep their own ownership boundaries
+and do not reset an unrelated editor. Concurrent creation is serialized
 within the same database and setting type; ambiguous existing rows are not
 silently overwritten or deduplicated.
 

@@ -101,7 +101,7 @@ if ($data==='showUUIDLeft') {
         try {$connection->rollback();} catch (Throwable $ignored) {}
         error_log('achbot_existing_subscription_entry_deferred');return;
     }
-    delMessage();
+    try {delMessage();} catch(Throwable $ignored){}
     sendMessage(\achbotCurrentMessage('send_config_uuid'), $cancelKey,'HTML');
     return;
 }

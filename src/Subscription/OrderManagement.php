@@ -77,8 +77,8 @@ if (isset($update->message->text) && !isset($update->callback_query) && $userInf
 
     $stmt = $connection->prepare("SELECT * FROM orders_list WHERE remark = ?");
     if (!$stmt) {
+        if (!setUser()) return;
         sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.99b2e0169a'), $removeKeyboard, 'HTML');
-        setUser();
         return;
     }
     $stmt->bind_param("s", $remark);
@@ -110,15 +110,15 @@ if (isset($update->message->text) && !isset($update->callback_query) && $userInf
     while ($row = $result->fetch_assoc()) {
         if (!in_array($row['userid'], $useridList)) {
             if ($counter >= $maxResults) {
+                if (!setUser()) return;
                 sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.f8c9916b9c'), $removeKeyboard, 'HTML');
-                setUser();
                 return;
             }
             $useridList[] = $row['userid'];
             $callbackData = "selectOrderByRemark_userid_{$row['userid']}_tempId_" . $tempRemarkId;
             if (strlen($callbackData) > 64) {
+                if (!setUser()) return;
                 sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.45a8b2af73'), $removeKeyboard, 'HTML');
-                setUser();
                 return;
             }
             $keyboard['inline_keyboard'][] = [['text' => "{$row['userid']}", 'callback_data' => $callbackData]];
@@ -147,8 +147,8 @@ if (preg_match('/^selectOrderByRemark_userid_(\d+)_tempId_(.+)/', $data, $match)
 
     $stmt = $connection->prepare("SELECT * FROM orders_list WHERE userid = ? AND remark = ? LIMIT 1");
     if (!$stmt) {
+        if (!setUser()) return;
         sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.99b2e0169a'), $removeKeyboard, 'HTML');
-        setUser();
         return;
     }
     $stmt->bind_param("is", $userid, $remark);
@@ -162,8 +162,8 @@ if (preg_match('/^selectOrderByRemark_userid_(\d+)_tempId_(.+)/', $data, $match)
                 [['text' => \achbotMessage('subscription.order_management.awaiting_order_remark_only.button.76f3daea16'), 'callback_data' => "manageorderdatabase"]]
             ]
         ]);
+        if (!setUser()) return;
         sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.d11ef21837'), $keyboard, 'HTML');
-        setUser();
         return;
     }
 
@@ -356,7 +356,6 @@ if (preg_match('/^confirmDeleteOrder_([1-9][0-9]*)$/D', (string)$data, $match)) 
     alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.1340fd2124'));
     sendMessage(\achbotMessageHtml('subscription.order_management.show_order_management_panel.message.606600ccca', ['userid' => $userid, 'remark' => $remark]), null, "html");
 
-    setUser();
 }
 
 if (preg_match('/^toggleOrderAgent_([1-9][0-9]*)_([01])$/D', (string)$data, $match)) {
@@ -485,7 +484,6 @@ if (preg_match('/^selectServerId_(\d+)_(\d+)$/D', (string)($data ?? ''), $match)
     $order = $stmt->get_result()->fetch_assoc();
     $stmt->close();
     showOrderManagementPanel($order, $message_id);
-    setUser();
     return;
 }
 
@@ -573,7 +571,6 @@ if (preg_match('/^selectFileId_(\d+)_(\d+)$/', (string) ($data ?? ''), $match)) 
     $s=$connection->prepare('SELECT * FROM orders_list WHERE id=?');
     $s->bind_param('i',$id);$s->execute();$order=$s->get_result()->fetch_assoc();$s->close();
     if ($order) showOrderManagementPanel($order,$message_id);
-    setUser();
     return;
 }
 

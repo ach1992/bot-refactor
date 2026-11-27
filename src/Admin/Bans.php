@@ -16,7 +16,7 @@ if ($data === "banUser") {
         $connection,$update,(int)$from_id,(int)$chat_id,(int)$message_id,
         $userInfo,(int)$admin,'startBan');
     if ($status==='started') {
-        delMessage();
+        try {delMessage();} catch(Throwable $ignored){}
         sendMessage(\achbotMessage('admin.bans.ban_user.message.e2ecb94a9c'), $cancelKey, 'HTML');
     }
 }
@@ -25,7 +25,7 @@ if ($data === "unbanUser") {
         $connection,$update,(int)$from_id,(int)$chat_id,(int)$message_id,
         $userInfo,(int)$admin,'startUnban');
     if ($status==='started') {
-        delMessage();
+        try {delMessage();} catch(Throwable $ignored){}
         sendMessage(\achbotMessage('admin.bans.unban_user.message.450fb58659'), $cancelKey, 'HTML');
     }
 }

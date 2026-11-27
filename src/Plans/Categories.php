@@ -95,7 +95,7 @@ if(($data=='categoriesSetting' || preg_match('/\AnextCategoryPage([0-9]+)\z/D',$
 }
 if ($categoryData==='addNewCategory') {
     if (!achbotCategoryMutation($connection,$categoryActor,$categoryOwner,$update,$categoryData,$categoryText,'start','addNewCategory')) return;
-    delMessage();
+    try {delMessage();} catch(Throwable $ignored){}
     $msg=\achbotMessage('plans.categories.add_new_category.msg.3eab115e65');
     sendMessage($msg,$cancelKey, 'HTML');
     return;
@@ -116,7 +116,7 @@ if (preg_match('/\Awizwizcategorydelete([1-9][0-9]*)_([0-9]+)\z/D',$categoryData
 }
 if (preg_match('/\Awizwizcategoryedit([1-9][0-9]*)_([0-9]+)\z/D',$categoryData,$match)) {
     if (!achbotCategoryMutation($connection,$categoryActor,$categoryOwner,$update,$categoryData,$categoryText,'start',$categoryData,(int)$match[1])) return;
-    delMessage();
+    try {delMessage();} catch(Throwable $ignored){}
     sendMessage(\achbotMessage('plans.categories.add_new_category.message.15337e0db0'),$cancelKey, 'HTML');
     return;
 }

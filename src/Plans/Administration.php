@@ -78,10 +78,11 @@ if(($data=="editCustomPlan" || (isset($update->message->text) && !isset($update-
     }
 }
 if(preg_match('/^editCustom(gbPrice|dayPrice)/',$data,$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
-    delMessage();
+    if (!setUser($data)) return;
+    try {delMessage();} catch(Throwable $ignored){}
     $title = $match[1] == "dayPrice"?\achbotMessage('plans.administration.edit_custom_plan.text.b641937e16'):\achbotMessage('plans.administration.edit_custom_plan.text.c84922eddf');
     sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.207313a746') . $title . \achbotMessage('plans.administration.edit_custom_plan.message.ae9d133be8'),$cancelKey,'HTML');
-    setUser($data);
+    return;
 }
 if(preg_match('/plansList(\d+)/', $data,$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
     $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type` IN (".achbotProviderSqlTypes().") WHERE p.`server_id`=? AND p.`inbound_id`=0 ORDER BY p.`id` ASC");
@@ -232,7 +233,7 @@ if(preg_match('/^confirmDeletePlan([1-9][0-9]*)_([a-f0-9]{16})$/D',(string)$data
 }
 if(preg_match('/^wizwizplanname(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != \achbotMessage('legacy_buttons.cancel')){
     if (!setUser($data)) return;
-    delMessage();
+    try {delMessage();} catch(Throwable $ignored){}
     sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.0253b1982e'),$cancelKey, 'HTML');exit;
 }
 if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/^wizwizplanname(\d+)/',$userInfo['step'], $match) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
@@ -256,7 +257,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
 }
 if(preg_match('/^wizwizplaneditdes(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != \achbotMessage('legacy_buttons.cancel')){
     if (!setUser($data)) return;
-    delMessage();
+    try {delMessage();} catch(Throwable $ignored){}
     sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.090fe8ddfd'),$cancelKey, 'HTML');exit;
 }
 if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/^wizwizplaneditdes(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != \achbotMessage('legacy_buttons.cancel')){
@@ -281,7 +282,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
 }
 if(preg_match('/^wizwizplanrial(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != \achbotMessage('legacy_buttons.cancel')){
     if (!setUser($data)) return;
-    delMessage();
+    try {delMessage();} catch(Throwable $ignored){}
     sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.031fdf541a'),$cancelKey, 'HTML');exit;
 }
 if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/^wizwizplanrial(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')&& $text != \achbotMessage('legacy_buttons.cancel')){
