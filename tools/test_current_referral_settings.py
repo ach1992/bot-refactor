@@ -24,7 +24,7 @@ $connection->set_charset('utf8mb4');
 $spec=json_decode($argv[5],true,64,JSON_THROW_ON_ERROR);
 $admin=9001;$from_id=(int)($spec['actor']??9001);$botState=[];$events=[];$callbackId='fixture';
 require_once $root.'/src/Admin/ReferralSettings.php';
-function wire($kind,$body,$keys,$mode,$to,$mid=null) {
+function wire($kind,$body,$keys,$mode,$to,$mid=null,$reply=null) {
     global $events,$connection,$spec,$from_id;
     if ((int)achbotProviderRow($connection,'SELECT @@in_transaction AS tx')['tx']!==0)
         throw new RuntimeException('fixture_wire_inside_transaction');
@@ -34,12 +34,22 @@ function wire($kind,$body,$keys,$mode,$to,$mid=null) {
             throw new RuntimeException('fixture_prompt_before_editor_admission');
     }
     $events[]=['kind'=>$kind,'body'=>$body,'keys'=>$keys,'to'=>$to??$from_id,'mode'=>$mode];
+    if ($reply!==null) $events[array_key_last($events)]['reply']=$reply;
+    if (isset($spec['wire_fail_at']) && $spec['wire_fail_at']===count($events)) {
+        return match($spec['wire_failure']??'missing') {
+            'missing'=>null,
+            'foreign'=>(object)['ok'=>true,'result'=>(object)['message_id'=>999999,'chat'=>(object)['id'=>-123]]],
+            'incomplete'=>(object)['ok'=>true,'result'=>(object)['message_id'=>999999]],
+            'rate'=>(object)['ok'=>false,'error_code'=>429,'description'=>'Too Many Requests'],
+            'throw'=>throw new RuntimeException('fixture_wire_failure'),
+        };
+    }
     if (($spec['cleanup_fail']??false) && (json_decode($keys??'null',true)['remove_keyboard']??false))
         throw new RuntimeException('fixture_cleanup_failure');
     return (object)['ok'=>true,'result'=>(object)['message_id'=>$mid??100000+count($events),'chat'=>(object)['id'=>$to??$from_id]]];
 }
-function sendMessage($body,$keys=null,$mode=null,$to=null){return wire('send',$body,$keys,$mode,$to);}
-function sendPhoto($file,$body,$keys=null,$mode=null,$to=null){return wire('photo',$body,$keys,$mode,$to);}
+function sendMessage($body,$keys=null,$mode=null,$to=null,$reply=null){return wire('send',$body,$keys,$mode,$to,null,$reply);}
+function sendPhoto($file,$body,$keys=null,$mode=null,$to=null,$reply=null){return wire('photo',$body,$keys,$mode,$to,null,$reply);}
 function editText($mid,$body,$keys=null,$mode=null,$to=null){return wire('edit',$body,$keys,$mode,$to,$mid);}
 function delMessage(...$args){$GLOBALS['events'][]=['kind'=>'delete','args'=>$args];if ($GLOBALS['spec']['delete_fail']??false) throw new RuntimeException('fixture_delete_fail');}
 function answerCallbackQuery(...$args){$GLOBALS['events'][]=['kind'=>'ack','body'=>$args[1]??''];}
@@ -87,6 +97,13 @@ if ($data==='' && $text!==null) $update->message->text=$text;
 if (isset($spec['photo'])) {$update->message->photo=[(object)['file_id'=>$spec['photo']]];$update->message->caption=$spec['caption']??'';}
 if (isset($spec['entities'])) $update->message->entities=json_decode(json_encode($spec['entities']));
 $message_id=$mid;$chat_id=$from_id;$customerShortcut=null;$status=false;$result=null;
+if ($data==='inviteFriends') {
+    $botUsername='fixture_bot';$inviteReward=25;
+    $update->callback_query->message->from->id=999999;
+    if (!($spec['missing_source_keyboard']??false)) {
+        $update->callback_query->message->reply_markup=(object)['inline_keyboard'=>[[(object)['callback_data'=>'inviteFriends']]]];
+    }
+}
 register_shutdown_function(static function() use ($connection,&$status,&$result,&$events){
     $policy=null;$policyError=null;
     try {$policy=achbotPurchaseReferralPolicyAmount($connection);}catch(Throwable $e){$policyError=$e->getMessage();}
@@ -146,7 +163,9 @@ if (isset($spec['ordinary_route'])) {
 }
 $status=achbotReferralSettingsRoute($connection,$from_id,$update,$userInfo,$cancelKey);
 if ($status) return;
-if ($data==='managePanel') {
+if ($data==='inviteFriends') {
+    eval(routeBlock('bot.php','if($data=="inviteFriends"){'));
+} elseif ($data==='managePanel') {
     eval(section('if($data == "managePanel"','if($data == \'reciveApplications\')'));
 } elseif ($spec['cancel']??false) {
     eval(section('// Final ordinary-editor cancellation',"\n?>"));
@@ -289,6 +308,25 @@ def main():
             r=run(mode,photo='fixture-file',caption='Photo LINK')
             assert json.loads(value('TEXT'))=={'type':'photo','caption':'Photo LINK','file_id':'fixture-file'} and row()==['none',''] and len(saved(r))==1,r
             case('banner_text_photo_and_stale_cancel_ownership')
+            # The real customer referral route must retain navigation after
+            # incomplete/foreign delivery and must never reply to unknown IDs.
+            for banner_kind in ('text','photo'):
+                start(mode,action='editInviteBannerText')
+                run(mode,**({'text':'Invite LINK'} if banner_kind=='text' else {'photo':'fixture-file','caption':'Invite LINK'}))
+                first_kind='send' if banner_kind=='text' else 'photo'
+                for failure in ('missing','foreign','incomplete','rate','throw'):
+                    for fail_at in (1,2):
+                        r=run(mode,callback='inviteFriends',wire_fail_at=fail_at,wire_failure=failure)
+                        assert [e['kind'] for e in r['events']]==[first_kind]+(['send'] if fail_at==2 else []),r
+                        if fail_at==2:assert r['events'][1]['reply']==100001,r
+                r=run(mode,callback='inviteFriends',delete_fail=True)
+                assert [e['kind'] for e in r['events']]==[first_kind,'send','delete'],r
+                assert r['events'][1]['reply']==100001 and r['events'][0]['to']==9001,r
+                assert json.loads(r['events'][1]['keys'])['inline_keyboard'][0][0]['callback_data']=='mainMenu',r
+                r=run(mode,callback='inviteFriends',missing_source_keyboard=True)
+                assert [e['kind'] for e in r['events']]==[first_kind,'send'],r
+            case('referral_banner_navigation_requires_both_exact_delivery_acks')
+
             # Delayed navigation observes a fresh actor row, not a stale
             # cached temp. Reuse the same source message and exact old update.
             for action,kind,payload in (

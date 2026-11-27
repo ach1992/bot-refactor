@@ -813,81 +813,100 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
 }
 
 if($data=="inviteFriends"){
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'INVITE_BANNER_TEXT'");
-    $stmt->execute();
-    $inviteText = $stmt->get_result()->fetch_assoc()['value'];
-
-    if($inviteText != null){
-        require_once __DIR__.'/src/Presentation/Text.php';
-        $link=\AchBot\Presentation\Text\inviteStartLink($botUsername??null,$from_id);
-        if ($link==='') {
-            error_log('achbot_invite_username_unavailable');
-            alert(\achbotMessage('bot.bot.invite_friends.alert.56fd80c6d5'));
-            return;
-        }
-        delMessage();
-        $inviteText = json_decode($inviteText, true);
-
-        $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'INVITE_BANNER_AMOUNT'");
+    $actor=(int)$from_id;
+    $source=\AchBot\Telegram\Conversation\source($update,$actor,true);
+    if (!$source || ($source->from->is_bot??false)!==true) return;
+    try {
+        $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'INVITE_BANNER_TEXT'");
         $stmt->execute();
-        $inviteAmount = number_format($stmt->get_result()->fetch_assoc()['value'] ?? 0) . \achbotMessage('labels.currency_toman_suffix');
+        $inviteText = $stmt->get_result()->fetch_assoc()['value']??null;
         $stmt->close();
 
-        if($inviteText['type'] == "text"){
-            $txt = str_replace('LINK', $link, $inviteText['text']);
-            $res = sendMessage($txt, null, "HTML");
-        } else {
-            $txt = str_replace('LINK', $link, $inviteText['caption']);
-            $res = sendPhoto($inviteText['file_id'], $txt, null, "HTML");
-        }
+        if($inviteText != null){
+            require_once __DIR__.'/src/Presentation/Text.php';
+            $link=\AchBot\Presentation\Text\inviteStartLink($botUsername??null,$from_id);
+            if ($link==='') {
+                error_log('achbot_invite_username_unavailable');
+                alert(\achbotMessage('bot.bot.invite_friends.alert.56fd80c6d5'));
+                return;
+            }
+            $inviteText = json_decode($inviteText, true);
+            if (!is_array($inviteText) ||
+                !(($inviteText['type']??null)==='text' && is_string($inviteText['text']??null)) &&
+                !(($inviteText['type']??null)==='photo' && is_string($inviteText['caption']??null) &&
+                    is_string($inviteText['file_id']??null) && $inviteText['file_id']!=='')) {
+                alert(\achbotMessage('bot.bot.invite_friends.alert.56fd80c6d5'));
+                return;
+            }
 
-        $msgId = $res->result->message_id;
+            $inviteAmount=achbotReferralAmountLabel(achbotPurchaseReferralPolicyAmount($connection));
 
-        $secondText = str_replace(
-            ['{INVITE_REWARD}', '{INVITE_AMOUNT}'],
-            [$inviteReward, $inviteAmount],
-            \achbotMessage('legacy_messages.invite_second_text')
-        );
+            if($inviteText['type'] == "text"){
+                $txt = str_replace('LINK', $link, $inviteText['text']);
+                $res = sendMessage($txt, null, "HTML");
+            } else {
+                $txt = str_replace('LINK', $link, $inviteText['caption']);
+                $res = sendPhoto($inviteText['file_id'], $txt, null, "HTML");
+            }
 
-        $keyboard = json_encode([
-            'inline_keyboard' => [
-                [
-                    ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]
+            // A missing or foreign delivery acknowledgement is not a reply target.
+            // Keep the entry menu until both parts are confirmed at the actor.
+            $msgId = \AchBot\Telegram\Conversation\acknowledgedMessage($res,$actor);
+            if ($msgId===null || $msgId===$source->message_id) return;
+
+            $secondText = str_replace(
+                ['{INVITE_REWARD}', '{INVITE_AMOUNT}'],
+                [$inviteReward, $inviteAmount],
+                \achbotMessage('legacy_messages.invite_second_text')
+            );
+
+            $keyboard = json_encode([
+                'inline_keyboard' => [
+                    [
+                        ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]
+                    ]
                 ]
-            ]
-        ]);
+            ]);
 
-        $photoPath = __DIR__ . "/affiliate.jpg";
+            $photoPath = __DIR__ . "/affiliate.jpg";
 
-        if(file_exists($photoPath) && is_readable($photoPath)){
-            $caption =
-\achbotMessage('bot.bot.invite_friends.caption.16ca7a4696', ['inviteReward' => $inviteReward]) .
-\achbotMessage('bot.bot.invite_friends.text.c14f10907e', ['inviteAmount' => $inviteAmount]);
+            if(file_exists($photoPath) && is_readable($photoPath)){
+                $caption =
+                    \achbotMessage('bot.bot.invite_friends.caption.16ca7a4696', ['inviteReward' => $inviteReward]) .
+                    \achbotMessage('bot.bot.invite_friends.text.c14f10907e', ['inviteAmount' => $inviteAmount]);
 
-            $photoFile = function_exists('curl_file_create')
-                ? curl_file_create($photoPath)
-                : new CURLFile($photoPath);
+                $photoFile = function_exists('curl_file_create')
+                    ? curl_file_create($photoPath)
+                    : new CURLFile($photoPath);
 
-            sendPhoto(
-                $photoFile,
-                $caption,
-                $keyboard,
-                "HTML",
-                $from_id,
-                $msgId
-            );
+                $details=sendPhoto(
+                    $photoFile,
+                    $caption,
+                    $keyboard,
+                    "HTML",
+                    $from_id,
+                    $msgId
+                );
+            } else {
+                $details=sendMessage(
+                    $secondText,
+                    $keyboard,
+                    "HTML",
+                    null,
+                    $msgId
+                );
+            }
+            $detailsId=\AchBot\Telegram\Conversation\acknowledgedMessage($details,$actor);
+            if ($detailsId!==null && $detailsId!==$msgId && $detailsId!==$source->message_id &&
+                \AchBot\Telegram\Conversation\verifiedCallback($update,$actor,$source->message_id)) {
+                try {delMessage($source->message_id,$actor);} catch(Throwable $ignored){}
+            }
+
         } else {
-            sendMessage(
-                $secondText,
-                $keyboard,
-                "HTML",
-                null,
-                $msgId
-            );
+            alert(\achbotMessage('bot.bot.invite_friends.alert.56fd80c6d5'));
         }
-
-    } else {
-        alert(\achbotMessage('bot.bot.invite_friends.alert.56fd80c6d5'));
+    } catch(Throwable $e) {
+        error_log('achbot_invite_navigation_deferred actor='.$actor.' class='.get_class($e));
     }
 }
 
