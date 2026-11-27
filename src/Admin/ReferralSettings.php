@@ -12,6 +12,24 @@ function achbotReferralSettingEditor(string $step): ?array {
     return ['action'=>$m[1],'source'=>(int)$m[2],
         'type'=>$m[1]==='editInviteAmount'?'INVITE_BANNER_AMOUNT':'INVITE_BANNER_TEXT'];
 }
+/** The editor generation records the authenticated opening update and its
+ * local admission time. A delayed older update may see the NEW actor row,
+ * so a row CAS alone does not establish input ownership. */
+function achbotReferralSettingGeneration(array $cached): ?array {
+    if (preg_match('/^([1-9][0-9]*):([1-9][0-9]*)$/D',(string)($cached['temp']??''),$m)!==1)
+        return null;
+    return ['update'=>(int)$m[1],'opened_at'=>(int)$m[2]];
+}
+function achbotReferralSettingUpdateAfter(array $generation,$updateId,$eventTime): bool {
+    if (!is_int($updateId) || $updateId<=0) return false;
+    if ($updateId>$generation['update']) return true;
+    // Telegram may restart update IDs after a week without updates; a queued
+    // opening update can be delivered up to 24 hours late. A lower ID can
+    // therefore be new after that minimum interval, not an editor expiry.
+    // For typed input use Telegram's own message date, not processing time.
+    // https://core.telegram.org/bots/api#update
+    return is_int($eventTime) && $eventTime >= $generation['opened_at'] + (7-1)*86400;
+}
 function achbotReferralSettingAuthorize(mysqli $db,int $actor): void {
     if (!achbotAdminCanLocked($db,$actor,(int)$GLOBALS['admin'],'bot_settings'))
         throw new DomainException('referral_setting_role_revoked');
@@ -27,8 +45,11 @@ function achbotReferralSettingSave(mysqli $db,int $actor,array $cached,string $v
     if (!$editor) return false;
     $type=$editor['type'];
     if ($type==='INVITE_BANNER_AMOUNT' && achbotPurchaseReferralAmount($value)===null) return false;
-    $lock='achbot_referral_setting_'.$type;$held=false;
+    $lock=null;$held=false;
     try {
+        $dbName=achbotProviderRow($db,'SELECT DATABASE() AS name')['name']??null;
+        if (!is_string($dbName) || $dbName==='') return false;
+        $lock='referral-setting:'.substr(hash('sha256',$dbName.':'.$type),0,40);
         $held=(int)(achbotProviderRow($db,'SELECT GET_LOCK(?,10) AS acquired','s',[$lock])['acquired']??0)===1;
         if (!$held) return false;
         return \AchBot\Telegram\Conversation\transitionEditor($db,$actor,$cached,'none',null,
@@ -94,12 +115,17 @@ function achbotReferralSettingsRoute(mysqli $db,int $actor,$update,array $cached
         achbotAdminDeny();return true;
     }
     try {
+        $generation=$editor?achbotReferralSettingGeneration($cached):null;
+        $updateId=$update->update_id??null;
         if ($isCallback) {
             $edit=$data==='editInviteAmount' || $data==='editInviteBannerText';
-            $generation=$update->update_id??null;
-            if ($edit && (!is_int($generation) || $generation<=0)) return true;
+            $openedAt=time();
+            // A replayed older invitation control cannot replace the newer
+            // active editor. Fresh navigation may recover malformed state.
+            if ($generation && !achbotReferralSettingUpdateAfter($generation,$updateId,$openedAt)) return true;
+            if ($edit && (!is_int($updateId) || $updateId<=0)) return true;
             $row=\AchBot\Telegram\Conversation\transitionEditor($db,$actor,$cached,
-                $edit?$data.'_'.$source->message_id:'none',$edit?(string)$generation:null,
+                $edit?$data.'_'.$source->message_id:'none',$edit?$updateId.':'.$openedAt:null,
                 static fn(mysqli $db)=>achbotReferralSettingAuthorize($db,$actor));
             if (!$row) return true;
             if ($edit) {
@@ -130,7 +156,8 @@ function achbotReferralSettingsRoute(mysqli $db,int $actor,$update,array $cached
             }
             return true;
         }
-        if ($source->message_id<=$editor['source']) return true;
+        if ($source->message_id<=$editor['source'] || !$generation ||
+            !achbotReferralSettingUpdateAfter($generation,$updateId,$source->date??null)) return true;
         if ($editor['action']==='editInviteAmount') {
             $raw=is_string($source->text??null)?trim($source->text):'';
             // Normalize ordinary digit input, then use exactly the reader's

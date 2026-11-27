@@ -8,6 +8,7 @@ import json
 from pathlib import Path
 import subprocess
 import threading
+import time
 
 import database_fixture as owned
 
@@ -46,7 +47,7 @@ if ($spec['cancel']??false) $text=achbotMessage('legacy_buttons.cancel');
 $sender=(object)['id'=>$from_id];$chat=(object)['id'=>$spec['chat']??$from_id,'type'=>$spec['chat_type']??'private'];
 $update=$data!==''?(object)['update_id'=>$spec['update'],'callback_query'=>(object)['data'=>$data,'from'=>$sender,
     'message'=>(object)['chat'=>$chat,'message_id'=>$mid,'from'=>(object)['is_bot'=>true],'text'=>$text]]]:
-    (object)['update_id'=>$spec['update'],'message'=>(object)['from'=>$sender,'chat'=>$chat,'message_id'=>$mid]];
+    (object)['update_id'=>$spec['update'],'message'=>(object)['from'=>$sender,'chat'=>$chat,'message_id'=>$mid,'date'=>$spec['date']??time()]];
 if ($data==='' && $text!==null) $update->message->text=$text;
 if (isset($spec['photo'])) {$update->message->photo=[(object)['file_id'=>$spec['photo']]];$update->message->caption=$spec['caption']??'';}
 if (isset($spec['entities'])) $update->message->entities=json_decode(json_encode($spec['entities']));
@@ -75,7 +76,7 @@ def main():
         def sql(q):return owned.sql(w,env,q,DB).strip()
         def run(mode,actor=9001,**spec):
             with lock:seq=next(counter)
-            spec=dict(actor=actor,mid=seq,update=seq,**spec) if 'mid' not in spec else dict(actor=actor,update=seq,**spec)
+            spec={'actor':actor,'mid':seq,'update':seq,**spec}
             r=subprocess.run(['php','-d','allow_url_fopen=0','-d','disable_functions=curl_exec,fsockopen,pfsockopen,stream_socket_client,mail,exec,shell_exec,system,passthru,popen,proc_open',
                 str(driver),str(ROOT),str(w/'mysql.sock'),DB,mode,json.dumps(spec)],env=env,text=True,capture_output=True,timeout=25)
             assert r.returncode==0,(r.stdout,r.stderr)
@@ -122,8 +123,25 @@ def main():
             r=run(mode,text='321',mid=mid-1)
             assert row()==n and value()=='2147483647' and not succeeded(r),r
             case('cancel_and_reentry_fence_delayed_input')
+            # The delayed old input can read the NEW current editor, rather
+            # than carrying the old cached generation. Source message alone
+            # is insufficient when the same menu survived cosmetic cleanup.
+            old_update=int(s[1].split(':')[0])
+            r=run(mode,text='654',mid=mid+1,update=old_update+1)
+            assert value()=='2147483647' and row()==n and not succeeded(r),r
+            r=run(mode,callback='editInviteAmount',mid=mid,update=old_update)
+            assert row()==n and not r['events'],r
+            case('delayed_old_update_cannot_consume_fresh_generation')
             run(mode,callback='inviteSetting')
             assert row()==['none','']
+            # A new update after Telegram's idle sequence reset may carry
+            # a lower ID. This is not a lifetime limit on a valid editor.
+            g=start(mode)
+            gen=int(g[1].split(':')[0])
+            sql(f"UPDATE users SET temp='{gen}:{int(time.time())-8*86400}' WHERE userid=9001")
+            r=run(mode,text='2147483647',update=1)
+            assert value()=='2147483647' and row()==['none',''] and len(saved(r))==1,r
+            case('idle_update_sequence_reset_does_not_expire_editor')
             s=start(mode,9002)
             sql("UPDATE setting SET value='operator' WHERE type='ADMIN_ROLE_9002'")
             r=run(mode,9002,text='456')
@@ -162,7 +180,11 @@ def main():
             run(mode,cancel=True)
             r=run(mode,text='Wrong',cached_step=n[0],cached_temp=n[1])
             assert row()==['none',''] and json.loads(value('TEXT'))['text']=='Hello LINK' and not succeeded(r),r
-            start(mode,action='editInviteBannerText')
+            bmid=int(n[0].rsplit('_',1)[1])
+            fresh=start(mode,action='editInviteBannerText',mid=bmid)
+            r=run(mode,photo='old-photo',caption='Old LINK',mid=bmid+1,update=int(n[1].split(':')[0])+1)
+            assert row()==fresh and json.loads(value('TEXT'))['text']=='Hello LINK' and not succeeded(r),r
+            case('delayed_banner_input_preserves_fresh_generation')
             r=run(mode,photo='fixture-file',caption='Photo LINK')
             assert json.loads(value('TEXT'))=={'type':'photo','caption':'Photo LINK','file_id':'fixture-file'} and row()==['none',''] and len(saved(r))==1,r
             case('banner_text_photo_and_stale_cancel_ownership')

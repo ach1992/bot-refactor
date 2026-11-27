@@ -134,6 +134,8 @@ REQUIRED_CURRENT_CASES = {
     "current_referral_settings": (
         "invalid_amount_cannot_enter_financial_policy","canonical_zero_positive_and_existing_money_bound",
         "cancel_and_reentry_fence_delayed_input","current_role_and_navigation",
+        "delayed_old_update_cannot_consume_fresh_generation","idle_update_sequence_reset_does_not_expire_editor",
+        "delayed_banner_input_preserves_fresh_generation",
         "concurrent_singleton_creation_one_setting","concurrent_same_editor_one_winner",
         "write_failure_and_ambiguous_existing_setting_not_success","banner_text_photo_and_stale_cancel_ownership",
     ),

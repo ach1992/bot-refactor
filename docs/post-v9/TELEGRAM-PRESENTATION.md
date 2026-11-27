@@ -254,8 +254,12 @@ source-bound editor transaction and the existing singleton setting
 writer-lock pattern. The financial reader and editor use the same canonical
 integer amount domain, including zero to disable rewards; no new cap is
 introduced. The current actor and editor generation, exact setting row and
-write result are checked before commit. Concurrent creation is serialized;
-ambiguous existing rows are not silently overwritten or deduplicated.
+write result are checked before commit. The authenticated input must also
+follow the editor-opening update, even when a delayed webhook reads a newly
+opened editor for the same source message. Telegram's documented idle update-ID
+reset does not expire a still-valid editor. Concurrent creation is serialized
+within the same database and setting type; ambiguous existing rows are not
+silently overwritten or deduplicated.
 
 
 Subscription search prefers a unique exact name and otherwise permits a
