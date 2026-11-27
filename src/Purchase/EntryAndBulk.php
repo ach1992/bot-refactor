@@ -71,13 +71,13 @@ if(preg_match('/\AcreateAccServer([1-9][0-9]*)\z/D',$data, $match) && ($from_id 
     foreach (achbotAvailablePlans($connection,(int)$sid,null,'admin') as $plan)
         $categories[(int)$plan['catid']]=$plan['category_title'];
     if (!$categories) {
-        alert(achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.de33518bf8'));
+        alert(achbotMessage('legacy_messages.category_not_avilable'));
         return;
     } else {
         ksort($categories);$keyboard=[];
         foreach ($categories as $id=>$name)
             $keyboard[]=['text'=>$name,'callback_data'=>"createAccCategory{$id}_{$sid}"];
-        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.174c6a61d7'));
+        alert(\achbotMessage('legacy_messages.receive_categories'));
         $keyboard[] = ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "createMultipleAccounts"];
         $keyboard = array_chunk($keyboard,1);
         editText($message_id, \achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e'), json_encode(['inline_keyboard'=>$keyboard]));
@@ -91,7 +91,7 @@ if(preg_match('/\AcreateAccCategory([1-9][0-9]*)_([1-9][0-9]*)\z/D',$data,$match
     if (!$respd) {
         alert(achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.5223e5a747'));
     } else {
-        alert(\achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.alert.465c2a0af9'));
+        alert(\achbotMessage('legacy_messages.receive_plans'));
         $keyboard = [];
         foreach($respd as $file){
             $id = $file['id'];

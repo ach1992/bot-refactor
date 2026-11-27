@@ -49,7 +49,7 @@ if(preg_match('/\AselectCategory(?<categoryId>[1-9][0-9]*)_(?<serverId>[1-9][0-9
             $name = $file['title'];
             [$price]=achbotAgencyPrice($userInfo,$botState,(int)$id,(int)$sid,(int)$file['price']);
             if ((int)$from_id===(int)$admin) $price=0;
-            $price = ($price == 0) ? \achbotMessage('purchase.catalogue.text.dda7ff2974') : number_format($price).\achbotMessage('purchase.catalogue.text.bfb7221456');
+            $price = ($price == 0) ? \achbotMessage('labels.free_price') : number_format($price).\achbotMessage('purchase.catalogue.text.bfb7221456');
             $keyboard[] = ['text' => "$name - $price", 'callback_data' => "selectPlan{$id}_{$call_id}_{$match['buyType']}"];
         }
         if($custom){

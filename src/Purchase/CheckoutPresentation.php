@@ -48,8 +48,8 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $o
     $pay=$view['pay'];$q=$view['quote'];$plan=$view['plan'];$mode=$view['mode'];
     $hash_id=$pay['hash_id'];$actor=(int)$pay['user_id'];$amount=(int)$pay['price'];
     $renew=$mode==='renew';
-    $price=$amount===0?($renew?achbotMessage('renewal.extensions.price.dda7ff2974'):achbotMessage('purchase.catalogue.text.dda7ff2974')):
-        number_format($amount).($renew?achbotMessage('renewal.extensions.text.2cc98f7f7c'):achbotMessage('purchase.catalogue.text.bfb7221456'));
+    $price=$amount===0?($renew?achbotMessage('labels.free_price'):achbotMessage('labels.free_price')):
+        number_format($amount).($renew?achbotMessage('labels.currency_toman_suffix'):achbotMessage('purchase.catalogue.text.bfb7221456'));
     $methods=$view['payment_methods'];
     $keyboard=achbotCheckoutPaymentKeyboard($mode,$hash_id,$amount,$methods,$botUrl);
     $noMethod=$amount>0 && !$keyboard;
@@ -77,7 +77,7 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $o
             $template=achbotMessage('legacy_messages.buy_much_subscription_detail');
             $values['ACCOUNT-COUNT']=(string)$q['quantity'];
             $values['TOTAL-PRICE']=$price;
-            $values['PRICE']=number_format($amount/$q['quantity']).achbotMessage('purchase.select_plan.text.2cc98f7f7c');
+            $values['PRICE']=number_format($amount/$q['quantity']).achbotMessage('labels.currency_toman_suffix');
         } elseif ($mode==='custom') {
             $values['VOLUME']=(string)$q['volume'];$values['DAYS']=(string)$q['days'];
         }

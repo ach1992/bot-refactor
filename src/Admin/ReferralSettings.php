@@ -64,12 +64,12 @@ function achbotReferralSettingKeys(string $amount): string {
 }
 function achbotReferralBannerKeys(): string {
     return json_encode(['inline_keyboard'=>[
-        [['text'=>achbotMessage('bot.bot.invite_banner.button.d6aa12d559'),'callback_data'=>'editInviteBannerText']],
+        [['text'=>achbotMessage('labels.edit'),'callback_data'=>'editInviteBannerText']],
         [['text'=>achbotMessage('legacy_buttons.back_button'),'callback_data'=>'inviteSetting']]
     ]],JSON_THROW_ON_ERROR);
 }
 function achbotReferralAmountLabel(int $amount): string {
-    return number_format($amount).achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
+    return number_format($amount).achbotMessage('labels.currency_toman_suffix');
 }
 function achbotReferralSettingMenuAmount(mysqli $db): string {
     try {return achbotReferralAmountLabel(achbotPurchaseReferralPolicyAmount($db));}

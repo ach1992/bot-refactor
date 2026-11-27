@@ -495,16 +495,16 @@ function achbotPayUxHostedAttentionElapsed(mysqli $db,int $payId): bool {
  */
 require_once __DIR__.'/GatewayRules.php';
 function achbotPayUxAudienceModes(): array {
-    return ['all'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.15270886ea'),'agents'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.452a2d6fed'),'non_agents'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.8b3e917f90'),
+    return ['all'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.15270886ea'),'agents'=>\achbotMessage('labels.labels.audience.label.452a2d6fed'),'non_agents'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.8b3e917f90'),
             'buyers'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.446e7017e1'),'non_buyers'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.711a7d07d3'),
             'has_active_order'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.08f38edd68'),
             'no_active_order'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.3310f2a1e3'),'off'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.29dbbef63d')];
 }
 function achbotPayUxAudienceMethods(): array {
     return [
-        'nowpayments'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.n_o_w_payments.83db3cb125'),'zarinpal'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.7d213c0bc4'),'nextpay'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.d5f4cc2d6e'),
-        'bank_transfer'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.64c20e2b45'),'gift_card'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.3904ef0f3d'),
-        'manual_usdt'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.4fafcb549d'),'manual_trx'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.349ece736f'),'wallet'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212')
+        'nowpayments'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.n_o_w_payments.83db3cb125'),'zarinpal'=>\achbotMessage('automatic_gateway_review.provider_zarinpal'),'nextpay'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.d5f4cc2d6e'),
+        'bank_transfer'=>\achbotMessage('automatic_gateway_review.provider_bank_transfer'),'gift_card'=>\achbotMessage('manual_payment.receipt_helpers.manual_label.text.3904ef0f3d'),
+        'manual_usdt'=>\achbotMessage('manual_payment.receipt_helpers.manual_label.text.2f1fd66193'),'manual_trx'=>\achbotMessage('manual_payment.receipt_helpers.manual_label.text.ea9faa7b63'),'wallet'=>\achbotMessage('labels.wallet')
     ];
 }
 /** Current exact settings row under the existing owner/setting lock order.
@@ -890,7 +890,7 @@ function achbotPayUxStatusKeyboard(string $hash,?array $pay=null,?array $attempt
         $rows[] = [['text'=>achbotMessage($previous?'payment.payment_lifecycle.previous_payment_review':
             'payment.payment_lifecycle.pay_ux_status_keyboard.button.9e25b02e86'),'callback_data'=>'ps_'.$hash]];
     }
-    $rows[] = [['text'=>\achbotMessage('payment.payment_lifecycle.pay_ux_status_keyboard.button.1121ffbf88'),'callback_data'=>!$draftClosed && preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)?'ph_'.$hash:'mainMenu']];
+    $rows[] = [['text'=>\achbotMessage('labels.home'),'callback_data'=>!$draftClosed && preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)?'ph_'.$hash:'mainMenu']];
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
 }
 

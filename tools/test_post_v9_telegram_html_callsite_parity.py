@@ -111,7 +111,7 @@ PLAIN = re.compile(r"""\Anull\Z""", re.I)
 # A changed count, key order, parsed argument, or literal catalog text fails CI.
 AUDITED = {
     'src/Finance/Routes/DiscountAdministration.php': (55, '1e7deda493957a08c6ecb43897c3cad7c66d9249fa0350685201a59b810cc42f'),
-    'src/Plans/Intervals.php': (13, '57b3a0e239d448b46404fc7af0fb56944d4e902b71962958836ff155dd14a666'),
+    'src/Plans/Intervals.php': (13, '4191a9da5d5ed7c5cdce5714f770834c80f9ae4345ab3904a38e46fef015d81f'),
     'src/Plans/Administration.php': (13, 'ca9721526e4152fd04ddca631db4c92f613a8bf620df73502a28ab41c4060007'),
     'src/Plans/AddonAdmin.php': (5, '77eb5d7a03d05ab9da955a61f38be342857f3d08f620ec7d0c07b6f1cac1bc22'),
     'src/Plans/Categories.php': (3, 'f5e5f232dab62ecb5bd39adf2a808bf03672d109e5d58f9a8eff2ab1b387f82e'),
@@ -127,7 +127,7 @@ AUDITED = {
     'src/Admin/ReferralSettings.php': (4, '218431a3e84479d7447a0b44f9101d3de6453eb45bf7a56d90939c4f9a98b8c6'),
     'src/Agent/Applications.php': (3, '1a907e09e672e2ffb39b902e21f32a5f7356b8562cce3a5ab3099f767702c2ec'),
     'src/Agent/Discounts.php': (3, 'f65c70afe55e9fb16b12cf878ced107ce6647f63e999354421621a94c0ab2a78'),
-    'src/Broadcast/Routes.php': (24, '08eec77bd3a0e76f6d20d364a0837ce711527487a79d3355f66ed5b987df379a'),
+    'src/Broadcast/Routes.php': (24, 'eb760abed9521e99b5a5e988611a6cb8a449fa3689e470a9afba069f2ba78116'),
     'src/Finance/Discounts.php': (0, '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'),
     'src/Finance/ReceiptHelpers.php': (0, '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'),
     'src/Finance/ManualCheckoutPresentation.php': (3, 'c2e250aa3b249b0d6fab66dfde44c598606647c867a9beaf5af98e3b5a447707'),

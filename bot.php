@@ -182,7 +182,7 @@ if ($isStart) {
         $inviterMsg = \achbotMessage('bot.bot.webhook_ingress_authenticated.inviter_msg.0a64da8ef5')
             . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.750b1aaad1') . number_format($actualReward) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
             . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.87d0794e8e') . number_format($oldWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
-            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
+            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('labels.currency_toman_suffix');
         sendMessage($inviterMsg, null, 'html', $inviter);
     }
     $text = '/start';
@@ -399,8 +399,8 @@ if (in_array($data, $statOptions) && ($from_id == $admin || $userInfo['isAdmin']
     // آرایه برای عنوان‌ها
     $titles = [
         'stats_users' => \achbotMessage('bot.bot.webhook_ingress_authenticated.text.d4b423ba4f'),
-        'stats_orders' => \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2ef1b34354'),
-        'stats_sales' => \achbotMessage('bot.bot.webhook_ingress_authenticated.text.adb2cb111d'),
+        'stats_orders' => \achbotMessage('labels.admin_subscription_stats'),
+        'stats_sales' => \achbotMessage('labels.admin_sales_stats'),
     ];
 
     // انتخاب عنوان بر اساس کلید
@@ -566,7 +566,7 @@ if (is_string($userInfo['step']??null) &&
     sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.397d3e91b6').$text.\achbotMessage('bot.bot.gateway_audience_settings.message.c5bdeadc6b'),
         json_encode(['inline_keyboard'=>[
             [['text'=>\achbotMessage('bot.bot.gateway_audience_settings.button.9b026e4934'),'callback_data'=>'gr|s|'.$sourceId]],
-            [['text'=>\achbotMessage('bot.bot.gateway_audience_settings.button.1fe862ea18'),'callback_data'=>'gr|x|'.$sourceId]]
+            [['text'=>\achbotMessage('labels.dismiss'),'callback_data'=>'gr|x|'.$sourceId]]
         ]],JSON_UNESCAPED_UNICODE), 'HTML');
     return;
 }
@@ -830,7 +830,7 @@ if($data=="inviteFriends"){
 
         $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'INVITE_BANNER_AMOUNT'");
         $stmt->execute();
-        $inviteAmount = number_format($stmt->get_result()->fetch_assoc()['value'] ?? 0) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
+        $inviteAmount = number_format($stmt->get_result()->fetch_assoc()['value'] ?? 0) . \achbotMessage('labels.currency_toman_suffix');
         $stmt->close();
 
         if($inviteText['type'] == "text"){
@@ -898,7 +898,7 @@ if($data=="myInfo"){
     $totalBuys = $stmt->get_result()->num_rows;
     $stmt->close();
 
-    $myWallet = number_format($userInfo['wallet']) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
+    $myWallet = number_format($userInfo['wallet']) . \achbotMessage('labels.currency_toman_suffix');
 
     $keys = json_encode(['inline_keyboard'=>[
         [
@@ -1080,7 +1080,7 @@ if($data=="mainMenuButtons" && ($from_id == $admin || $userInfo['isAdmin'] == tr
 if(preg_match('/\AdelMainButton([1-9][0-9]*)\z/D',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotDeleteContentSetting($connection,(int)$from_id,(int)$admin,(int)$match[1],'main')) return;
 
-    alert(\achbotMessage('bot.bot.process_callback_query.alert.e1e7245408'));
+    alert(\achbotMessage('labels.deleted_successfully'));
     editText($message_id,\achbotMessage('bot.bot.process_callback_query.message.70afb19fd8'),getMainMenuButtonsKeys());
 }
 if($data == "addNewMainButton" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -1585,7 +1585,7 @@ if(preg_match('/^wizwizdeleteserver([1-9][0-9]*)$/D',(string)$data,$match)){
         $confirmation=achbotAdminIntentIssue($connection,(int)$from_id,(int)$admin,
             'server',(int)$match[1],$update,(string)$data);
         editText($message_id,\achbotMessage('admin_settings.management.server_delete_confirm'),json_encode(['inline_keyboard'=>[
-            [['text'=>\achbotMessage('bot.bot.addserver_name.button.13159f8c74'),'callback_data'=>$confirmation],
+            [['text'=>\achbotMessage('labels.confirm_yes'),'callback_data'=>$confirmation],
              ['text'=>\achbotMessage('bot.bot.addserver_name.button.f47dddc181'),'callback_data'=>str_replace('yesDeleteServer','cancelDeleteServer',$confirmation)]]
         ]],JSON_UNESCAPED_UNICODE));
     } catch (Throwable $error) {

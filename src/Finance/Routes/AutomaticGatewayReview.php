@@ -261,10 +261,10 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|(?:Open)?Case_[1-9][0-
         'zarinpal'=>achbotMessage('automatic_gateway_review.provider_zarinpal'),
         'nextpay'=>achbotMessage('automatic_gateway_review.provider_nextpay'),
         'bank_transfer'=>achbotMessage('automatic_gateway_review.provider_bank_transfer'),
-        'gift_card'=>achbotMessage('automatic_gateway_review.provider_gift_card'),
+        'gift_card'=>achbotMessage('manual_payment.receipt_helpers.manual_label.text.3904ef0f3d'),
         'manual_usdt'=>achbotManualLabel('manual_usdt'),
         'manual_trx'=>achbotManualLabel('manual_trx'),
-        'wallet'=>achbotMessage('automatic_gateway_review.wallet_provider'),
+        'wallet'=>achbotMessage('labels.wallet'),
     ];
     $safe=static fn($v) => htmlspecialchars(mb_substr((string)($v??''),0,180,'UTF-8'),
         ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
@@ -299,10 +299,10 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|(?:Open)?Case_[1-9][0-
                 'ii',[$before,$before]);
             $items=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
             $more=count($items)>12;$items=array_slice($items,0,12);
-            $kinds=['BUY'=>achbotMessage('automatic_gateway_review.purchase'),
-                'RENEW'=>achbotMessage('automatic_gateway_review.renew'),
+            $kinds=['BUY'=>achbotMessage('labels.labels.payment_type.label.e6343571a4'),
+                'RENEW'=>achbotMessage('labels.labels.payment_type.label.df1c62b99e'),
                 'ADD_TIME'=>achbotMessage('automatic_gateway_review.days'),
-                'ADD_VOLUME'=>achbotMessage('automatic_gateway_review.volume')];
+                'ADD_VOLUME'=>achbotMessage('labels.labels.payment_type.label.160a34aa6d')];
             foreach ($items as $item) {
                 if ($item['source']==='nonpaid_delivery') {
                     $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_action').' | '.$item['provider'],
@@ -321,14 +321,14 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|(?:Open)?Case_[1-9][0-
                 $kind=$walletReport?achbotMessage('operational_reports.wallet_report_case').' '.$item['provider']:($service?$kinds[$item['provider']]:
                     ($labels[$item['provider']]??$item['provider']));
                 $label=($service?'⚙️ ':'💳 ').number_format((int)$item['price']).' '.
-                    achbotMessage('automatic_gateway_review.toman').' | '.(int)$item['user_id'].' | '.$kind;
+                    achbotMessage('labels.currency_toman').' | '.(int)$item['user_id'].' | '.$kind;
                 $rows[]=[['text'=>$label,'callback_data'=>($walletReport?'attentionReportC_':($service?'attentionService_':'attentionCase_')).(int)$item['id']]];
             }
             if ($more && $items) $rows[]=[['text'=>achbotMessage('automatic_gateway_review.older'),
                 'callback_data'=>'attentionInbox_'.(int)end($items)['case_cursor']]];
             if ($before>0) $rows[]=[['text'=>achbotMessage('automatic_gateway_review.newest'),
                 'callback_data'=>'attentionInbox']];
-            $rows[]=[['text'=>achbotMessage('automatic_gateway_review.back_admin'),
+            $rows[]=[['text'=>achbotMessage('labels.back_to_admin'),
                 'callback_data'=>'managePanel']];
             $body=achbotMessage('automatic_gateway_review.title');
             if (!$items) $body.="\n".achbotMessage('automatic_gateway_review.empty');
@@ -371,14 +371,14 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|(?:Open)?Case_[1-9][0-
             $type=(string)$item['type'];
             $walletCase=(string)$item['provider']==='wallet';
             $subject=match(true) {
-                $type==='BUY_SUB' => achbotMessage('automatic_gateway_review.purchase'),
+                $type==='BUY_SUB' => achbotMessage('labels.labels.payment_type.label.e6343571a4'),
                 $type==='RENEW_ACCOUNT' =>
-                    achbotMessage('automatic_gateway_review.renew'),
+                    achbotMessage('labels.labels.payment_type.label.df1c62b99e'),
                 $type==='INCREASE_WALLET' => achbotMessage('automatic_gateway_review.wallet'),
                 str_starts_with($type,'INCREASE_DAY_') =>
                     achbotMessage('automatic_gateway_review.days'),
                 str_starts_with($type,'INCREASE_VOLUME_') =>
-                    achbotMessage('automatic_gateway_review.volume'),
+                    achbotMessage('labels.labels.payment_type.label.160a34aa6d'),
                 default => $safe($type),
             };
             $orderId=(int)($item['order_id']??0);

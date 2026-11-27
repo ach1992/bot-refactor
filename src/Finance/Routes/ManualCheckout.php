@@ -102,7 +102,7 @@ if ($isMenu || $isPick) {
             $keyboard=[];
             foreach ($options as $tag=>$option)
                 $keyboard[]=[['text'=>$option['label'],'callback_data'=>'mc_'.$tag.'_'.$hashId]];
-            $keyboard[]=[['text'=>achbotMessage('manual_payment.manual_crypto.button.1121ffbf88'),'callback_data'=>'dc_'.$hashId]];
+            $keyboard[]=[['text'=>achbotMessage('labels.home'),'callback_data'=>'dc_'.$hashId]];
             $body=achbotMessage('manual_payment.manual_crypto.message.d05b7cfc7d').
                 achbotMessage('manual_payment.manual_crypto.text.0a49531de8').
                 achbotMessage('manual_payment.manual_crypto.text.ee4ae4b0c7');

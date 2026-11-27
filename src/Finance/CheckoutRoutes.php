@@ -194,10 +194,10 @@ function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,array $
                     achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.4092b19ef1').number_format($wallet).
                     achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.81a62ff6c6').
                     achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.f82b5605a9').number_format($need).
-                    achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.2cc98f7f7c'),true);
+                    achbotMessage('labels.currency_toman_suffix'),true);
             else alert(achbotMessage('renewal.extensions.alert.39c72d8044').number_format($wallet).
                 achbotMessage('renewal.extensions.alert.71a2507661').number_format($need).
-                achbotMessage('renewal.extensions.text.2cc98f7f7c'),true);
+                achbotMessage('labels.currency_toman_suffix'),true);
         } elseif ($r['status']==='capacity_unavailable') {
             alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.0b74ab3f2e'),true);
         } elseif (in_array($r['status'],['funded','already_funded'],true)) {

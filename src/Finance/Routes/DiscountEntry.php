@@ -30,7 +30,7 @@ if (preg_match('/\AdiscountCheckout_([1-9][0-9]*)\z/D',(string)($userInfo['step'
         sendMessage(achbotMessage('bot.bootstrap.unavailable'),null,'HTML');
         return null;
     }
-    $unit=achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
+    $unit=achbotMessage('labels.currency_toman_suffix');
     $discountText=$result['success']?number_format($result['discount_value']).$unit:'';
     $notice=match($reason) {
         'redeemed'=>strtr(achbotMessage('legacy_messages.valid_discount_code'),['AMOUNT'=>$discountText]),

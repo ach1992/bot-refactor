@@ -25,5 +25,5 @@ if ($data==="getTestAccount") {
             'callback_data'=>'freeTrial'.$row['id'].'_normal']];
     }
     $keyboard[]=[['text'=>achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>'navHome']];
-    editText($message_id,achbotMessage('purchase.trial_catalogue.get_test_account.message.b059640ccc'),json_encode(['inline_keyboard'=>$keyboard]),"HTML");
+    editText($message_id,achbotMessage('labels.select_option'),json_encode(['inline_keyboard'=>$keyboard]),"HTML");
 }

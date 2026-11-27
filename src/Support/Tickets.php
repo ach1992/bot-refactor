@@ -138,8 +138,8 @@ function achbotTicketClose(mysqli $db,int $actor,int $id,bool $staff,array $cach
         achbotTicketStageLocked($db,$ticket,$actor,$ref,achbotTicketPackets($body,achbotTicketRateKeys($id)),false);
         if (!$staff) {
             $keys=achbotTicketKeys([
-                [['text'=>(string)$actor,'callback_data'=>'wizwizch'],['text'=>achbotMessage('support.customer_conversation.user_all_tickets.button.2dc9dcf8cd'),'callback_data'=>'wizwizch']],
-                [['text'=>(string)$row['name'],'callback_data'=>'wizwizch'],['text'=>achbotMessage('support.customer_conversation.user_all_tickets.button.c9b4331f4f'),'callback_data'=>'wizwizch']],
+                [['text'=>(string)$actor,'callback_data'=>'wizwizch'],['text'=>achbotMessage('labels.telegram_numeric_id'),'callback_data'=>'wizwizch']],
+                [['text'=>(string)$row['name'],'callback_data'=>'wizwizch'],['text'=>achbotMessage('labels.customer_name'),'callback_data'=>'wizwizch']],
                 [['text'=>(string)$ticket['title'],'callback_data'=>'wizwizch'],['text'=>achbotMessage('support.customer_conversation.user_all_tickets.button.74190f4bb0'),'callback_data'=>'wizwizch']],
                 [['text'=>(string)$ticket['category'],'callback_data'=>'wizwizch'],['text'=>achbotMessage('support.categories.tickets_category.button.0fc3aac224'),'callback_data'=>'wizwizch']]
             ]);

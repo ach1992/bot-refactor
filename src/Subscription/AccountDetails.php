@@ -222,11 +222,11 @@ function getUserOrderDetailKeys($id, $offset = 0, ?object $provenRemote=null){
 
     $keyboard[] = [
         ['text' => $firstName, 'callback_data' => "wizwizch"],
-        ['text' => \achbotMessage('subscription.account_details.get_user_order_detail_keys.button.c9b4331f4f'), 'callback_data' => "wizwizch"],
+        ['text' => \achbotMessage('labels.customer_name'), 'callback_data' => "wizwizch"],
     ];
 
     $keyboard[] = [
-        ['text' => ($agentBought ? \achbotMessage('subscription.account_deletion.button.13159f8c74') : \achbotMessage('subscription.account_deletion.button.5f5c4c72bd')), 'callback_data' => "wizwizch"],
+        ['text' => ($agentBought ? \achbotMessage('labels.confirm_yes') : \achbotMessage('subscription.account_deletion.button.5f5c4c72bd')), 'callback_data' => "wizwizch"],
         ['text' => \achbotMessage('subscription.account_details.get_user_order_detail_keys.button.1c7f597d4f'), 'callback_data' => "wizwizch"],
     ];
 

@@ -10,7 +10,7 @@ require_once __DIR__.'/AccountDetails.php';
 // Both displayed controls and old/forged callbacks require a current admin.
 $achbotServerSwitch=is_string($data??null) && preg_match('/^(?:switchLocation|switchServer)/D',$data);
 if ($achbotServerSwitch && !\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
-    alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.057ec5448c'),true);
+    alert(\achbotMessage('labels.access_denied'),true);
     return;
 }
 

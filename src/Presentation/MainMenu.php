@@ -65,7 +65,7 @@ function achbotMainMenuForContext($connection,$userInfo,$from_id,$admin,$botStat
             array_merge(
                 [['text'=>\achbotMessage('legacy_buttons.search_config'),'callback_data'=>"showUUIDLeft"]],
                 ($isAdminMenu ? [[
-                    'text'=>\achbotMessage('admin_settings.config.get_main_keys.button.11b0188fcb'),
+                    'text'=>\achbotMessage('legacy_buttons.search_agent_config'),
                     'callback_data'=>"searchUsersConfig"
                 ]] : [])
             ) : []

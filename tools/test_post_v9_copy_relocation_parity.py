@@ -83,21 +83,35 @@ def main() -> None:
             del expected[k]
         else:
             expected[k] = change["after"]
+    # Apply semantic sharing after the explicit approved wording changes.
+    # This records a retired key exactly once without duplicating its prose.
+    semantic=ux.get("semantic_equal",{})
+    semantic_values={}
+    for name,target in semantic.items():
+        check(name in expected and name!=target and target not in semantic,
+              "semantic_copy_invalid_mapping:"+name)
+        value=expected.pop(name)
+        check(target not in expected or expected[target]==value,
+              "semantic_copy_not_equal:"+name)
+        expected[target]=value
+        semantic_values[name]=value
     check(new==expected, "current_copy_bytes_changed_outside_explicit_mapping")
     ux_retired = {k for k, change in ux["changes"].items() if change["after"] is None}
-    retired = sorted(set(prior_retired)|set(mapping["equal"])|set(mapping["dead"])|ux_retired)
+    retired = sorted(set(prior_retired)|set(mapping["equal"])|set(mapping["dead"])|ux_retired|set(semantic))
     sources = {p:(ROOT/p).read_text() for p in package_current.members()
                if p.endswith(".php") and p not in owner.AUDIENCES}
     restored = {topic:dict(entries) for topic,entries in owner.loaded_catalog().items()}
     for name in retired:
         topic,key=name.split(".",1)
-        restored.setdefault(topic,{})[key]=ux_base[name] if name in ux_retired else (previous[name] if name in previous else old[name])
+        restored.setdefault(topic,{})[key]=(semantic_values[name] if name in semantic_values else
+            ux_base[name] if name in ux_retired else previous[name] if name in previous else old[name])
     check(owner.unresolved_copy_orphans(restored,sources)==retired,"retired_copy_has_live_consumer")
     check(not owner.unresolved_copy_orphans(owner.loaded_catalog(),sources),"unresolved_current_copy")
     print(json.dumps({"complete":True,"status":"PASS","baseline":stable,
         "existing_copy_values_preserved":len(new)-len(allowed),"existing_copy_values_changed":sum(v["before"] is not None for v in allowed.values()),
         "explicit_new_copy":sum(v["before"] is None for v in allowed.values()),
         "removed_source_dead_copy":len(retired),"retired_key_sha256":digest(retired),
+        "semantic_aliases_retired":len(semantic),
         "network_calls":0},ensure_ascii=False))
 
 

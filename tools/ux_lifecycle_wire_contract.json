@@ -6,13 +6,13 @@
       "before_count": 150,
       "after_count": 150,
       "before_sha256": "83cbd5f026e17a0e65e2f5d80a6c7b3f964e10be2ed464a86421cf926a111c45",
-      "after_sha256": "de78b9ae44863433ede9adbf8a7b0e5f7d3f5f5e62103c062bb43249cc79efaa"
+      "after_sha256": "2b6b1ca1277ac90bbbeacb67ab0691909529c564489ebee7cb81784e3691c5e0"
     },
     "src/Broadcast/Routes.php": {
       "before_count": 44,
       "after_count": 44,
       "before_sha256": "d627a18a2fd59d624ce7645f9340f9165966db19bf04b67d14b0fc8d44363a53",
-      "after_sha256": "bc91d56efde62a2d975f44ee7cb58fe4ab5a7ec563ef2ba87170ad0985d2f8fb"
+      "after_sha256": "e093f54677008863a9c9a999391c68bbebe7f1b11799d6d2f18f3be3b8a31fa2"
     },
     "src/Finance/ManualCheckoutPresentation.php": {
       "before_count": 10,
@@ -61,6 +61,30 @@
       "after_count": 1,
       "before_sha256": "5513aec09c2d935e7d0a57b7ea508504c58a35af3ca0357cecf94d8fe4515885",
       "after_sha256": "773f498e0f24a059a7d4312e61b011588f6bb02e595951848b1bcbc7c966e372"
+    },
+    "src/Agent/Applications.php": {
+      "before_count": 5,
+      "after_count": 5,
+      "before_sha256": "033f33d448491bb496dc456a953970a026c9b52c5b2b5a2ea15ecbbeb7206bf6",
+      "after_sha256": "90d5ad29c16c8b4caccb05f41a3c046122d81b77844a7c33c1eccb33080228c2"
+    },
+    "src/Plans/Intervals.php": {
+      "before_count": 16,
+      "after_count": 16,
+      "before_sha256": "ba451ca98ddd9a0053069ab702a93b24b073928fffe429f267832f2a53c670b2",
+      "after_sha256": "5e1543464f5935144cfd20ccb150bee2dc5fb551cab80cebf42b2a196160301b"
+    },
+    "src/Purchase/TrialCatalogue.php": {
+      "before_count": 1,
+      "after_count": 1,
+      "before_sha256": "2d353c3999e8b08c46730616c8d66307118215a6014dd39d875a809f8e304510",
+      "after_sha256": "db32b227c5410b269837d83e4e0c2e8043d38684cf4b0f8bfe36c0e4281420d3"
+    },
+    "src/Subscription/AccountDeletion.php": {
+      "before_count": 5,
+      "after_count": 5,
+      "before_sha256": "b55d1346e086c045be04cb4874ddb32f3d91e15b9ef9fa564dd25c2c67b5cc0b",
+      "after_sha256": "6bcd803824a4c9955f6c2773cfa9a0aaba94930eaacf24a86122f9855b376ee4"
     }
   }
 }

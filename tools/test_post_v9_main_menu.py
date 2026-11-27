@@ -25,7 +25,7 @@ require_once $root.'/src/Presentation/Text.php';
 require_once $root.'/src/Purchase/AgentPricing.php';
 require_once $root.'/messages/loader.php';
 $buttonValues=achbotMessages('legacy_buttons');
-$adminSearchLabel=achbotMessage('admin_settings.config.get_main_keys.button.11b0188fcb');
+$adminSearchLabel=achbotMessage('legacy_buttons.search_agent_config');
 $adminManageLabel=achbotMessage('admin_settings.config.get_main_keys.button.d9c51cced4');
 $admin=9001;
 $from_id=!empty($spec['admin'])?9001:2002;
@@ -139,6 +139,12 @@ def check(root: Path = ROOT) -> dict:
     end=prior_source.index('function getAgentKeys(){',start)
     prior_function=prior_source[start:end].replace(
         'function getMainKeys(){','function getMainKeysBaseline(){',1)
+    prior_function=prior_function.replace(
+        "\\achbotMessage('admin_settings.config.get_main_keys.button.11b0188fcb')",
+        "'🔍 جستجوی اشتراک'").replace(
+        "achbotMessage('admin_settings.config.get_main_keys.button.11b0188fcb')",
+        "'🔍 جستجوی اشتراک'")
+
     start=prior_function.index("        ((($botState['sharedExistence']")
     end=prior_function.index("        // Keep the optional customer import",start)
     prior_function=prior_function[:start]+"""        ((($botState['individualExistence'] ?? 'off') == "on")?

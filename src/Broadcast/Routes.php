@@ -70,7 +70,7 @@ if($data == 'message2All' && ($from_id == $admin || $userInfo['isAdmin'] == true
 if($data == 'broadcastStart' && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.76bb0d02d0'), json_encode([
         'inline_keyboard' => [
-            [['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.fac6686c54'),'callback_data'=>"chooseSendGroup_all"]],
+            [['text'=>\achbotMessage('labels.all_users_button'),'callback_data'=>"chooseSendGroup_all"]],
             [['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.ebc2cb2366'),'callback_data'=>"chooseSendGroup_has"]],
             [['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.49b4568f0c'),'callback_data'=>"chooseSendGroup_none"]],
             [['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.706e4a7807'),'callback_data'=>"chooseSendGroup_agents"]],
@@ -228,7 +228,7 @@ if(preg_match('/^broadcastHistory_(\d+)$/', $data, $m) && ($from_id == $admin ||
 
         $items[] =
             \achbotMessage('broadcast.routes.broadcast_start.id_type.b95c2c743a', ['id' => $id, 'type' => $type]).groupFa($group).\achbotMessage('broadcast.routes.broadcast_start.text.2af0046efa', ['st' => $st, 'sent' => $sent, 'lastId' => $lastId]).
-            \achbotMessage('broadcast.routes.broadcast_start.title.eaf516bb5a', ['title' => $title]).
+            \achbotMessage('broadcast.routes.message2_all.text.b00aae4551', ['title' => $title]).
             \achbotMessage('broadcast.routes.broadcast_start.dt.ba0c133dbc', ['dt' => $dt]);
     }
 
@@ -325,7 +325,7 @@ if(preg_match('/^pinManageAllPage_(\d+)$/', $data, $m) && ($from_id == $admin ||
             ['text'=>"#".$bid, 'callback_data'=>"pinManageSelect_$bid"], 
             ['text'=>$group, 'callback_data'=>"pmNoop"], 
             ['text'=>$pinTxt, 'callback_data'=>"pmNoop"], 
-            ['text'=>\achbotMessage('broadcast.routes.pin_manage_all.button.1780efa62b'), 'callback_data'=>"pinManageSelect_$bid"],
+            ['text'=>\achbotMessage('labels.edit'), 'callback_data'=>"pinManageSelect_$bid"],
         ]; 
     } 
  
@@ -486,7 +486,7 @@ if(preg_match('/^jobsStatusBid_(\d+)_(\d+)$/', $data, $m) && ($from_id == $admin
         $jid = (int)$row['id']; 
  
         $act = $row['action']; 
-		$actFa = ($act=='pin'?\achbotMessage('broadcast.routes.pm_noop.text.f9b5a56317'):($act=='unpin'?\achbotMessage('broadcast.routes.pm_noop.text.55e164ad1c'):($act=='edit'?\achbotMessage('broadcast.routes.pin_manage_all.button.1780efa62b'):\achbotMessage('broadcast.routes.pm_noop.text.bc26818ef0'))));
+		$actFa = ($act=='pin'?\achbotMessage('broadcast.routes.pm_noop.text.f9b5a56317'):($act=='unpin'?\achbotMessage('broadcast.routes.pm_noop.text.55e164ad1c'):($act=='edit'?\achbotMessage('labels.edit'):\achbotMessage('labels.delete'))));
  
         $st  = (int)$row['state']; 
         $stFa = ($st==1?\achbotMessage('broadcast.routes.pm_noop.text.1ebfb10a5f'):($st==2?\achbotMessage('broadcast.routes.pm_noop.text.ba31fd7d85'):($st==3?\achbotMessage('broadcast.routes.pm_noop.text.98a2718667'):\achbotMessage('broadcast.routes.pm_noop.text.1704c602b4'))));
@@ -706,7 +706,7 @@ if(preg_match('/^jobsStatus_(\d+)$/', $data, $m) && ($from_id == $admin || $user
         $bid = (int)$row['broadcast_id'];
 
         $act = $row['action'];
-		$actFa = ($act=='pin'?\achbotMessage('broadcast.routes.pm_noop.text.f9b5a56317'):($act=='unpin'?\achbotMessage('broadcast.routes.pm_noop.text.55e164ad1c'):($act=='edit'?\achbotMessage('broadcast.routes.pin_manage_all.button.1780efa62b'):\achbotMessage('broadcast.routes.pm_noop.text.bc26818ef0'))));
+		$actFa = ($act=='pin'?\achbotMessage('broadcast.routes.pm_noop.text.f9b5a56317'):($act=='unpin'?\achbotMessage('broadcast.routes.pm_noop.text.55e164ad1c'):($act=='edit'?\achbotMessage('labels.edit'):\achbotMessage('labels.delete'))));
 
         $st  = (int)$row['state'];
         $stFa = ($st==1?\achbotMessage('broadcast.routes.pm_noop.text.1ebfb10a5f'):($st==2?\achbotMessage('broadcast.routes.pm_noop.text.ba31fd7d85'):($st==3?\achbotMessage('broadcast.routes.pm_noop.text.98a2718667'):\achbotMessage('broadcast.routes.pm_noop.text.1704c602b4'))));

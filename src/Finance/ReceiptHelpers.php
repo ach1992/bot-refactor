@@ -321,7 +321,7 @@ function achbotManualCaption(mysqli $connection, array $payInfo, string $caption
  */
 function achbotManualGiftReviewText(string $caption,string $code,?array $screen=null): string {
     $missing=achbotMessage('manual_payment.api_payment.gift_not_provided');
-    $unit=($screen['amount_unit']??null)==='rial'?achbotMessage('manual_payment.api_payment.currency_rial'):achbotMessage('manual_payment.api_payment.currency_toman');
+    $unit=($screen['amount_unit']??null)==='rial'?achbotMessage('manual_payment.api_payment.currency_rial'):achbotMessage('labels.currency_toman');
     $amount=is_int($screen['redeem_amount']??null) && $screen['redeem_amount']>0
         ? number_format($screen['redeem_amount']).' '.$unit
         : achbotMessage('manual_payment.api_payment.gift_not_verified');
@@ -651,7 +651,7 @@ function buildAdminKeyboardWithStats(
             ['text' => \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.c2c33e1499'), 'callback_data' => "noop_bad_{$hashId}"],
         ],
         [
-            ['text' => number_format($approvedSum) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c'), 'callback_data' => "noop_sumv_{$hashId}"],
+            ['text' => number_format($approvedSum) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => "noop_sumv_{$hashId}"],
 			['text' => \achbotMessage('manual_payment.receipt_helpers.build_admin_keyboard_with_stats.button.e892623fb9'), 'callback_data' => "noop_sum_{$hashId}"],
         ],
         [

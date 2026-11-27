@@ -159,7 +159,7 @@ function achbotServiceReportFundingFacts(array $funding): string {
 }
 function achbotServiceReportContext(array $op,array $quote,array $funding,string $remark): string {
     $q=$quote['request'];$kind=$op['kind'];$receipt=$funding['receipt'];
-    $method=$receipt===null?achbotMessage('automatic_gateway_review.wallet_provider'):
+    $method=$receipt===null?achbotMessage('labels.wallet'):
         achbotReceiptReportMethod($receipt['attempt']).' | '.achbotReceiptReportBasis($receipt['attempt']);
     return achbotMessageHtml('operational_reports.service_context',[
         'user'=>$op['userid'],'method'=>$method,'amount'=>number_format($q['price']),'remark'=>$remark,

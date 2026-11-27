@@ -439,10 +439,10 @@ function achbotBotToggleDefinitions(): array {
     return [
         'agencyState'=>['default'=>'off','label'=>'admin_settings.config.get_bot_setting_keys.button.3b878712ee'],
         'agencyPlanDiscount'=>['default'=>'off','label'=>'admin_settings.config.get_bot_setting_keys.button.c2df8234c5'],
-        'individualExistence'=>['default'=>'off','label'=>'admin_settings.config.get_bot_setting_keys.button.546c2c8acc'],
+        'individualExistence'=>['default'=>'off','label'=>'legacy_buttons.individual_existence'],
         'testAccount'=>['default'=>'off','label'=>'admin_settings.config.get_bot_setting_keys.button.11ee94f26d'],
         'changePlanState'=>['default'=>'on','label'=>'admin_settings.config.get_bot_setting_keys.customer_plan_toggle'],
-        'renewAccountState'=>['default'=>'off','label'=>'admin_settings.config.get_bot_setting_keys.button.df1c62b99e'],
+        'renewAccountState'=>['default'=>'off','label'=>'legacy_buttons.renew_config'],
         'renewAutoState'=>['default'=>'off','label'=>'admin_settings.config.get_bot_setting_keys.button.f9a77f614a'],
         'plandelkhahState'=>['default'=>'off','label'=>'admin_settings.config.get_bot_setting_keys.button.8ef9c2184e'],
         'increaseTimeState'=>['default'=>'off','label'=>'admin_settings.config.get_bot_setting_keys.button.070602773a'],
@@ -454,7 +454,7 @@ function achbotBotToggleDefinitions(): array {
         'searchState'=>['default'=>'off','label'=>'admin_settings.config.get_bot_setting_keys.button.c56b392566'],
         'renewConfigLinkState'=>['default'=>'off','label'=>'admin_settings.config.get_bot_setting_keys.button.242b408ae2'],
         'updateConfigLinkState'=>['default'=>'off','label'=>'admin_settings.config.get_bot_setting_keys.button.fb0475aeb4'],
-        'qrConfigState'=>['default'=>'off','label'=>'admin_settings.config.get_bot_setting_keys.button.59be548183'],
+        'qrConfigState'=>['default'=>'off','label'=>'legacy_buttons.qr_config'],
         'qrSubState'=>['default'=>'off','label'=>'admin_settings.config.get_bot_setting_keys.button.ae54bb8cbe'],
     ];
 }
@@ -679,7 +679,7 @@ function getRejectedAgentList(){
     
     if($list->num_rows>0){
         $keys = array();
-        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_rejected_agent_list.button.df8e33a61a'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_rejected_agent_list.button.c9b4331f4f'),'callback_data'=>'wizwizch'],['text'=>\achbotMessage('admin_settings.config.get_rejected_agent_list.button.2dc9dcf8cd'),'callback_data'=>"wizwizch"]];
+        $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_rejected_agent_list.button.df8e33a61a'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('labels.customer_name'),'callback_data'=>'wizwizch'],['text'=>\achbotMessage('labels.telegram_numeric_id'),'callback_data'=>"wizwizch"]];
         while($row = $list->fetch_assoc()){
             $userId = $row['userid'];
             
@@ -786,7 +786,7 @@ function getAgentsList($offset = 0){
     $keys = array();
     if($agentList->num_rows == 0 && $offset == 0) return null;
     
-    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.9f7ae9d87f'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.83a20e2f87'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.1882d627a1'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_rejected_agent_list.button.2dc9dcf8cd'),'callback_data'=>"wizwizch"]];
+    $keys[] = [['text'=>\achbotMessage('labels.delete'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.9f7ae9d87f'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.83a20e2f87'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.1882d627a1'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('labels.telegram_numeric_id'),'callback_data'=>"wizwizch"]];
     if($agentList->num_rows > 0){
         while($row = $agentList->fetch_assoc()){
             $userId = $row['userid'];
@@ -875,7 +875,7 @@ function getServerListKeys($offset = 0){
 
 
     $keys = array();
-    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.68d7eb08ef'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.6badcac8c1'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.b55501074d'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.0b29754285'),'callback_data'=>"wizwizch"]];
+    $keys[] = [['text'=>\achbotMessage('labels.status'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.6badcac8c1'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.b55501074d'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.0b29754285'),'callback_data'=>"wizwizch"]];
     if($cats->num_rows == 0){
         $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_server_list_keys.button.5a370aba9d'),'callback_data'=>"wizwizch"]];
     }else {
@@ -928,7 +928,7 @@ function getCategoriesKeys($offset = 0){
 
 
     $keys = array();
-    $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_agents_list.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_categories_keys.button.47ccdcb5f1'),'callback_data'=>"wizwizch"]];
+    $keys[] = [['text'=>\achbotMessage('labels.delete'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('admin_settings.config.get_categories_keys.button.47ccdcb5f1'),'callback_data'=>"wizwizch"]];
     if($cats->num_rows == 0){
         $keys[] = [['text'=>\achbotMessage('admin_settings.config.get_categories_keys.button.fba2c6927b'),'callback_data'=>"wizwizch"]];
     }else {
@@ -1014,13 +1014,13 @@ function getGateWaysKeys(){
     $stmt->close();
     require_once __DIR__ . '/src/Finance/ReceiptHelpers.php';
     $giftSellerUrl = trim((string)($paymentKeys['giftCardUrl'] ?? ''));
-    $giftSellerStatus = $giftSellerUrl === '' ? \achbotMessage('admin_settings.config.get_gate_ways_keys.text.9fec3d676e') :
-        (achbotManualGiftSellerUrlValid($giftSellerUrl) ? \achbotMessage('admin_settings.config.get_gate_ways_keys.text.ad271ae97c') : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.213a608ab9'));
+    $giftSellerStatus = $giftSellerUrl === '' ? \achbotMessage('payment_settings.payment_key_admin.payment_key_admin_merchant_label.text.9fec3d676e') :
+        (achbotManualGiftSellerUrlValid($giftSellerUrl) ? \achbotMessage('payment_settings.payment_key_admin.payment_key_admin_merchant_label.text.ad271ae97c') : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.213a608ab9'));
     $cryptoRows=[];
     foreach (['BEP20','TRC20','ERC20'] as $network) {
         $field='manualUsdtWallet'.$network;
         $value=trim((string)($paymentKeys[$field]??''));
-        $label=achbotManualUsdtWalletValid($value,$network) ? $value : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.9fec3d676e');
+        $label=achbotManualUsdtWalletValid($value,$network) ? $value : \achbotMessage('payment_settings.payment_key_admin.payment_key_admin_merchant_label.text.9fec3d676e');
         $cryptoRows[]=[
             ['text'=>$label,'callback_data'=>'changePaymentKeys'.$field],
             ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.e1971f4d7a').$network,'callback_data'=>'wizwizch']
@@ -1030,27 +1030,27 @@ function getGateWaysKeys(){
     foreach (['cooperationUrl','helpChannel','lockChannelJoinUrl'] as $field) {
         $set=\AchBot\Presentation\Text\destinationUrl($botState[$field]??'')!=='';
         $destinationRows[]=[
-            ['text'=>\achbotMessage($set?'admin_settings.config.get_gate_ways_keys.text.ad271ae97c':
-                'admin_settings.config.get_gate_ways_keys.text.9fec3d676e'),'callback_data'=>'ic|e|'.$field],
+            ['text'=>\achbotMessage($set?'payment_settings.payment_key_admin.payment_key_admin_merchant_label.text.ad271ae97c':
+                'payment_settings.payment_key_admin.payment_key_admin_merchant_label.text.9fec3d676e'),'callback_data'=>'ic|e|'.$field],
             ['text'=>achbotInstanceLabel($field),'callback_data'=>'wizwizch']
         ];
     }
     $trxWallet=trim((string)($paymentKeys['manualTrxWallet']??''));
     $cryptoRows[]=[
-        ['text'=>achbotManualTronAddressValid($trxWallet) ? $trxWallet : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.9fec3d676e'),
+        ['text'=>achbotManualTronAddressValid($trxWallet) ? $trxWallet : \achbotMessage('payment_settings.payment_key_admin.payment_key_admin_merchant_label.text.9fec3d676e'),
          'callback_data'=>'changePaymentKeysmanualTrxWallet'],
         ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.99a296169c'),'callback_data'=>'wizwizch']
     ];
     $rate=achbotUsdtRate($paymentKeys);
     $rateRows=[[
-        ['text'=>$rate!==null ? number_format($rate).\achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c') :
+        ['text'=>$rate!==null ? number_format($rate).\achbotMessage('labels.currency_toman_suffix') :
             \achbotMessage('admin_settings.config.get_gate_ways_keys.text.8da09df26e'),
          'callback_data'=>'changePaymentKeysmanualUsdtRateToman'],
         ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.text.f87b607b2d'),'callback_data'=>'wizwizch']
     ]];
     $cryptoRows[]=[
         ['text'=>(!empty($paymentKeys['manualTrxRateToman']) ?
-            number_format((int)$paymentKeys['manualTrxRateToman']).\achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c') : \achbotMessage('admin_settings.config.get_gate_ways_keys.text.9fec3d676e')),
+            number_format((int)$paymentKeys['manualTrxRateToman']).\achbotMessage('labels.currency_toman_suffix') : \achbotMessage('payment_settings.payment_key_admin.payment_key_admin_merchant_label.text.9fec3d676e')),
          'callback_data'=>'changePaymentKeysmanualTrxRateToman'],
         ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.2f0a69097a'),'callback_data'=>'wizwizch']
     ];
@@ -1116,7 +1116,7 @@ function getGateWaysKeys(){
             ['text'=>\achbotMessage('admin_settings.config.get_gate_ways_keys.button.6295c35212'),'callback_data'=>"wizwizch"]
         ],
         [
-            ['text'=>number_format(achbotInviteReward($connection)).\achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'),'callback_data'=>'changePaymentKeysinviteReward'],
+            ['text'=>number_format(achbotInviteReward($connection)).\achbotMessage('labels.currency_toman_suffix'),'callback_data'=>'changePaymentKeysinviteReward'],
             ['text'=>\achbotMessage('admin_settings.invite_reward_label'),'callback_data'=>'wizwizch']
         ],
 		[
@@ -1234,9 +1234,9 @@ function getBotReportKeys($data = null) {
     if ($data == null || $data == 'show_stats_menu') {
         return json_encode(['inline_keyboard' => [
             [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.6d1fec5b8b'), 'callback_data' => 'stats_users']],
-            [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.2ef1b34354'), 'callback_data' => 'stats_orders']],
-            [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.adb2cb111d'), 'callback_data' => 'stats_sales']],
-            [['text' => \achbotMessage('admin_settings.config.get_bot_report_keys.button.255cc89ba7'), 'callback_data' => 'managePanel']]
+            [['text' => \achbotMessage('labels.admin_subscription_stats'), 'callback_data' => 'stats_orders']],
+            [['text' => \achbotMessage('labels.admin_sales_stats'), 'callback_data' => 'stats_sales']],
+            [['text' => \achbotMessage('labels.back_to_admin'), 'callback_data' => 'managePanel']]
         ]]);
     }
 
@@ -1549,29 +1549,29 @@ function getBotReportKeys($data = null) {
 
         return json_encode([
             'inline_keyboard' => [
-                [['text' => number_format($salesTotal) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.878127aca8'), 'callback_data' => 'wizwizch']],
-                [['text' => number_format($salesToday) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.643203ba32'), 'callback_data' => 'wizwizch']],
-                [['text' => number_format($salesWeek) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.4d01a2bc86'), 'callback_data' => 'wizwizch']],
-                [['text' => number_format($salesMonth) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.85093d3e2a'), 'callback_data' => 'wizwizch']],
-                [['text' => number_format($salesThreeMonth) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.4fdc585861'), 'callback_data' => 'wizwizch']],
-                [['text' => number_format($salesSixMonth) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.a033e66e78'), 'callback_data' => 'wizwizch']],
-                [['text' => number_format($salesYear) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.1b9161ba4e'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesTotal) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.878127aca8'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesToday) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.643203ba32'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesWeek) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.4d01a2bc86'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesMonth) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.85093d3e2a'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesThreeMonth) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.4fdc585861'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesSixMonth) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.a033e66e78'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($salesYear) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.1b9161ba4e'), 'callback_data' => 'wizwizch']],
 				[['text' => \achbotMessage('admin_settings.config.get_plan_title.button.1090ae2ef1', ['totalPaidWithWalletCount' => $totalPaidWithWalletCount]), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.4992ee1ce3'), 'callback_data' => 'wizwizch']],
-				[['text' => number_format($totalPaidWithWalletSum) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.3e6902a0a5'), 'callback_data' => 'wizwizch']],
+				[['text' => number_format($totalPaidWithWalletSum) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.3e6902a0a5'), 'callback_data' => 'wizwizch']],
 				[['text' => \achbotMessage('admin_settings.config.get_plan_title.button.9170a0b384', ['unfinishedPurchases' => $unfinishedPurchases]), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.4a9dde94ce'), 'callback_data' => 'wizwizch']],
 				[['text' => \achbotMessage('admin_settings.config.get_plan_title.button.ec06326997'), 'callback_data' => 'wizwizch']],
-				[['text' => number_format($agentSalesToday) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.94e51af9f2'), 'callback_data' => 'wizwizch']],
-                [['text' => number_format($agentSalesWeek) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.bec5bd798a'), 'callback_data' => 'wizwizch']],
-                [['text' => number_format($agentSalesMonth) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.95e6d0f605'), 'callback_data' => 'wizwizch']],
-                [['text' => number_format($agentSalesThreeMonth) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.8533ebdb23'), 'callback_data' => 'wizwizch']],
-                [['text' => number_format($agentSalesSixMonth) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.93640c9789'), 'callback_data' => 'wizwizch']],
-                [['text' => number_format($agentSalesYear) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.94b1f2942e'), 'callback_data' => 'wizwizch']],
+				[['text' => number_format($agentSalesToday) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.94e51af9f2'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($agentSalesWeek) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.bec5bd798a'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($agentSalesMonth) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.95e6d0f605'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($agentSalesThreeMonth) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.8533ebdb23'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($agentSalesSixMonth) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.93640c9789'), 'callback_data' => 'wizwizch']],
+                [['text' => number_format($agentSalesYear) . \achbotMessage('labels.currency_toman_suffix'), 'callback_data' => 'wizwizch'], ['text' => \achbotMessage('admin_settings.config.get_plan_title.button.94b1f2942e'), 'callback_data' => 'wizwizch']],
 				[['text' => \achbotMessage('admin_settings.config.get_plan_title.button.e24c37f91d'), 'callback_data' => 'wizwizch']],
 				// دکمه های سرورها
 				...array_map(function ($server) use ($serverSales) {
 					return [
 						[
-							'text' => number_format($serverSales[$server['id']]??0) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), // میزان فروش کلی
+							'text' => number_format($serverSales[$server['id']]??0) . \achbotMessage('labels.currency_toman_suffix'), // میزان فروش کلی
 							'callback_data' => 'server_sales_' . $server['id']
 						],
 						[
@@ -1585,7 +1585,7 @@ function getBotReportKeys($data = null) {
 				...array_map(function ($server) use ($serverSalesMonth) {
 					return [
 						[
-							'text' => number_format($serverSalesMonth[$server['id']]??0) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'), // فروش ماهانه به تومان
+							'text' => number_format($serverSalesMonth[$server['id']]??0) . \achbotMessage('labels.currency_toman_suffix'), // فروش ماهانه به تومان
 							'callback_data' => 'server_sales_month_' . $server['id']
 						],
 						[
@@ -1600,7 +1600,7 @@ function getBotReportKeys($data = null) {
 					$planTitle = $getPlanTitle($plan['plan_id']);  // استخراج عنوان پلن
 					return [
 						[
-							'text' => number_format($plan['total']) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'),  // فروش کل پلن به تومان
+							'text' => number_format($plan['total']) . \achbotMessage('labels.currency_toman_suffix'),  // فروش کل پلن به تومان
 							'callback_data' => 'plan_sales_' . $plan['plan_id']
 						],
 						[
@@ -1615,7 +1615,7 @@ function getBotReportKeys($data = null) {
 					$planTitle = $getPlanTitle($plan['plan_id']);  // استخراج عنوان پلن
 					return [
 						[
-							'text' => number_format($plan['total']) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'),  // فروش ماهانه پلن به تومان
+							'text' => number_format($plan['total']) . \achbotMessage('labels.currency_toman_suffix'),  // فروش ماهانه پلن به تومان
 							'callback_data' => 'plan_sales_month_' . $plan['plan_id']
 						],
 						[
@@ -1792,7 +1792,7 @@ function getUserInfoKeys($userId) {
  
     if ($userCount->num_rows > 0) { 
         $userInfos = $userCount->fetch_assoc(); 
-        $userWallet = number_format($userInfos['wallet'] ?? 0) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c');
+        $userWallet = number_format($userInfos['wallet'] ?? 0) . \achbotMessage('labels.currency_toman_suffix');
  
         // وضعیت همکاری و مسدودی
         $isAgent = $userInfos['is_agent'] ?? 0;
@@ -1847,7 +1847,7 @@ function getUserInfoKeys($userId) {
         $stmt->bind_param("i", $userId); 
         $stmt->execute(); 
         $val = $stmt->get_result()->fetch_assoc()['totalApprovedPayments'] ?? 0; 
-        $totalApprovedPayments = number_format($val) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c');
+        $totalApprovedPayments = number_format($val) . \achbotMessage('labels.currency_toman_suffix');
         $stmt->close(); 
  
         // محاسبه بازه های زمانی 
@@ -1907,7 +1907,7 @@ function getUserInfoKeys($userId) {
         } 
  
         $totalAmountWithIncrease = $totalBoughtPrice + $increaseAmountTotal; 
-        $totalAmountWithIncreaseFormatted = number_format($totalAmountWithIncrease) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c');
+        $totalAmountWithIncreaseFormatted = number_format($totalAmountWithIncrease) . \achbotMessage('labels.currency_toman_suffix');
  
         // آماده سازی لیست اشتراک ها 
         $chunkedSubscriptions = array_chunk($subscriptions, 20); 
@@ -2013,7 +2013,7 @@ function getPaymentSumInRange($connection, $userId, $fromDate) {
     $stmt->execute(); 
     $result = $stmt->get_result()->fetch_assoc()['total'] ?? 0; 
     $stmt->close(); 
-    return number_format($result) . \achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c');
+    return number_format($result) . \achbotMessage('labels.currency_toman_suffix');
 } 
  
 function getOrderCountInRange($connection, $userId, $fromDate) { 
@@ -2786,7 +2786,7 @@ function getPlanDetailsKeys($planId){
     $keys=[
         [['text'=>$plan['title'],'callback_data'=>'wizwizplanname'.$planId],
          ['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.e1615aff08'),'callback_data'=>'wizwizch']],
-        [['text'=>number_format($plan['price']).\achbotMessage('admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c'),'callback_data'=>'wizwizplanrial'.$planId],
+        [['text'=>number_format($plan['price']).\achbotMessage('labels.currency_toman_suffix'),'callback_data'=>'wizwizplanrial'.$planId],
          ['text'=>\achbotMessage('admin_settings.config.get_plan_details_keys.button.433f647c69'),'callback_data'=>'wizwizch']],
         [['text'=>$dayLabel,'callback_data'=>'planDays'.$planId],
          ['text'=>$volumeLabel,'callback_data'=>'planVolume'.$planId]],

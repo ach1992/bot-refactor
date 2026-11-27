@@ -388,7 +388,7 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
             \achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.63f13c4d9f'),
             'keyboard'=>achbotGatewayAdminMarkup([
                 [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.909c78e8f7'),'callback_data'=>'gr|d|'.$prefix.'|'.$nonce]],
-                [['text'=>\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.fa7af603d4'),'callback_data'=>'gr|x|'.$nonce]]
+                [['text'=>\achbotMessage('labels.dismiss'),'callback_data'=>'gr|x|'.$nonce]]
             ])];
     }
     if ($r===null) {

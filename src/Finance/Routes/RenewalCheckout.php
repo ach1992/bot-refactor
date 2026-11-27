@@ -28,7 +28,7 @@ if (preg_match('/\ArenewAccountAsk([1-9][0-9]{0,9})\z/D', $data, $match)) {
                 ['text' => \achbotMessage('renewal.renewal_checkout.button.faa57a99b5'), 'callback_data' => "renewAccount{$oid}"]
             ],
             [
-                ['text' => \achbotMessage('renewal.renewal_checkout.button.1fe862ea18'), 'callback_data' => "mySubscriptions"]
+                ['text' => \achbotMessage('labels.dismiss'), 'callback_data' => "mySubscriptions"]
             ]
         ]
     ]);
@@ -89,11 +89,11 @@ if (
         $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,achbotAgencyQuotePolicy($userInfo,$botState,(int)$fid,(int)$serverId),false,$respd,$botState);
         $stmt->close();
         if ($rowId<=0) {
-            alert(\achbotMessage('renewal.renewal_checkout.alert.201380d8bf'),true);
+            alert(\achbotMessage('purchase.catalogue.alert.201380d8bf'),true);
             return;
         }
     require_once __DIR__.'/../../Purchase/CheckoutPresentation.php';
     if (!achbotRenderNewCheckoutDraft($connection,$rowId,(int)$from_id,$botState,$botUrl))
-        alert(achbotMessage('renewal.renewal_checkout.alert.201380d8bf'),true);
+        alert(achbotMessage('purchase.catalogue.alert.201380d8bf'),true);
     return;
 }

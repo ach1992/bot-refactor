@@ -68,10 +68,10 @@ try {
     }
     if ($action!=='' && $action!=='Page') throw new DomainException('service_resolution_stale');
     $kind=match($op['kind']) {
-        'BUY'=>achbotMessage('automatic_gateway_review.purchase'),
-        'RENEW'=>achbotMessage('automatic_gateway_review.renew'),
+        'BUY'=>achbotMessage('labels.labels.payment_type.label.e6343571a4'),
+        'RENEW'=>achbotMessage('labels.labels.payment_type.label.df1c62b99e'),
         'ADD_TIME'=>achbotMessage('automatic_gateway_review.days'),
-        'ADD_VOLUME'=>achbotMessage('automatic_gateway_review.volume'),
+        'ADD_VOLUME'=>achbotMessage('labels.labels.payment_type.label.160a34aa6d'),
     };
     $body=achbotMessageHtml('automatic_gateway_review.service_title',[
         'id'=>$id,'user'=>$op['userid'],'kind'=>$kind,

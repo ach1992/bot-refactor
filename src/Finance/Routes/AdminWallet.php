@@ -403,7 +403,7 @@ if (!function_exists('achbotAdminWalletReportResult')) {
                 \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.bfb7221456') . ($operation['kind'] === 'credit' ?
                     \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.cac43b05c7') : \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.587ace91f5')) .
                 \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.25f7017bbb') .
-                number_format($operation['after']) . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.2cc98f7f7c');
+                number_format($operation['after']) . \achbotMessage('labels.currency_toman_suffix');
             $notices = [
                 ['operator_confirmation', [\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.customer.a5b15e454e') .
                     number_format($operation['amount']) . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.bfb7221456') . $verb .

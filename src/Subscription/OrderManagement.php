@@ -18,7 +18,7 @@ $achbotOrderAdminRoute=is_string($data??null) &&
 $achbotOrderAdminStep=preg_match('/^(?:awaitingOrderRemarkOnly$|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_)/D',(string)($userInfo['step']??''));
 if (($achbotOrderAdminRoute || $achbotOrderAdminStep) &&
     !\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
-    alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.057ec5448c'),true);
+    alert(\achbotMessage('labels.access_denied'),true);
     return;
 }
 // Cancel is owned here and completes once, retaining the operator's context.
@@ -47,7 +47,7 @@ if (preg_match('/^showUserSubscriptions(\d+)/', $data, $match)) {
         $title = \achbotMessage('subscription.order_management.title.b4f29204c1', ['userId' => $userId]);
         $keyboard = json_encode([
             'inline_keyboard' => [
-                [['text' => \achbotMessage('subscription.manual_accounts.manual_account_consume_selection.button.11b0188fcb'), 'callback_data' => "searchUsersConfig"]]
+                [['text' => \achbotMessage('legacy_buttons.search_agent_config'), 'callback_data' => "searchUsersConfig"]]
             ]
         ]);
 
@@ -200,7 +200,7 @@ function achbotOrderWarningPresentation(array $order): array {
 
 function showOrderManagementPanel($order, $msgId = null,string $notice=''){
     if (!\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
-        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.057ec5448c'),true);
+        alert(\achbotMessage('labels.access_denied'),true);
         return;
     }
     $provider=achbotProviderType($GLOBALS['connection'],(int)$order['server_id']);
@@ -219,7 +219,7 @@ function showOrderManagementPanel($order, $msgId = null,string $notice=''){
 		[["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.72e5322e9a', ['agentStatus' => $agentStatus]), "callback_data" => "toggleOrderAgent_{$order['id']}_".((int)$order['agent_bought']===1?0:1)]],
         [["text"=>$warning['label'],"callback_data"=>"orderWarningStatus_{$order['id']}"]],
 		[["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.bf169ddbf3'), "callback_data" => "quickUserOrderDetails_{$order['id']}"]],
-        [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.087a5a43b1'), "callback_data" => "managePanel"]],
+        [["text" => \achbotMessage('labels.back_to_admin'), "callback_data" => "managePanel"]],
     ];
 
     if ($provider==='pasarguard')
@@ -432,7 +432,7 @@ if (isset($update->message->text) && !isset($update->callback_query) && preg_mat
 // PasarGuard connection. Cached callbacks are revalidated against current SQL state.
 if (preg_match('/^changeServerId_(\d+)$/D', (string)($data ?? ''), $match)) {
     if (!($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
-        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.057ec5448c'), true);
+        alert(\achbotMessage('labels.access_denied'), true);
         return;
     }
     $id = (int)$match[1];
@@ -465,7 +465,7 @@ if (preg_match('/^changeServerId_(\d+)$/D', (string)($data ?? ''), $match)) {
 
 if (preg_match('/^selectServerId_(\d+)_(\d+)$/D', (string)($data ?? ''), $match)) {
     if (!($from_id == $admin || ($userInfo['isAdmin'] ?? false))) {
-        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.057ec5448c'), true);
+        alert(\achbotMessage('labels.access_denied'), true);
         return;
     }
     $id = (int)$match[1];
@@ -518,7 +518,7 @@ if (preg_match('/^reviewPlanCorrection_([1-9][0-9]*)_([1-9][0-9]*)$/D',
     $journalId=(int)$match[1];$orderId=(int)$match[2];
     require_once __DIR__.'/../Admin/Access.php';
     if (!achbotAdminCanFor($connection,(int)$from_id,(int)($GLOBALS['admin']??0),'orders')) {
-        alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.057ec5448c'),true);
+        alert(\achbotMessage('labels.access_denied'),true);
         return;
     }
     // Displaying a confirmation button is read-only, never Native authorization.

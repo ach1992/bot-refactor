@@ -163,7 +163,7 @@ if ($userInfo['step'] == "awaiting_userid_input" && $text !== \achbotMessage('le
     $msg = \achbotMessage('subscription.manual_accounts.manual_account_consume_selection.msg.86a1eb982f', ['customUserId' => $customUserId]);
     $keyboard = [
         [['text' => \achbotMessage('subscription.manual_accounts.manual_account_consume_selection.button.0c983c9f0f'), 'callback_data' => "addToOrders" . $serverId]],
-        [['text' => \achbotMessage('subscription.manual_accounts.manual_account_consume_selection.button.11b0188fcb'), 'callback_data' => "searchUsersConfig"]],
+        [['text' => \achbotMessage('legacy_buttons.search_agent_config'), 'callback_data' => "searchUsersConfig"]],
         [['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]]
     ];
     sendMessage($msg, json_encode(['inline_keyboard' => $keyboard]), "html", $from_id);

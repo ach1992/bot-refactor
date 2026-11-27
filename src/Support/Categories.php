@@ -9,7 +9,7 @@ function achbotTicketCategories(mysqli $db): array {
     return $rows;
 }
 function achbotTicketCategoryKeys(mysqli $db): string {
-    $rows=[[['text'=>achbotMessage('support.categories.tickets_category.button.59ca629220'),'callback_data'=>'wizwizch'],
+    $rows=[[['text'=>achbotMessage('labels.delete'),'callback_data'=>'wizwizch'],
         ['text'=>achbotMessage('support.categories.tickets_category.button.0fc3aac224'),'callback_data'=>'wizwizch']]];
     $categories=achbotTicketCategories($db);
     foreach ($categories as $category) $rows[]=[
@@ -31,7 +31,7 @@ function achbotTicketCategoryRoute(mysqli $db,int $actor,object $source,array $c
         }
         if ($data==='ticketsList') {
             $keys=achbotTicketKeys([
-                [['text'=>achbotMessage('support.categories.tickets_list.button.33d6fa9470'),'callback_data'=>'openTickets'],
+                [['text'=>achbotMessage('support.entry.support_section.button.a203213e37'),'callback_data'=>'openTickets'],
                  ['text'=>achbotMessage('support.categories.tickets_list.button.732c0fd101'),'callback_data'=>'newTickets']],
                 [['text'=>achbotMessage('support.categories.tickets_list.button.c77cd22d1c'),'callback_data'=>'allTickets'],
                  ['text'=>achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),'callback_data'=>'ticketsCategory']],
@@ -44,7 +44,7 @@ function achbotTicketCategoryRoute(mysqli $db,int $actor,object $source,array $c
     }
     if ($data!==null && preg_match('/^delTicketCat_([1-9][0-9]*)$/D',$data,$m)) {
         if (!achbotDeleteContentSetting($db,$actor,(int)$GLOBALS['admin'],(int)$m[1],'ticket')) return true;
-        alert(achbotMessage('support.categories.add_ticket_category.alert.e1e7245408'));
+        alert(achbotMessage('labels.deleted_successfully'));
         \AchBot\Telegram\Conversation\replaceTransient($actor,$cid,achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),achbotTicketCategoryKeys($db));
         return true;
     }

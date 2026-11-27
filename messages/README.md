@@ -9,7 +9,7 @@ Both files have named topic sections. Search for the current sentence, then edit
 
 Classify editing placement from the actual recipient, including forwarded support reports and shared controls; a route filename alone is not an audience. Choose status/action emoji from the complete outcome and action, not an isolated word such as success, unsuccessful, delete or duplicate.
 
-File placement does not authorize a recipient. Existing actor/owner checks and explicit destinations decide whether a message may reach a user or administrator. A harmless shared label lives once in `user.php`, even when administrators also see it. Never move an operational diagnostic into a customer message to help troubleshooting.
+File placement does not authorize a recipient. Existing actor/owner checks and explicit destinations decide whether a message may reach a user or administrator. A harmless shared label lives once in `user.php`, even when administrators also see it. Shared administrator-only labels live under the same logical `labels` topic in `admin.php`. Reuse an existing semantic owner for genuinely equivalent labels/templates, preserving exact wording, parameters and parse mode. Identical text alone does not establish equivalence: input-command captions, independent business statuses, and context-specific fragments may have different owners. Never move an operational diagnostic into a customer message to help troubleshooting.
 
 ## Presentation conventions
 

@@ -67,7 +67,7 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',
             achbotCheckoutReceiptOutcome($connection,$payId):'unknown');
         // This action began inside the shared attention inbox. Its result
         // always returns there, even if the original case is now closed.
-        $rows=[[['text'=>achbotMessage('manual_receipt_final.back'),
+        $rows=[[['text'=>achbotMessage('automatic_gateway_review.back_list'),
             'callback_data'=>'attentionInbox']]];
         // A deferred result is NOT a terminal denial: expose the original
         // case directly, where the next confirmed preview uses fresh evidence.
@@ -176,7 +176,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
     }
 
     $uid = $payInfo['user_id'];
-    $price = !empty($payInfo['price']) ? number_format($payInfo['price']) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c') : "---";
+    $price = !empty($payInfo['price']) ? number_format($payInfo['price']) . \achbotMessage('labels.currency_toman_suffix') : "---";
     $reason = htmlspecialchars((string)$text, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8');
 	$remark = "---";
 
@@ -329,7 +329,7 @@ if (is_string($data) &&
     if ($status==='changed') {
         alert(\achbotMessage('manual_payment.manual_receipts.alert.61d5318e58', ['m_1' => $m[1]]));
     } elseif ($status==='already') {
-        alert(\achbotMessage('manual_payment.manual_receipts.alert.8b8e660e87'));
+        alert(\achbotMessage('admin.bans.unban_user.message.8b8e660e87'));
     } else {
         alert(\achbotMessage('manual_payment.manual_receipts.alert.abf0b6c70d'),true);
     }

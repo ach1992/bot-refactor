@@ -17,7 +17,7 @@ function achbotGatewayRuleCategories(): array {
 function achbotGatewayRuleMetrics(): array {
     return [
         'buy'=>\achbotMessage('payment_settings.gateway_rules.gateway_rule_metrics.text.7021d6f38e'),'renew'=>\achbotMessage('payment_settings.gateway_rules.gateway_rule_metrics.text.3225fab3cd'),'volume'=>\achbotMessage('payment_settings.gateway_rules.gateway_rule_metrics.text.4bbbd988ad'),
-        'time'=>\achbotMessage('payment_settings.gateway_rules.gateway_rule_metrics.text.070602773a'),'topup'=>\achbotMessage('payment_settings.gateway_rules.gateway_rule_metrics.text.991ae08d64')
+        'time'=>\achbotMessage('payment_settings.gateway_rules.gateway_rule_metrics.text.070602773a'),'topup'=>\achbotMessage('labels.labels.payment_type.label.991ae08d64')
     ];
 }
 function achbotGatewayRuleBlank(string $category): array {

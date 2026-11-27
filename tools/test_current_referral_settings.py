@@ -137,6 +137,8 @@ if (isset($spec['ordinary_route'])) {
     if ($route==='wallet') require $root.'/src/Finance/Routes/AdminWallet.php';
     else {
         require_once $root.'/src/Purchase/Core.php';
+        if (in_array($route,['chooseSendGroup','editBroadcastAsk'],true))
+            require_once $root.'/src/Broadcast/Storage.php';
         if (!isset($routes[$route])) throw new RuntimeException('fixture_unknown_ordinary_route');
         eval(routeBlock(...$routes[$route]));
     }
@@ -412,7 +414,12 @@ def main():
                 g=start(mode)
                 r=run(mode,callback=callback,ordinary_route=route,delete_fail=True,expected_prompt_step=expected)
                 sends=[e for e in r['events'] if e['kind']=='send']
-                assert row()==[expected,''] and len(sends)==1,(route,callback,r)
+                state,generation=row()
+                assert state==expected and len(sends)==1,(route,callback,r)
+                if route in ('chooseSendGroup','editBroadcastAsk'):
+                    event,opened=map(int,generation.split(':'))
+                    assert event>gen and opened>0,(route,generation)
+                else:assert generation=='',(route,generation)
                 assert sends[0]['to']==9001 and sends[0]['keys']==r['cancel_keys'] and sends[0]['body'],(route,r)
                 if route=='userReports':assert sends[0]['body']==r['user_report_prompt'],r
                 run(mode,cancel=True)

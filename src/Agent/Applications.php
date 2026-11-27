@@ -24,7 +24,7 @@ if ($data==='requestAgency' && $agencyCallback) {
         achbotOperationalReportDispatch($connection,$result['ref'],8.0);break;
     case 2: alert(achbotMessage('legacy_messages.agency_request_already_sent'));break;
     case -1: alert(achbotCurrentMessage('agency_request_declined'));break;
-    case 1: editText($message_id,achbotMessage('agent.applications.request_agency.message.b059640ccc'),getMainKeys());break;
+    case 1: editText($message_id,achbotMessage('labels.select_option'),getMainKeys());break;
     default: alert(achbotMessage('legacy_messages.config_not_found'));
     }
     return;

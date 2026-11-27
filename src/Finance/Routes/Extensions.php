@@ -50,8 +50,8 @@ if(preg_match('/\AincreaseADay([1-9][0-9]{0,9})\z/D', $data, $match)){
         $title = $cat['volume'];
         $price = $cat['price'];
         $price=achbotExistingServicePrice($userInfo,$botState,$orderInfo,(int)$price);
-        if($price == 0) $price = \achbotMessage('renewal.extensions.price.dda7ff2974');
-        else $price = (string)$price . \achbotMessage('renewal.extensions.text.2cc98f7f7c');
+        if($price == 0) $price = \achbotMessage('labels.free_price');
+        else $price = (string)$price . \achbotMessage('labels.currency_toman_suffix');
         $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.fbb9f61105', ['title' => $title, 'price' => $price]), 'callback_data' => "selectPlanDayIncrease{$match[1]}_$id"]];
     }
     $keyboard[] = [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "orderDetails{$match[1]}"]];
@@ -249,9 +249,9 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
         $price = $cat['price'];
         $price=achbotExistingServicePrice($userInfo,$botState,$orderInfo,(int)$price);
         if ($price == 0)
-            $price = \achbotMessage('renewal.extensions.price.dda7ff2974');
+            $price = \achbotMessage('labels.free_price');
         else
-            $price = (string)$price . \achbotMessage('renewal.extensions.text.2cc98f7f7c');
+            $price = (string)$price . \achbotMessage('labels.currency_toman_suffix');
 
         $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.249377f2b7', ['title' => $title, 'price' => $price]), 'callback_data' => "increaseVolumePlan{$match[1]}_{$id}"]];
     }
