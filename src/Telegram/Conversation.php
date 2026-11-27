@@ -91,7 +91,8 @@ function referralSettingEditor(string $step): ?array {
  * local admission time. A delayed older update may see the NEW actor row,
  * so a row CAS alone does not establish input ownership. */
 function editorOpeningGeneration(array $cached): ?array {
-    if (!referralSettingEditor((string)($cached['step']??''))) return null;
+    $step=(string)($cached['step']??'');
+    if (!referralSettingEditor($step) && !preg_match('/\Abc_edit_[1-9][0-9]*\z/D',$step)) return null;
     if (preg_match('/^([1-9][0-9]*):([1-9][0-9]*)$/D',(string)($cached['temp']??''),$m)!==1)
         return null;
     return ['update'=>(int)$m[1],'opened_at'=>(int)$m[2]];
@@ -109,7 +110,7 @@ function updateAfterOpening(array $generation,$updateId,$eventTime): bool {
 /**
  * Only generation-bearing editors require a newer authenticated event.
  * Other editors retain their existing ownership rules; a malformed
- * generation can still be abandoned but cannot authorize a referral save.
+ * generation can still be abandoned but cannot authorize a protected save.
  */
 function editorAcceptsUpdate(array $row,int $actor,$update): bool {
     $generation=editorOpeningGeneration($row);

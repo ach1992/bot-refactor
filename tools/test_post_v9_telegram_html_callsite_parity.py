@@ -127,7 +127,7 @@ AUDITED = {
     'src/Admin/ReferralSettings.php': (4, '218431a3e84479d7447a0b44f9101d3de6453eb45bf7a56d90939c4f9a98b8c6'),
     'src/Agent/Applications.php': (3, '1a907e09e672e2ffb39b902e21f32a5f7356b8562cce3a5ab3099f767702c2ec'),
     'src/Agent/Discounts.php': (3, 'f65c70afe55e9fb16b12cf878ced107ce6647f63e999354421621a94c0ab2a78'),
-    'src/Broadcast/Routes.php': (23, '0505c03589ebd347cc04e39d2b6a15eaeab3e2cfa1cf4e6fa8773fc6555a5eab'),
+    'src/Broadcast/Routes.php': (23, '2da8f7b86abdb238933a2e0f6fd9e8a51f927aeeae5b55e5f03404e73f99f4f4'),
     'src/Finance/Discounts.php': (0, '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'),
     'src/Finance/ReceiptHelpers.php': (0, '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'),
     'src/Finance/ManualCheckoutPresentation.php': (3, 'c2e250aa3b249b0d6fab66dfde44c598606647c867a9beaf5af98e3b5a447707'),

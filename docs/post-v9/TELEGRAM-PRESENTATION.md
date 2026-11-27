@@ -168,6 +168,13 @@ completion before the optional approved admin report; distinguish processing
 completion from Telegram acceptance and exclude unconfirmed sends. Cancellation
 cannot be reopened and failure of a report cannot restart customer sends.
 
+Management-job admission serializes on the completed broadcast row. A
+current staff editor generation, queued edit, and intended raw/HTML text
+commit together; a failed admission cannot leave an independently queued
+edit or consume the editor. Concurrent submissions of the same active
+action reuse the existing in-progress result rather than create a second job.
+A stale typed edit cannot authorize a new job.
+
 Pin/unpin/delete/edit jobs use the same lease, claim and pause/finish
 checkpoints, independently of the send queue. They also continue past a
 recipient-specific failure and resume from the next unclaimed message

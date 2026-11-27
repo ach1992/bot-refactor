@@ -146,15 +146,25 @@ function bot($method,$data=[]) {
     // of staff markup and financial-delivery sends.
     if (in_array($x['op'],['followup','maintain_followups'],true) && $method==='editMessageText') {
         $ref=achbotProviderRow($db,"SELECT r.*,p.user_id FROM payment_message_refs r JOIN pays p ON p.id=r.pay_row_id
-            WHERE r.chat_id=? AND r.message_id=? AND r.purpose='receipt_view' AND r.retired_reason IS NULL",
+            WHERE r.chat_id=? AND r.message_id=? AND r.kind='text' AND r.purpose IN ('receipt_view','selector','invoice','status') AND r.retired_reason IS NULL",
             'ii',[(int)$data['chat_id'],(int)$data['message_id']]);
         if (!$ref || (int)$ref['user_id']!==(int)$data['chat_id'] ||
             (int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0 ||
             ($data['parse_mode']??null)!=='HTML')
             throw new RuntimeException('fixture_receipt_projection_target');
         [$pay,$attempt]=achbotPayUxProjectionSource($db,(int)$ref['pay_row_id']);
-        if ($data['text']!==achbotPayUxStatusText($pay,$attempt) ||
-            $data['reply_markup']!==achbotPayUxStatusKeyboard((string)$pay['hash_id'],$pay,$attempt))
+        $view=achbotPayUxReceiptView($db,(int)$ref['pay_row_id'],(int)$ref['user_id']);
+        // The fixture's delete API deliberately provides no ACK. An old
+        // selector/invoice is then sanitized in place, not a receipt edit.
+        if ($view && (int)$view['id']!==(int)$ref['id']) {
+            $body=achbotMessage('payment.payment_lifecycle.receipt_instruction_retired');
+            $keys=inlineKeyboard([]);
+        } else {
+            $projection=achbotPayUxProjection($db,$pay,$attempt,$view?'receipt_view':$ref['purpose']);
+            if (!$projection || $projection[2]) throw new RuntimeException('fixture_receipt_projection_purpose');
+            [$body,$keys]=$projection;
+        }
+        if ($data['text']!==$body || $data['reply_markup']!==$keys)
             throw new RuntimeException('fixture_receipt_projection_content');
         $s=achbotProviderStatement($db,'INSERT INTO fixture_receipt_projection(pay_id,chat_id,message_id,body,keys_json) VALUES (?,?,?,?,?)',
             'iiiss',[(int)$ref['pay_row_id'],(int)$data['chat_id'],(int)$data['message_id'],$data['text'],$data['reply_markup']]);$s->close();
@@ -775,6 +785,10 @@ def main():
                     if line.startswith('[AChBot] '):
                         diagnostics.append(json.loads(line[len('[AChBot] '):]))
                     else:
+                        projection=re.match(r'achbot_payment_telegram_edit_deferred pay_id=([0-9]+) ref_id=([0-9]+)',line)
+                        if projection:
+                            ref=int(projection[2])
+                            raise AssertionError((line,sql(f"SELECT pay_row_id,chat_id,message_id,purpose,retired_reason FROM payment_message_refs WHERE id={ref}")))
                         assert line.startswith(('achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_','achbot_plan_correction_')) or (op in ('telegram_wallet','telegram_approval') and line.startswith('achbot_admin_')) or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
                 last_diagnostics[:]=diagnostics
                 if 'expect_diagnostic' in kw:

@@ -32,6 +32,14 @@
       "before": "⏳ کم کم برا همه ارسال میشه ...",
       "after": "⏳ ارسال پیام همگانی در صف قرار گرفت."
     },
+    "broadcast.routes.pm_noop.message.42f2d7e7a7": {
+      "before": "❌ خطا در ثبت عملیات ویرایش.",
+      "after": "⚠️ ثبت عملیات ویرایش تأیید نشد. وضعیت عملیات را بررسی کنید."
+    },
+    "broadcast.routes.pm_noop.message.55c6d689fd": {
+      "before": "⚠️ خطا در ساخت عملیات، دوباره تلاش کنید.",
+      "after": "⚠️ ثبت عملیات تأیید نشد. وضعیت عملیات را بررسی کنید."
+    },
     "broadcast.routes.state_ack_count": {
       "before": null,
       "after": {

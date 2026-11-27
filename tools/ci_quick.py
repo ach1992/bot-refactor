@@ -307,6 +307,11 @@ REQUIRED_SCENARIOS = {
         "all_declared_foreign_key_relationships_verified"),
 
     "broadcast_delivery": (
+        "broadcast_edit_stale_or_replayed_generation_never_queues",
+        "broadcast_edit_job_content_and_editor_commit_or_rollback_together",
+        "broadcast_edit_current_role_and_real_caption_limit",
+        "broadcast_edit_competing_staff_one_current_job",
+        "broadcast_management_concurrent_same_action_one_job",
         "killed_after_outbound_before_ack_never_replays_recipient",
         "actual_html_text_and_raw_history_unchanged",
         "actual_media_caption_unknown_ack_not_retried_and_logged",
