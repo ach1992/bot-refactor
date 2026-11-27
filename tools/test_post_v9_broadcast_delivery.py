@@ -257,7 +257,7 @@ def main():
             results.append(json.loads(out))
         assert sorted(r['status'] for r in results)==['active','created'],results
         assert sql("SELECT COUNT(*) FROM bc_jobs WHERE broadcast_id=8 AND action='edit'")=='1'
-        assert sql("SELECT s.text=j.new_text AND s.text_html=j.new_html FROM send_list s JOIN bc_jobs j ON j.broadcast_id=s.id WHERE s.id=8")=='1'
+        assert sql("SELECT BINARY s.text=BINARY j.new_text AND BINARY s.text_html=BINARY j.new_html FROM send_list s JOIN bc_jobs j ON j.broadcast_id=s.id WHERE s.id=8")=='1'
         cases.append('broadcast_edit_competing_staff_one_current_job')
         seed_admission()
         procs=[subprocess.Popen(admit_command(actor=uid,action='pin'),env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True) for uid in (9001,9002)]

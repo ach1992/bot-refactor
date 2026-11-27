@@ -147,9 +147,12 @@ equal(array_column($effects,'keys'),array_merge(array_fill(0,count($parts)-1,nul
 $effects=[];
 verify(AchBot\Subscription\AccountDetails\showMessage(['msg'=>$protected,'keyboard'=>'navigation'],77),'actual_order_output_protected_overflow');
 equal(array_column($effects,'text'),$parts,'actual_order_output_parts_preserve_message');
-equal($effects[0]['kind'],'edit','order_refresh_edits_existing_first_message');
-equal($effects[0]['id'],77,'order_refresh_preserves_original_message_identity');
-equal(count(array_filter($effects,static fn($s)=>$s['kind']==='edit')),1,'order_refresh_sends_only_overflow_parts');
+equal(array_column($effects,'kind'),array_fill(0,count($parts),'send'),'multipart_refresh_is_one_new_complete_view');
+equal(array_column($effects,'keys'),array_merge(array_fill(0,count($parts)-1,json_encode(['inline_keyboard'=>[]])),['navigation']),'multipart_navigation_only_on_final_part');
+$effects=[];
+verify(AchBot\Subscription\AccountDetails\showMessage(['msg'=>$protected,'keyboard'=>'navigation'],77),'repeated_explicit_multipart_refresh');
+equal(array_column($effects,'text'),$parts,'repeated_refresh_never_mixes_old_and_new_parts');
+equal(array_column($effects,'kind'),array_fill(0,count($parts),'send'),'retained_previous_view_not_overwritten');
 $effects=[];$editReply=(object)['ok'=>false,'error_code'=>400,'description'=>'Bad Request: message to edit not found'];
 verify(AchBot\Subscription\AccountDetails\showMessage(['msg'=>'<b>Exact</b>','keyboard'=>'navigation'],77),'missing_detail_recovers_once');
 equal(array_column($effects,'kind'),['edit','send'],'missing_detail_new_copy_only_after_definite_rejection');
@@ -164,8 +167,11 @@ foreach ([(object)['ok'=>true],(object)['ok'=>true,'result'=>(object)['message_i
     equal(array_column($effects,'kind'),['edit'],'unknown_or_rate_limited_detail_not_replayed');
 }
 $editReply=null;$effects=[];$failAt=2;
-verify(!AchBot\Subscription\AccountDetails\showMessage(['msg'=>$protected,'keyboard'=>'navigation'],77),'failed_overflow_part_not_certified');
-equal(count($effects),count($parts),'presentation_failure_does_not_abort_independent_parts');
+$large=$protected.$protected;
+verify(count(messageParts($large))>2,'failure_fixture_contains_later_parts');
+verify(!AchBot\Subscription\AccountDetails\showMessage(['msg'=>$large,'keyboard'=>'navigation'],77),'failed_overflow_part_not_certified');
+equal(count($effects),2,'incomplete_multipart_stops_after_first_unconfirmed_part');
+verify(!in_array('navigation',array_column($effects,'keys'),true),'incomplete_view_does_not_send_later_navigation');
 $failAt=0;$effects=[];$sendReply=(object)['ok'=>true,'result'=>(object)['message_id'=>4,'chat'=>(object)['id'=>9002]]];
 verify(!AchBot\Subscription\AccountDetails\showMessage(['msg'=>'Exact','keyboard'=>'navigation']),'foreign_recipient_view_not_certified');
 equal(count($effects),1,'foreign_ack_not_replayed');
