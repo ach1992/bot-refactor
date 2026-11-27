@@ -69,7 +69,9 @@ CREATE TABLE `chats` (
   `category` varchar(1000) NOT NULL,
   `state` int(11) NOT NULL,
   `rate` int(11) NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_ticket_owner_queue` (`user_id`,`state`,`create_date`,`id`),
+  KEY `idx_ticket_staff_queue` (`state`,`create_date`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -80,7 +82,13 @@ CREATE TABLE `chats_info` (
   `sent_date` int(11) NOT NULL,
   `msg_type` varchar(50) DEFAULT NULL,
   `text` text NOT NULL,
-  PRIMARY KEY (`id`)
+  `source_chat_id` bigint(20) DEFAULT NULL,
+  `source_message_id` bigint(20) unsigned DEFAULT NULL,
+  `content_kind` varchar(8) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ticket_message_source` (`source_chat_id`,`source_message_id`),
+  KEY `idx_ticket_history` (`chat_id`,`sent_date`,`id`),
+  CONSTRAINT `ck_ticket_message_source` CHECK (`source_chat_id` is null and `source_message_id` is null and `content_kind` is null or `source_chat_id` is not null and `source_chat_id` > 0 and `source_message_id` is not null and `source_message_id` > 0 and `content_kind` is not null and `content_kind` in ('text','photo'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;

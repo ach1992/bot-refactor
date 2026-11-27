@@ -804,5 +804,13 @@
   "subscription.order_management.show_order_management_panel.alert.7a6ebab798": {
     "after": "⚠️ هیچ سرور دیگری متصل به همین پنل پاسارگارد وجود ندارد.",
     "before": "⚠️ هیچ سرور دیگری با همان پنل مرزبان وجود ندارد."
+  },
+  "support.action_unconfirmed": {
+    "after": "⚠️ ثبت درخواست تأیید نشد. لطفاً وضعیت تیکت را بررسی کنید.",
+    "before": null
+  },
+  "support.history_empty": {
+    "after": "هنوز پیامی در این تیکت ثبت نشده است.",
+    "before": null
   }
 }

@@ -64,7 +64,7 @@ $buttonValues=['join_channel'=>'Join channel','have_joined'=>'Joined','sharj'=>'
   'request_agency'=>'Agency','agency_setting'=>'Agency settings',
   'agent_much_buy'=>'Bulk','agent_one_buy'=>'Individual','individual_existence'=>'Individual',
   'shared_existence'=>'Shared','test_account'=>'Trial','search_config'=>'Search'];
-$events=[];$memberQueries=0;
+$events=[];$memberQueries=0;$removeKeyboard='{"remove_keyboard":true}';
 $sender=(object)['id'=>(int)($spec['sender']??$actor),'first_name'=>'Fixture',
     'last_name'=>'Test','username'=>'fixture_user','is_bot'=>false];
 $chat=(object)['id'=>$chat_id,'type'=>$chatType];
@@ -102,8 +102,8 @@ function fixtureCurrentMessage(string $key): string {
 require __DIR__.'/auth.php';
 require __DIR__.'/set-user.php';
 require __DIR__.'/get-main-keys.php';
-require __DIR__.'/src/Presentation/Text.php';
-require $root.'/src/Telegram/UserProfile.php';
+require_once $root.'/src/Presentation/Text.php';
+require_once $root.'/src/Telegram/UserProfile.php';
 require_once $root.'/src/Purchase/AgentPricing.php';
 $userInfo=null;
 $stmt=$connection->prepare('SELECT * FROM users WHERE userid=? LIMIT 2');
@@ -164,7 +164,7 @@ def write_runtime(w: Path) -> None:
             "if ((require __DIR__.'/src/Finance/Routes/ManualCheckout.php')"),
     }
     for file,body in files.items():
-        (w/file).write_text(body.replace('achbotCurrentMessage(', 'fixtureCurrentMessage(').replace("__DIR__ . '/src/Telegram/UserProfile.php'","$root . '/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Telegram/UserProfile.php'","$root.'/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Subscription/Presentation.php'","$root.'/src/Subscription/Presentation.php'"),encoding="utf-8")
+        (w/file).write_text(body.replace('achbotCurrentMessage(', 'fixtureCurrentMessage(').replace("__DIR__ . '/src/Telegram/UserProfile.php'","$root . '/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Telegram/UserProfile.php'","$root.'/src/Telegram/UserProfile.php'").replace("__DIR__.'/src/Subscription/Presentation.php'","$root.'/src/Subscription/Presentation.php'").replace("__DIR__.'/src/Support/Tickets.php'","$root.'/src/Support/Tickets.php'"),encoding="utf-8")
     for f in ("src/Telegram/UserProfile.php","src/Presentation/Text.php","src/Wallet/Ledger.php"):
         to=w/f;to.parent.mkdir(parents=True,exist_ok=True)
         shutil.copyfile(ROOT/f,to)
@@ -500,6 +500,18 @@ def main() -> None:
             sum(e['text']=='HOME' for x in concurrent for e in x['events']
                 if e['kind']=='send')==1,
             "concurrent_start_after_existing_unsent_user_notifies_once")
+
+        # Home is a real private navigation event; it clears only its own
+        # support draft and preserves history and the already-sent welcome flag.
+        native.sql(w,env,
+            "INSERT INTO users(userid,name,username,refcode,wallet,date,first_start,step,temp) "
+            "VALUES (2460,'prior','prior',0,0,1700000000,'sent','sendTicket_50_70','Draft')",DB)
+        r=run(actor=2460,callback='mainMenu')
+        yes(r['rows'][0]['step']=='none' and
+            native.sql(w,env,"SELECT temp IS NULL FROM users WHERE userid=2460",DB).strip()=='1' and
+            [e['text'] for e in r['events'] if e['kind']=='send'][-1:] == ['HOME'] and
+            not any(e['kind']=='delete' for e in r['events']),
+            "home_consumes_only_support_editor_without_deleting_history")
 
     proof={'complete':True,'cases':len(checks),'checks':checks,
            'source_real':True,'owned_socket_mariadb':True,'php85':True,

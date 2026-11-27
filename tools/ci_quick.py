@@ -33,6 +33,7 @@ NATIVE_TESTS = (
     ("current_payment_readiness", "test_post_v9_payment_readiness.py"),
     ("current_sales_discount", "test_current_sales_discount.py"),
     ("current_customer_routes", "test_current_customer_routes.py"),
+    ("current_support", "test_current_support.py"),
     ("manual_checkout_conversation", "test_manual_checkout_conversation.py"),
     ("wallet_first_hosted", "test_wallet_first_hosted.py"),
     ("wallet_first_manual", "test_wallet_first_manual.py"),
@@ -95,6 +96,20 @@ OTHER_TESTS = (
 # Replaced execution families must be covered by affirmative named cases,
 # not merely removed from the roster. See docs/post-v9/CI-VALIDATION.md.
 REQUIRED_CURRENT_CASES = {
+    "current_support": (
+        "atomic_ticket_body_and_outbox_rollback",
+        "durable_private_independent_audience_unknown_not_resent",
+        "original_message_identity_and_private_ownership",
+        "staff_reply_photo_ownership_and_rate_aware_retry",
+        "closed_ticket_cannot_reopen_or_duplicate_rating_prompt",
+        "bounded_stable_personal_and_staff_pagination",
+        "current_recipient_revocation_skips_only_original_copy",
+        "concurrent_submit_single_ticket",
+        "concurrent_close_reply_linearization",
+        "category_private_current_role_and_concurrent_create",
+        "support_cancel_and_menu_do_not_clear_newer_editor",
+        "legacy_attachment_and_long_history_preserved",
+    ),
     "wallet_first_service_execution": (
         "missing_current_report_attempt_no_legacy_fallback",
         "actual_long_checkout_and_auto_renew_storage_bound",

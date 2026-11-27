@@ -257,8 +257,17 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == \achbotMessage('legacy_butt
     require_once __DIR__.'/src/Telegram/UserProfile.php';
     achbotRefreshUserProfile($connection, $update ?? null, (int)$from_id);
 
-    setUser();
-    setUser("", "temp");
+    require_once __DIR__.'/src/Support/Tickets.php';
+    if (achbotTicketEditor((string)($userInfo['step']??'')) ||
+        achbotTicketEditor((string)$menuRows[0]['step'])) {
+        if (!achbotTicketEditor((string)($userInfo['step']??'')) ||
+            !\AchBot\Telegram\Conversation\source($update,(int)$from_id,isset($update->callback_query)) ||
+            !achbotTicketLeaveStep($connection,(int)$from_id,$userInfo)) return;
+        sendMessage(\achbotMessage('legacy_messages.operation_canceled'),$removeKeyboard,'HTML');
+    } else {
+        setUser();
+        setUser("", "temp");
+    }
 
     if ($customerShortcut===null && isset($data) && ($data == "mainMenu" || $data == "evidenceHome" || $paymentHome)) {
         // Legacy Home buttons can be on untracked financial/support evidence.
@@ -336,6 +345,8 @@ if (preg_match('/^\/([Ss]tart)/', $text) || $text == \achbotMessage('legacy_butt
 
 if ((require __DIR__.'/src/Finance/Routes/ManualCheckout.php') === null) return;
 if ((require __DIR__.'/src/Finance/Routes/PaymentActions.php') === null) return;
+require_once __DIR__.'/src/Support/Routes.php';
+if (achbotSupportRoute($connection,(int)$from_id,$update,$userInfo,$cancelKey,$removeKeyboard)) return;
 
 if(preg_match('/^sendMessageToUser(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     editText($message_id,\achbotMessage('bot.bot.webhook_ingress_authenticated.message.305cb98154'));
@@ -1248,12 +1259,7 @@ if($data=="availableServers2" && ($botState['individualExistence']??'off')==='on
     return;
 }
 require __DIR__ . '/src/Agent/Applications.php';
-require __DIR__ . '/src/Support/Entry.php';
 if ((require __DIR__ . '/src/Plans/Intervals.php') === null) return;
-require __DIR__ . '/src/Support/CreateTicket.php';
-require __DIR__ . '/src/Support/CustomerConversation.php';
-require __DIR__ . '/src/Support/Categories.php';
-require __DIR__ . '/src/Support/QueueAndHistory.php';
 require __DIR__ . '/src/Admin/Bans.php';
 if($data=="mainMenuButtons" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     editText($message_id,\achbotMessage('bot.bot.process_callback_query.message.70afb19fd8'),getMainMenuButtonsKeys());
@@ -1299,7 +1305,6 @@ if (preg_match('/^setMainButtonAnswer(.*)/', $userInfo['step'], $match) && ($fro
 }
 
 require __DIR__ . '/src/Admin/Unban.php';
-require __DIR__ . '/src/Support/AdminReply.php';
 if ((require __DIR__ . '/src/Purchase/TrialProvision.php') === null) return;
 if (preg_match('/\AshowMainButtonAns([1-9][0-9]*)\z/D', $data, $match)) {
     $stmt = $connection->prepare("SELECT value FROM setting WHERE id=? AND ".achbotMainButtonNamespace());

@@ -71,6 +71,10 @@ function achbotFollowupStorageReady(mysqli $db): bool {
 function achbotFollowupReceiptStaffRole(string $role): bool {
     return $role==='receipt_notice' || preg_match('/\Aview_[1-9][0-9]{0,18}\z/D',$role)===1;
 }
+function achbotFollowupPhotoAllowed(string $stage,string $role,string $kind): bool {
+    return $kind==='send' && (($stage==='receipt_admitted' && achbotFollowupReceiptStaffRole($role)) ||
+        ($stage==='ticket_notice' && in_array($role,['service_admin','customer'],true)));
+}
 function achbotFollowupJournaled(array $r): bool {
     return (is_string($r['operational_ref']??null) &&
         achbotFollowupOperationalStage((string)($r['stage']??''))) || (int)($r['wallet_entry_id']??0)>0 || (int)($r['service_operation_id']??0)>0 ||
@@ -142,8 +146,8 @@ function achbotFollowupStoreLocked(mysqli $db,?int $payId,?int $serviceId,string
         !is_string($content['text']??null) || $content['text']==='' ||
         !in_array($content['mode']??null,['HTML','plain',null],true) ||
         (!is_null($content['keys']??null) && !is_string($content['keys']??null)) ||
-        (array_key_exists('photo',$content) && ($stage!=='receipt_admitted' || !achbotFollowupReceiptStaffRole($role) ||
-            $kind!=='send' || !is_string($content['photo']) || $content['photo']==='')))
+        (array_key_exists('photo',$content) && (!achbotFollowupPhotoAllowed($stage,$role,$kind) ||
+            !is_string($content['photo']) || $content['photo']==='')))
         throw new RuntimeException('followup_source_packet_invalid');
     $key=achbotFollowupIntentKey($stage,$role,$kind,$recipient,$messageId);
     $body=['v'=>$event!==null?6:($walletId!==null?5:($stage==='wallet_credit'?4:($payId===null?3:($serviceId===null?1:2)))),'pay_id'=>$payId,'stage'=>$stage,'role'=>$role,
@@ -175,6 +179,14 @@ function achbotFollowupServicePurpose(int $id,string $stage,string $key): string
 }
 function achbotFollowupOperationalEventValid(array $event): bool {
     $keys=array_keys($event);
+    if ($keys===['reference','actor','capability','user','ticket_id','ticket_sha256']) {
+        return is_int($event['ticket_id']) && $event['ticket_id']>0 &&
+            is_string($event['reference']) &&
+            preg_match('/^ticket:'.preg_quote((string)$event['ticket_id'],'/').':(?:message:[1-9][0-9]*|close|rate:[1-9][0-9]*)$/D',$event['reference'])===1 &&
+            is_int($event['actor']) && $event['actor']>0 && is_int($event['user']) && $event['user']>0 &&
+            $event['capability']==='operations' && is_string($event['ticket_sha256']) &&
+            preg_match('/^[a-f0-9]{64}$/D',$event['ticket_sha256'])===1;
+    }
     $customer=$keys===['reference','actor','capability','user','order_id','order_sha256'];
     if (!$customer && $keys!==['reference','actor','capability','user']) return false;
     if (!is_string($event['reference']) || strlen($event['reference'])>128 ||
@@ -188,6 +200,9 @@ function achbotFollowupOperationalEventValid(array $event): bool {
         preg_match('/^(?:direct:[1-9][0-9]*|batch:[1-9][0-9]*:[0-9]+)$/D',$event['reference'])===1);
 }
 function achbotFollowupOperationalStage(string $stage,?array $event=null): bool {
+    if (preg_match('/^ticket_notice(?:_p[1-9][0-9]*)?$/D',$stage))
+        return $event===null || isset($event['ticket_id']);
+    if (isset($event['ticket_id'])) return false;
     if ($stage==='operational_customer_notice')
         return $event===null || isset($event['order_id']);
     return ($event===null || !isset($event['order_id'])) &&
@@ -287,8 +302,8 @@ function achbotFollowupDecodePacket(?array $pay,array $r,?string $sourceFingerpr
         ($packet['text']??'')!=='' &&
         in_array($packet['mode']??null,['HTML','plain',null],true) &&
         (is_null($packet['keys']??null) || is_string($packet['keys'])) &&
-        (!array_key_exists('photo',$packet) || ($r['stage']==='receipt_admitted' && achbotFollowupReceiptStaffRole($r['role']) &&
-            $r['kind']==='send' && is_string($packet['photo']) && $packet['photo']!==''))
+        (!array_key_exists('photo',$packet) || (achbotFollowupPhotoAllowed($r['stage'],$r['role'],$r['kind']) &&
+            is_string($packet['photo']) && $packet['photo']!==''))
         ?$packet:null;
 }
 

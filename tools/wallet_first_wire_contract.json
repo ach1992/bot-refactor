@@ -34,6 +34,8 @@
     "src/Services/Funding.php",
     "src/Services/Ownership.php",
     "src/Services/Resolution.php",
+    "src/Support/Notices.php",
+    "src/Support/Tickets.php",
     "src/Telegram/Conversation.php",
     "src/Wallet/Ledger.php"
   ],
@@ -56,7 +58,11 @@
     "src/Finance/WalletRenewalRecovery.php",
     "src/Finance/WalletSettlement.php",
     "src/Panel/Accounts.php",
-    "src/Panel/MarzbanPlanAccess.php"
+    "src/Panel/MarzbanPlanAccess.php",
+    "src/Support/AdminReply.php",
+    "src/Support/CreateTicket.php",
+    "src/Support/CustomerConversation.php",
+    "src/Support/Entry.php"
   ],
   "changes": {
     "src/Plans/Categories.php": {
@@ -68,10 +74,10 @@
     },
     "bot.php": {
       "before_count": 200,
-      "after_count": 167,
+      "after_count": 168,
       "before_sha256": "cff48d8a700a865d62d8c96389da43e7a2d34431deff1f650f3bd4b107808baa",
-      "after_sha256": "5b84c3bbe01595fb96a1499d5feaefb56f931806dbbdb5f4bd71ee6b987b5e11",
-      "reason": "F7 retire unsupported shared availability, F8 dispatch authenticated shortcuts through canonical Home and customer routes; F6 denied content reads do not send values #209: 3 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged. #51: remove retired bank timer prompt branch; preserve reward report editor.; Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts. Combine first-start welcome and Home, preserving only Telegram-length fallback; #236."
+      "after_sha256": "f01bd5dae26d943f3b490066aeffb155c38533a233d2b1a19ebdef93b01fa55f",
+      "reason": "F7 retire unsupported shared availability, F8 dispatch authenticated shortcuts through canonical Home and customer routes; F6 denied content reads do not send values #209: 3 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged. #51: remove retired bank timer prompt branch; preserve reward report editor.; Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts. Combine first-start welcome and Home, preserving only Telegram-length fallback; #236. #236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation."
     },
     "src/Finance/ApiPaymentPresentation.php": {
       "before_count": 1,
@@ -376,31 +382,31 @@
     },
     "src/Support/AdminReply.php": {
       "before_count": 4,
-      "after_count": 4,
+      "after_count": 0,
       "before_sha256": "c361f9cfb70aae4cbea1832ef31411dde97821f6c27727715464f39c52723683",
-      "after_sha256": "df16ce9a2a863f049771267222ad067a3844c996dd75f8861cf2bcef28fe1acd",
-      "reason": "Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts."
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts. #236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation."
     },
     "src/Support/CreateTicket.php": {
       "before_count": 7,
-      "after_count": 7,
+      "after_count": 0,
       "before_sha256": "076266aec4de6b2627272b59c9164ce8f4776fcb3a222de5d09caa822d74e6d1",
-      "after_sha256": "9e74df51f56a8b81de74cfa4756435bfdaf66995cf74e83d5e865f62144b5354",
-      "reason": "Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts."
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts. #236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation."
     },
     "src/Support/CustomerConversation.php": {
       "before_count": 11,
-      "after_count": 11,
+      "after_count": 0,
       "before_sha256": "98bd3b13a45133de4835666f7fb555d7b727e14933a25ded60d224f555be2da7",
-      "after_sha256": "dab30fe52b4d4066b1bcb707a7f6b9d274aa130e58bfca553e5e86c04025a2f4",
-      "reason": "Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts."
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts. #236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation."
     },
     "src/Support/QueueAndHistory.php": {
       "before_count": 8,
-      "after_count": 8,
+      "after_count": 2,
       "before_sha256": "6989d9ab8eb0b22b163c86c7f019b05ea2d0391377fd7418147947a75247e5d6",
-      "after_sha256": "5c56b7b0ab00291d8bf30e48e5f5dd6b953c7f67d2e3256a720b6e0cfae1fc1d",
-      "reason": "Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts."
+      "after_sha256": "b90347b6a0f2f10dc51596568854afd3a3d95941661b249c2ce6d2b8b775a76b",
+      "reason": "Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts. #236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation."
     },
     "pay/checkout.php": {
       "before_count": 1,
@@ -450,6 +456,34 @@
       "after_count": 3,
       "before_sha256": "965ba962458246adc7d9b5a433f681af54df442552b93a0cf4cdb116783d2c1a",
       "after_sha256": "65c42c5a90a0e1e00bcc611b0d79a16c9b59d225db03d89a13b641d7497d6c31"
+    },
+    "src/Support/Categories.php": {
+      "before_count": 6,
+      "after_count": 6,
+      "before_sha256": "222a64f62465f0178adaef0cdb36b4263e99e11ef1321b789890b13639c5fb11",
+      "after_sha256": "c6021d9b8ebfaa016cf067ec72bdf65f456c2702f334045d210ae32e0e123416",
+      "reason": "#236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation."
+    },
+    "src/Support/Entry.php": {
+      "before_count": 2,
+      "after_count": 0,
+      "before_sha256": "9ccffe98d70e84f959bb349deff20a510564fba725907ff76cbba5590af5a5ee",
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "#236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation."
+    },
+    "src/Support/Presentation.php": {
+      "before_count": 0,
+      "after_count": 2,
+      "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "after_sha256": "ea3b621418a23f8798d4b760adcb11bc1772af569be821539bf6cdcb12d5c422",
+      "reason": "#236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation."
+    },
+    "src/Support/Routes.php": {
+      "before_count": 0,
+      "after_count": 11,
+      "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "after_sha256": "9391026ca167bb324f06a22ea6e9d8655f71353e693e36589bab7d584f2f60d5",
+      "reason": "#236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation."
     }
   },
   "added_with_direct_send": [
@@ -457,6 +491,8 @@
     "src/Finance/PaymentMessages.php",
     "src/Finance/Routes/ManualCheckout.php",
     "src/Finance/Routes/ServiceAttention.php",
-    "src/Purchase/CheckoutPresentation.php"
+    "src/Purchase/CheckoutPresentation.php",
+    "src/Support/Presentation.php",
+    "src/Support/Routes.php"
   ]
 }

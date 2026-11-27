@@ -52,10 +52,9 @@ TARGETS = (
     "src/Subscription/ExternalAccounts.php",
     "src/Subscription/ManualAccounts.php",
     "src/Subscription/ServerDisplaySettings.php",
-    "src/Support/AdminReply.php",
     "src/Support/Categories.php",
-    "src/Support/CreateTicket.php",
-    "src/Support/CustomerConversation.php",
+    "src/Support/Routes.php",
+    "src/Support/Presentation.php",
     "src/Support/QueueAndHistory.php",
 )
 DIRECT_SEND = re.compile(
@@ -115,7 +114,7 @@ AUDITED = {
     'src/Plans/Administration.php': (13, '7bc479ac209460e9f3270644655a881cda730f9ed5e18f529047d36187404587'),
     'src/Plans/AddonAdmin.php': (5, '77eb5d7a03d05ab9da955a61f38be342857f3d08f620ec7d0c07b6f1cac1bc22'),
     'src/Plans/Categories.php': (3, 'f5e5f232dab62ecb5bd39adf2a808bf03672d109e5d58f9a8eff2ab1b387f82e'),
-    'bot.php': (83, '1b2b6e5cfe0d21a85e6c2f14b43966026e9527e29857ed19bc68a8d55ef87da4'),
+    'bot.php': (84, '982548fce719951f107bbbdaaba0b360da0b9dac2cd75d788b2eac82122a6463'),
     'config.php': (10, '21109c7827c494aba3e73602bac6d30ebc27001282c2bf3bb54d582f5de1c2d7'),
     'src/Subscription/CustomerRoutes.php': (12, '484e08a51eebc501a8788043f8694397b69bd0b9a4bea60dc22be2a5695ee5b2'),
     'src/Purchase/Catalogue.php': (10, 'b913c025e7247e4c27d41b5b17ebf0940c884c6983e786b0f36c84db58d344cd'),
@@ -144,11 +143,10 @@ AUDITED = {
     'src/Subscription/ExternalAccounts.php': (4, '4f0b987cfd63ac45858aa292c5eaa54faed9f0f722b0315ce4e88b10bd2240bf'),
     'src/Subscription/ManualAccounts.php': (2, '478b9ee6891fa454375d79a200ce0f5309b198e5d6394dbab5dece0e022eb70f'),
     'src/Subscription/ServerDisplaySettings.php': (2, 'd61d0711698c58159189fd9a69146bd35fc1f5687a5326a571406d36a6b398a9'),
-    'src/Support/AdminReply.php': (2, 'c8b2ac3aac3947e8b49e4bc40119e1bf7f0fca46eec28f88492b1d6d4f10b8b8'),
-    'src/Support/Categories.php': (2, '28176076ffb1fab5faec8741e0f5cb85956f559e2bdb80770f293df3a11f1f81'),
-    'src/Support/CreateTicket.php': (4, '9bfd056498c192738b9abcd85e68345a4bf1ea18b37018388d9b45c417587202'),
-    'src/Support/CustomerConversation.php': (3, '8d167415ba6e79e3699f84391a9ef8dd1e663b19dbbdd4b89b1d0e841315e61f'),
-    'src/Support/QueueAndHistory.php': (2, 'd4f64c70c14d3d03eb5b15e1ebbf5a1fbcc81464c1b89f2bd2c0065b9b10cceb'),
+    'src/Support/Categories.php': (6, 'dd1b00a6d7ca7ff0c7c24c59b2bb00c7f6114d4bf9337a47c4590bae2d931a5a'),
+    'src/Support/Routes.php': (8, '6b905da503adefaceafdb6d7a42b10e5fe155c4a15432fde292c04f03d35ad00'),
+    'src/Support/Presentation.php': (0, '4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945'),
+    'src/Support/QueueAndHistory.php': (1, '4a8518699ba37a3fd0d8492abcfe69137c03a286fb1f121e049e0a45d8c18972'),
 }
 
 

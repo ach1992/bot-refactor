@@ -710,6 +710,8 @@ return [
 
     // ── پشتیبانی و تیکت ──
     'support' => [
+        'history_empty' => 'هنوز پیامی در این تیکت ثبت نشده است.',
+        'action_unconfirmed' => '⚠️ ثبت درخواست تأیید نشد. لطفاً وضعیت تیکت را بررسی کنید.',
         'admin_reply.button.f8a34e79d9' => '💬 پاسخ به تیکت',
         'admin_reply.button.173875ae6b' => '💬 بستن تیکت',
         'queue_and_history.all_tickets.text.61cf036058' => '📷 تصویر /dlPic',

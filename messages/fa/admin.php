@@ -869,7 +869,6 @@ return [
         'admin_reply.message.8da2c2756b' => '💬 لطفا پیام خود را ارسال کنید.',
         // admin_reply.button
         // admin_reply.message
-        'admin_reply.message.5cd91cfb0b' => '✅ پیام شما با موفقیت ارسال شد.',
         // categories.tickets_list
         'categories.tickets_list.button.33d6fa9470' => '💬 تیکت های باز',
         'categories.tickets_list.button.732c0fd101' => '💬 تیکت های جدید',
@@ -885,7 +884,6 @@ return [
         // categories.add_ticket_category
         'categories.add_ticket_category.message.f17638132c' => 'لطفا اسم دسته بندی را وارد کنید',
         'categories.add_ticket_category.alert.e1e7245408' => '✅ با موفقیت حذف شد.',
-        'categories.add_ticket_category.button.fba2c6927b' => '⚠️ دسته بندی یافت نشد.',
         // create_ticket.button
         'create_ticket.button.3b90dccc67' => '💬 پاسخ',
         // create_ticket.txt

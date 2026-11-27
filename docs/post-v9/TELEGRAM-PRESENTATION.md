@@ -87,6 +87,35 @@ configured welcome is preserved separately, without a duplicate menu.
 The approved shared refresh/link-change advice retains both auxiliary-link
 and QR instructions unconditionally.
 
+## Support conversations
+
+The support router owns category selection, private typed title/body/reply,
+staff categories, scoped queues, history/attachment access, closure and rating.
+A ticket and its first message commit together. Subsequent messages serialize
+with closure on the ticket row; a customer reply marks it awaiting staff, a
+staff reply marks it answered, and closure cannot be undone by a late reply.
+Each current inbound text/photo retains its original private chat/message ID;
+legacy history remains readable with unknown identity left NULL. Literal text
+that resembles photo JSON is not classified as media.
+
+The existing sealed operational followup journal records the private original
+audience in the same transaction as each accepted message, closure or rating.
+No public report channel receives conversation content. Current recipient
+authority and preference are checked independently at dispatch; known
+non-application may retry, unknown sends are not repeated automatically.
+Acknowledgement means accepted by Telegram, not read by the recipient.
+Long text/captions are split without discarding content; history and queue
+views share scoped rendering and deterministic bounded pages. Pagination
+reflects current queue state, not a frozen historical snapshot.
+
+Only disposable prompts may be removed best effort. Typed input must belong
+to the actor's current editor, not a callback's message text. Support
+cancel/menu navigation consumes only its matching editor and clears its draft,
+without deleting the original conversation or erasing a newer unrelated
+editor. The reply-keyboard removal and inline menu are separate Telegram
+payloads where required. A successful registration notice describes durable
+registration, never unconfirmed delivery.
+
 ## Canonical HTML ownership
 
 Use HTML templates and escape untrusted dynamic text exactly once with

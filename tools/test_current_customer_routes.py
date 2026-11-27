@@ -101,7 +101,8 @@ case 'delete_main':
 case 'plan_category':
     require $root.'/src/Plans/Categories.php';break;
 case 'ticket':
-    require $root.'/src/Support/Categories.php';break;
+    require_once $root.'/src/Support/Routes.php';
+    achbotSupportRoute($connection,$from_id,$update,$userInfo,$cancelKey,$removeKeyboard);break;
 case 'menu':
     $events[]=['menu',achbotMainMenuForContext($connection,$userInfo,$from_id,$admin,$botState)];break;
 case 'capacity':

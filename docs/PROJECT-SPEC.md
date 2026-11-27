@@ -180,3 +180,16 @@ The [contributor rules](../AGENTS.md), [security](SECURITY.md),
 [Issues](https://github.com/ach1992/bot-refactor/issues) and
 [Releases](https://github.com/ach1992/bot-refactor/releases) own engineering,
 unresolved work and publication respectively.
+
+## Support
+
+- Preserve actual ticket/message history and attachment content. Current
+  private text/photo submission is atomic with its original recipient intents;
+  duplicate incoming messages do not create duplicate ticket history.
+- Current ticket ownership and staff authority govern actions; a closed
+  ticket cannot be reopened by a delayed reply. General staff notification
+  preferences and the existing audience policy remain unchanged.
+- The existing followup worker independently delivers private support notices;
+  no financial or public reporting destination is added. Queue pages,
+  historical attachment retrieval and editor exit use the shared support
+  contract in [Telegram presentation](post-v9/TELEGRAM-PRESENTATION.md).
