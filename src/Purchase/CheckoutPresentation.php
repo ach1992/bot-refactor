@@ -44,7 +44,7 @@ function achbotCheckoutPaymentKeyboard(string $mode,string $hash,int $amount,arr
     return $keyboard;
 }
 
-function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $offerDiscount,bool $discountRejectedNoMethod=false): bool {
+function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $offerDiscount,bool $discountRejectionAlreadyShown=false): bool {
     $pay=$view['pay'];$q=$view['quote'];$plan=$view['plan'];$mode=$view['mode'];
     $hash_id=$pay['hash_id'];$actor=(int)$pay['user_id'];$amount=(int)$pay['price'];
     $renew=$mode==='renew';
@@ -53,7 +53,7 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $o
     $methods=$view['payment_methods'];
     $noMethod=$amount>0 && !$methods;
     $keyboard=achbotCheckoutPaymentKeyboard($mode,$hash_id,$amount,$methods,$botUrl);
-    if (($offerDiscount || $noMethod || $discountRejectedNoMethod) && $amount>0 && empty($view['context']['discount_applied']))
+    if (($offerDiscount || $noMethod || $discountRejectionAlreadyShown) && $amount>0 && empty($view['context']['discount_applied']))
         $keyboard[]=[['text'=>achbotMessage('purchase.catalogue.button.05c3a1e3f4'),'callback_data'=>'haveDiscountCheckout_'.$pay['id']]];
     if ($mode==='standard') {
         $buyType=(int)$pay['agent_bought']===1?((int)$pay['agent_count']>0?'much':'one'):'none';
@@ -64,7 +64,7 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $o
     }
     $notice=achbotMessage('payment.discounts.no_monetary_method');
     if ($renew) $msg=$amount===0?achbotMessage('renewal.free_confirmation.prompt'):
-        (achbotMessageHtml('renewal.renewal_checkout.message.24ae8c4399',['amount'=>number_format($amount)]) . ($noMethod?"\n\n".$notice:''));
+        (achbotMessageHtml('renewal.renewal_checkout.message.24ae8c4399',['amount'=>number_format($amount)]) . ($noMethod && !$discountRejectionAlreadyShown?"\n\n".$notice:''));
     else {
         // Catalog titles and descriptions are literal stored data, not HTML
         // templates. Preserve the separately authored instance note and
@@ -84,7 +84,7 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $o
         $msg=rtrim(strtr($template,$values))."\n\n".
             achbotInstanceMessage((array)($GLOBALS['botState']??[]),'purchase_note',$actor);
     }
-    if (($noMethod && !$renew) || ($discountRejectedNoMethod && !$noMethod)) $msg.="\n\n".$notice;
+    if ($noMethod && !$renew && !$discountRejectionAlreadyShown) $msg.="\n\n".$notice;
     $sent=sendMessage($msg,json_encode(['inline_keyboard'=>$keyboard]),'HTML');
     achbotPayUxTrackByHash($db,(string)$hash_id,$actor,$sent,'selector');
     return \AchBot\Telegram\Conversation\acknowledgedMessage($sent,$actor)!==null;

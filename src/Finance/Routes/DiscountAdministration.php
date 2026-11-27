@@ -491,7 +491,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
                 $audienceType,$audienceUserId,$targetType,$targetId,$minPrice,$maxDiscount,&$duplicate): void {
                 if (!achbotAdminCanLocked($db,$actor,(int)$admin,'operations'))
                     throw new DomainException('discount_editor_role_changed');
-                if (achbotProviderRow($db,'SELECT id FROM discounts WHERE hash_id=? LIMIT 1 FOR UPDATE','s',[$hashId])) {
+                if (achbotProviderRow($db,'SELECT id FROM discounts WHERE hash_id=? LIMIT 1','s',[$hashId])) {
                     $duplicate=true;throw new DomainException('discount_code_exists');
                 }
                 $q=achbotProviderStatement($db,'INSERT INTO discounts

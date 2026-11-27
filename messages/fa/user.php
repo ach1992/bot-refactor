@@ -527,7 +527,6 @@ return [
         // discounts.apply_discount_to_pay
         'discounts.no_monetary_method' => '⚠️ هیچ روش پرداختی برای این سفارش در دسترس نیست. در این شرایط فقط کد تخفیفی که مبلغ نهایی را صفر کند قابل استفاده است.',
         'discounts.apply_discount_to_pay.text.2cc98f7f7c' => ' تومان',
-        'discounts.apply_discount_to_pay.message.e3c216313a' => 'کد تخفیف با موفقیت اعمال شد. مبلغ تخفیف: ',
         'discounts.apply_discount_to_pay.button.16e81418a3' => '❤️',
         // payment_lifecycle.pay_ux_reference
         'payment_lifecycle.pay_ux_reference.label.edb6e627ea' => '🧾 شناسه سفارش: <code>',

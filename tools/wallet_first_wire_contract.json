@@ -124,11 +124,11 @@
       "reason": "One durable per-part dispatch owner; old whole-packet sender retired."
     },
     "src/Finance/Discounts.php": {
-      "after_count": 14,
-      "after_sha256": "df91d1b5ee30b58ad431624bbdb2259e240fb8f7897cbdd9cdade5f4b5c275a3",
       "before_count": 13,
       "before_sha256": "6895b524dcc7fbef044102999af033e94803d234b41f05c7c27315cedc85f5a6",
-      "reason": "Correct invalid-discount notice in shared quote flow. #209: 3 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged."
+      "after_count": 0,
+      "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+      "reason": "Remove direct Telegram sends from redemption; the shared transaction returns one committed domain result to DiscountEntry."
     },
     "src/Finance/FollowupOutbox.php": {
       "after_count": 3,
@@ -201,11 +201,11 @@
       "reason": "Success delivery owned by shared command; remove obsolete inline wallet notices. Current manual and wallet admission own all validation; duplicate pre-admission branches removed. Independent review F03: gift retry cancellation uses the original persisted checkout family through the shared receipt callback mapping; the actual callback and message are unchanged. Remove duplicate manual invoice and receipt handlers; shared current route; #236."
     },
     "src/Finance/Routes/DiscountEntry.php": {
-      "reason": "F5 one owned current draft prompt and redemption route with exact continuation; Owner-approved no-monetary-method discount explanation, with fallback send if the original card becomes unavailable.; #236 terminal lifecycle: Owned discount prompt and terminal reply-keyboard removal.",
       "before_count": 1,
-      "after_count": 4,
       "before_sha256": "33676f503ea1ccf762f477c6859b83364dccf586e77187d6e9d18de2d30fb189",
-      "after_sha256": "72715a6bec05bd7b1ba5ff6d53018e8c58f37235279b7b86bf50c55f2e9d8621"
+      "after_count": 2,
+      "after_sha256": "e13b6b0eff09c6914b40ae10f21bb5cd5f086603ee605dc7e2f575e0f1a85e18",
+      "reason": "One owned checkout prompt and committed redemption result, terminal keyboard removal and shared checkout presentation. No duplicate failure or success notice."
     },
     "src/Finance/Routes/Extensions.php": {
       "after_count": 7,

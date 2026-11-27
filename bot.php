@@ -1483,12 +1483,6 @@ if (is_string($userInfo['step']??null) &&
     }
     return;
 }
-// The inherited non-nonced direct-gift steps are intentionally inert.
-if (is_string($userInfo['step']??null) &&
-    preg_match('/\A(?:giftToUserRemark|giftUserDay|giftUserVolume)/',
-               $userInfo['step'])) {
-    return;
-}
 // ACHBOT_DIRECT_GIFT_ROUTE_END
 
 if(preg_match('/^giftServerDay([1-9][0-9]*)$/D',$userInfo['step'], $match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){

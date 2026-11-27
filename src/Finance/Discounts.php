@@ -1,5 +1,5 @@
 <?php
-/** AChBot V8: source-pinned financial compatibility module. */
+/** Current discount redemption and shared catalogue policy. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
@@ -8,300 +8,141 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/../Purchase/AgentPricing.php';
 
 
-/** Preview and definitive redemption share the same audience predicate.
+/** Definitive redemption uses the current locked audience.
  * The existing order-based audiences mean a stored order reference, not
  * the gateway's active-entitlement category. Keep that distinction. */
-function achbotDiscountAudienceAllowed(mysqli $db,array $discount,int $userId,bool $final): bool {
+function achbotDiscountAudienceAllowed(mysqli $db,array $discount,int $userId): bool {
     require_once __DIR__.'/ServiceHistory.php';
     $mode=$discount['audience_type']?:'all';
     if ($mode==='all') return true;
     if ($mode==='user') return (int)$discount['audience_user_id']===$userId;
     if ($mode==='buyers' || $mode==='non_buyers') {
-        $count=achbotCustomerHistoryCount($db,$userId,'buy',0,'older',$final,time());
+        $count=achbotCustomerHistoryCount($db,$userId,'buy',0,'older',true,time());
         return $count!==null && ($count>0)===($mode==='buyers');
     }
-    $lock=$final?' FOR UPDATE':'';
     if ($mode==='agents' || $mode==='non_agents') {
-        $user=achbotProviderRow($db,'SELECT is_agent FROM users WHERE userid=?'.$lock,'i',[$userId]);
+        $user=achbotProviderRow($db,'SELECT is_agent FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? FOR UPDATE','i',[$userId]);
         return $user!==null && ((int)$user['is_agent']===1)===($mode==='agents');
     }
     if ($mode==='has_active_order' || $mode==='no_active_order') {
-        $order=achbotProviderRow($db,'SELECT id FROM orders_list'.
-            ($final?' FORCE INDEX (idx_orders_userid_v1)':'').' WHERE userid=? LIMIT 1'.$lock,'i',[$userId]);
+        $order=achbotProviderRow($db,'SELECT id FROM orders_list FORCE INDEX (idx_orders_userid_v1) WHERE userid=? LIMIT 1 FOR UPDATE','i',[$userId]);
         return ($order!==null)===($mode==='has_active_order');
     }
     return false;
 }
 
-function achbotDiscountTargetAllowed(mysqli $db,array $discount,int $planId,bool $final): bool {
+/** The checkout view already holds the exact current plan row. */
+function achbotDiscountTargetAllowed(array $discount,array $plan): bool {
     $mode=$discount['target_type']?:'all';
     $id=(int)$discount['target_id'];
-    if ($mode==='all') return true;
-    if ($planId<=0) return false;
-    if ($mode==='plan') return $planId===$id;
-    if ($mode!=='server' && $mode!=='category') return false;
-    $plan=achbotProviderRow($db,'SELECT server_id,catid FROM server_plans WHERE id=?'.
-        ($final?' FOR UPDATE':''),'i',[$planId]);
-    return $plan!==null && (int)$plan[$mode==='server'?'server_id':'catid']===$id;
+    return match($mode) {
+        'all'=>true,
+        'plan'=>(int)$plan['id']===$id,
+        'server'=>(int)$plan['server_id']===$id,
+        'category'=>(int)$plan['catid']===$id,
+        default=>false,
+    };
 }
 
-function applyDiscountToPay($connection, $rowId, $discountCode, $from_id, $username, $first_name, $admin, $botState){
-    // گرفتن اطلاعات پرداخت
-    $stmt = $connection->prepare("SELECT * FROM `pays` WHERE `id` = ?");
-    $stmt->bind_param("i", $rowId);
-    $stmt->execute();
-    $payInfo = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    if(!$payInfo || (int)$payInfo['user_id']!==(int)$from_id){
-        // پرداخت یافت نشد
-        sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
-        return [
-            'success'        => false,
-            'price'          => 0,
-            'hash_id'        => '',
-            'discount_value' => 0,
-            'discount_text'  => '',
-            'payInfo'        => null,
-        ];
-    }
-
-    $hash_id = $payInfo['hash_id'];
-    $price   = (int)$payInfo['price'];
-    $planId  = isset($payInfo['plan_id']) ? (int)$payInfo['plan_id'] : 0;
-    // $user_id در جدول pays برابر همون userid تلگرام است:
-    $userId  = isset($payInfo['user_id']) ? (int)$payInfo['user_id'] : $from_id;
-
-    // گرفتن اطلاعات کد تخفیف
-	$time = time();
-	$stmt = $connection->prepare("SELECT * FROM `discounts` WHERE (`expire_date` > $time OR `expire_date` = 0) AND (`expire_count` > 0 OR `expire_count` = -1) AND `is_active` = 1 AND `hash_id` = ?");
-	$stmt->bind_param("s", $discountCode);
-    $stmt->execute();
-    $list = $stmt->get_result();
-    $stmt->close();
-
-    // اگر کد تخفیف پیدا نشد
-    if($list->num_rows <= 0){
-        // کد اصلاً وجود ندارد یا منقضی شده
-        if (!empty(\achbotMessage('legacy_messages.discount_not_found'))) {
-            sendMessage(\achbotMessage('legacy_messages.discount_not_found'), null, 'HTML');
-        } else {
-            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
-        }
-
-        return [
-            'success'        => false,
-            'price'          => $price,
-            'hash_id'        => $hash_id,
-            'discount_value' => 0,
-            'discount_text'  => '',
-            'payInfo'        => $payInfo,
-        ];
-    }
-
-    $discountInfo = $list->fetch_assoc();
-
-    $amount       = (int)$discountInfo['amount'];
-    $type         = $discountInfo['type'];
-    $count        = (int)$discountInfo['expire_count'];
-    $canUse       = (int)$discountInfo['can_use'];
-    $minPrice     = isset($discountInfo['min_price']) ? (int)$discountInfo['min_price'] : 0;
-    $maxDiscount  = isset($discountInfo['max_discount']) && $discountInfo['max_discount'] !== null
-                    ? (int)$discountInfo['max_discount'] : 0;
-
-    try {
-        require_once __DIR__.'/../Panel/ProviderStorage.php';
-        $allowedForUser=achbotDiscountAudienceAllowed($connection,$discountInfo,(int)$from_id,false);
-    } catch (Throwable $e) {
-        $allowedForUser=false;
-        error_log('achbot_discount_audience_deferred user_id='.(int)$from_id.' class='.get_class($e));
-    }
-
-    if (!$allowedForUser) {
-        // این کد مخصوص این کاربر/شرایط نیست
-        if (!empty(\achbotMessage('legacy_messages.discount_not_for_user'))) {
-            sendMessage(\achbotMessage('legacy_messages.discount_not_for_user'), null, 'HTML');
-        } else {
-            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
-        }
-
-        return [
-            'success'        => false,
-            'price'          => $price,
-            'hash_id'        => $hash_id,
-            'discount_value' => 0,
-            'discount_text'  => '',
-            'payInfo'        => $payInfo,
-        ];
-    }
-
-    try {
-        $allowedForPlan=achbotDiscountTargetAllowed($connection,$discountInfo,$planId,false);
-    } catch (Throwable $e) {
-        $allowedForPlan=false;
-        error_log('achbot_discount_target_deferred user_id='.(int)$from_id.' class='.get_class($e));
-    }
-
-    if (!$allowedForPlan) {
-        // این کد برای این پلن/سرور/دسته معتبر نیست
-        if (!empty(\achbotMessage('legacy_messages.discount_not_for_service'))) {
-            sendMessage(\achbotMessage('legacy_messages.discount_not_for_service'), null, 'HTML');
-        } else {
-            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
-        }
-
-        return [
-            'success'        => false,
-            'price'          => $price,
-            'hash_id'        => $hash_id,
-            'discount_value' => 0,
-            'discount_text'  => '',
-            'payInfo'        => $payInfo,
-        ];
-    }
-
-    // چک حداقل مبلغ سفارش
-
-    if ($minPrice > 0 && $price < $minPrice) {
-        if (!empty(\achbotMessage('legacy_messages.discount_min_price'))) {
-            $msg = str_replace("MINPRICE", number_format($minPrice) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c'), \achbotMessage('legacy_messages.discount_min_price'));
-            sendMessage($msg, null, 'HTML');
-        } else {
-            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
-        }
-
-        return [
-            'success'        => false,
-            'price'          => $price,
-            'hash_id'        => $hash_id,
-            'discount_value' => 0,
-            'discount_text'  => '',
-            'payInfo'        => $payInfo,
-        ];
-    }
-
-    // چک تعداد استفاده هر یوزر (can_use + used_by)
-
-    $usedBy = !is_null($discountInfo['used_by']) ? json_decode($discountInfo['used_by'], true) : array();
-    if(!is_array($usedBy)) $usedBy = array();
-
-    $counts = array_count_values($usedBy);
-    $userUsedCount = isset($counts[$from_id]) ? (int)$counts[$from_id] : 0;
-
-    // اگر can_use = -1 یعنی نامحدود، محدودیتی نباید اعمال شود
-    if($canUse != -1 && $canUse <= $userUsedCount){
-        if (!empty(\achbotMessage('legacy_messages.discount_user_limit'))) {
-            sendMessage(\achbotMessage('legacy_messages.discount_user_limit'), null, 'HTML');
-        } else {
-            sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'), null, 'HTML');
-        }
-
-        return [
-            'success'        => false,
-            'price'          => $price,
-            'hash_id'        => $hash_id,
-            'discount_value' => 0,
-            'discount_text'  => '',
-            'payInfo'        => $payInfo,
-        ];
-    }
-
-    // Revalidate both source rows under the same owner/checkout lock.
-    // A failed or concurrent redemption must never consume a discount
-    // independently of the original unpaid invoice.
+/** One current redemption transaction. Consumption by another eligible
+ * buyer is not itself a conflict. When a conversational editor is supplied,
+ * its exact ownership and terminal state share this commit. */
+function achbotDiscountRedeem(mysqli $db,int $id,string $code,int $actor,array $states,?array $editor=null): array {
     require_once __DIR__.'/CheckoutAdmission.php';
-    $started=false;
+    require_once __DIR__.'/../Telegram/Conversation.php';
+    $begun=false;$result=['success'=>false,'reason'=>'invalid_draft','view'=>null];
     try {
-        achbotCheckoutRequireSchema($connection);
-        if (!$connection->begin_transaction()) throw new RuntimeException('discount_begin_failed');
-        $started=true;
-        achbotPayUxLockDraftOwner($connection,(int)$from_id);
-        $current=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=? FOR UPDATE','i',[(int)$rowId]);
-        if (!$current || $current!==$payInfo) throw new DomainException('discount_draft_changed');
-        $view=achbotCheckoutDraftViewLocked($connection,$current,(int)$from_id,$botState);
-        if ((int)$current['price']<=0 || !empty($view['context']['discount_applied']))
-            throw new DomainException('discount_already_applied');
-        $locked=achbotProviderRow($connection,'SELECT * FROM discounts WHERE id=? FOR UPDATE','i',[(int)$discountInfo['id']]);
-        if (!$locked || $locked!==$discountInfo ||
-            ((int)$locked['expire_date']!==0 && (int)$locked['expire_date']<=time()) ||
-            (int)$locked['is_active']!==1)
-            throw new DomainException('discount_changed');
-        if (!achbotDiscountAudienceAllowed($connection,$locked,(int)$from_id,true))
-            throw new DomainException('discount_audience_changed');
-        if (!achbotDiscountTargetAllowed($connection,$locked,(int)$current['plan_id'],true))
-            throw new DomainException('discount_target_changed');
-        $usedBy[] = $from_id;
-        $encodeUsedBy = json_encode($usedBy, JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-        $discountValue=$type==='percent'?achbotPercentageAmount(max(0,$price),max(0,min(100,$amount))):$amount;
-        if ($maxDiscount>0) $discountValue=min($maxDiscount,$discountValue);
-        $discountValue=max(0,min($price,$discountValue));
-        $newPrice=$price-$discountValue;
-        $view['payment_methods']=array_keys(achbotCheckoutPaymentOptionsLocked($connection,(int)$from_id,$current['type'],$newPrice));
-        if ($newPrice>0 && !$view['payment_methods'])
-            throw new DomainException('discount_no_monetary_method');
-        $view['context']['discount_applied']=true;
-        $encodedContext=achbotServiceJson($view['context']);
-
-        $query=$count!=-1
-            ? 'UPDATE discounts SET expire_count=expire_count-1,used_by=? WHERE id=?'
-            : 'UPDATE discounts SET used_by=? WHERE id=?';
-        $stmt=achbotProviderStatement($connection,$query,'si',[$encodeUsedBy,(int)$discountInfo['id']]);
-        $n=$stmt->affected_rows;$stmt->close();
-        if ($n!==1) throw new RuntimeException('discount_counter_failed');
-        $stmt=achbotProviderStatement($connection,'UPDATE pays SET price=?,checkout_draft_context=? WHERE id=?','isi',[$newPrice,$encodedContext,(int)$rowId]);
-        $stmt->close();
-        if (!$connection->commit()) throw new RuntimeException('discount_commit_unknown');
-        $started=false;
-        $price=$newPrice;
-        $payInfo['price']=$newPrice;$payInfo['checkout_draft_context']=$encodedContext;
-        $view['pay']=$payInfo;
+        achbotCheckoutRequireSchema($db);
+        achbotPaymentEvidenceRequireAutocommit($db);
+        if (!$db->begin_transaction()) throw new RuntimeException('discount_begin_failed');
+        $begun=true;
+        $ownedEditor=null;
+        if ($editor!==null) {
+            if (($editor['step']??null)!=='discountCheckout_'.$id)
+                throw new DomainException('discount_editor_changed');
+            $ownedEditor=\AchBot\Telegram\Conversation\lockEditor($db,$actor,$editor);
+        } else achbotPayUxLockDraftOwner($db,$actor);
+        $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=? AND user_id=? FOR UPDATE','ii',[$id,$actor]);
+        if ($pay) {
+            try {$view=achbotCheckoutDraftViewLocked($db,$pay,$actor,$states);}
+            catch (DomainException $e) {$view=null;}
+            if ($view!==null && (int)$pay['price']>0 && empty($view['context']['discount_applied'])) {
+                // Locate the eligible code, then lock only its actual PK.
+                // Do not lock every row through an unindexed code scan.
+                $q=achbotProviderStatement($db,'SELECT id FROM discounts WHERE hash_id=?
+                    AND is_active=1 AND (expire_date=0 OR expire_date>UNIX_TIMESTAMP())
+                    AND (expire_count=-1 OR expire_count>0) LIMIT 2','s',[$code]);
+                $locators=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+                $discount=count($locators)===1?achbotProviderRow($db,
+                    'SELECT * FROM discounts WHERE id=? AND hash_id=? FOR UPDATE','is',
+                    [(int)$locators[0]['id'],$code]):null;
+                $price=(int)$pay['price'];
+                $result=['success'=>false,'reason'=>'discount_not_found','price'=>$price,'view'=>$view];
+                if ($discount && (int)$discount['is_active']===1 &&
+                    ((int)$discount['expire_date']===0 || (int)$discount['expire_date']>time()) &&
+                    ((int)$discount['expire_count']===-1 || (int)$discount['expire_count']>0))
+                    $result=achbotDiscountApplyLocked($db,$pay,$view,$discount,$actor);
+                if (!$result['success'])
+                    $result['view']['payment_methods']=array_keys(achbotCheckoutPaymentOptionsLocked($db,$actor,$pay['type'],$price));
+            }
+        }
+        if ($ownedEditor!==null)
+            \AchBot\Telegram\Conversation\writeEditorLocked($db,$ownedEditor,'none',null);
+        if (!$db->commit()) throw new RuntimeException('discount_commit_unknown');
+        $begun=false;
+        return $result;
     } catch (Throwable $e) {
-        if ($started) {try {$connection->rollback();} catch (Throwable $ignored) {}}
-        if ($e instanceof DomainException && $e->getMessage()==='discount_no_monetary_method')
-            return ['success'=>false,'price'=>$price,'hash_id'=>$hash_id,'discount_value'=>0,
-                'discount_text'=>'','payInfo'=>$payInfo,'reason'=>'discount_no_monetary_method'];
-        sendMessage(\achbotMessage('legacy_messages.not_valid_discount_code'),null,'HTML');
-        return ['success'=>false,'price'=>0,'hash_id'=>'','discount_value'=>0,'discount_text'=>'','payInfo'=>null];
+        if ($begun) try {$db->rollback();} catch (Throwable $ignored) {}
+        if ($e instanceof DomainException && in_array($e->getMessage(),
+            ['discount_editor_changed','conversation_editor_changed','conversation_actor_unverified'],true))
+            return ['success'=>false,'reason'=>'stale_editor','view'=>null];
+        if (!($e instanceof DomainException))
+            achbotDiagnosticEvent('achbot.finance.discount_deferred',
+                ['pay_id'=>$id,'actor_id'=>$actor]+achbotDiagnosticLocalFailure($e),'warning');
+        return ['success'=>false,'reason'=>'unconfirmed','view'=>null];
     }
+}
 
-    // پیام به کاربر
-
-    $discountText = number_format($discountValue) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
-
-    if (!empty(\achbotMessage('legacy_messages.valid_discount_code'))) {
-        sendMessage(str_replace("AMOUNT", $discountText, \achbotMessage('legacy_messages.valid_discount_code')), null, 'HTML');
-    } else {
-        sendMessage(\achbotMessage('payment.discounts.apply_discount_to_pay.message.e3c216313a') . $discountText, null, 'HTML');
+/** Original owner, quote and discount are already locked. No messaging or
+ * independent transaction; evaluate current policy, counters and quote. */
+function achbotDiscountApplyLocked(mysqli $db,array $pay,array $view,array $discount,int $actor): array {
+    $price=(int)$pay['price'];$min=(int)$discount['min_price'];
+    $result=['success'=>false,'price'=>$price,'view'=>$view];
+    if (!achbotDiscountAudienceAllowed($db,$discount,$actor))
+        return $result+['reason'=>'discount_not_for_user'];
+    if (!achbotDiscountTargetAllowed($discount,$view['plan']))
+        return $result+['reason'=>'discount_not_for_service'];
+    if ($min>0 && $price<$min)
+        return $result+['reason'=>'discount_min_price','minimum'=>$min];
+    $uses=$discount['used_by']===null?[]:json_decode($discount['used_by'],true,64,JSON_THROW_ON_ERROR);
+    if (!is_array($uses) || !array_is_list($uses)) throw new RuntimeException('discount_history_invalid');
+    $used=0;
+    foreach ($uses as $uid) {
+        if (!is_int($uid) && !is_string($uid)) throw new RuntimeException('discount_history_invalid');
+        if ((string)$uid===(string)$actor) ++$used;
     }
-
-    // پیام به ادمین و کانال گزارش
-
-    $keys = json_encode(['inline_keyboard'=>[
-        [
-            ['text'=>\achbotMessage('payment.discounts.apply_discount_to_pay.button.16e81418a3'), "callback_data"=>"wizwizch"]
-        ],
-    ]]);
-
-    $msg = str_replace(
-        ['USERID', 'USERNAME', 'NAME', 'AMOUNT', 'DISCOUNTCODE'],
-        [$from_id, $username, $first_name, $discountText, $discountCode],
-        \achbotMessage('legacy_messages.used_discount_code')
-    );
-
-    // ارسال پیام به ادمین خاص
-    achbotNotifyAdmins('sendMessage', ['text'=>$msg,'reply_markup'=>$keys],
-        ['report_parse_mode'=>'html']);
-
-
-    return [
-        'success'        => true,
-        'price'          => $price,
-        'hash_id'        => $hash_id,
-        'view'           => $view,
-        'discount_value' => $discountValue,
-        'discount_text'  => $discountText,
-        'payInfo'        => $payInfo,
-    ];
+    $limit=(int)$discount['can_use'];
+    if ($limit!==-1 && $used>=$limit) return $result+['reason'=>'discount_user_limit'];
+    $amount=(int)$discount['amount'];$maximum=(int)$discount['max_discount'];
+    $value=$discount['type']==='percent'?achbotPercentageAmount($price,max(0,min(100,$amount))):$amount;
+    if ($maximum>0) $value=min($maximum,$value);
+    $value=max(0,min($price,$value));$newPrice=$price-$value;
+    $methods=array_keys(achbotCheckoutPaymentOptionsLocked($db,$actor,$pay['type'],$newPrice));
+    if ($newPrice>0 && !$methods) return $result+['reason'=>'discount_no_monetary_method'];
+    $uses[]=$actor;
+    $encoded=json_encode($uses,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+    $view['context']['discount_applied']=true;
+    $context=achbotServiceJson($view['context']);
+    $q=achbotProviderStatement($db,(int)$discount['expire_count']!==-1
+        ?'UPDATE discounts SET expire_count=expire_count-1,used_by=? WHERE id=?'
+        :'UPDATE discounts SET used_by=? WHERE id=?','si',[$encoded,(int)$discount['id']]);
+    $n=$q->affected_rows;$q->close();
+    if ($n!==1) throw new RuntimeException('discount_counter_failed');
+    $q=achbotProviderStatement($db,'UPDATE pays SET price=?,checkout_draft_context=? WHERE id=?','isi',
+        [$newPrice,$context,(int)$pay['id']]);$q->close();
+    $pay['price']=$newPrice;$pay['checkout_draft_context']=$context;
+    $view['pay']=$pay;$view['payment_methods']=$methods;
+    return ['success'=>true,'reason'=>'redeemed','price'=>$newPrice,'view'=>$view,'discount_value'=>$value];
 }
 
 // END Apply Discount

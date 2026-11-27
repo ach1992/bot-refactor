@@ -793,7 +793,6 @@ return [
         'api_payment.gift_details' => ['text' => "💰 مبلغ بازخرید: {amount}\n🧾 شماره سفارش: {order}\n📅 تاریخ ایجاد: {created}", 'parameters' => ['amount', 'order', 'created']],
         'api_payment.gift_not_verified' => 'نیازمند بررسی دستی',
         'api_payment.gift_not_provided' => 'در پاسخ API ارائه نشده',
-        'api_payment.status_confirmed' => "پرداخت و عملیات مربوط تأیید شد",
         'api_payment.status_settled' => "پرداخت قبلاً نهایی شده است.",
         'api_payment.status_review' => "نیازمند بررسی مدیر",
         'api_payment.status_uncertain' => "نتیجهٔ عملیات بیرونی نامشخص است.",

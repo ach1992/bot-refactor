@@ -64,7 +64,7 @@ function achbotAgencyOriginalRequest(mysqli $db,array $user): ?array {
  * controls and present-tense customer role notices depend on current state. */
 function achbotUserEventValidateLocked(mysqli $db,array $r,array $event,array $packet): ?array {
     if (!achbotUserEventValid($event) || $r['kind']!=='send' || $r['message_id']!==null) return null;
-    $s=achbotProviderStatement($db,'SELECT * FROM users WHERE userid=? LIMIT 2 LOCK IN SHARE MODE NOWAIT',
+    $s=achbotProviderStatement($db,'SELECT * FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? LIMIT 2 LOCK IN SHARE MODE NOWAIT',
         'i',[$event['user']]);$rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
     if (count($rows)!==1 || (int)$rows[0]['id']!==$event['user_row_id'])
         return achbotFollowupRequireRecipient(false)?$packet:null;
@@ -98,7 +98,7 @@ function achbotUserWelcomeClaim(mysqli $db,int $userId,int $rowId,string $home,s
     try {
         achbotOperationalReportRequireReady($db);
         if (!$db->begin_transaction()) throw new RuntimeException('welcome_begin');
-        $s=achbotProviderStatement($db,'SELECT * FROM users WHERE userid=? LIMIT 2 FOR UPDATE','i',[$userId]);
+        $s=achbotProviderStatement($db,'SELECT * FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? LIMIT 2 FOR UPDATE','i',[$userId]);
         $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
         if (count($rows)!==1 || (int)$rows[0]['id']!==$rowId || $rows[0]['step']==='banned')
             throw new DomainException('welcome_actor_changed');

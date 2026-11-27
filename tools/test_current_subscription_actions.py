@@ -38,6 +38,15 @@ case 'transition':
     if (isset($spec['cached_temp'])) $u['temp']=$spec['cached_temp'];
     $result=\AchBot\Telegram\Conversation\transitionEditor($connection,$from_id,$u,$spec['next']??'none')!==null;
     break;
+case 'revoked_cancel':
+    require_once $root.'/src/Panel/ProviderAdmin.php';
+    $userInfo=$u;$data='';$chat_id=$from_id;$message_id=81;$cancelKey='{}';
+    $text=achbotMessage('legacy_buttons.cancel');
+    $update=(object)['update_id'=>123,'message'=>(object)['message_id'=>81,'text'=>$text,
+        'from'=>(object)['id'=>$from_id],'chat'=>(object)['id'=>$from_id,'type'=>'private']]];
+    if (achbotHandleProviderAdmin()) {$result=false;break;}
+    $result=\AchBot\Telegram\Conversation\transitionFromUpdate($connection,$from_id,$userInfo,$update)!==null;
+    break;
 case 'frame':
     $update=json_decode(json_encode($spec['update']));
     $result=\AchBot\Telegram\Conversation\source($update,$from_id,$spec['callback'])!==null;break;
@@ -108,6 +117,11 @@ def main():
         human=dict(from_={'id':1001},chat={'id':1001,'type':'private'},message_id=82,text='fixture')
         human['from']=human.pop('from_')
         check('private_typed',call('frame',update={'message':human},callback=False)['result'])
+        for strict in (True,False):
+            sql("UPDATE users SET isAdmin=0,step='pg:groups:plan:7',temp='pending' WHERE userid=9002")
+            r=call('revoked_cancel',actor=9002,strict=strict)
+            state=sql("SELECT step FROM users WHERE userid=9002").strip()
+            check(('strict' if strict else 'off')+':revoked_provider_editor_can_cancel_own_draft',r['result'] and state=='none')
         cb={'callback_query':{'from':{'id':1001},'data':'test','message':human}}
         check('callback_not_typed',not call('frame',update=cb,callback=False)['result'])
         check('foreign_chat',not call('frame',update={'message':dict(human,chat={'id':9002,'type':'private'})},callback=False)['result'])
@@ -138,8 +152,9 @@ def main():
         check('same_update_get_only_recovery',r['result']=='shown' and server.write_count==1 and r['events'][0]['url'].endswith('/changed'))
         previous_url=server.user['subscription_url']
         server.user['subscription_url']=previous_url+'/external-change'
-        r=call('link',order=91,rotate=True,id=400)
-        check('changed_subscription_url_not_original_success',r['result']=='review' and server.write_count==1 and not r['events'])
+        for strict in (True,False):
+            r=call('link',order=91,rotate=True,id=400,strict=strict)
+            check(('strict' if strict else 'off')+':changed_subscription_url_not_original_success',r['result']=='review' and server.write_count==1 and not r['events'])
         server.user['subscription_url']=previous_url
         server.user['proxy_settings']={'vless':{'id':'external-change'}}
         r=call('link',order=91,rotate=True,id=400)

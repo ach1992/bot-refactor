@@ -101,7 +101,7 @@ REQUIRED_CURRENT_CASES = {
         "exact_owned","ambiguous_partial","literal_percent","literal_underscore",
         "my_scope","inactive","unauthorized_staff","staff_duplicate_exact",
         "stale_step","stale_temp","current_transition","protected_transition",
-        "changed_subscription_url_not_original_success",
+        "changed_subscription_url_not_original_success","revoked_provider_editor_can_cancel_own_draft",
     ),
     "agency_current": (
         "request_commits_before_send","independent_original_audience","request_known_failure_recovery_only",
@@ -405,6 +405,8 @@ REQUIRED_SCENARIOS = {
         "actual_discount_buyer_inverse_matches_completed_history_and_no_ineligible_consumption",
         "actual_discount_target_policy_preserved_at_consumption",
         "actual_discount_revalidates_buyer_history_under_owner_lock",
+        "actual_shared_discount_concurrent_owners_both_eligible",
+        "actual_discount_editor_stale_and_atomic_rollback",
     ),
 }
 

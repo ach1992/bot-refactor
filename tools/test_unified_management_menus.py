@@ -225,9 +225,9 @@ $connection->query("UPDATE users SET step='pg:groups:plan:42',isAdmin=0 WHERE us
 $from_id=$chat_id=9002;$userInfo=['step'=>'pg:groups:plan:42','isAdmin'=>1];$data='';$text=$buttonValues['cancel'];
 $update=(object)['update_id'=>200,'message'=>(object)['message_id'=>10,'text'=>$buttonValues['cancel'],
     'from'=>(object)['id'=>9002],'chat'=>(object)['id'=>9002,'type'=>'private']]];
-yes(achbotHandleProviderAdmin()===true,'revoked cached administrator receives safe response');
+yes(achbotHandleProviderAdmin()===false,'revoked administrator can reach ordinary own-editor cancel');
 yes($connection->query('SELECT step FROM users WHERE userid=9002')->fetch_row()[0]==='pg:groups:plan:42',
-    'revoked administrator cannot mutate state');
+    'provider handler cannot mutate state after revocation');
 $from_id=$chat_id=9001;$userInfo=['step'=>'pg:groups:plan:42','isAdmin'=>1];
 $connection->query("UPDATE users SET step='protected-new-flow',temp='keep' WHERE userid=9001");
 $update=(object)['update_id'=>201,'message'=>(object)['message_id'=>10,'text'=>$buttonValues['cancel'],

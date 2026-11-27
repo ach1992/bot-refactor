@@ -350,7 +350,7 @@ try {
     }
     elseif ($x['op']==='checkout_discount') {
         require_once $argv[1].'/src/Finance/Discounts.php';
-        $r=applyDiscountToPay($db,(int)$x['pay'],$x['code'],(int)($x['actor']??1001),'fixture','Fixture',9001,[]);
+        $r=achbotDiscountRedeem($db,(int)$x['pay'],$x['code'],(int)($x['actor']??1001),[]);
     }
     elseif ($x['op']==='checkout_wallet') {
         require_once $argv[1].'/src/Finance/CheckoutAdmission.php';

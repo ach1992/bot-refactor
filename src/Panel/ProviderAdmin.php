@@ -88,6 +88,11 @@ function achbotHandleProviderAdmin(): bool {
     $step=(string)($userInfo['step']??'');
     $native=is_string($data??null) && preg_match('/^pg(?:RotateServerKey|PlanGroups|ResetAccount)/D',$data);
     if (!$native && !str_starts_with($step,'pg:')) return false;
+    // Revocation prevents provider operations, not leaving one's own editor.
+    // The ordinary private cancel owner checks the exact actor, step and temp.
+    if (str_starts_with($step,'pg:') && $text===achbotMessage('legacy_buttons.cancel') &&
+        !isset($update->callback_query) &&
+        !achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'servers')) return false;
     if (!((int)$from_id===(int)$admin || (int)($userInfo['isAdmin']??0)===1)) {
         alert(\achbotMessage('provider.provider_admin.handle_provider_admin.alert.057ec5448c'),true);return true;
     }

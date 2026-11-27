@@ -410,6 +410,13 @@ def main() -> None:
         with ThreadPoolExecutor(max_workers=2) as pool:
             jobs=[pool.submit(run,actor=2421) for _ in range(2)]
             greetings=[x.result(timeout=25) for x in jobs]
+        # Current recipient checks intentionally defer on an active row lock.
+        # Both competing requests are finished; only the original pending
+        # packets can be recovered, and no acknowledged packet can be resent.
+        native.sql(w,env,"UPDATE payment_followup_intents SET next_attempt_at=NOW(6) WHERE state='pending' AND operational_ref=CONCAT('welcome:',(SELECT id FROM users WHERE userid=2421))",DB)
+        greetings.append(run(actor=2421,mode='dispatch'))
+        yes(not run(actor=2421,mode='dispatch')['events'],
+            "concurrent_welcome_original_packets_not_replayed_2421")
         yes(sum(e['text']=='WELCOME\n\nHOME' for x in greetings for e in x['events']
                 if e['kind']=='send')==1 and
             sum(e['kind']=='admin' for x in greetings for e in x['events'])==1 and
@@ -513,6 +520,13 @@ def main() -> None:
         with ThreadPoolExecutor(max_workers=2) as pool:
             tasks=[pool.submit(run,actor=2455) for _ in range(2)]
             concurrent=[job.result(timeout=25) for job in tasks]
+        # Current recipient checks intentionally defer on an active row lock.
+        # Both competing requests are finished; only the original pending
+        # packets can be recovered, and no acknowledged packet can be resent.
+        native.sql(w,env,"UPDATE payment_followup_intents SET next_attempt_at=NOW(6) WHERE state='pending' AND operational_ref=CONCAT('welcome:',(SELECT id FROM users WHERE userid=2455))",DB)
+        concurrent.append(run(actor=2455,mode='dispatch'))
+        yes(not run(actor=2455,mode='dispatch')['events'],
+            "concurrent_welcome_original_packets_not_replayed_2455")
         yes(sum(e['text']=='WELCOME\n\nHOME' for x in concurrent for e in x['events']
                 if e['kind']=='send')==1 and
             sum(e['kind']=='admin' for x in concurrent for e in x['events'])==1 and

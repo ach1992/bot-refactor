@@ -91,7 +91,7 @@ function lockEditor(\mysqli $db,int $actor,array $cached): array {
         (int)($cached['userid']??0)!==$actor || !is_string($cached['step']??null))
         throw new \DomainException('conversation_actor_unverified');
     require_once __DIR__.'/../Panel/ProviderStorage.php';
-    $s=\achbotProviderStatement($db,'SELECT * FROM users WHERE userid=? LIMIT 2 FOR UPDATE','i',[$actor]);
+    $s=\achbotProviderStatement($db,'SELECT * FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? LIMIT 2 FOR UPDATE','i',[$actor]);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
     $row=$rows[0]??[];
     if (count($rows)!==1 || (int)$row['id']!==(int)$cached['id'] ||

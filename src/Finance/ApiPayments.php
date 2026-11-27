@@ -65,59 +65,82 @@ function achbotApiPaymentContext(mysqli $db,string $hash,int $actor=0): ?array {
 function achbotApiPaymentTerminal(array $pay): bool {
     return in_array((string)($pay['state']??''),['approved','paid','auto_cart_approved','paid_with_wallet'],true);
 }
-function achbotApiPaymentNotice(mysqli $db,array $pay,string $status): int {
-    $edited=0;
-    $id=(int)$pay['id'];$pay=achbotApiPaymentRow($db,$id);if(!$pay)return 0;
+/** Project committed state, not a stale checker return. The same original
+ * payment lease already serializes evidence and human decisions. */
+function achbotApiPaymentNotice(mysqli $db,int $id): int {
     require_once __DIR__.'/ReceiptNotices.php';
-    $hash=(string)$pay['hash_id'];$a=achbotApiPaymentAttempt($db,$id);if(!$a)return 0;
-    // A new wallet credit owns durable receipt/report projection, including
-    // service completion. Never announce delivery from paid alone.
-    if (($a['wallet_credit_entry_id']??null)!==null || $pay['state']==='declined') return 0;
-    $proof=achbotPaymentEvidenceGetProof($db,$id);
-    if(achbotApiPaymentTerminal($pay) && in_array($status,['used','revoked','expired','mismatch'],true))$status='settled';
-    $invalidCode=in_array($status,['used','revoked','expired','mismatch'],true);
-    $status=in_array($status,['confirmed','settled','review','uncertain','evidence_only','used','revoked','expired','mismatch'],true)?$status:'review';
-    $label=$invalidCode?achbotMessage('manual_payment.api_payment.code_'.$status):achbotMessage('manual_payment.api_payment.status_'.$status);
     require_once __DIR__.'/GatewayClient.php';
-    $actionable=achbotGatewayAttentionCaseOpen($db,$id);
-    $automatic=achbotApiPaymentTerminal($pay) && (int)($pay['approved_by']??-1)===0 && ($proof['mode']??'')==='settle';
-    if($automatic)$label=achbotMessage('manual_payment.api_payment.auto_approved');
-    $presentation=achbotApiPaymentPresentation($db,$pay,$a);
-    // Review details remain available from the original evidence/report
-    // presenter. Owner opens the review workbench voluntarily: a background
-    // provider poll must not send additional standalone admin messages.
-    // Original receipt keyboards are still edited in place below.
-    $refs=achbotReceiptMessageTargets($db,$pay);
-    $keys=inlineKeyboard([[['text'=>$label,'callback_data'=>'noop_'.$hash]]]);
-    if(achbotApiPaymentTerminal($pay))
-        $keys=achbotApiPaymentFinalKeyboard($pay,$label,$automatic,$presentation);
-    if($invalidCode && $pay['state']==='have_sent'){
-        $rows=json_decode(achbotApiPaymentReviewKeyboard($db,$pay),true)['inline_keyboard'];
-        $rows[]=[['text'=>$label,'callback_data'=>'noop_'.$hash]];$keys=inlineKeyboard($rows);
-    }
-    if ($actionable) {
-        $rows=json_decode($keys,true)['inline_keyboard']??[];
-        $open=['text'=>achbotMessage('automatic_gateway_review.open_case'),
-            'callback_data'=>'attentionCase_'.$id];
-        if (!achbotApiPaymentTerminal($pay)) {
-            // A failed automatic API receipt must not keep a dead "needs
-            // operator review" noop button. Keep genuine manual Approve /
-            // Reject controls when still eligible and add the one real route.
-            $rows=$invalidCode && $pay['state']==='have_sent'
-                ?array_values(array_filter($rows,static function(array $line):bool {
-                    foreach ($line as $button)
-                        if (!str_starts_with((string)($button['callback_data']??''),'noop_'))
-                            return true;
-                    return false;
-                })):[];
+    achbotPaymentEvidenceRequireAutocommit($db);
+    return achbotPayUxWithLease($db,$id,static function() use ($db,$id): int {
+        $edited=0;
+        $pay=achbotApiPaymentRow($db,$id);$a=achbotApiPaymentAttempt($db,$id);
+        if (!$pay || !$a || $a['wallet_credit_entry_id']!==null || $pay['state']==='declined') return 0;
+        $hash=(string)$pay['hash_id'];
+        $proof=achbotPaymentEvidenceGetProof($db,$id);
+        $actionable=achbotGatewayAttentionCaseOpen($db,$id);
+        $state=$a['evidence_state']??null;
+        if (achbotApiPaymentTerminal($pay))
+            $status=($proof['mode']??null)==='evidence_only'?'evidence_only':'settled';
+        elseif ($state==='invalid_code') {
+            $d=achbotPaymentEvidenceUnprotect('code:'.$a['id'].':'.$id,(string)$a['evidence_code']);
+            $status=$d['last_status']??null;
+            if (!in_array($status,['used','revoked','expired','mismatch'],true)) {
+                if (!$actionable) return 0;
+                $status='review';
+            }
+        } elseif ($state==='uncertain') $status='uncertain';
+        elseif ($state==='review' || $pay['state']==='processing' || $actionable) $status='review';
+        else return 0;
+        $invalidCode=in_array($status,['used','revoked','expired','mismatch'],true);
+        $label=match($status) {
+            'used'=>achbotMessage('manual_payment.api_payment.code_used'),
+            'revoked'=>achbotMessage('manual_payment.api_payment.code_revoked'),
+            'expired'=>achbotMessage('manual_payment.api_payment.code_expired'),
+            'mismatch'=>achbotMessage('manual_payment.api_payment.code_mismatch'),
+            'evidence_only'=>achbotMessage('manual_payment.api_payment.status_evidence_only'),
+            'settled'=>achbotMessage('manual_payment.api_payment.status_settled'),
+            'uncertain'=>achbotMessage('manual_payment.api_payment.status_uncertain'),
+            'review'=>achbotMessage('manual_payment.api_payment.status_review'),
+        };
+        $automatic=achbotApiPaymentTerminal($pay) && (int)($pay['approved_by']??-1)===0 && ($proof['mode']??'')==='settle';
+        if($automatic)$label=achbotMessage('manual_payment.api_payment.auto_approved');
+        $presentation=achbotApiPaymentTerminal($pay)?achbotApiPaymentPresentation($db,$pay,$a):[];
+        // Review details remain available from the original evidence/report
+        // presenter. Owner opens the review workbench voluntarily: a background
+        // provider poll must not send additional standalone admin messages.
+        // Original receipt keyboards are still edited in place below.
+        $refs=achbotReceiptMessageTargets($db,$pay);
+        $keys=inlineKeyboard([[['text'=>$label,'callback_data'=>'noop_'.$hash]]]);
+        if(achbotApiPaymentTerminal($pay))
+            $keys=achbotApiPaymentFinalKeyboard($pay,$label,$automatic,$presentation);
+        if($invalidCode && $pay['state']==='have_sent'){
+            $rows=json_decode(achbotApiPaymentReviewKeyboard($db,$pay),true)['inline_keyboard'];
+            $rows[]=[['text'=>$label,'callback_data'=>'noop_'.$hash]];$keys=inlineKeyboard($rows);
         }
-        $rows[]=[$open];
-        $keys=inlineKeyboard($rows);
-    }
-    if (achbotApiPaymentTerminal($pay) || $pay['state']==='processing' ||
-        ($invalidCode && $pay['state']==='have_sent') || $actionable)
-        $edited=achbotApiPaymentProjectStaff($db,$pay,$refs,$keys);
-    return $edited;
+        if ($actionable) {
+            $rows=json_decode($keys,true)['inline_keyboard']??[];
+            $open=['text'=>achbotMessage('automatic_gateway_review.open_case'),
+                'callback_data'=>'attentionCase_'.$id];
+            if (!achbotApiPaymentTerminal($pay)) {
+                // A failed automatic API receipt must not keep a dead "needs
+                // operator review" noop button. Keep genuine manual Approve /
+                // Reject controls when still eligible and add the one real route.
+                $rows=$invalidCode && $pay['state']==='have_sent'
+                    ?array_values(array_filter($rows,static function(array $line):bool {
+                        foreach ($line as $button)
+                            if (!str_starts_with((string)($button['callback_data']??''),'noop_'))
+                                return true;
+                        return false;
+                    })):[];
+            }
+            $rows[]=[$open];
+            $keys=inlineKeyboard($rows);
+        }
+        if (achbotApiPaymentTerminal($pay) || $pay['state']==='processing' ||
+            ($invalidCode && $pay['state']==='have_sent') || $actionable)
+            $edited=achbotApiPaymentProjectStaff($db,$pay,$refs,$keys);
+        return $edited;
+    },0);
 }
 /** Each original staff target has independent ACK/retirement/retry state.
  * Financial and terminal edits keep the existing per-target lease. */
@@ -423,10 +446,7 @@ function achbotApiPaymentCheck(mysqli $db,int $id): string {
                 }
             }
             if ($pay && !in_array($status,['rejected','awaiting_receipt'],true)) {
-                if (in_array($status,['used','revoked','expired','mismatch'],true))
-                    achbotApiPaymentNotice($db,$pay,$status);
-                elseif (in_array($status,['review','pending','unavailable'],true))
-                    achbotApiPaymentNotice($db,$pay,$status==='pending'?'uncertain':'review');
+                achbotApiPaymentNotice($db,$id);
                 achbotPayUxSyncMessages($db,$id);
             }
             return $status;
@@ -493,6 +513,7 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
         $q=$db->query("SELECT a.pay_row_id,p.hash_id FROM payment_attempts a JOIN pays p ON p.id=a.pay_row_id
             WHERE a.evidence_profile IS NOT NULL AND a.provider IN ($apiMethods)
               AND a.invoice_expires_at IS NOT NULL AND a.wallet_invoice_sha256 IS NOT NULL AND a.wallet_invoice_sha256<>''
+              AND a.wallet_credit_entry_id IS NULL AND p.state<>'declined'
             ORDER BY CASE WHEN p.state='paid'
                     AND (a.evidence_projection_checked_at IS NULL OR
                          a.updated_at>a.evidence_projection_checked_at)
@@ -504,13 +525,7 @@ function achbotApiPaymentMaintainWithinBudget(mysqli $db,int $limit=12): array {
             try {
                 $c=achbotApiPaymentContext($db,(string)$row['hash_id']);
                 if (!$c) {achbotDiagnosticEvent('achbot.finance.evidence_projection',['pay_id'=>$id,'reason'=>'original_context_unavailable'],'warning');continue;}
-                $p=$c['pay'];$a=$c['attempt'];$proof=achbotPaymentEvidenceGetProof($db,(int)$p['id']);
-                if(achbotApiPaymentTerminal($p))$edited+=achbotApiPaymentNotice($db,$p,($proof['mode']??'')==='evidence_only'?'evidence_only':(($a['wallet_credit_entry_id']??null)!==null?'confirmed':'settled'));
-                elseif(($a['evidence_state']??'')==='invalid_code'){
-                    $d=achbotPaymentEvidenceUnprotect('code:'.$a['id'].':'.$p['id'],(string)$a['evidence_code']);
-                    if(in_array($d['last_status']??'',['used','revoked','expired','mismatch'],true))$edited+=achbotApiPaymentNotice($db,$p,$d['last_status']);
-                }
-                elseif(in_array($a['evidence_state']??'',['review','uncertain'],true)||$p['state']==='processing')$edited+=achbotApiPaymentNotice($db,$p,($a['evidence_state']??'')==='uncertain'?'uncertain':'review');
+                $edited+=achbotApiPaymentNotice($db,$id);
             } catch (Throwable $e) {
                 achbotDiagnosticEvent('achbot.finance.evidence_projection',['pay_id'=>$id,
                     'reason'=>'projection_deferred','class'=>get_class($e)],'warning');

@@ -19,13 +19,13 @@ error_reporting(E_ALL);
 set_error_handler(static function($n,$s){throw new ErrorException($s,0,$n);});
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');$admin=9001;
-$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);$events=[];
+$spec=json_decode($argv[4],true,512,JSON_THROW_ON_ERROR);$events=[];$keyboards=[];
 require_once $argv[1].'/src/Finance/ApiPayments.php';
 require_once $argv[1].'/src/Finance/ReceiptNotices.php';
 function bot($method,$args=[]){
-    global $events,$spec;
+    global $events,$spec,$keyboards;
     if ($method!=='editMessageReplyMarkup') throw new RuntimeException('unexpected_transport');
-    $chat=(int)$args['chat_id'];$message=(int)$args['message_id'];$events[]=[$chat,$message];
+    $chat=(int)$args['chat_id'];$message=(int)$args['message_id'];$events[]=[$chat,$message];$keyboards[]=$args['reply_markup']??null;
     $mode=$spec['modes'][(string)$chat]??'ok';
     return match($mode) {
         'missing'=>(object)['ok'=>false,'error_code'=>400,'description'=>'Bad Request: message to edit not found'],
@@ -46,6 +46,15 @@ if (!empty($spec['caller_tx'])) {
     $active=(int)$connection->query('SELECT @@in_transaction')->fetch_row()[0];
     $connection->rollback();
     echo json_encode(['blocked'=>$blocked,'active'=>$active,'events'=>$events]);exit;
+}
+if (!empty($spec['notice'])) {
+    if (!empty($spec['busy'])) {
+        $other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
+        if (achbotOriginalDispatchLeaseBegin($other,7701)!=='owned')
+            throw new RuntimeException('fixture_busy_lease');
+    }
+    $edited=achbotApiPaymentNotice($connection,7701);
+    echo json_encode(['edited'=>$edited,'events'=>$events,'keyboards'=>$keyboards],JSON_THROW_ON_ERROR);exit;
 }
 $edited=achbotApiPaymentProjectStaff($connection,$pay,$refs,json_encode(['inline_keyboard'=>[[['text'=>$spec['label']??'Review','callback_data'=>'noop_fixture']]]]));
 echo json_encode(['edited'=>$edited,'events'=>$events,'rows'=>achbotProviderStatement($connection,"SELECT chat_id,message_id,retired_reason,synced_digest,TIMESTAMPDIFF(SECOND,NOW(6),updated_at) AS delay_seconds FROM payment_message_refs WHERE purpose='staff' ORDER BY chat_id")->get_result()->fetch_all(MYSQLI_ASSOC)],JSON_THROW_ON_ERROR);
@@ -80,6 +89,21 @@ def main():
         r=run(unowned=True);assert r['events']==[[9003,73]],r;cases+=['only_due_original_recipient_retried','revoked_staff_not_edited','arbitrary_message_not_registered']
         r=run(label='New status');assert r['events']==[[9001,71],[9003,73]],r;cases.append('new_status_converges_live_targets_only')
         r=run(caller_tx=True);assert r=={'blocked':True,'active':1,'events':[]},r;cases.append('caller_transaction_preserved')
+        # Use the real notice entry, not a supplied stale keyboard.
+        sql("INSERT INTO payment_attempts(pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,evidence_state) VALUES (7701,'bank_transfer','fixture-7701',200,'toman',200,'uncertain')")
+        sql("UPDATE pays SET state='processing' WHERE id=7701")
+        r=run(notice=True,busy=True);assert r['edited']==0 and not r['events'],r
+        cases.append('original_payment_lease_prevents_stale_notice')
+        r=run(notice=True);assert r['edited']==2 and r['keyboards'],r
+        previous=r['keyboards']
+        sql("UPDATE payment_attempts SET evidence_state='review' WHERE pay_row_id=7701")
+        r=run(notice=True);assert r['edited']==2 and r['keyboards']!=previous,r
+        assert not run(notice=True)['events']
+        cases.append('notice_projects_current_committed_evidence_state')
+        sql("UPDATE pays SET state='declined' WHERE id=7701")
+        assert not run(notice=True)['events']
+        cases.append('terminal_rejected_receipt_not_reopened')
+
     result={'complete':True,'status':'PASS','cases':len(cases),'scenarios':cases}
     if args.report:args.report.write_text(json.dumps(result,indent=2)+'\n')
     print(json.dumps(result))

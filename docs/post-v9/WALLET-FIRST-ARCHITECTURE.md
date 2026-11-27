@@ -86,7 +86,11 @@ fake compatibility adapters or generalized plugin framework.
   order, local finality and delivery. Admit only operations supported by the
   selected implemented adapter and actual configuration. Unknown/partial
   adapters must fail before funding or a remote effect. Pin the selected
-  provider and target; do not silently switch on retry. The current registry is the extension point. Nonpayment reservation resolves
+  provider and target; do not silently switch on retry. The current registry is the extension point.
+  Every create/link adapter must implement the original-delivery credential guard:
+  verify that persisted delivery credentials are still safe to send, with
+  provider-specific rotation/identity semantics. Reject an incomplete adapter
+  at registration, not after funding or delivery. Nonpayment reservation resolves
   and locks the
   physical connection through the registered target adapter before effect-range
   reads. Its normalized `key` and `connection_id` feed the shared allocator;
