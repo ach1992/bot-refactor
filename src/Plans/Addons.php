@@ -2,22 +2,26 @@
 /** AChBot current-only scoped extension catalog; requires the current scoped-offer schema. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {http_response_code(404);exit;}
 
+require_once __DIR__.'/../Diagnostics/EventLog.php';
+
 /** Only the current scoped-offer schema can serve offers. */
 function achbotAddonSchema(mysqli $db): bool {
     $required=['increase_day'=>['server_id','group_ids','scope_hash'],
         'increase_plan'=>['server_id','group_ids','scope_hash'],
         'pays'=>['addon_scope_snapshot']];
-    $q=$db->query("SELECT TABLE_NAME,COLUMN_NAME FROM information_schema.COLUMNS
+    $q=$db->query("SELECT TABLE_NAME,COLUMN_NAME,IS_GENERATED FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('increase_day','increase_plan','pays')
         AND COLUMN_NAME IN ('server_id','group_ids','scope_hash','addon_scope_snapshot')");
     if (!$q) throw new RuntimeException('addon_schema_unavailable');
-    $seen=[];while($row=$q->fetch_assoc()) $seen[$row['TABLE_NAME']][$row['COLUMN_NAME']]=true;
+    $seen=[];while($row=$q->fetch_assoc()) $seen[$row['TABLE_NAME']][$row['COLUMN_NAME']]=$row['IS_GENERATED'];
     $q->free();$count=0;
     foreach($required as $table=>$columns) foreach($columns as $col) {
         if (!empty($seen[$table][$col])) $count++;
     }
     if ($count===0) throw new RuntimeException('addon_schema_missing');
     if ($count!==7) throw new RuntimeException('addon_schema_partial');
+    foreach (['increase_day','increase_plan'] as $table)
+        if ($seen[$table]['scope_hash']!=='ALWAYS') throw new RuntimeException('addon_schema_incompatible');
     // Missing/altered DB uniqueness is not a usable migration: two concurrent
     // admins could insert competing prices for the same quantity and scope.
     $requiredIndexes=['increase_day'=>'uq_addon_day_units_scope',
@@ -64,9 +68,8 @@ function achbotAddonOfferRevision(string $kind,array $row): string {
     achbotAddonTable($kind);
     if (!isset($row['id'],$row['volume'],$row['price']) || (int)$row['id']<=0)
         throw new RuntimeException('addon_admin_offer_invalid');
-    $scope=achbotAddonScopeRow($row);
     return substr(hash('sha256',json_encode([$kind,(int)$row['id'],
-        (string)$row['volume'],(string)$row['price'],$scope['scope_hash']],
+        (string)$row['volume'],(string)$row['price'],$row['server_id'],$row['group_ids']],
         JSON_THROW_ON_ERROR)),0,20);
 }
 function achbotAddonOfferCallback(string $prefix,string $kind,array $row): string {
@@ -97,17 +100,15 @@ function achbotAddonScopeRow(array $row): array {
     if ($json!==null) {
         if ($sid===null || !is_string($json))
             throw new RuntimeException('addon_scope_groups_invalid');
-        try {$groups=json_decode($json,true,64,JSON_THROW_ON_ERROR);}
+        try {$groups=json_decode($json,false,64,JSON_THROW_ON_ERROR);}
         catch(Throwable $error) {throw new RuntimeException('addon_scope_groups_invalid');}
-        if (!is_array($groups) || !array_is_list($groups) ||
-            $groups!==achbotAddonGroups($groups,true) ||
-            json_encode($groups,JSON_THROW_ON_ERROR)!==$json)
+        if (!is_array($groups) || !array_is_list($groups))
             throw new RuntimeException('addon_scope_groups_invalid');
+        $groups=achbotAddonGroups($groups,true);
     } else $groups=null;
     $hash=achbotAddonScopeHash($sid,$groups);
-    if (!is_string($row['scope_hash']) ||
-        !hash_equals($hash,$row['scope_hash']))
-        throw new RuntimeException('addon_scope_hash_changed');
+    // The actual business columns own scope. The database-generated key
+    // is an index aid; it is never a second source of business truth.
     return ['server_id'=>$sid,'groups'=>$groups,'scope_hash'=>$hash];
 }
 /** Fetching every candidate also detects duplicated/conflicting offers; no lowest-price selection. */
@@ -119,12 +120,24 @@ function achbotAddonCatalog(mysqli $db,string $kind,array $context,?array $rows=
         if (!$q || !$q->execute()) throw new RuntimeException('addon_catalog_unavailable');
         $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     }
-    $found=[];$verifiedPgGroups=null;
+    $found=[];$blocked=[];$verifiedPgGroups=null;
     foreach($rows as $r) {
         $units=achbotWholeServiceUnits($r['volume'],$kind==='day'?achbotServiceDaysMax():achbotServiceVolumeMax());
         if ($units===null || !is_numeric($r['price']) || (int)$r['price']<0 ||
             (int)$r['price']>2147483647) continue;
-        $scope=achbotAddonScopeRow($r);
+        // Do not let an invalid offer for another server poison this list.
+        if ($r['server_id']!==null && ctype_digit((string)$r['server_id']) &&
+            (int)$r['server_id']>0 && (int)$r['server_id']!==$context['server_id']) continue;
+        try { $scope=achbotAddonScopeRow($r); }
+        catch (RuntimeException $error) {
+            // A malformed potentially applicable row blocks only its own
+            // quantity, not other valid quantities. Never guess its price/scope.
+            $blocked[$units]=true;
+            achbotDiagnosticEvent('achbot.addon.catalog_deferred',[
+                'operational_ref'=>'addon:'.$kind.':'.(int)$r['id'],
+                'server_id'=>(int)$context['server_id']]+achbotDiagnosticLocalFailure($error),'warning');
+            continue;
+        }
         $rank=0;
         if ($scope['server_id']===null) $rank=1;
         elseif ($scope['server_id']!==$context['server_id']) continue;
@@ -151,9 +164,16 @@ function achbotAddonCatalog(mysqli $db,string $kind,array $context,?array $rows=
             'scope_hash'=>$scope['scope_hash'],'scope_server_id'=>$scope['server_id'],
             'scope_groups'=>$scope['groups']];
         if (!isset($found[$units]) || $rank>$found[$units]['rank'])
-            $found[$units]=['rank'=>$rank,'offer'=>$offer];
+            $found[$units]=['rank'=>$rank,'offer'=>$offer,'ambiguous'=>false];
         elseif ($rank===$found[$units]['rank'])
-            throw new RuntimeException('addon_catalog_ambiguous');
+            $found[$units]['ambiguous']=true;
+    }
+    foreach ($found as $units=>$candidate) {
+        if ($candidate['ambiguous'])
+            achbotDiagnosticEvent('achbot.addon.catalog_deferred',[
+                'operational_ref'=>'addon:'.$kind.':'.$candidate['offer']['id'],
+                'server_id'=>(int)$context['server_id'],'reason'=>'addon_catalog_ambiguous'],'warning');
+        if (isset($blocked[$units]) || $candidate['ambiguous']) unset($found[$units]);
     }
     ksort($found,SORT_NUMERIC);
     return array_values(array_map(static fn(array $item)=>$item['offer'],$found));

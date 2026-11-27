@@ -310,8 +310,6 @@ def check(root: Path = ROOT) -> dict:
     user_source=(root/'messages/fa/user.php').read_text()
     admin_source=(root/'messages/fa/admin.php').read_text()
     references=(
-        'manual_receipts.message.f6331b33af',
-        'gateway_return.perform_payment_effect.message.dd866497c7',
         'warnings.msg.804056ecc4',
         'external_accounts.extract_username_from_link.message.b2f5ea228c',
         'manual_accounts.import_completed',

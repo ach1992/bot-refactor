@@ -401,6 +401,13 @@ function achbotApiPaymentReviewKeyboard(mysqli $db,array $pay,array $a,?string $
                 $button['callback_data']!=='declineAction_'.$hash));
         }
     }
+    // An ordinary provider outage does not need a redundant status row
+    // on a receipt that still offers manual review. Keep the inbox and
+    // genuine recovery controls available when no manual action exists.
+    if (($a['evidence_state']??null)==='unavailable') {
+        if ($rows) return inlineKeyboard($rows);
+        $label=null;
+    }
     if ($actionable) $rows[]=[['text'=>$label??achbotMessage('automatic_gateway_review.open_case'),
         'callback_data'=>'attentionOpenCase_'.$id]];
     elseif ($label!==null) $rows[]=[['text'=>$label,'callback_data'=>'noop_'.$hash]];

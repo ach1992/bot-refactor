@@ -1,0 +1,258 @@
+{
+  "baseline": "2b8e60b7b03396aeb89663698280eada0f536846",
+  "owner_contract": "https://github.com/ach1992/bot-refactor/issues/236#issuecomment-7227500020",
+  "changes": {
+    "gateway.gateway_return.perform_payment_effect.message.a5b15e454e": {
+      "before": "✅ مبلغ ",
+      "after": null
+    },
+    "gateway.gateway_return.perform_payment_effect.message.dd866497c7": {
+      "before": {
+        "text": " تومان به حساب شما اضافه شد.\n\n<blockquote>\n⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:\n\n🛒 <b>خرید اشتراک جدید</b>\nیا <b>🔄 مشاهده اشتراک‌ها</b>\n\nو در مرحله پرداخت روی دکمه زیر بزنید:\n\n💰 <b>پرداخت با موجودی</b>\n\n</blockquote>\n💬 پشتیبانی: {supportID}",
+        "parameters": [
+          "supportID"
+        ]
+      },
+      "after": null
+    },
+    "manual_payment.manual_receipts.message.f568baa065": {
+      "before": "✅ افزایش حساب شما با موفقیت تایید شد.\n💰 مبلغ <b>",
+      "after": null
+    },
+    "manual_payment.manual_receipts.message.f6331b33af": {
+      "before": {
+        "text": " تومان</b> به کیف پول شما اضافه شد.\n\n<blockquote>\n⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:\n🛒 <b>خرید اشتراک جدید</b>\nیا <b>🔄 مشاهده اشتراک‌ها</b>\nو در مرحله پرداخت روی دکمه زیر بزنید:\n💳 <b>پرداخت با موجودی</b>\n</blockquote>\n💬 پشتیبانی: {supportID}",
+        "parameters": [
+          "supportID"
+        ]
+      },
+      "after": null
+    },
+    "operational_reports.import_report": {
+      "before": {
+        "text": "📥 ثبت اشتراک موجود\nکاربر: {user}\nاشتراک: {remark}\nشناسهٔ اشتراک: {order}\nسرور: {server}\nثبت‌کننده: {actor}",
+        "parameters": [
+          "user",
+          "remark",
+          "order",
+          "server",
+          "actor"
+        ]
+      },
+      "after": {
+        "text": "📥 ثبت اشتراک موجود\n🎫 کاربر: {user}\n🎈 اشتراک: {remark}\n🎈 شناسهٔ اشتراک: {order}\n🚦 سرور: {server}\n🎫 ثبت‌کننده: {actor}",
+        "parameters": [
+          "user",
+          "remark",
+          "order",
+          "server",
+          "actor"
+        ]
+      }
+    },
+    "operational_reports.invited": {
+      "before": {
+        "text": "کاربر معرفی‌شده: <code>{user}</code>",
+        "parameters": [
+          "user"
+        ]
+      },
+      "after": {
+        "text": "🎫 کاربر معرفی‌شده: <code>{user}</code>",
+        "parameters": [
+          "user"
+        ]
+      }
+    },
+    "operational_reports.payment_context": {
+      "before": {
+        "text": "روش پرداخت: {method}\nنوع تأیید: {basis}\nشناسهٔ پرداخت: <code>{payment}</code>\nعملیات سرویس: <code>{service}</code>\nشناسهٔ اشتراک: <code>{order}</code>\nنتیجه: {result}",
+        "parameters": [
+          "method",
+          "basis",
+          "payment",
+          "service",
+          "order",
+          "result"
+        ]
+      },
+      "after": {
+        "text": "💳 روش پرداخت: {method}\n✅ نوع تأیید: {basis}\n🧾 شناسهٔ پرداخت: <code>{payment}</code>\n🔖 عملیات سرویس: <code>{service}</code>\n🎈 شناسهٔ اشتراک: <code>{order}</code>\n📋 نتیجه: {result}",
+        "parameters": [
+          "method",
+          "basis",
+          "payment",
+          "service",
+          "order",
+          "result"
+        ]
+      }
+    },
+    "operational_reports.resolution_subject": {
+      "before": {
+        "text": "اشتراک: {remark} | شناسه: {order}",
+        "parameters": [
+          "remark",
+          "order"
+        ]
+      },
+      "after": {
+        "text": "🎈 اشتراک: {remark} | شناسه: {order}",
+        "parameters": [
+          "remark",
+          "order"
+        ]
+      }
+    },
+    "operational_reports.service_context": {
+      "before": {
+        "text": "🎫 شناسه عددی کاربر: <code>{user}</code>\n💳 روش پرداخت: {method}\n💵 مبلغ: {amount} تومان\n🎈 اشتراک: <code>{remark}</code>\n🚦 سرور: <code>{server}</code> | پلن: <code>{plan}</code>\nشناسهٔ پرداخت/درخواست: <code>{reference}</code>\nشناسهٔ عملیات: <code>svc_{service}</code>",
+        "parameters": [
+          "user",
+          "method",
+          "amount",
+          "remark",
+          "server",
+          "plan",
+          "reference",
+          "service"
+        ]
+      },
+      "after": {
+        "text": "🎫 شناسه عددی کاربر: <code>{user}</code>\n💳 روش پرداخت: {method}\n💵 مبلغ: {amount} تومان\n🎈 اشتراک: <code>{remark}</code>\n🚦 سرور: <code>{server}</code> | پلن: <code>{plan}</code>\n🧾 شناسهٔ پرداخت/درخواست: <code>{reference}</code>\n🔖 شناسهٔ عملیات: <code>svc_{service}</code>",
+        "parameters": [
+          "user",
+          "method",
+          "amount",
+          "remark",
+          "server",
+          "plan",
+          "reference",
+          "service"
+        ]
+      }
+    },
+    "operational_reports.service_order": {
+      "before": {
+        "text": "شناسهٔ اشتراک: <code>{order}</code>",
+        "parameters": [
+          "order"
+        ]
+      },
+      "after": {
+        "text": "🎈 شناسهٔ اشتراک: <code>{order}</code>",
+        "parameters": [
+          "order"
+        ]
+      }
+    },
+    "operational_reports.service_wallet_balance": {
+      "before": {
+        "text": "موجودی قبل: {before} تومان\nموجودی بعد: {after} تومان",
+        "parameters": [
+          "before",
+          "after"
+        ]
+      },
+      "after": {
+        "text": "💰 موجودی قبل: {before} تومان\n💰 موجودی بعد: {after} تومان",
+        "parameters": [
+          "before",
+          "after"
+        ]
+      }
+    },
+    "operational_reports.service_wallet_net": {
+      "before": {
+        "text": "خالص تغییر موجودی: {net} تومان",
+        "parameters": [
+          "net"
+        ]
+      },
+      "after": {
+        "text": "💰 خالص تغییر موجودی: {net} تومان",
+        "parameters": [
+          "net"
+        ]
+      }
+    },
+    "operational_reports.source_reference": {
+      "before": {
+        "text": "شناسهٔ مرجع: <code>{reference}</code>",
+        "parameters": [
+          "reference"
+        ]
+      },
+      "after": {
+        "text": "🔖 شناسهٔ مرجع: <code>{reference}</code>",
+        "parameters": [
+          "reference"
+        ]
+      }
+    },
+    "operational_reports.transfer_sender": {
+      "before": {
+        "text": "فرستنده: <code>{sender}</code>\nموجودی فرستنده پیش از انتقال: {before} تومان\nموجودی فرستنده پس از انتقال: {after} تومان",
+        "parameters": [
+          "sender",
+          "before",
+          "after"
+        ]
+      },
+      "after": {
+        "text": "🎫 فرستنده: <code>{sender}</code>\n💰 موجودی فرستنده پیش از انتقال: {before} تومان\n💰 موجودی فرستنده پس از انتقال: {after} تومان",
+        "parameters": [
+          "sender",
+          "before",
+          "after"
+        ]
+      }
+    },
+    "operational_reports.wallet_facts": {
+      "before": {
+        "text": "🎫 شناسه عددی کاربر: <code>{user}</code>\n💵 مبلغ: {amount} تومان\nموجودی پیش از تراکنش: {before} تومان\nموجودی پس از تراکنش: {after} تومان\nشناسهٔ تراکنش کیف پول: <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}",
+        "parameters": [
+          "user",
+          "amount",
+          "before",
+          "after",
+          "entry",
+          "date"
+        ]
+      },
+      "after": {
+        "text": "🎫 شناسه عددی کاربر: <code>{user}</code>\n💵 مبلغ: {amount} تومان\n💰 موجودی پیش از تراکنش: {before} تومان\n💰 موجودی پس از تراکنش: {after} تومان\n🔖 شناسهٔ تراکنش کیف پول: <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}",
+        "parameters": [
+          "user",
+          "amount",
+          "before",
+          "after",
+          "entry",
+          "date"
+        ]
+      }
+    },
+    "purchase.entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e": {
+      "before": "📂 مرحلهٔ دوم\n\nدسته بندی مورد نظرت رو انتخاب کن 🤭",
+      "after": null
+    },
+    "purchase.entry_and_bulk.create_multiple_accounts.message.7f4d98ab9b": {
+      "before": "📋 مرحلهٔ سوم\n\nیکی از پلن هارو انتخاب کن و برو برای پرداختش 🤲",
+      "after": null
+    },
+    "subscription.customer_routes.link_update_advice": {
+      "before": "🔄 لینک <b>اشتراک قبلی</b> را از نرم افزار <b>حذف</b> کنید و <b>لینک جدید</b> را از بالا بردارید و <b>وارد</b> کنید.\n⚠️ اگر <b>لینک اصلی</b> کار نکرد از <b>لینک کمکی</b> استفاده کنید.\n⚠️ برای دریافت کانفیگ ها به صورت تک تک می توانید دکمه <b>کیوآرکد کانفیگ</b> را بزنید.",
+      "after": "🔄 لینک <b>اشتراک قبلی</b> را از نرم افزار <b>حذف</b> کنید و <b>لینک جدید</b> را از بالا بردارید و <b>وارد</b> کنید.\n⚠️ اگر <b>لینک اصلی</b> کار نکرد از <b>لینک کمکی</b> استفاده کنید.\n⬇️ برای دریافت کانفیگ ها به صورت تک تک می توانید دکمه <b>کیوآرکد کانفیگ</b> را بزنید."
+    },
+    "wallet.topup_success": {
+      "before": null,
+      "after": {
+        "text": "✅ افزایش حساب شما با موفقیت تایید شد.\n💰 مبلغ <b>{amount} تومان</b> به کیف پول شما اضافه شد.\n🧰 جهت <b>استفاده از موجودی</b> روی یکی از دکمه های زیر بزنید. همچنین اگر اشتراک دارید می توانید <b>تمدید خودکار</b> را برای آن <b>روشن</b> کنید.\n\n💬 پشتیبانی: {supportID}",
+        "parameters": [
+          "amount",
+          "supportID"
+        ]
+      }
+    }
+  }
+}

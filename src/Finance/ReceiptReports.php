@@ -124,19 +124,15 @@ function achbotReceiptReportStageLocked(mysqli $db,int $payId,int $userId,string
         achbotServiceStageFundingReportLocked($db,$op,$quote,$source);
         return;
     }
-    $hosted=achbotReceiptIsHosted($a);
-    $amount=number_format((int)$pay['price']);
-    $support=['supportID'=>(string)($GLOBALS['supportID']??'')];
-    $mode='HTML';
-    if ($hosted) {
-        $text=achbotMessage('gateway.gateway_return.perform_payment_effect.message.a5b15e454e').$amount.
-            achbotMessageHtml('gateway.gateway_return.perform_payment_effect.message.dd866497c7',$support);
-    } else {
-        $text=achbotMessage('manual_payment.manual_receipts.message.f568baa065').$amount.
-            achbotMessageHtml('manual_payment.manual_receipts.message.f6331b33af',$support);
-    }
+    $text=achbotMessageHtml('wallet.topup_success',[
+        'amount'=>number_format($entry['after']-$entry['before']),
+        'supportID'=>(string)($GLOBALS['supportID']??'')]);
+    $keys=inlineKeyboard([[
+        ['text'=>achbotMessage('legacy_buttons.buy_subscriptions'),'callback_data'=>'shortcutBuy'],
+        ['text'=>achbotMessage('legacy_buttons.my_subscriptions'),'callback_data'=>'shortcutMySubs']
+    ]]);
     achbotFollowupStoreLocked($db,$payId,null,$stage,'customer','send',(string)$userId,null,
-        $fingerprint,['text'=>$text,'keys'=>null,'mode'=>$mode]);
+        $fingerprint,['text'=>$text,'keys'=>$keys,'mode'=>'HTML']);
     $wallet=achbotWalletReportEntryLocked($db,$entry['id']);
     $result=$a['wallet_funding_result'];
     if ($result==='request_invalidated' && $originalState==='service_superseded') $result='service_superseded';

@@ -160,6 +160,33 @@ def compare_ux(before, after):
     assert changes==set(UX["changes"]),"missing_declared_ux_wire_delta"
     return dict(Counter(method for rows in after.values() for method,_ in rows))
 
+# Owner-approved Chili acceptance changes exactly two bulk prompt keys.
+# Preserve all prior contracts through the integrated v0.12.1 baseline.
+CHILI_BASE = "2b8e60b7b03396aeb89663698280eada0f536846"
+
+def compare_chili(before, after):
+    assert before.keys()==after.keys()
+    path="src/Purchase/EntryAndBulk.php"
+    replacements={
+        "purchase.entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e":"legacy_messages.buy_sub_select_category",
+        "purchase.entry_and_bulk.create_multiple_accounts.message.7f4d98ab9b":"legacy_messages.buy_sub_select_plan",
+    }
+    seen=Counter()
+    for name,rows in before.items():
+        expected=[]
+        for method,args in rows:
+            args=list(args)
+            if name==path and method=="editText":
+                for i,arg in enumerate(args):
+                    for old,new in replacements.items():
+                        if arg==php_args.canonical_expression("\\achbotMessage('"+old+"')"):
+                            args[i]=php_args.canonical_expression("\\achbotMessage('"+new+"')")
+                            seen[old]+=1
+            expected.append([method,args])
+        assert expected==after[name],("unapproved_chili_wire_delta",name)
+    assert seen==Counter({key:1 for key in replacements}),seen
+    return dict(Counter(method for rows in after.values() for method,_ in rows))
+
 def main():
     def accepted(name):
         return (name.endswith(".php") and not name.startswith("messages/fa/")
@@ -185,7 +212,11 @@ def main():
         ["git","show",UX["baseline"]+":"+name],cwd=ROOT,text=True)
         for name in current})
     compare_hygiene(integrated,hygiene)
-    total = compare_ux(hygiene,current)
+    chili = canonical({name:subprocess.check_output(
+        ["git","show",CHILI_BASE+":"+name],cwd=ROOT,text=True)
+        for name in current})
+    compare_ux(hygiene,chili)
+    total = compare_chili(chili,current)
 
     # Mutate an actual current call, not a hand-written parser fixture.
     bot = now["bot.php"]
@@ -204,14 +235,14 @@ def main():
         assert replacement != bot
         mutation = dict(now, **{"bot.php": replacement})
         try:
-            compare_ux(hygiene, canonical(mutation))
+            compare_chili(chili, canonical(mutation))
         except AssertionError:
             pass
         else:
             raise AssertionError("wire_mutation_not_detected")
     mutation = dict(now, **{"bot.php": bot.replace(
         "<?php", "<?php\n// sendMessage('inactive comment');", 1)})
-    assert compare_ux(hygiene, canonical(mutation)) == total
+    assert compare_chili(chili, canonical(mutation)) == total
     print(json.dumps({"complete": True, "status": "PASS", "baseline": BASE,
         "calls": total, "cases": sum(total.values()),
         "exact_unchanged_paths_and_pinned_deltas": True,

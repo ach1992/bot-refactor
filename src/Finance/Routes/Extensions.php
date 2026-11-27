@@ -36,6 +36,9 @@ if(preg_match('/\AincreaseADay([1-9][0-9]{0,9})\z/D', $data, $match)){
         }
         $catalog=achbotAddonCatalog($connection,'day',$addonContext);
     } catch (Throwable $error) {
+        achbotDiagnosticEvent('achbot.addon.route_deferred',[
+            'order_id'=>(int)$orderInfo['id'],'server_id'=>(int)$orderInfo['server_id'],
+            'action'=>'day_list']+achbotDiagnosticLocalFailure($error),'warning');
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
@@ -94,6 +97,9 @@ if(preg_match('/\AselectPlanDayIncrease(?<orderId>[1-9][0-9]{0,9})_(?<dayId>[1-9
         if (!$res) throw new RuntimeException('addon_offer_not_applicable');
         $quotedUnits=$res['volume'];$planprice=$res['price'];
     } catch (Throwable $error) {
+        achbotDiagnosticEvent('achbot.addon.route_deferred',[
+            'order_id'=>(int)$orderInfo['id'],'server_id'=>(int)$orderInfo['server_id'],
+            'action'=>'day_quote']+achbotDiagnosticLocalFailure($error),'warning');
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
@@ -234,6 +240,9 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
         }
         $catalog=achbotAddonCatalog($connection,'volume',$addonContext);
     } catch(Throwable $error) {
+        achbotDiagnosticEvent('achbot.addon.route_deferred',[
+            'order_id'=>(int)$orderInfo['id'],'server_id'=>(int)$orderInfo['server_id'],
+            'action'=>'volume_list']+achbotDiagnosticLocalFailure($error),'warning');
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }
@@ -301,6 +310,9 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
         if (!$res) throw new RuntimeException('addon_offer_not_applicable');
         $planprice=$res['price'];$plangb=$res['volume'];
     } catch(Throwable $error) {
+        achbotDiagnosticEvent('achbot.addon.route_deferred',[
+            'order_id'=>(int)$orderInfo['id'],'server_id'=>(int)$orderInfo['server_id'],
+            'action'=>'volume_quote']+achbotDiagnosticLocalFailure($error),'warning');
         alert(\achbotMessage('payment.pre_payment.alert.fa55f5201f'),true);
         return;
     }

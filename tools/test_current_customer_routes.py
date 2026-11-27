@@ -126,6 +126,8 @@ case 'order_agent':
     break;
 case 'plan_category':
     require $root.'/src/Plans/Categories.php';break;
+case 'addon_admin':
+    require $root.'/src/Plans/Intervals.php';break;
 case 'ticket':
     require_once $root.'/src/Support/Routes.php';
     achbotSupportRoute($connection,$from_id,$update,$userInfo,$cancelKey,$removeKeyboard);break;
@@ -243,7 +245,10 @@ def main():
                     continue
                 assert line.startswith('[AChBot] '),(op,line)
                 diagnostic=json.loads(line[len('[AChBot] '):])
-                assert (op in ('manual_claim','manual_checkout') and diagnostic['event']=='achbot.finance.checkout_manual_admission_deferred') or (
+                assert (op=='addon_admin' and diagnostic['event']=='achbot.addon.admin_scope_deferred') or (
+                    op=='extensions' and diagnostic['event']=='achbot.addon.route_deferred' and
+                    diagnostic.get('action') in ('day_list','day_quote','volume_list','volume_quote') and
+                    isinstance(diagnostic.get('order_id'),int) and isinstance(diagnostic.get('server_id'),int)) or (op in ('manual_claim','manual_checkout') and diagnostic['event']=='achbot.finance.checkout_manual_admission_deferred') or (
                     op=='shortcut' and diagnostic['event']=='achbot.delivery.followup_result' and
                     diagnostic.get('operational_ref','').startswith('welcome:') and diagnostic.get('result')=='acknowledged'),(op,diagnostic)
             return json.loads(r.stdout)
@@ -285,6 +290,34 @@ def main():
         run('ticket',actor=2003,callback='delTicketCat_10')
         assert sql('SELECT COUNT(*) FROM setting WHERE id IN (9,10)')=='0'
         cases.append('actual_content_deletion_scope_and_staff_capability')
+        # An actual invalid manually edited scope must remain repairable in
+        # the ordinary admin list, with working creation and same-value save.
+        for kind,table,menu,add,prefix in [
+            ('Volume','increase_plan','volumePlanSettings','addNewVolumePlan','changeVolumePlanPrice'),
+            ('Day','increase_day','dayPlanSettings','addNewDayPlan','changeDayPlanPrice')]:
+            sql(f"INSERT INTO {table}(id,volume,price,server_id,group_ids) VALUES(51,5,30000,NULL,NULL),(52,50,250000,18,'bad-json')")
+            r=run('addon_admin',actor=9001,callback=menu,update_id=201)
+            c=callbacks(r)
+            assert add in c and any(k.startswith(prefix+'51_') for k in c),r
+            repair=next(k for k in c if k.startswith('addonEditScope'+kind+'52_'))
+            r=run('addon_admin',actor=9001,callback=repair,update_id=202)
+            assert r['user']['step']=='addon:scope',r
+            select=next(k for k in callbacks(r) if k.startswith('addonScopeGlobal_'))
+            r=run('addon_admin',actor=9001,callback=select,update_id=203)
+            assert r['user']['step']=='none' and sql(f"SELECT CONCAT(server_id IS NULL,':',group_ids IS NULL,':',scope_hash=SHA2('G',256)) FROM {table} WHERE id=52")=='1:1:1',r
+            sql(f"UPDATE {table} SET volume=51,price=260000 WHERE id=52")
+            r=run('addon_admin',actor=9001,callback=menu,update_id=204)
+            price=next(k for k in callbacks(r) if k.startswith(prefix+'52_'))
+            r=run('addon_admin',actor=9001,callback=price,update_id=205)
+            assert r['user']['step']==price,r
+            r=run('addon_admin',actor=9001,text='260000',update_id=206)
+            assert r['user']['step']=='none' and sql(f'SELECT price FROM {table} WHERE id=52')=='260000',r
+            r=run('addon_admin',actor=9001,callback=add,update_id=207)
+            r=run('addon_admin',actor=9001,callback=next(k for k in callbacks(r) if k.startswith('addonScopeGlobal_')),update_id=208)
+            r=run('addon_admin',actor=9001,text='20-90000',update_id=209)
+            assert r['user']['step']=='none' and sql(f"SELECT COUNT(*) FROM {table} WHERE volume=20 AND price=90000")=='1',r
+            sql(f'DELETE FROM {table}')
+        cases.append('actual_addon_admin_repair_direct_edit_noop_and_create')
         # Two administrators may open category creation independently. Neither
         # draft creates or deletes shared catalogue rows; typed submission
         # consumes only its own locked step, exactly once.
@@ -383,6 +416,15 @@ def main():
         assert [c for c in callbacks(run('catalogue',callback='selectCategory1_2_none')) if c.startswith('selectPlan')]==['selectPlan7_1_none']
         assert 'availableServers' not in callbacks(run('menu'))
         cases.append('actual_capacity_entry_catalogue_share_current_native_saleability')
+        # Use precisely the same prompt in single purchase and staff bulk routes.
+        for staff,customer,expected in [
+            ('createAccServer2','selectServer2_none','createAccCategory1_2'),
+            ('createAccCategory1_2','selectCategory1_2_none','createAccPlan7')]:
+            a=run('entry',actor=9001,callback=staff)
+            b=run('catalogue',callback=customer)
+            assert expected in callbacks(a),a
+            assert [e[1] for e in a['events'] if e[0]=='edit']==[e[1] for e in b['events'] if e[0]=='edit'],(a,b)
+        cases.append('staff_bulk_and_customer_single_catalogue_prompts_identical')
         # All references, even inactive plans, prevent category deletion.
         sql("INSERT INTO server_categories(id,title,parent,active) VALUES (90,'Referenced',0,1),(91,'Empty',0,1)")
         sql("UPDATE server_plans SET catid=90 WHERE id=8")
@@ -425,9 +467,18 @@ def main():
             if mode=='custom': assert quote['days']==3 and quote['volume']==2 and quote['remark']=='custom12345',quote
             return r
         original=run('standard',callback='selectPlan7_1_none')
+        original_id=latest(2001)[0]
         sql('UPDATE server_plans SET price=250 WHERE id=7')
         redeem(2001,original,'standard','standard','selectCategory1_2_none',80)
-        sql('UPDATE server_plans SET price=100 WHERE id=7')
+        original_context=json.loads(sql(f"SELECT checkout_draft_context FROM pays WHERE id={original_id}"))
+        assert (original_context['days'],original_context['volume'])==(30,2),original_context
+        sql('UPDATE server_plans SET days=31,volume=3 WHERE id=7')
+        fresh=run('standard',callback='selectPlan7_1_none')
+        fresh_id,_,price,_=latest(2001)
+        fresh_context=json.loads(sql(f"SELECT checkout_draft_context FROM pays WHERE id={fresh_id}"))
+        assert fresh_id!=original_id and int(price)==250 and (fresh_context['days'],fresh_context['volume'])==(31,3),(fresh,fresh_context)
+        sql('UPDATE server_plans SET price=100,days=30,volume=2 WHERE id=7')
+        cases.append('direct_standard_plan_edits_apply_to_fresh_quotes_preserve_original')
         redeem(2002,run('standard',actor=2002,callback='selectPlan7_1_one'),'agentone','standard','selectCategory1_2_one',80)
         before_bulk=sql('SELECT COUNT(*) FROM pays')
         run('standard',actor=2002,callback='selectPlan7_1_much')
@@ -512,6 +563,15 @@ def main():
         assert 'selectServer2_none' not in callbacks(run('shortcut',text='/buy',forced='@fixture',member=False))
         assert 'haveJoined/start buy' in callbacks(run('shortcut',text='/buy',forced='@fixture',member=False))
         assert 'selectServer2_none' in callbacks(run('shortcut',callback='haveJoined/start buy',forced='@fixture',member=True))
+        for callback,expected in [('shortcutBuy','selectServer2_none'),('shortcutMySubs',f'orderDetails{oid}')]:
+            r=run('shortcut',callback=callback,record_delete=True)
+            assert expected in callbacks(r) and not any(e[0] in ('edit','delete') for e in r['events']),r
+        assert 'haveJoined/start buy' in callbacks(run('shortcut',callback='shortcutBuy',forced='@fixture',member=False))
+        assert 'agentOneBuy' in callbacks(run('shortcut',actor=2002,callback='shortcutBuy'))
+        state(sellState='off')
+        assert 'selectServer2_none' not in callbacks(run('shortcut',callback='shortcutBuy'))
+        state()
+        cases.append('wallet_credit_shortcuts_preserve_evidence_and_current_entry_guards')
         state(botState='off')
         assert 'selectServer2_none' not in callbacks(run('shortcut',text='/buy'))
         state()

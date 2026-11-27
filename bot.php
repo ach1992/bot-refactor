@@ -91,7 +91,7 @@ if ((require __DIR__ . '/src/Finance/Routes/PrePayment.php') === null) return;
 require_once __DIR__.'/src/Telegram/UserProfile.php';
 $customerShortcut=achbotCustomerShortcut($update??null,(int)$from_id);
 $isJoinCallback = is_string($data) &&
-    (preg_match('/\AhaveJoined(?:\/start(?: [1-9][0-9]{0,18})?)?\z/D', $data) === 1 || ($customerShortcut!==null && is_object($update->callback_query??null)));
+    (preg_match('/\AhaveJoined(?:\/start(?: [1-9][0-9]{0,18})?)?\z/D', $data) === 1 || ($customerShortcut!==null && is_object($update->callback_query??null) && str_starts_with($data,'haveJoined/start ')));
 if ($isJoinCallback) {
     // The join button is usable only in the same actor's private bot chat.
     // Validate before potentially deleting its message or writing identity.

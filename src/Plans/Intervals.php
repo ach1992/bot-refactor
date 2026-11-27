@@ -143,7 +143,20 @@ function achbotIntervalWrite(mysqli $db,string $sql,string $types,array $params,
             if (!$offer || !hash_equals(achbotAddonOfferRevision($kind,$offer),$target[3])) {
                 $db->rollback();return false;
             }
-            if ($sql!=='') $requireAffected=true;
+            if ($sql!=='') $requireAffected=str_starts_with($sql,'DELETE ');
+        }
+        // The scope editor keeps the original row revision in its stored
+        // flow. Check it again at save, not the stale/generated hash.
+        if ($sql!=='' && ($stored['flow']['action']??null)==='edit' && str_starts_with($step,'addon:')) {
+            $original=$stored['flow']['original']??[];
+            $kind=$stored['flow']['kind']??'';
+            $table=achbotAddonTable($kind);$offerId=$original['id']??0;
+            $q=$db->prepare("SELECT * FROM $table WHERE id=? FOR UPDATE");
+            $q->bind_param('i',$offerId);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
+            if (!$row || !is_string($original['revision']??null) ||
+                !hash_equals(achbotAddonOfferRevision($kind,$row),$original['revision'])) {
+                $db->rollback();return false;
+            }
         }
         if ($sql!=='') {
             $q=$db->prepare($sql);
@@ -189,8 +202,13 @@ function achbotIntervalShow(mysqli $db,string $kind,?int $editMessageId=null): v
         $keys[]=[['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>achbotAddonOfferCallback($day?'deleteDayPlan':'deleteVolumePlan',$kind,$row)],
             ['text'=>number_format($row['price']).\achbotMessage('labels.currency_toman_suffix'),'callback_data'=>achbotAddonOfferCallback($day?'changeDayPlanPrice':'changeVolumePlanPrice',$kind,$row)],
             ['text'=>(string)$row['volume'],'callback_data'=>achbotAddonOfferCallback($day?'changeDayPlanDay':'changeVolumePlanVolume',$kind,$row)]];
-        $scope=achbotAddonScopeRow($row);
-        $keys[]=[['text'=>achbotAddonAdminScopeLabel($scope),
+        try { $scopeLabel=achbotAddonAdminScopeLabel(achbotAddonScopeRow($row)); }
+        catch (RuntimeException $error) {
+            $scopeLabel=achbotMessage('addon_scopes.choose_scope');
+            achbotDiagnosticEvent('achbot.addon.admin_scope_deferred',[
+                'operational_ref'=>'addon:'.$kind.':'.(int)$row['id']]+achbotDiagnosticLocalFailure($error),'warning');
+        }
+        $keys[]=[['text'=>$scopeLabel,
             'callback_data'=>achbotAddonOfferCallback('addonEditScope'.($day?'Day':'Volume'),$kind,$row)]];
     }
     $keys[]=[['text'=>$day?\achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'):\achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'),'callback_data'=>$day?'addNewDayPlan':'addNewVolumePlan']];

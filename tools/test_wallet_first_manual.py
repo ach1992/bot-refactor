@@ -23,6 +23,7 @@ require_once dirname($argv[1]).'/ManualReceipt.php';
 require_once dirname($argv[1]).'/ApiPayments.php';
 require_once dirname($argv[1]).'/GatewayReview.php';
 require_once dirname($argv[1]).'/ReceiptNotices.php';
+$GLOBALS['supportID']='@fixture_support';
 function sendPhoto(...$args) {
     $GLOBALS['review_sends'][]=['kind'=>'photo','args'=>$args];
     if ($GLOBALS['spec']['approve_during_send']??false) {
@@ -234,7 +235,20 @@ def main():
                 h=sql(f"SELECT hash_id FROM pays WHERE id={pid}")
                 keys={b['callback_data'] for b in buttons}
                 assert 'pa_'+h in keys and ('declineAction_'+h in keys)==reject,r
-                assert any(b['callback_data']==f'attentionOpenCase_{pid}' and b['text']==label for b in buttons),r
+                if label==unavailable_label:
+                    assert f'attentionOpenCase_{pid}' not in keys and all(b['text']!=label for b in buttons),r
+                else:
+                    assert any(b['callback_data']==f'attentionOpenCase_{pid}' and b['text']==label for b in buttons),r
+            def assert_credit_notice(r,amount):
+                args=r['sends'][0]['args']
+                expected=("✅ افزایش حساب شما با موفقیت تایید شد.\n"
+                    f"💰 مبلغ <b>{amount:,} تومان</b> به کیف پول شما اضافه شد.\n"
+                    "🧰 جهت <b>استفاده از موجودی</b> روی یکی از دکمه های زیر بزنید. همچنین اگر اشتراک دارید می توانید <b>تمدید خودکار</b> را برای آن <b>روشن</b> کنید.\n\n"
+                    "💬 پشتیبانی: @fixture_support")
+                assert args[0]==expected and args[2]=='HTML' and int(args[3])==1001,r
+                assert json.loads(args[1])=={'inline_keyboard':[[
+                    {'text':'🛍 خرید اشتراک جدید','callback_data':'shortcutBuy'},
+                    {'text':'🔄 مشاهده اشتراک‌ها','callback_data':'shortcutMySubs'}]]},r
             def assert_same_view(mode,pid,view,r):
                 message,digest=view
                 assert not any(e['kind'] in ('message','photo','editMessageText') for e in r['sends']),r
@@ -762,6 +776,7 @@ DELIMITER ;
                 iid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='wallet_credit' AND role='customer'"))
                 delivered=result(mode,'report',pid,report=iid)
                 assert delivered['status']=='acknowledged' and len(delivered['sends'])==1,delivered
+                assert_credit_notice(delivered,1000)
                 assert not result(mode,'report',pid,report=iid)['sends']
                 assert not result(mode,'status_click',pid,message_id=view[0])['sends']
                 assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='payment_credit' AND source_ref='{pid}'")=='1'
@@ -982,6 +997,7 @@ DELIMITER ;
                 iid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='wallet_credit' AND role='customer'"))
                 r=result(mode,'report',pid,report=iid)
                 assert r['status']=='acknowledged' and len(r['sends'])==1,r
+                assert_credit_notice(r,94731)
                 r=result(mode,'report',pid,report=iid)
                 assert r['status']=='acknowledged' and not r['sends'],r
                 assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='payment_credit' AND source_ref='{pid}'")=='1'

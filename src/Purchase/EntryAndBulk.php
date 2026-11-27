@@ -80,7 +80,7 @@ if(preg_match('/\AcreateAccServer([1-9][0-9]*)\z/D',$data, $match) && ($from_id 
         alert(\achbotMessage('legacy_messages.receive_categories'));
         $keyboard[] = ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "createMultipleAccounts"];
         $keyboard = array_chunk($keyboard,1);
-        editText($message_id, \achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e'), json_encode(['inline_keyboard'=>$keyboard]));
+        editText($message_id, \achbotMessage('legacy_messages.buy_sub_select_category'), json_encode(['inline_keyboard'=>$keyboard]));
     }
 
 }
@@ -100,7 +100,7 @@ if(preg_match('/\AcreateAccCategory([1-9][0-9]*)_([1-9][0-9]*)\z/D',$data,$match
         }
         $keyboard[] = ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "createAccServer$sid"];
         $keyboard = array_chunk($keyboard,1);
-        editText($message_id, \achbotMessage('purchase.entry_and_bulk.create_multiple_accounts.message.7f4d98ab9b'), json_encode(['inline_keyboard'=>$keyboard]));
+        editText($message_id, \achbotMessage('legacy_messages.buy_sub_select_plan'), json_encode(['inline_keyboard'=>$keyboard]));
     }
 
 }

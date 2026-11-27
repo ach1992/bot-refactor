@@ -131,7 +131,7 @@ CREATE TABLE `increase_day` (
   `price` int(11) NOT NULL,
   `server_id` int(11) DEFAULT NULL,
   `group_ids` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  `scope_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '333e0a1e27815d0ceee55c473fe3dc93d56c63e3bee2b3b4aee8eed6d70191a3',
+  `scope_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin GENERATED ALWAYS AS (sha2(case when `server_id` is null and `group_ids` is null then 'G' when `server_id` is null or `server_id` <= 0 then NULL when `group_ids` is null then concat('S:',`server_id`) when json_valid(`group_ids`) then concat('P:',`server_id`,':',trim(both ']' from trim(both '[' from json_compact(`group_ids`)))) else NULL end,256)) STORED,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_addon_day_units_scope` (`volume`,`scope_hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -158,7 +158,7 @@ CREATE TABLE `increase_plan` (
   `price` int(11) NOT NULL,
   `server_id` int(11) DEFAULT NULL,
   `group_ids` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
-  `scope_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL DEFAULT '333e0a1e27815d0ceee55c473fe3dc93d56c63e3bee2b3b4aee8eed6d70191a3',
+  `scope_hash` char(64) CHARACTER SET ascii COLLATE ascii_bin GENERATED ALWAYS AS (sha2(case when `server_id` is null and `group_ids` is null then 'G' when `server_id` is null or `server_id` <= 0 then NULL when `group_ids` is null then concat('S:',`server_id`) when json_valid(`group_ids`) then concat('P:',`server_id`,':',trim(both ']' from trim(both '[' from json_compact(`group_ids`)))) else NULL end,256)) STORED,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_addon_volume_units_scope` (`volume`,`scope_hash`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

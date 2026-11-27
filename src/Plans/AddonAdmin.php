@@ -45,36 +45,33 @@ function achbotAddonAdminValidServer(mysqli $db,int $id,string $scope): bool {
 function achbotAddonAdminVerifyFlow(mysqli $db,array $flow): array {
     $scope=$flow['scope']??null;
     if (!in_array($scope,['global','server','groups'],true)) throw new RuntimeException('addon_admin_scope_invalid');
-    if ($scope==='global') return [null,null,achbotAddonScopeHash(null,null)];
+    if ($scope==='global') return [null,null];
     $sid=$flow['server_id']??null;
     if (!is_int($sid) || !achbotAddonAdminValidServer($db,$sid,$scope))
         throw new RuntimeException('addon_admin_server_missing');
-    if ($scope==='server') return [$sid,null,achbotAddonScopeHash($sid,null)];
+    if ($scope==='server') return [$sid,null];
     $groups=achbotAddonGroups($flow['groups']??[],true);
     if (count($groups)>64) throw new RuntimeException('addon_admin_groups_too_many');
     require_once __DIR__.'/../Panel/ProviderAdmin.php';
     $panel=achbotPgServerPanel($db,$sid);
     $verified=achbotPgAdminGroupIds(implode(',',$groups),$panel);
     if ($verified!==$groups) throw new RuntimeException('addon_admin_groups_changed');
-    return [$sid,json_encode($groups,JSON_THROW_ON_ERROR),achbotAddonScopeHash($sid,$groups)];
+    return [$sid,json_encode($groups,JSON_THROW_ON_ERROR)];
 }
 function achbotAddonAdminSave(mysqli $db,array $flow,?int $units=null,?int $price=null): bool {
-    [$sid,$groupJson,$hash]=achbotAddonAdminVerifyFlow($db,$flow);
+    [$sid,$groupJson]=achbotAddonAdminVerifyFlow($db,$flow);
     $table=achbotAddonTable($flow['kind']);
     if ($flow['action']==='create') {
         if ($units===null || $price===null) return false;
-        $sql="INSERT INTO $table (volume,price,server_id,group_ids,scope_hash) VALUES (?,?,?,?,?)";
-        $ok=achbotIntervalWrite($db,$sql,'iiiss',[$units,$price,$sid,$groupJson,$hash],true,null,null,true);
+        $sql="INSERT INTO $table (volume,price,server_id,group_ids) VALUES (?,?,?,?)";
+        $ok=achbotIntervalWrite($db,$sql,'iiis',[$units,$price,$sid,$groupJson],true,null,null,true);
     } else {
         $original=$flow['original'];
         if (!is_int($original['id']??null) || $original['id']<=0 ||
-            !is_string($original['scope_hash']??null) ||
-            !is_int($original['volume']??null) || !is_int($original['price']??null)) return false;
-        $sql="UPDATE $table SET server_id=?,group_ids=?,scope_hash=?
-              WHERE id=? AND scope_hash=? AND volume=? AND price=?";
-        $ok=achbotIntervalWrite($db,$sql,'issisii',[
-            $sid,$groupJson,$hash,$original['id'],$original['scope_hash'],
-            $original['volume'],$original['price']],true,null,null,true);
+            !is_string($original['revision']??null)) return false;
+        // The shared writer checks the exact saved row revision under lock.
+        $sql="UPDATE $table SET server_id=?,group_ids=? WHERE id=?";
+        $ok=achbotIntervalWrite($db,$sql,'isi',[$sid,$groupJson,$original['id']],true);
     }
     if (!$ok) return false;
     // The financial write has already committed; rendering must never turn
@@ -129,11 +126,9 @@ function achbotAddonAdminHandle(mysqli $db): bool {
                 if (!$row) throw new RuntimeException('addon_admin_offer_missing');
                 if (!hash_equals(achbotAddonOfferRevision($kind,$row),$edit[3]))
                     throw new RuntimeException('addon_admin_stale_callback');
-                $scope=achbotAddonScopeRow($row);
-                $units=achbotWholeServiceUnits($row['volume'],$kind==='day'?achbotServiceDaysMax(0):achbotServiceVolumeMax());
-                if ($units===null || (int)$row['price']<0) throw new RuntimeException('addon_admin_offer_invalid');
-                $flow['original']=['id'=>$id,'scope_hash'=>$scope['scope_hash'],
-                    'volume'=>$units,'price'=>(int)$row['price']];
+                // Even a malformed manually edited scope can be corrected
+                // from its current row; no valid scope is assumed here.
+                $flow['original']=['id'=>$id,'revision'=>achbotAddonOfferRevision($kind,$row)];
             }
             if (!achbotIntervalWrite($db,'','',[],false,'addon:scope',$flow)) {
                 achbotIntervalWriteNotice();return true;

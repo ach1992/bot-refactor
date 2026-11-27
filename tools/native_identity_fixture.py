@@ -176,6 +176,7 @@ def sandbox(*, imported_empty=False):
             "014_api_payment_evidence.sql",
             "018_payment_delivery_intents.sql",
             "015_scoped_addons.sql",
+            "057_derived_addon_scope.sql",
         ):
             sql((ROOT / "migrations/post-v9" / name).read_text())
 
@@ -241,23 +242,19 @@ def sandbox(*, imported_empty=False):
                 ("volume", 702, VOLUME, VOLUME_PRICE),
             ]:
                 table = "increase_day" if kind == "day" else "increase_plan"
-                group_hash = hashlib.sha256(b"P:2:2,5").hexdigest()
                 sql(f"INSERT INTO {table} "
-                    "(id,volume,price,server_id,group_ids,scope_hash) "
-                    f"VALUES ({offer},{units},{price},2,'[2,5]',"
-                    f"'{group_hash}')")
+                    "(id,volume,price,server_id,group_ids) "
+                    f"VALUES ({offer},{units},{price},2,'[2,5]')")
 
             if imported_empty:
                 # Exact Server day and Global volume fallbacks. Group-only
                 # rows 701/702 must remain ineligible for Groups=[].
-                server_scope=hashlib.sha256(b"S:2").hexdigest()
-                global_scope=hashlib.sha256(b"G").hexdigest()
                 sql("INSERT INTO increase_day "
-                    "(id,volume,price,server_id,scope_hash) VALUES "
-                    f"(704,{DAY},{DAY_PRICE},2,'{server_scope}')")
+                    "(id,volume,price,server_id) VALUES "
+                    f"(704,{DAY},{DAY_PRICE},2)")
                 sql("INSERT INTO increase_plan "
-                    "(id,volume,price,scope_hash) VALUES "
-                    f"(705,{VOLUME},{VOLUME_PRICE},'{global_scope}')")
+                    "(id,volume,price) VALUES "
+                    f"(705,{VOLUME},{VOLUME_PRICE})")
 
             driver=work/'native-identity.php'
             driver.write_text(PHP)
