@@ -79,7 +79,11 @@ Fallback does not mutate saved content, nor retroactively edit messages.
 The transport renderer is not authority to delete history. Preserve all
 human-authored input and retained evidence, including issued invoices,
 receipts, subscription information, support conversations and reports.
-Transient bot-owned navigation must be retired only by verified identity;
+Once a customer receipt status is acknowledged, obsolete payment instructions
+are transient and can be retired without removing actual financial evidence.
+Opening a case from staff evidence creates a separate workbench; navigation
+inside that workbench may edit it. Transient bot-owned navigation must be
+retired only by verified identity;
 a successful send, a successful edit, a definite missing target, and an
 unknown delivery are distinct outcomes. First-start welcome and normal
 menu share one message when within the Telegram text limit; an oversized

@@ -111,7 +111,7 @@ try {
         'start'=>achbotPayUxStartManualReceipt($db,$id,$method,(int)($spec['owner']??1001),$spec['expected_mode']??null),
         'admit'=>achbotManualAdmitReceipt($db,$pay,$method,(int)($spec['owner']??1001),$spec['file'],
             'fixture original receipt',inlineKeyboard([[['text'=>'approve','callback_data'=>achbotManualApprovalCallbackData($pay)]]]),
-            'fixture_bot',$spec['expected_mode']??null),
+            $spec['expected_mode']??null),
         'approve'=>achbotCheckoutSettleReceipt($db,$id,(int)($spec['owner']??1001),$spec['basis']??'manual',[],(int)($spec['actor']??9001),9001),
         'check'=>achbotManualReceiptCheckApi($db,$id),
         'quote'=>achbotServiceIssueLocked($db,1001,'fixture',$spec['reference'],$spec['request']),
@@ -365,7 +365,9 @@ def main():
                 wire=result(mode,'report',pid,report=edit)
                 assert wire['status']=='acknowledged' and wire['sends'][0]['args'][1]==222 and 'pa_' not in wire['sends'][0]['args'][0],wire
                 customer=result(mode,'report',pid,report=notice(pid,1001))
-                assert customer['status']=='superseded' and not customer['sends'],customer
+                assert customer['status']=='acknowledged' and len(customer['sends'])==1,customer
+                assert 'کیف پول' in customer['sends'][0]['args'][0] and 'مهلت پرداخت' not in customer['sends'][0]['args'][0],customer
+                assert sql(f"SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id={pid} AND purpose='receipt_view'")=='1'
                 assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+1000
                 case('receipt_late_ack_after_financial_commit')
                 # A definite 429 is retryable only after retry_after; each recipient is independent.

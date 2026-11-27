@@ -74,14 +74,24 @@ def main() -> None:
         expected[target] = value
     for k in mapping["dead"]:
         del expected[k]
+    ux = json.loads((ROOT / "tools/ux_lifecycle_copy_corrections.json").read_text())
+    ux_base = at_revision(ux["baseline"])
+    check(expected == ux_base, "ux_copy_baseline_mismatch")
+    for k, change in ux["changes"].items():
+        check(expected.get(k) == change["before"], "ux_copy_before_mismatch:" + k)
+        if change["after"] is None:
+            del expected[k]
+        else:
+            expected[k] = change["after"]
     check(new==expected, "current_copy_bytes_changed_outside_explicit_mapping")
-    retired = sorted(set(prior_retired)|set(mapping["equal"])|set(mapping["dead"]))
+    ux_retired = {k for k, change in ux["changes"].items() if change["after"] is None}
+    retired = sorted(set(prior_retired)|set(mapping["equal"])|set(mapping["dead"])|ux_retired)
     sources = {p:(ROOT/p).read_text() for p in package_current.members()
                if p.endswith(".php") and p not in owner.AUDIENCES}
     restored = {topic:dict(entries) for topic,entries in owner.loaded_catalog().items()}
     for name in retired:
         topic,key=name.split(".",1)
-        restored.setdefault(topic,{})[key]=previous[name] if name in previous else old[name]
+        restored.setdefault(topic,{})[key]=ux_base[name] if name in ux_retired else (previous[name] if name in previous else old[name])
     check(owner.unresolved_copy_orphans(restored,sources)==retired,"retired_copy_has_live_consumer")
     check(not owner.unresolved_copy_orphans(owner.loaded_catalog(),sources),"unresolved_current_copy")
     print(json.dumps({"complete":True,"status":"PASS","baseline":stable,

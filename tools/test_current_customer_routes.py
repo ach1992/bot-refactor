@@ -73,7 +73,7 @@ function bot($method,$data=[]){
     if ($method==='editMessageReplyMarkup') {$GLOBALS['events'][]=['markup',$data['message_id'],$data['reply_markup']??null];return (object)['ok'=>true,'result'=>(object)['message_id'=>(int)$data['message_id'],'chat'=>(object)['id'=>(int)$data['chat_id']]]];}
     throw new RuntimeException('unexpected fixture bot method '.$method);
 }
-function delMessage(...$a){if (($GLOBALS['spec']['op']??'')==='manual_checkout') $GLOBALS['events'][]=['delete',...$a];return (object)['ok'=>true];}
+function delMessage(...$a){if (($GLOBALS['spec']['op']??'')==='manual_checkout' || !empty($GLOBALS['spec']['record_delete'])) $GLOBALS['events'][]=['delete',...$a];return array_key_exists('delete_result',$GLOBALS['spec'])?json_decode(json_encode($GLOBALS['spec']['delete_result'])):(object)['ok'=>true,'result'=>true];}
 function sendPhoto($file,$text,$keys=null,$mode=null,$uid=null){$GLOBALS['events'][]=['photo',$text,$keys,$mode,$uid,$file];return (object)['ok'=>true,'result'=>(object)['message_id'=>333,'chat'=>(object)['id'=>(int)$uid]]];}
 function sendToAllAdmins(...$a){}
 function alert(...$a){$GLOBALS['events'][]=['alert',...$a];}
@@ -184,6 +184,14 @@ case 'manual_checkout':
 case 'manual_claim':
     $pay=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=?','i',[(int)$spec['pay']]);
     $events[]=['claim',achbotManualClaim($connection,$pay,$spec['method'],$from_id,$spec['network']??null,$spec['mode']??'standard')];
+    break;
+case 'settle_fixture':
+    require_once $root.'/src/Finance/FundingCheckout.php';
+    $events[]=['settle',achbotCheckoutSettleReceipt($connection,(int)$spec['pay'],$from_id,'manual',[],9001,9001)];
+    break;
+case 'dispatch_fixture':
+    require_once $root.'/src/Finance/FollowupOutbox.php';
+    $events[]=['dispatch',achbotFollowupDispatchOne($connection,(int)$spec['intent'])];
     break;
 case 'projection':
     $events[]=['projection',achbotPayUxSyncMessages($connection,(int)$spec['pay'])];break;

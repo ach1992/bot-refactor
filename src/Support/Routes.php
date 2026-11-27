@@ -83,14 +83,16 @@ function achbotSupportRoute(mysqli $db,int $actor,$update,array $cached,string $
                 achbotTicketHistory($db,$actor,(int)$m[2],$m[1]==='s');
             } elseif (preg_match('/^closeTicket_([cs])_([1-9][0-9]*)$/D',$data,$m)) {
                 $staff=$m[1]==='s';$id=(int)$m[2];
-                if (!achbotTicketRow($db,$actor,$id,$staff)) {achbotAdminDeny();return true;}
+                $ticket=achbotTicketRow($db,$actor,$id,$staff);
+                if (!$ticket) {achbotAdminDeny();return true;}
                 $result=achbotTicketClose($db,$actor,$id,$staff,$cached);
                 if ($result===null) {alert(achbotMessage('support.action_unconfirmed'));return true;}
                 if ($result['editor_closed'])
                     \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('support.queue_and_history.all_tickets.button.b1eee8adee'),$actor);
-                if ($result['ref']===null) return true;
-                try {editKeys($staff?achbotTicketKeys([[['text'=>achbotMessage('support.queue_and_history.all_tickets.button.b1eee8adee'),'callback_data'=>'wizwizch']]]):null,$cid,$actor);} catch(Throwable $ignored){}
-                achbotOperationalReportDispatch($db,$result['ref'],8.0);
+                $ticket['state']=2;
+                try {editKeys(achbotTicketListKeys($ticket,$staff),$cid,$actor);} catch(Throwable $ignored){}
+                alert(achbotMessage('support.queue_and_history.all_tickets.button.b1eee8adee'));
+                if ($result['ref']!==null) achbotOperationalReportDispatch($db,$result['ref'],8.0);
             } elseif (preg_match('/^rate_([1-9][0-9]*)_([1-5])$/D',$data,$m)) {
                 if (!achbotTicketRow($db,$actor,(int)$m[1],false)) {achbotAdminDeny();return true;}
                 $ref=achbotTicketRate($db,$actor,(int)$m[1],(int)$m[2],(int)($update->update_id??0),$cached);

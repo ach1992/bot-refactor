@@ -53,6 +53,9 @@ function achbotCreditMethodRegistry(): array {
                 'child_transactions'=>false]],
     ];
 }
+function achbotManualTypedGiftAttempt(array $attempt): bool {
+    return ($attempt['provider']??null)==='gift_card' && ($attempt['evidence_profile']??null)!==null;
+}
 function achbotCreditMethodDefinition(string $key): ?array {
     if (!preg_match('/\A[a-z][a-z0-9_]{0,31}\z/D',$key)) return null;
     $method=achbotCreditMethodRegistry()[$key]??null;

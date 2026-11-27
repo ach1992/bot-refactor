@@ -83,14 +83,8 @@ if(preg_match('/^cancelBroadcast(\d+)/', $data, $m) && ($from_id == $admin || $u
     $stmt = $connection->prepare("UPDATE `send_list` SET `state` = 4 WHERE `id` = ? AND `state` IN (1,2)");
     $stmt->bind_param("i", $id);
     $stmt->execute();
-    $affected = $stmt->affected_rows;
     $stmt->close();
-
-    if($affected > 0){
-        editText($message_id, \achbotMessage('broadcast.routes.broadcast_start.message.39fe6c5d7e'), getMainKeys());
-    } else {
-        editText($message_id, \achbotMessage('broadcast.routes.broadcast_start.message.78511c235c'), getMainKeys());
-    }
+    editText($message_id,achbotBroadcastStateText($connection,$id),getMainKeys());
 }
 
 if(preg_match('/^chooseSendGroup_(all|has|none|agents)$/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -220,7 +214,7 @@ if(preg_match('/^noDontSend2all(\d+)/', $data, $match) && ($from_id == $admin ||
     $stmt->execute();
     $stmt->close();
 
-    editText($message_id, \achbotMessage('broadcast.routes.broadcast_start.message.372ee64c90'), getMainKeys());
+    editText($message_id,achbotBroadcastStateText($connection,$id),getMainKeys());
 }
 
 if(preg_match('/^yesSend2All(\d+)/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -231,7 +225,7 @@ if(preg_match('/^yesSend2All(\d+)/', $data, $match) && ($from_id == $admin || $u
     $stmt->execute();
     $stmt->close();
 
-    editText($message_id, \achbotMessage('broadcast.routes.broadcast_start.message.b56da4fdde'), getMainKeys());
+    editText($message_id,achbotBroadcastStateText($connection,$id),getMainKeys());
 }
 
 if(preg_match('/^broadcastHistory_(\d+)$/', $data, $m) && ($from_id == $admin || $userInfo['isAdmin'] == true)){

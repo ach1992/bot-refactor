@@ -508,7 +508,6 @@ return [
         // Existing API-assisted payments.
         'api_payment.code' => "📤 ارسال کد گیفت کارت",
         'api_payment.code_prompt' => "کد کامل یک گیفت‌کارت که با مبلغ دقیق فاکتور برابر است را ارسال کنید. <b>فقط کد بفرستید</b> تصویر نفرستید.",
-        'api_payment.code_acknowledgement' => "✅ کد گیفت‌کارت دریافت شد.\n⏳ درخواست در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.",
         'api_payment.code_too_long' => 'کد همراه اطلاعات سفارش در یک پیام جا نمی‌شود. کد را دقیق و بدون متن اضافی بفرستید؛ اگر فقط کد است، با پشتیبانی تماس بگیرید.',
         'api_payment.code_not_found_retry' => "کد گیفت‌کارت در سامانه پیدا نشد. لطفاً کد درست را دوباره بفرستید یا درخواست را لغو کنید.",
         'api_payment.code_invalid_retry' => "کد گیفت‌کارت معتبر نیست. لطفاً کد درست را دوباره بفرستید یا درخواست را لغو کنید.",
@@ -536,10 +535,6 @@ return [
         'payment_lifecycle.progress_wallet_credited' => '✅ مبلغ تأییدشده به کیف پول شما اضافه شد.',
         'payment_lifecycle.progress_resolved' => 'رسیدگی به این درخواست پایان یافته است؛ برای جزئیات، وضعیت سفارش را از پشتیبانی پیگیری کنید.',
         'payment_lifecycle.progress_unverified' => 'نتیجه نهایی هنوز قابل تأیید نیست. پرداخت را تکرار نکنید و وضعیت همین سفارش را پیگیری کنید.',
-        'payment_lifecycle.original_invoice_record' => ['text' => '<b>🧾 اطلاعات فاکتور اصلی (سوابق)</b>' . "\n" . '💳 روش: {method}' . "\n" . '💰 مبلغ فاکتور: <code>{amount}</code> {currency}', 'parameters' => ['method', 'amount', 'currency']],
-        'payment_lifecycle.original_bank_destination' => ['text' => '💳 شماره کارت: <code>{account}</code>' . "\n" . '👤 صاحب حساب: {holder}', 'parameters' => ['account', 'holder']],
-        'payment_lifecycle.original_crypto_destination' => ['text' => '🌐 شبکه: {network}' . "\n" . '📋 آدرس مقصد: <code>{wallet}</code>', 'parameters' => ['network', 'wallet']],
-        'payment_lifecycle.toman' => 'تومان',
         'payment_lifecycle.draft_closed' => '<b>⌛️ مهلت انتخاب روش پرداخت پایان یافت.</b> لطفاً درخواست خود را دوباره ثبت کنید.',
         'payment_lifecycle.pay_ux_status_text.text.a1026d7b85' => '⌛️ مهلت این درخواست پرداخت پایان یافته است.',
         'payment_lifecycle.pay_ux_status_text.text.74adf2adfe' => '🧾 درخواست جدیدتری جایگزین این پیش‌نویس شده است.',
@@ -552,6 +547,19 @@ return [
         'payment_lifecycle.pay_ux_status_text.text.7873970550' => '✅ وضعیت پرداخت ثبت شده است.',
         'payment_lifecycle.pay_ux_status_text.text.c7ccf032ac' => '🧾 فاکتور در انتظار پرداخت است.',
         'payment_lifecycle.pay_ux_status_text.text.8b1195f62f' => 'پرداخت جدید انجام ندهید. اگر قبلاً وجهی پرداخت کرده‌اید، همان پرداخت را برای بررسی ارسال کنید. پس از بسته‌شدن درخواست، مبلغ تأییدشده به کیف پول شما اضافه می‌شود.',
+        'payment_lifecycle.gift_received' => '📥 کد گیفت‌کارت دریافت شد.',
+        'payment_lifecycle.gift_not_verified' => '⚠️ اعتبار کد گیفت‌کارت تأیید نشد.',
+        'payment_lifecycle.gift_not_verified_next' => 'کد ثبت‌شده معتبر تشخیص داده نشد. برای بررسی همین سفارش با پشتیبانی هماهنگ کنید؛ دوباره پرداخت نکنید.',
+        'payment_lifecycle.receipt_uncertain' => '⚠️ نتیجه بررسی پرداخت هنوز مشخص نیست.',
+        'payment_lifecycle.receipt_monitoring_next' => '⏳ در انتظار تطبیق و تأیید خودکار پرداخت هستیم. نیازی به ارسال مجدد رسید نیست.',
+        'payment_lifecycle.receipt_manual_next' => '⏳ پرداخت برای بررسی مدیر ثبت شده است. نیازی به ارسال مجدد رسید نیست.',
+        'payment_lifecycle.receipt_verifying_next' => '⏳ در حال بررسی نهایی پرداخت هستیم. تا مشخص شدن نتیجه، پرداخت را تکرار نکنید.',
+        'payment_lifecycle.hosted_waiting' => '⏳ در انتظار ثبت پرداخت در درگاه هستیم.',
+        'payment_lifecycle.hosted_confirming' => '⏳ پرداخت در حال تأیید توسط درگاه است.',
+        'payment_lifecycle.hosted_progress_next' => 'نتیجه پرداخت هنوز نهایی نشده است. از همین پیام وضعیت سفارش را بررسی کنید و پرداخت را تکرار نکنید.',
+        'payment_lifecycle.hosted_awaiting_next' => 'برای پرداخت از دکمه همین فاکتور استفاده کنید. اگر قبلاً پرداخت کرده‌اید، وضعیت سفارش را بررسی کنید.',
+        'payment_lifecycle.status_update_unconfirmed' => 'به‌روزرسانی پیام هنوز تأیید نشده است؛ لطفاً دوباره وضعیت سفارش را بررسی کنید.',
+        'payment_lifecycle.receipt_instruction_retired' => '🧾 اطلاعات پرداخت قبلی دیگر قابل استفاده نیست. وضعیت سفارش را از پیام ثبت رسید بررسی کنید.',
         'payment_lifecycle.invoice_deadline' => ['text'=>'⏳ مهلت پرداخت: {deadline}','parameters'=>['deadline']],
         'payment_lifecycle.previous_payment_review' => '🔎 بررسی پرداخت قبلی',
         'payment_lifecycle.pay_ux_status_text.text.90290d6783' => 'مهلت پرداخت این درخواست پایان یافته است. اگر قبلاً پرداخت کرده‌اید، پرداخت را تکرار نکنید و وضعیت همان فاکتور را پیگیری کنید. مبلغ تأییدشده پس از بسته‌شدن درخواست به کیف پول شما اضافه می‌شود.',
@@ -594,7 +602,6 @@ return [
         // pre_payment.body
         // pre_payment.button
         // pre_payment.alert
-        'pre_payment.alert.fdf0d1d6f9' => 'وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.',
         'pre_payment.alert.fa55f5201f' => '⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست. با پشتیبانی تماس بگیرید.',
         'pre_payment.button.f81a8cfcdd' => '💳 پرداخت فاکتور',
         // pre_payment.alert
@@ -611,17 +618,12 @@ return [
         // receipt_helpers.manual_crypto_options
         'receipt_helpers.manual_crypto_options.u_s_d_t.1974a6095a' => '💎 تتر (USDT) — ',
         'receipt_helpers.manual_crypto_options.t_r_x__t_r_o_n.e3a2653517' => '🔴 ترون (TRX) — TRON',
-        // receipt_helpers.manual_acknowledgement
-        'receipt_helpers.manual_acknowledgement.label.a5f27211f7' => '📥 تصویر ',
-        'receipt_helpers.manual_acknowledgement.text.29e14cf62e' => ' دریافت شد.' . "\n" . '',
-        'receipt_helpers.manual_acknowledgement.text.62e569e922' => '⏳ رسید در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.',
         // receipt_helpers.duplicate_receipt_guard
         'receipt_helpers.duplicate_receipt_guard.label.2ea72e23b7' => '⛔️ شما درخواست مشابه‌ای قبلا ثبت کرده‌اید.' . "\n" . '⚠️ لطفاً منتظر بررسی پشتیبانی بمانید.',
         'receipt_helpers.duplicate_receipt_guard.label.2f5e71511d' => ['text' => '⛔️ یک درخواست مشابه شما در حال بررسی است.' . "\n" . '⚠️ لطفاً حدود {mins} دقیقه دیگر دوباره تلاش کنید.', 'parameters' => ['mins']],
         'receipt_helpers.duplicate_receipt_guard.label.c571825a4a' => ['text' => '⛔️ شما اخیراً یک درخواست مشابه با وضعیت تایید شده داشته‌اید.' . "\n" . '⚠️ لطفاً حدود {mins} دقیقه دیگر دوباره تلاش کنید.', 'parameters' => ['mins']],
         'receipt_helpers.duplicate_receipt_guard.label.a2fecf9749' => ['text' => '⛔️ درخواست مشابه قبلی شما اخیراً رد شده است.' . "\n" . '⚠️ لطفاً {remain} ثانیه دیگر دوباره تلاش کنید.', 'parameters' => ['remain']],
         // receipt_helpers.send_with_start_button
-        'receipt_helpers.send_with_start_button.button.dcb9c20928' => '🔄 بررسی وضعیت',
         // manual_crypto.alert
         'manual_crypto.alert.d0d07ef447' => 'این سفارش در انتظار پرداخت نیست یا متعلق به شما نیست.',
         // manual_crypto.alert
@@ -661,8 +663,6 @@ return [
         'gateway_initiation.mark_checkout_uncertain.message.32573bc25a' => 'این روش پرداخت برای حساب شما فعال نیست؛ اگر فاکتور قبلی صادر شده با پشتیبانی وضعیت آن را پیگیری کنید.',
         'gateway_initiation.mark_checkout_uncertain.message.2d6b333856' => 'مهلت استفاده از لینک این فاکتور پایان یافته است. وضعیت پرداخت در حال پیگیری است؛ وجه را دوباره ارسال نکنید.',
         'gateway_initiation.mark_checkout_uncertain.message.eaf7a98f3e' => 'وضعیت فاکتور آنلاین نیازمند بررسی است؛ پرداخت مجدد انجام ندهید.',
-        'gateway_initiation.mark_checkout_uncertain.message.0c4a9612f7' => '⚠️ پرداخت فقط پس از تأیید درگاه و ثبت نتیجه در ربات نهایی است؛ ',
-        'gateway_initiation.mark_checkout_uncertain.message.0a2e0bc7bc' => 'پردازش ممکن است بیش از چند دقیقه طول بکشد.',
         'gateway_return.np_reconcile_batch.message.f48a802b77' => 'خطا!',
         'gateway_return.np_reconcile_batch.message.da0bc406d8' => 'پیگیری پرداخت',
         'gateway_return.np_reconcile_batch.message.0116c30fc4' => 'پرداخت شما ثبت شده است؛ نتیجه و لینک سرویس در ربات ارسال می‌شود.',

@@ -385,7 +385,9 @@ REQUIRED_SCENARIOS = {
     "manual_checkout_conversation": (
         "unified_method_issue_exact_owner_and_retained_invoice",
         "prompt_reuse_and_exact_cancel_no_financial_cancellation",
-        "definite_target_rejection_replaces_prompt_unknown_and_rate_limit_do_not",
+        "chronological_evidence_feedback_exact_ack_retires_only_previous_prompt",
+        "same_receipt_status_and_separate_actual_credit_notification",
+        "definite_receipt_target_loss_explicit_recovery_no_blind_replay",
         "draft_cancel_retires_selector_only",
         "original_receipt_routes_to_staff_without_credit_or_human_delete",
         "committed_invoice_recovered_in_place_and_original_facts_preserved",

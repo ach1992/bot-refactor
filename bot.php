@@ -311,8 +311,15 @@ if(preg_match('/^sendMessageToUser(\d+)/',$data,$match) && ($from_id == $admin |
 }
 if(isset($update->message) && !isset($update->callback_query) && preg_match('/^sendMessageToUser(\d+)$/D',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     if (!setUser()) return;
-    sendMessage($text,null,null,$match[1]);
-	sendMessage(\achbotMessage('bot.bot.webhook_ingress_authenticated.message.21095e090c', ['match_1' => $match[1]]), $removeKeyboard, "html");
+    try {$response=sendMessage($text,null,null,$match[1]);}
+    catch (Throwable $ignored) {$response=null;}
+    $result=\AchBot\Telegram\Response\messageDeliveryOutcome($response,(string)(int)$match[1])['result'];
+    $feedback=match($result) {
+        'acknowledged'=>achbotMessageHtml('bot.bot.webhook_ingress_authenticated.message.21095e090c',['match_1'=>$match[1]]),
+        'rejected'=>achbotMessageHtml('bot.bot.direct_message_rejected',['user'=>$match[1]]),
+        default=>achbotMessageHtml('bot.bot.direct_message_unknown',['user'=>$match[1]])
+    };
+    sendMessage($feedback,$removeKeyboard,'HTML');
     sendMessage(\achbotCurrentMessage('reached_main_menu'), getAdminKeys(), 'HTML');
     return;
 }

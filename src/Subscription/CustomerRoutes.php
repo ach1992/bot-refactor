@@ -108,7 +108,7 @@ if (
         'callback_data' => "navHome"
     ]];
 
-    if (($customerShortcut??null)!=='mysubs') {
+    if ($action!==null && ($customerShortcut??null)!=='mysubs') {
         editText(
             $message_id,
             \achbotMessage('legacy_messages.select_one_to_show_detail'),

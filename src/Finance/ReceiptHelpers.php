@@ -421,9 +421,6 @@ function achbotManualGiftRetryMessage(string $reason): string {
     return achbotMessage($key);
 }
 /** Caller has validated the sealed original invoice/profile, not live API flags. */
-function achbotManualTypedGiftAttempt(array $attempt): bool {
-    return ($attempt['provider']??null)==='gift_card' && ($attempt['evidence_profile']??null)!==null;
-}
 function achbotManualTypedGift(mysqli $db,array $pay,string $method): bool {
     if ($method!=='gift_card') return false;
     require_once __DIR__.'/ApiPayments.php';
@@ -452,16 +449,9 @@ function achbotManualReceiptPrompt(string $method): string {
     return \achbotMessage('legacy_messages.'.$key);
 }
 
-function achbotManualAcknowledgement(array $payInfo,string $method,bool $typed): string {
-    if ($typed) return achbotMessage('payment.api_payment.code_acknowledgement')."\n".achbotPayUxReference($payInfo);
-    return achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.label.a5f27211f7') . achbotManualLabel($method) . achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.29e14cf62e') .
-        achbotPayUxReference($payInfo) .
-        achbotMessage('manual_payment.receipt_helpers.manual_acknowledgement.text.62e569e922');
-}
-
-/** Render only the owned immutable manual invoice. Its closed form retains
- * the original amount/destination without telling the customer to pay again. */
-function achbotManualInvoiceText(mysqli $db,array $pay,array $attempt,bool $open=true): string {
+/** Render only the owned immutable, active manual invoice. Closed views
+ * are rendered by the shared status owner without payment destinations. */
+function achbotManualInvoiceText(array $pay,array $attempt): string {
     try {
         require_once __DIR__.'/PaymentCredit.php';
         $method=(string)$attempt['provider'];$priceToman=(int)$pay['price'];
@@ -473,21 +463,6 @@ function achbotManualInvoiceText(mysqli $db,array $pay,array $attempt,bool $open
             !hash_equals($attempt['wallet_invoice_sha256'],achbotCreditInvoiceFingerprint($pay,$attempt))) return '';
         $intent = achbotManualIntentDecode((string)$attempt['checkout_url'], $method);
         if (!$intent) return '';
-        if (!$open) {
-            $amount=(string)$attempt['quote_amount'];
-            $currency=(string)$attempt['quote_currency'];
-            $facts=achbotMessageHtml('payment.payment_lifecycle.original_invoice_record',[
-                'method'=>achbotCreditMethodLabel($method),
-                'amount'=>$currency==='toman'?number_format((int)$amount):(str_contains($amount,'.')?rtrim(rtrim($amount,'0'),'.'):$amount),
-                'currency'=>$currency==='toman'?achbotMessage('payment.payment_lifecycle.toman'):$currency]);
-            if ($method==='bank_transfer')
-                $facts.="\n".achbotMessageHtml('payment.payment_lifecycle.original_bank_destination',[
-                    'account'=>(string)($intent['account']??''),'holder'=>(string)($intent['holder']??'')]);
-            elseif (in_array($method,['manual_usdt','manual_trx'],true))
-                $facts.="\n".achbotMessageHtml('payment.payment_lifecycle.original_crypto_destination',[
-                    'network'=>(string)($intent['network']??''),'wallet'=>(string)($intent['wallet']??'')]);
-            return $facts;
-        }
         if (in_array($method, ['manual_usdt','manual_trx'], true)) {
             $network = (string)($intent['network'] ?? '');
             $wallet = (string)($intent['wallet'] ?? '');

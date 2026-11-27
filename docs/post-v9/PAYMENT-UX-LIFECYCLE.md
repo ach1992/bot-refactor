@@ -19,8 +19,9 @@ checkout/message projection and the merchant configuration workflow.
   original receipt and rc_ cancels its current acknowledged prompt.
   The subject/method come from the owned persisted invoice, not the callback.
   The receipt step has a generation and exact bot prompt ID; validation
-  reuses the prompt and only a definite target-specific edit rejection
-  permits replacement. A concurrent changed step cannot authorize evidence.
+  sends a new corrective reply below the human input and retires the
+  previous bot prompt only on exact acknowledgement of its replacement.
+  A concurrent changed step cannot authorize evidence.
   Invoice Home (ph_) preserves the retained invoice. Draft cancellation
   (dc_) retires a selector, not a financial claim. Hosted methods, including
   renewal, use the same guarded URL directly.
@@ -29,8 +30,9 @@ checkout/message projection and the merchant configuration workflow.
   code input. Bank and crypto retain their own approved labels; closed
   invoices offer original-payment review without a new payment link.
   Starting a manual receipt flow must not delete the original invoice.
-  A durable funding admission receives a non-modal acceptance notice,
-  without implying service or delivery completion.
+  After durable receipt admission, the acknowledged receipt status takes
+  ownership of the customer view; obsolete payment instructions are retired.
+  Receipt admission does not imply service or delivery completion.
 - Owned gateway initiation URLs re-check the original payment and
   authoritative current draft; public Return and authenticated merchant
   evidence are separate. Raw historical external links cannot be revoked
@@ -54,7 +56,7 @@ checkout/message projection and the merchant configuration workflow.
 ## Message ownership and recovery
 
 `payment_message_refs` is the shared payment projection registry, with an explicit
-semantic purpose (`selector`, `invoice`, `status`, `receipt`, `staff`) and exact
+semantic purpose (`selector`, `invoice`, `status`, `receipt`, `receipt_view`, `staff`) and exact
 owned chat/message identity. The existing payment session lease serializes
 message promotion, navigation retirement and projection. No database
 transaction is held across a Telegram edit. Selector retirement checks
@@ -67,19 +69,25 @@ A committed original whose selector was not promoted is recovered by the
 same projector. A stale method or crypto network click reconciles an
 already admitted original rather than reviving its selection keyboard.
 Other selectors are status views, not additional invoices.
-Receipt acknowledgements retain their original text; their keyboard alone
-may be updated. Closed manual invoices retain pinned amount and destination
-as historical facts, without new payment instructions. Hosted gateways
-project the original guarded payment URL; they do not send a second
-provider-specific invoice notice.
+An acknowledged receipt status (`receipt_view`) is the single mutable
+customer view for admitted evidence. The original receipt acknowledgement
+journal can establish its identity. Customer-authored input, staff evidence,
+and independent result notices remain separate. After receipt admission the
+old instructions are retired by verified identity, or sanitized if deletion
+is definitively rejected; never delete the human receipt. Closed invoices
+preserve original financial facts in storage, not obsolete destinations in
+customer messages. Hosted gateways project the original guarded payment URL
+only while actionable. The same renderer serves explicit status requests
+and automatic projection; a separate Wallet-credit or service-delivery
+notice remains independently idempotent.
 
 A retired navigation reference is not a successful edit and cannot become a
 payment target again. Definite Telegram missing/non-editable responses retire
 that reference. Unknown outcomes do not authorize replacement sends; the
 existing due time and Telegram retry_after govern edits, including direct
 status clicks. A definite target rejection can permit one explicit
-replacement. Status requests from retained evidence use the active invoice
-or status view when available; a new explicit request has a durable
+replacement. Status requests from retained evidence use the acknowledged receipt status
+first, otherwise the active invoice or status view when available; a new explicit request has a durable
 update cursor before a new send. No repeated processing of the same update
 may blindly resend an unknown result.
 

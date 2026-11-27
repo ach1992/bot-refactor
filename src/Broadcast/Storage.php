@@ -43,6 +43,24 @@ function achbotBroadcastAckCount(mysqli $db,int $id): int {
     if (!$row) throw new RuntimeException('broadcast_ack_count_missing');
     return (int)$row['c'];
 }
+function achbotBroadcastStateText(mysqli $db,int $id): string {
+    $r=achbotBroadcastQuery($db,'SELECT state FROM send_list WHERE id=?',[$id]);
+    $row=$r->fetch_assoc();$r->free();
+    if (!$row) return achbotMessage('broadcast.routes.state_missing');
+    $state=(int)$row['state'];
+    $text=match($state) {
+        0=>achbotMessage('broadcast.routes.state_draft'),
+        1=>achbotMessage('broadcast.routes.broadcast_start.message.b56da4fdde'),
+        2=>achbotMessage('broadcast.routes.state_sending'),
+        3=>achbotMessage('broadcast.routes.state_finished'),
+        4=>achbotMessage('broadcast.routes.broadcast_start.message.372ee64c90'),
+        default=>achbotMessage('broadcast.routes.state_missing')
+    };
+    if (in_array($state,[1,2,3,4],true))
+        $text.="\n".achbotMessageHtml('broadcast.routes.state_ack_count',['count'=>achbotBroadcastAckCount($db,$id)]);
+    return $text;
+}
+
 function achbotBroadcastRecordAck(mysqli $db,int $id,int $uid,int $messageId): void {
     if ($id<=0 || $uid<=0 || $messageId<=0)
         throw new InvalidArgumentException('broadcast_ack_identity_invalid');

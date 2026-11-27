@@ -67,10 +67,10 @@ function acknowledgedMessage($response,int $actor): ?int {
 /** Edit the exact caller-classified transient text screen. Unknown outcome,
  * no-op and rate-limit responses do not trigger another send. */
 function replaceTransient(int $actor,int $message,string $text,string $keys): ?int {
-    $result=\editText($message,$text,$keys,'HTML',$actor);
+    try {$result=\editText($message,$text,$keys,'HTML',$actor);} catch (\Throwable $ignored) {return null;}
     if (\AchBot\Telegram\Response\messageDeliveryOutcome($result,(string)$actor,$message)['result']==='acknowledged') return $message;
     if (!canReplaceRejectedEdit($result)) return null;
-    $replacement=\sendMessage($text,$keys,'HTML',$actor);
+    try {$replacement=\sendMessage($text,$keys,'HTML',$actor);} catch (\Throwable $ignored) {return null;}
     $id=acknowledgedMessage($replacement,$actor);
     if ($id===null) return null;
     try {\delMessage($message,$actor);} catch (\Throwable $ignored) {}

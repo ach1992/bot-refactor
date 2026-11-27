@@ -6,6 +6,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404); exit;
 }
 require_once __DIR__.'/../../Admin/Access.php';
+require_once __DIR__.'/../../Telegram/Conversation.php';
 require_once __DIR__.'/../../../messages/loader.php';
 
 /** Telegram's 4096-character text limit applies after HTML parsing.
@@ -139,8 +140,7 @@ if (preg_match('/^attentionDelivery([CS])_([1-9][0-9]{0,17})_([1-9][0-9]{0,8})(?
         } else throw new RuntimeException('delivery_review_stale');
         $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),'callback_data'=>$back]];
         $keys=json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-        $edited=editText($message_id,$body,$keys,'HTML',$actor);
-        if (!is_object($edited)||($edited->ok??false)!==true) sendMessage($body,$keys,'HTML',$actor);
+        \AchBot\Telegram\Conversation\replaceTransient($actor,(int)$message_id,$body,$keys);
         if ($reviewAction[1]==='C') answerCallbackQuery($callbackId);
     } catch (Throwable $e) {
         answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.redrive_unavailable'),true);
@@ -205,8 +205,7 @@ if (preg_match('/^attentionReport([CS])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/
         } else throw new RuntimeException('followup_review_stale');
         $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),'callback_data'=>$back]];
         $keys=json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-        $edited=editText($message_id,$body,$keys,'HTML',$actor);
-        if (!is_object($edited)||($edited->ok??false)!==true) sendMessage($body,$keys,'HTML',$actor);
+        \AchBot\Telegram\Conversation\replaceTransient($actor,(int)$message_id,$body,$keys);
         if ($reviewAction[1]==='C') answerCallbackQuery($callbackId);
     } catch (Throwable $e) {
         answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.redrive_unavailable'),true);
@@ -214,7 +213,7 @@ if (preg_match('/^attentionReport([CS])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/
     return;
 }
 
-if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})$/D',
+if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|(?:Open)?Case_[1-9][0-9]{0,17})$/D',
     (string)($data??''))===1) {
     require_once __DIR__.'/../PaymentLifecycle.php';
     require_once __DIR__.'/../GatewayReview.php';
@@ -233,16 +232,29 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
     $inbox=[];$case=[];
     $isInbox=preg_match('/^attentionInbox(?:_([1-9][0-9]{0,17}))?$/D',
         (string)$data,$inbox)===1;
-    $isCase=preg_match('/^attentionCase_([1-9][0-9]{0,17})$/D',
+    $isCase=preg_match('/^attention(?:Open)?Case_([1-9][0-9]{0,17})$/D',
         (string)$data,$case)===1;
     if (!$isInbox && !$isCase) return;
 
-    $send=static function(string $message,array $rows) use ($message_id,$from_id): void {
+    // Opening a case from evidence is new navigation, not an edit fallback.
+    // Exact original recorded receipts remain retained even if their
+    // already-delivered button uses the ordinary case locator.
+    $openEvidence=str_starts_with((string)$data,'attentionOpenCase_');
+    if ($isCase && !$openEvidence) {
+        require_once __DIR__.'/../ReceiptNotices.php';
+        try {
+            $original=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=?','i',[(int)$case[1]]);
+            if ($original) foreach (achbotReceiptMessageTargets($connection,$original) as $target)
+                if ($target['chat_id']===(int)$from_id && $target['message_id']===(int)$message_id) {
+                    $openEvidence=true;break;
+                }
+        } catch (Throwable $ignored) {$openEvidence=true;}
+    }
+    $send=static function(string $message,array $rows) use ($message_id,$from_id,$openEvidence): void {
         $markup=json_encode(['inline_keyboard'=>$rows],
             JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-        $result=editText($message_id,$message,$markup,'HTML',(int)$from_id);
-        if (!is_object($result) || ($result->ok??false)!==true)
-            sendMessage($message,$markup,'HTML',(int)$from_id);
+        if ($openEvidence) sendMessage($message,$markup,'HTML',(int)$from_id);
+        else \AchBot\Telegram\Conversation\replaceTransient((int)$from_id,(int)$message_id,$message,$markup);
     };
     $labels=[
         'nowpayments'=>achbotMessage('automatic_gateway_review.provider_nowpayments'),
@@ -600,16 +612,12 @@ if (preg_match('/^gatewayReview_([ARV])_([1-9][0-9]{0,17})$/D',
             default=>achbotMessage('automatic_gateway_review.status_unavailable'),
         };
         $body=achbotMessageHtml('automatic_gateway_review.result',['result'=>$text]);
-        $sent=editText($message_id,$body,$keys,'HTML',(int)$from_id);
-        if (!is_object($sent)||($sent->ok??false)!==true)
-            sendMessage($body,$keys,'HTML',(int)$from_id);
+        \AchBot\Telegram\Conversation\replaceTransient((int)$from_id,(int)$message_id,$body,$keys);
     } catch(Throwable $error) {
         error_log('achbot_gateway_review_callback_error class='.get_class($error));
         $body=achbotMessage('automatic_gateway_review.unavailable');
         try {
-            $sent=editText($message_id,$body,$keys,'HTML',(int)$from_id);
-            if (!is_object($sent)||($sent->ok??false)!==true)
-                sendMessage($body,$keys,'HTML',(int)$from_id);
+            \AchBot\Telegram\Conversation\replaceTransient((int)$from_id,(int)$message_id,$body,$keys);
         } catch(Throwable $ignored) {}
     }
     return;

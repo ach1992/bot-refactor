@@ -592,17 +592,6 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
             return 'skipped';
         }
         if (!$packet) throw new RuntimeException('followup_identity_invalid');
-        if ($r['stage']==='receipt_admitted' && $r['role']==='customer' &&
-            in_array($pay['state'],['paid','declined'],true)) {
-            if ($actor>0) {$db->rollback();$opened=false;return 'stale';}
-            $s=achbotProviderStatement($db,"UPDATE payment_followup_intents
-                SET state='superseded',last_result='superseded',next_attempt_at=NULL
-                WHERE id=? AND state='pending' AND dispatch_token IS NULL",'i',[$id]);
-            $changed=$s->affected_rows;$s->close();
-            if ($changed!==1 || !$db->commit()) throw new RuntimeException('followup_receipt_supersession_failed');
-            $opened=false;return 'superseded';
-        }
-
         // Validate explicit actor authority before changing any older row.
         if ($actor>0) {
             $primary=(int)($GLOBALS['admin']??0);
@@ -686,6 +675,10 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         try {$db->rollback();}catch(Throwable $ignored){}
         error_log('achbot_followup_ack_unknown id='.$id);
         return 'unknown';
+    }
+    if ($status==='acknowledged' && $r['stage']==='receipt_admitted' && $r['role']==='customer') {
+        require_once __DIR__.'/PaymentMessages.php';
+        achbotPayUxSyncMessages($db,$payId);
     }
     return $status;
     } finally {

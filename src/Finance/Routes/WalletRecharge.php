@@ -114,9 +114,7 @@ if (!function_exists('achbotWalletTopupRetirePrompt')) {
 /** Use the confirmed sent message ID as the actual reply/selection boundary. */
 if (!function_exists('achbotWalletTopupSentMessageId')) {
     function achbotWalletTopupSentMessageId($reply): ?int {
-        $id = is_object($reply) ? ($reply->result->message_id ?? null) : null;
-        return is_object($reply) && ($reply->ok ?? false) === true &&
-            is_int($id) && $id > 0 ? $id : null;
+        return \AchBot\Telegram\Conversation\acknowledgedMessage($reply,(int)$GLOBALS['from_id']);
     }
 }
 
@@ -172,7 +170,8 @@ if ($data === 'increaseMyWallet') {
         error_log('achbot_wallet_topup_menu_stage_unconfirmed');
         return;
     }
-    achbotWalletTopupRetirePrompt();
+    // The shared entry can be on a retained warning or delivered result.
+    // Only the subsequent exact choice/amount prompt is disposable.
     return;
 }
 

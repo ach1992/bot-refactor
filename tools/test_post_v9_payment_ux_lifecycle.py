@@ -410,8 +410,10 @@ def main():
                      f'pay_row_id={transport} AND synced_digest IS NOT NULL')==1
         for response,expected_class in [
             (None,'transport_unavailable'),
-            ({'error_code':400,'description':'Bad Request: message to edit not found'},'message_missing'),
-            ({'error_code':400,'description':"Bad Request: message can't be edited"},'message_not_editable'),
+            ({'ok':False,'error_code':400,'description':'Bad Request: message to edit not found'},'message_missing'),
+            ({'error_code':400,'description':'Bad Request: message to edit not found'},'telegram_rejected'),
+            ({'ok':False,'error_code':400,'description':"Bad Request: message can't be edited"},'message_not_editable'),
+            ({'ok':False,'error_code':400,'description':'Bad Request: there is no text in the message to edit'},'message_not_editable'),
             ({'error_code':403},'access_denied'),
             ({'error_code':429},'rate_limited'),
             ({'error_code':503},'telegram_server_error'),
@@ -624,10 +626,10 @@ def main():
         assert 'مهلت پرداخت' in fresh_state['body']
         sql(w,e,f"UPDATE payment_attempts SET provider_status='confirming' WHERE pay_row_id={fresh_host}")
         confirming=run(w,e,dict(action='state',id=fresh_host))['result']
-        assert confirming['state']=='needs_review' and 'پرداخت فاکتور' not in confirming['keyboard']
+        assert confirming['state']=='hosted_confirming' and 'پرداخت فاکتور' not in confirming['keyboard']
         sql(w,e,f"UPDATE payment_attempts SET stage='review',provider_status='confirmed' WHERE pay_row_id={fresh_host}")
         assert run(w,e,dict(action='invoice_expire',id=fresh_host,clock=deadline(fresh_host)))['result'] is False
-        assert run(w,e,dict(action='state',id=fresh_host))['result']['state']=='needs_review'
+        assert run(w,e,dict(action='state',id=fresh_host))['result']['state']=='hosted_confirming'
         cases.append('hosted_recorded_provider_evidence_survives_expiry')
         race=quote('manual-expiry-race','bank_transfer',9499,age=21660)
         spec1=dict(action='invoice_expire',id=race)

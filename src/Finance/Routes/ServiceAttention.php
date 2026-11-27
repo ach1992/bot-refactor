@@ -2,6 +2,7 @@
 declare(strict_types=1);
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/../../Services/Resolution.php';
+require_once __DIR__.'/../../Telegram/Conversation.php';
 require_once __DIR__.'/../CheckoutRoutes.php';
 
 $actor=(int)$from_id;$primary=(int)$admin;
@@ -15,8 +16,7 @@ $back='attentionService_'.$id;
 $render=static function(string $body,array $rows) use ($message_id,$actor): void {
     $rows[]=[['text'=>achbotMessage('automatic_gateway_review.back_list'),'callback_data'=>'attentionInbox']];
     $keys=json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-    $edited=editText($message_id,$body,$keys,'HTML',$actor);
-    if (!is_object($edited)||($edited->ok??false)!==true) sendMessage($body,$keys,'HTML',$actor);
+    \AchBot\Telegram\Conversation\replaceTransient($actor,(int)$message_id,$body,$keys);
 };
 try {
     $op=achbotProviderRow($connection,'SELECT * FROM service_operations WHERE id=?','i',[$id]);

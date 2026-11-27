@@ -79,19 +79,7 @@ function achbotCheckoutReceiptOutcome(mysqli $db,int $payId): string {
     achbotPaymentEvidenceRequireAutocommit($db);
     if (!$db->begin_transaction()) throw new RuntimeException('payment_outcome_begin');
     try {
-        $uid=(int)$locator['user_id'];
-        $e=achbotReceiptCreditEvidenceLocked($db,$payId,$uid);
-        $a=$e['attempt'];
-        $status='wallet_credited';
-        if ($a['wallet_funding_result']==='funded') {
-            $id=(int)$a['service_operation_id'];
-            [$op,$quote,$owner]=achbotServiceReadLocked($db,$uid,$id);
-            achbotServiceVerifyFundingLocked($db,$op,$owner);
-            if ((int)$e['pay']['price']!==(int)$op['price_toman'] || (int)$op['price_toman']<=0 ||
-                ($op['command_kind']==='checkout' && (int)$e['pay']['checkout_operation_id']!==$id))
-                throw new RuntimeException('payment_outcome_funding_conflict');
-            $status=achbotCheckoutServiceOutcomeLocked($db,$op,$quote,$payId);
-        }
+        $status=achbotCheckoutReceiptOutcomeLocked($db,$payId,(int)$locator['user_id']);
         if (!$db->commit()) throw new RuntimeException('payment_outcome_commit');
         return $status;
     } catch (Throwable $e) {
@@ -102,6 +90,23 @@ function achbotCheckoutReceiptOutcome(mysqli $db,int $payId): string {
         return 'unknown';
     }
 }
+/** Same verified projection for callers already holding the owner transaction. */
+function achbotCheckoutReceiptOutcomeLocked(mysqli $db,int $payId,int $uid): string {
+    $e=achbotReceiptCreditEvidenceLocked($db,$payId,$uid);
+    $a=$e['attempt'];
+    $status='wallet_credited';
+    if ($a['wallet_funding_result']==='funded') {
+        $id=(int)$a['service_operation_id'];
+        [$op,$quote,$owner]=achbotServiceReadLocked($db,$uid,$id);
+        achbotServiceVerifyFundingLocked($db,$op,$owner);
+        if ((int)$e['pay']['price']!==(int)$op['price_toman'] || (int)$op['price_toman']<=0 ||
+            ($op['command_kind']==='checkout' && (int)$e['pay']['checkout_operation_id']!==$id))
+            throw new RuntimeException('payment_outcome_funding_conflict');
+        $status=achbotCheckoutServiceOutcomeLocked($db,$op,$quote,$payId);
+    }
+    return $status;
+}
+
 /**
  * Read-only progress/finality proof. Receipt and Wallet orders share the
  * same command, local result and exact delivery evidence.

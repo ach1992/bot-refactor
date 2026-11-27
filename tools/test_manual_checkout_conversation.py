@@ -61,44 +61,88 @@ def main():
         assert 'rc_'+h in callbacks(r) and not any(e[0]=='delete' for e in r['events']),r
         r=run(callback='rc_'+h,message_id=201)
         assert r['user']['step']==step and not any(e[0] in ('send','edit','delete') for e in r['events']),r
-        r=run(text='not-a-photo',message_id=203)
-        assert r['user']['step']==step and 'rc_'+h in callbacks(r),r
-        assert len([e for e in r['events'] if e[0]=='edit'])==1 and not any(e[0]=='send' for e in r['events']),r
+        r=run(text='not-a-photo',message_id=203,sent_id=204)
+        assert r['user']['step'].endswith(':204') and 'rc_'+h in callbacks(r),r
+        assert len([e for e in r['events'] if e[0]=='send'])==1 and not any(e[0]=='edit' for e in r['events']),r
+        assert ['delete',202,2001] in r['events'] and ['delete',203,2001] not in r['events'],r
+        step=r['user']['step']
         r=run(callback='rs_'+h,message_id=201)
         assert r['user']['step']==step and not any(e[0]=='send' for e in r['events']),r
         for result in (None,{'ok':False,'error_code':429,'description':'Too Many Requests','parameters':{'retry_after':10}},
-                       {'ok':False,'error_code':400,'description':"Bad Request: can't parse entities"}):
-            r=run(text='not-a-photo',message_id=203,edit_result=result)
-            assert r['user']['step']==step and not any(e[0] in ('send','delete') for e in r['events']),r
-        r=run(text='not-a-photo',message_id=203,edit_result={'ok':False,'error_code':400,'description':'Bad Request: message to edit not found'},sent_id=208)
-        assert r['user']['step'].endswith(':208') and ['delete',202,2001] in r['events'],r
+                       {'ok':False,'error_code':400,'description':"Bad Request: can't parse entities"},
+                       {'ok':True,'result':{'message_id':206,'chat':{'id':2002}}}):
+            r=run(text='not-a-photo',message_id=205,send_result=result)
+            assert r['user']['step']==step and sum(e[0]=='send' for e in r['events'])==1,r
+            assert not any(e[0] in ('edit','delete') for e in r['events']),r
+        r=run(text='not-a-photo',message_id=207,sent_id=208)
+        assert r['user']['step'].endswith(':208') and ['delete',204,2001] in r['events'],r
         step=r['user']['step']
-        r=run(callback='rc_'+h,message_id=202)
+        r=run(callback='rc_'+h,message_id=204)
         assert r['user']['step']==step and not any(e[0] in ('send','edit','delete') for e in r['events']),r
-        cases.append('definite_target_rejection_replaces_prompt_unknown_and_rate_limit_do_not')
+        cases.append('chronological_evidence_feedback_exact_ack_retires_only_previous_prompt')
         r=run(callback='rc_'+h,message_id=208)
         assert r['user']['step']=='none',r
         assert sql(f"SELECT state FROM pays WHERE id={pid}")=='pending'
         cases.append('prompt_reuse_and_exact_cancel_no_financial_cancellation')
         r=run(callback='rs_'+h,message_id=201,sent_id=209)
         assert r['user']['step'].endswith(':209'),r
-        r=run(photo='fixture-photo',message_id=210)
+        r=run(photo='fixture-photo',message_id=210,sent_id=215)
         assert r['user']['step']=='none' and any(e[0]=='photo' and e[4]==9001 for e in r['events']),r
         assert ['delete',209,2001] in r['events'] and ['delete',210,2001] not in r['events'],r
         assert sql(f"SELECT state FROM pays WHERE id={pid}")=='have_sent'
         assert sql(f"SELECT stage FROM payment_attempts WHERE pay_row_id={pid}")=='review'
         assert sql('SELECT COUNT(*) FROM wallet_entries')=='0'
         cases.append('original_receipt_routes_to_staff_without_credit_or_human_delete')
+        assert ['delete',201,2001] in r['events'],r
+        assert sql(f"SELECT purpose FROM payment_message_refs WHERE pay_row_id={pid} AND message_id=215")=='receipt_view'
+        assert sql(f"SELECT retired_reason FROM payment_message_refs WHERE pay_row_id={pid} AND message_id=201")=='receipt_replaced'
+        assert not any(e[0]=='edit' and e[4]==215 for e in r['events']),r
+        current=run('payment_status',callback='ps_'+h,message_id=215,update_id=2000)
+        assert not any(e[0] in ('edit','send') for e in current['events']),current
+        original=sql(f"SELECT checkout_url,quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}")
+        # A genuine credit is independent of the mutable receipt status.
+        run('settle_fixture',pay=int(pid))
+        assert sql(f"SELECT state FROM pays WHERE id={pid}")=='paid'
+        r=run('projection',pay=int(pid))
+        edits=[e for e in r['events'] if e[0]=='edit']
+        assert len(edits)==1 and edits[0][4]==215 and 'به کیف پول شما اضافه شد' in edits[0][1],r
+        assert 'مهلت پرداخت' not in edits[0][1] and 'fixture-bank' not in edits[0][1],r
+        assert sql(f"SELECT checkout_url,quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}")==original
+        intent=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='wallet_credit' AND role='customer'"))
+        r=run('dispatch_fixture',intent=intent,sent_id=216)
+        assert ['dispatch','acknowledged'] in r['events'] and sum(e[0]=='send' for e in r['events'])==1,r
+        assert '100,000' in next(e[1] for e in r['events'] if e[0]=='send'),r
+        for event_id in (2001,2002):
+            r=run('payment_status',callback='ps_'+h,message_id=215,update_id=event_id)
+            assert not any(e[0] in ('edit','send') for e in r['events']),r
+        r=run('dispatch_fixture',intent=intent)
+        assert ['dispatch','acknowledged'] in r['events'] and not any(e[0]=='send' for e in r['events']),r
+        assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='payment_credit' AND source_ref='{pid}'")=='1'
+        cases.append('same_receipt_status_and_separate_actual_credit_notification')
+        # A definite lost view can recover on a user click; an ambiguous
+        # replacement send cannot be repeated by a replay of that update.
+        sql(f"UPDATE payment_message_refs SET synced_digest=NULL WHERE pay_row_id={pid} AND message_id=215")
+        missing={'ok':False,'error_code':400,'description':'Bad Request: message to edit not found'}
+        r=run('payment_status',callback='ps_'+h,message_id=215,update_id=2003,edit_result=missing,send_result=None)
+        assert sum(e[0]=='send' for e in r['events'])==1,r
+        r=run('payment_status',callback='ps_'+h,message_id=215,update_id=2003)
+        assert not any(e[0]=='send' for e in r['events']),r
+        r=run('payment_status',callback='ps_'+h,message_id=215,update_id=2004,sent_id=217)
+        assert sum(e[0]=='send' for e in r['events'])==1,r
+        assert sql(f"SELECT message_id FROM payment_message_refs WHERE pay_row_id={pid} AND purpose='receipt_view' AND retired_reason IS NULL")=='217'
+        r=run('payment_status',callback='ps_'+h,message_id=217,update_id=2005)
+        assert not any(e[0]=='send' for e in r['events']),r
+        cases.append('definite_receipt_target_loss_explicit_recovery_no_blind_replay')
         # A selector that becomes Home is no longer a financial projection
         # target. Cancelling it never changes the original money state.
         sql(f"UPDATE users SET step='achbotWalletTopup:amount:100001:81:{int(time.time())}' WHERE userid=2001")
-        r=run('topup',sent_id=211)
+        r=run('topup',sent_id=220)
         assert ['topup','created'] in r['events'],r
         pid2,h2=sql("SELECT id,hash_id FROM pays WHERE user_id=2001 ORDER BY id DESC LIMIT 1").split('\t')
-        r=run(callback='dc_'+h2,message_id=211)
+        r=run(callback='dc_'+h2,message_id=220)
         assert any(e[0]=='edit' for e in r['events']) and not any(e[0]=='send' for e in r['events']),r
-        assert sql(f"SELECT retired_reason FROM payment_message_refs WHERE pay_row_id={pid2} AND message_id=211")=='navigation'
-        r=run(callback='dc_'+h2,message_id=211)
+        assert sql(f"SELECT retired_reason FROM payment_message_refs WHERE pay_row_id={pid2} AND message_id=220")=='navigation'
+        r=run(callback='dc_'+h2,message_id=220)
         assert not any(e[0] in ('send','edit','delete') for e in r['events']),r
         assert sql(f"SELECT state FROM pays WHERE id={pid2}")=='pending'
         assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid2}")=='0'
@@ -126,7 +170,8 @@ def main():
         sql(f"UPDATE pays SET state='expired' WHERE id={p3}")
         r=run('projection',actor=2002,pay=int(p3))
         edits=[e for e in r['events'] if e[0]=='edit']
-        assert len(edits)==1 and 'fixture-bank' in edits[0][1] and 'سوابق' in edits[0][1] and 'new-bank' not in edits[0][1],r
+        assert len(edits)==1 and 'fixture-bank' not in edits[0][1] and 'new-bank' not in edits[0][1] and 'مهلت پرداخت' not in edits[0][1],r
+        assert sql(f"SELECT checkout_url,quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={p3}")==original
         cases.append('committed_invoice_recovered_in_place_and_original_facts_preserved')
 
         # A rate limit or unknown edit must never cause a second send,

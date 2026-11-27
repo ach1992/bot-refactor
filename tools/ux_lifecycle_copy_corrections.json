@@ -1,0 +1,180 @@
+{
+  "baseline": "4db40265b54f839d31605ea5bbe2ffb375c94cf5",
+  "owner_contract": "https://github.com/ach1992/bot-refactor/issues/236#issuecomment-7222535933",
+  "changes": {
+    "bot.bot.direct_message_rejected": {
+      "before": null,
+      "after": {
+        "text": "❌ ارسال پیام به کاربر <code>{user}</code> ناموفق بود. در صورت نیاز دوباره از گزینه ارسال پیام استفاده کنید.",
+        "parameters": [
+          "user"
+        ]
+      }
+    },
+    "bot.bot.direct_message_unknown": {
+      "before": null,
+      "after": {
+        "text": "⚠️ ارسال پیام به کاربر <code>{user}</code> هنوز تأیید نشده است. پیش از تکرار، نتیجه را بررسی کنید.",
+        "parameters": [
+          "user"
+        ]
+      }
+    },
+    "broadcast.routes.broadcast_start.message.39fe6c5d7e": {
+      "before": "⛔️ لغو شد. ارسال ادامه پیدا نمی‌کند.",
+      "after": null
+    },
+    "broadcast.routes.broadcast_start.message.78511c235c": {
+      "before": "این ارسال قابل لغو نیست یا قبلاً تمام/لغو شده است.",
+      "after": null
+    },
+    "broadcast.routes.broadcast_start.message.b56da4fdde": {
+      "before": "⏳ کم کم برا همه ارسال میشه ...",
+      "after": "⏳ ارسال پیام همگانی در صف قرار گرفت."
+    },
+    "broadcast.routes.state_ack_count": {
+      "before": null,
+      "after": {
+        "text": "تعداد ارسال‌های تأییدشده: {count}",
+        "parameters": [
+          "count"
+        ]
+      }
+    },
+    "broadcast.routes.state_draft": {
+      "before": null,
+      "after": "پیش‌نویس پیام همگانی هنوز در صف ارسال قرار نگرفته است."
+    },
+    "broadcast.routes.state_finished": {
+      "before": null,
+      "after": "✅ پردازش ارسال پیام همگانی پایان یافته است."
+    },
+    "broadcast.routes.state_missing": {
+      "before": null,
+      "after": "⚠️ وضعیت این درخواست ارسال قابل تأیید نیست."
+    },
+    "broadcast.routes.state_sending": {
+      "before": null,
+      "after": "⏳ ارسال پیام همگانی در حال انجام است."
+    },
+    "gateway.gateway_initiation.mark_checkout_uncertain.message.0a2e0bc7bc": {
+      "before": "پردازش ممکن است بیش از چند دقیقه طول بکشد.",
+      "after": null
+    },
+    "gateway.gateway_initiation.mark_checkout_uncertain.message.0c4a9612f7": {
+      "before": "⚠️ پرداخت فقط پس از تأیید درگاه و ثبت نتیجه در ربات نهایی است؛ ",
+      "after": null
+    },
+    "manual_payment.receipt_helpers.manual_acknowledgement.label.a5f27211f7": {
+      "before": "📥 تصویر ",
+      "after": null
+    },
+    "manual_payment.receipt_helpers.manual_acknowledgement.text.29e14cf62e": {
+      "before": " دریافت شد.\n",
+      "after": null
+    },
+    "manual_payment.receipt_helpers.manual_acknowledgement.text.62e569e922": {
+      "before": "⏳ رسید در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.",
+      "after": null
+    },
+    "manual_payment.receipt_helpers.send_with_start_button.button.dcb9c20928": {
+      "before": "🔄 بررسی وضعیت",
+      "after": null
+    },
+    "payment.api_payment.code_acknowledgement": {
+      "before": "✅ کد گیفت‌کارت دریافت شد.\n⏳ درخواست در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.",
+      "after": null
+    },
+    "payment.payment_lifecycle.gift_not_verified": {
+      "before": null,
+      "after": "⚠️ اعتبار کد گیفت‌کارت تأیید نشد."
+    },
+    "payment.payment_lifecycle.gift_not_verified_next": {
+      "before": null,
+      "after": "کد ثبت‌شده معتبر تشخیص داده نشد. برای بررسی همین سفارش با پشتیبانی هماهنگ کنید؛ دوباره پرداخت نکنید."
+    },
+    "payment.payment_lifecycle.gift_received": {
+      "before": null,
+      "after": "📥 کد گیفت‌کارت دریافت شد."
+    },
+    "payment.payment_lifecycle.hosted_awaiting_next": {
+      "before": null,
+      "after": "برای پرداخت از دکمه همین فاکتور استفاده کنید. اگر قبلاً پرداخت کرده‌اید، وضعیت سفارش را بررسی کنید."
+    },
+    "payment.payment_lifecycle.hosted_confirming": {
+      "before": null,
+      "after": "⏳ پرداخت در حال تأیید توسط درگاه است."
+    },
+    "payment.payment_lifecycle.hosted_progress_next": {
+      "before": null,
+      "after": "نتیجه پرداخت هنوز نهایی نشده است. از همین پیام وضعیت سفارش را بررسی کنید و پرداخت را تکرار نکنید."
+    },
+    "payment.payment_lifecycle.hosted_waiting": {
+      "before": null,
+      "after": "⏳ در انتظار ثبت پرداخت در درگاه هستیم."
+    },
+    "payment.payment_lifecycle.original_bank_destination": {
+      "before": {
+        "text": "💳 شماره کارت: <code>{account}</code>\n👤 صاحب حساب: {holder}",
+        "parameters": [
+          "account",
+          "holder"
+        ]
+      },
+      "after": null
+    },
+    "payment.payment_lifecycle.original_crypto_destination": {
+      "before": {
+        "text": "🌐 شبکه: {network}\n📋 آدرس مقصد: <code>{wallet}</code>",
+        "parameters": [
+          "network",
+          "wallet"
+        ]
+      },
+      "after": null
+    },
+    "payment.payment_lifecycle.original_invoice_record": {
+      "before": {
+        "text": "<b>🧾 اطلاعات فاکتور اصلی (سوابق)</b>\n💳 روش: {method}\n💰 مبلغ فاکتور: <code>{amount}</code> {currency}",
+        "parameters": [
+          "method",
+          "amount",
+          "currency"
+        ]
+      },
+      "after": null
+    },
+    "payment.payment_lifecycle.receipt_instruction_retired": {
+      "before": null,
+      "after": "🧾 اطلاعات پرداخت قبلی دیگر قابل استفاده نیست. وضعیت سفارش را از پیام ثبت رسید بررسی کنید."
+    },
+    "payment.payment_lifecycle.receipt_manual_next": {
+      "before": null,
+      "after": "⏳ پرداخت برای بررسی مدیر ثبت شده است. نیازی به ارسال مجدد رسید نیست."
+    },
+    "payment.payment_lifecycle.receipt_monitoring_next": {
+      "before": null,
+      "after": "⏳ در انتظار تطبیق و تأیید خودکار پرداخت هستیم. نیازی به ارسال مجدد رسید نیست."
+    },
+    "payment.payment_lifecycle.receipt_uncertain": {
+      "before": null,
+      "after": "⚠️ نتیجه بررسی پرداخت هنوز مشخص نیست."
+    },
+    "payment.payment_lifecycle.receipt_verifying_next": {
+      "before": null,
+      "after": "⏳ در حال بررسی نهایی پرداخت هستیم. تا مشخص شدن نتیجه، پرداخت را تکرار نکنید."
+    },
+    "payment.payment_lifecycle.status_update_unconfirmed": {
+      "before": null,
+      "after": "به‌روزرسانی پیام هنوز تأیید نشده است؛ لطفاً دوباره وضعیت سفارش را بررسی کنید."
+    },
+    "payment.payment_lifecycle.toman": {
+      "before": "تومان",
+      "after": null
+    },
+    "payment.pre_payment.alert.fdf0d1d6f9": {
+      "before": "وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.",
+      "after": null
+    }
+  }
+}

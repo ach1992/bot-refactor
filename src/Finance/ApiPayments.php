@@ -116,7 +116,7 @@ function achbotApiPaymentNotice(mysqli $db,int $id): int {
         if ($actionable) {
             $rows=json_decode($keys,true)['inline_keyboard']??[];
             $open=['text'=>achbotMessage('automatic_gateway_review.open_case'),
-                'callback_data'=>'attentionCase_'.$id];
+                'callback_data'=>'attentionOpenCase_'.$id];
             if (!achbotApiPaymentTerminal($pay)) {
                 // A failed automatic API receipt must not keep a dead "needs
                 // operator review" noop button. Keep genuine manual Approve /

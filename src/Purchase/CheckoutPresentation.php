@@ -51,8 +51,8 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $o
     $price=$amount===0?($renew?achbotMessage('renewal.extensions.price.dda7ff2974'):achbotMessage('purchase.catalogue.text.dda7ff2974')):
         number_format($amount).($renew?achbotMessage('renewal.extensions.text.2cc98f7f7c'):achbotMessage('purchase.catalogue.text.bfb7221456'));
     $methods=$view['payment_methods'];
-    $noMethod=$amount>0 && !$methods;
     $keyboard=achbotCheckoutPaymentKeyboard($mode,$hash_id,$amount,$methods,$botUrl);
+    $noMethod=$amount>0 && !$keyboard;
     if (($offerDiscount || $noMethod || $discountRejectionAlreadyShown) && $amount>0 && empty($view['context']['discount_applied']))
         $keyboard[]=[['text'=>achbotMessage('purchase.catalogue.button.05c3a1e3f4'),'callback_data'=>'haveDiscountCheckout_'.$pay['id']]];
     if ($mode==='standard') {

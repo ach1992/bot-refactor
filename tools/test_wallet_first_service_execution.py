@@ -365,7 +365,7 @@ try {
         if ($r && ($x['submit']??false)) {
             require_once $argv[1].'/src/Finance/ReceiptNotices.php';
             $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[(int)$pay['id']]);
-            if (!achbotManualAdmitReceipt($db,$pay,'bank_transfer',1001,'fixture-photo','fixture receipt',inlineKeyboard([]),'fixture_bot'))
+            if (!achbotManualAdmitReceipt($db,$pay,'bank_transfer',1001,'fixture-photo','fixture receipt',inlineKeyboard([])))
                 throw new RuntimeException('fixture_manual_admission');
             $notice=achbotProviderRow($db,"SELECT id FROM payment_followup_intents WHERE pay_row_id=? AND stage='receipt_admitted' AND recipient='9001'",'i',[(int)$pay['id']]);
             if (achbotFollowupDispatchOne($db,(int)$notice['id'])!=='acknowledged')
@@ -399,7 +399,7 @@ try {
         if ($issued['status']!=='issued') throw new RuntimeException('fixture_manual_issue');
         require_once $argv[1].'/src/Finance/ReceiptNotices.php';
         $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[$pid]);
-        if (!achbotManualAdmitReceipt($db,$pay,'bank_transfer',1001,'fixture-photo','fixture receipt',inlineKeyboard([]),'fixture_bot'))
+        if (!achbotManualAdmitReceipt($db,$pay,'bank_transfer',1001,'fixture-photo','fixture receipt',inlineKeyboard([])))
             throw new RuntimeException('fixture_manual_admission');
         $notice=achbotProviderRow($db,"SELECT id FROM payment_followup_intents WHERE pay_row_id=? AND stage='receipt_admitted' AND recipient='9001'",'i',[$pid]);
         if (achbotFollowupDispatchOne($db,(int)$notice['id'])!=='acknowledged')
@@ -2503,7 +2503,7 @@ DELIMITER ;
                 assert int(sql('SELECT COUNT(*) FROM fixture_markup'))==markups+1
                 assert sql('SELECT chat_id,message_id FROM fixture_markup ORDER BY id DESC LIMIT 1')=='9001\t222'
                 markup=json.loads(sql('SELECT markup FROM fixture_markup ORDER BY id DESC LIMIT 1'))
-                assert markup['inline_keyboard'][0][0]['callback_data']==f'attentionCase_{pid}',markup
+                assert markup['inline_keyboard'][0][0]['callback_data']==f'attentionOpenCase_{pid}',markup
                 assert sql(f"SELECT state FROM pays WHERE id={pid}")=='service_superseded'
                 assert php(mode,'attention_receipt',pay=pid) is True
                 assert sql(f"SELECT stage FROM service_operations WHERE id={prior}")=='cancelled'

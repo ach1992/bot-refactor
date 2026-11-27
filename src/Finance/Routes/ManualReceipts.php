@@ -18,6 +18,7 @@ $adminCallback=(string)($data??'');
 // the receiving route performs fresh payment, actor and Native checks.
 if (str_starts_with($adminCallback,'attentionInbox') ||
     str_starts_with($adminCallback,'attentionCase_') ||
+    str_starts_with($adminCallback,'attentionOpenCase_') ||
     str_starts_with($adminCallback,'attentionReceipt_') ||
     str_starts_with($adminCallback,'attentionDelivery') ||
     str_starts_with($adminCallback,'attentionService') ||
@@ -82,9 +83,7 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',
         $buttons=json_encode(['inline_keyboard'=>$rows],
             JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         $text=achbotMessageHtml('manual_receipt_final.result',['result'=>$result]);
-        $reply=editText($message_id,$text,$buttons,'HTML',(int)$from_id);
-        if (!is_object($reply)||($reply->ok??false)!==true)
-            sendMessage($text,$buttons,'HTML',(int)$from_id);
+        \AchBot\Telegram\Conversation\replaceTransient((int)$from_id,(int)$message_id,$text,$buttons);
     } catch(Throwable $error) {
         error_log('achbot_api_review_resume_unavailable pay_id='.$payId.
             ' class='.get_class($error));
