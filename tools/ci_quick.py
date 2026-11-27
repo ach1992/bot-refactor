@@ -174,6 +174,8 @@ REQUIRED_CURRENT_CASES = {
         "import_create_physical_lock_read_committed_and_original_fence",
         "actual_addon_current_agency_pricing_and_draft_guard",
         "positive_addons_shared_configured_method_eligibility",
+        "addon_admin_semantic_conflicts_and_concurrent_writes",
+        "positive_addon_admission_conflict_and_original_settlement",
         "ordinary_zero_commercial_origin_survives_demotion",
         "discounted_and_zero_allocated_bulk_commercial_origin",
         "managed_addon_policy_revocation_blocks_new_funding",
@@ -401,6 +403,7 @@ REQUIRED_SCENARIOS = {
         "current_service_history_funding_only_excluded_auto_renew_counted_once",
         "amount_caps_all_methods_inclusive_exemption_independent_and_bad_value_isolation",
         "operator_amount_cap_create_clear_direct_edit_cas_independent_methods_and_authorization",
+        "operator_amount_cap_staged_save_cancel_and_replay",
     ),
     "manual_checkout_conversation": (
         "committed_topup_selector_recovery_exact_owner_no_second_draft",

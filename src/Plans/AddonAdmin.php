@@ -64,14 +64,16 @@ function achbotAddonAdminSave(mysqli $db,array $flow,?int $units=null,?int $pric
     if ($flow['action']==='create') {
         if ($units===null || $price===null) return false;
         $sql="INSERT INTO $table (volume,price,server_id,group_ids) VALUES (?,?,?,?)";
-        $ok=achbotIntervalWrite($db,$sql,'iiis',[$units,$price,$sid,$groupJson],true,null,null,true);
+        $ok=achbotIntervalWrite($db,$sql,'iiis',[$units,$price,$sid,$groupJson],true,null,null,true,
+            ['kind'=>$flow['kind'],'volume'=>$units,'server_id'=>$sid,'group_ids'=>$groupJson]);
     } else {
         $original=$flow['original'];
         if (!is_int($original['id']??null) || $original['id']<=0 ||
             !is_string($original['revision']??null)) return false;
         // The shared writer checks the exact saved row revision under lock.
         $sql="UPDATE $table SET server_id=?,group_ids=? WHERE id=?";
-        $ok=achbotIntervalWrite($db,$sql,'isi',[$sid,$groupJson,$original['id']],true);
+        $ok=achbotIntervalWrite($db,$sql,'isi',[$sid,$groupJson,$original['id']],true,null,null,false,
+            ['server_id'=>$sid,'group_ids'=>$groupJson]);
     }
     if (!$ok) return false;
     // The financial write has already committed; rendering must never turn

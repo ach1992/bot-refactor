@@ -30,7 +30,7 @@ TARGETS = (
     ('src/Subscription/ServerDisplaySettings.php', 'handle_server_display_admin.text.ed95738546'),
     ('src/Purchase/EntryAndBulk.php', 'bulk_reporting.delivery_needs_review'),
 )
-EXPECTED_SOURCE_SHA256 = '581fde1063ae6526b5a0947bbf252e49619d40937d0284fffe3441b0b830066e'
+EXPECTED_SOURCE_SHA256 = '2a219ed9d39d6649bbb8c31ef8ddccbc3fd7dd0ff5000a09f0d5d2263e09d9e7'
 EXPECTED_GOLDEN_SHA256 = 'f5374536119d86f56fea2d53b40f68aae375eb28a70649c91d2bc5d2d00ece64'
 HTML_UNSAFE = re.compile(r'[<>&*_`\[\]\\]|https?://|tg://|\bt\.me/', re.I)
 
@@ -95,7 +95,7 @@ CASES = [
 ]
 
 
-def render(rows: list[dict], cases=CASES) -> list[dict]:
+def render(rows: list[dict]) -> list[dict]:
     # The first two arguments are the actual, exact PHP producer expressions.
     # The source hash is checked BEFORE source expressions are executed.
     expression=','.join('['+row['args'][0]+','+row['args'][1]+']' for row in rows)
@@ -105,7 +105,6 @@ def render(rows: list[dict], cases=CASES) -> list[dict]:
     $cases=json_decode($argv[1],true,512,JSON_THROW_ON_ERROR);$out=[];
     function produce($case){
       $text=$case['text'];$buttonValues=achbotMessages('legacy_buttons');
-      $editor=['phase'=>$case['editor_phase']??'exempt'];
       $unavailable=$case['unavailable'];$invalidated=$case['invalidated'];
       $step=$case['step'];$kind=$case['kind'];
       $GLOBALS['achbotIntervalWriteUncertain']=$case['uncertain'];
@@ -119,7 +118,7 @@ def render(rows: list[dict], cases=CASES) -> list[dict]:
     foreach($cases as $case) $out[]=produce($case);
     echo json_encode($out,JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
     '''.replace('EXPRESSION',expression)
-    result=subprocess.run(['php','-n','-r',php,json.dumps(cases,ensure_ascii=False)],
+    result=subprocess.run(['php','-n','-r',php,json.dumps(CASES,ensure_ascii=False)],
                           cwd=ROOT,text=True,capture_output=True)
     if result.returncode:
         raise AssertionError('PHP rendering failed: '+result.stderr[-3000:]+result.stdout[-3000:])
@@ -216,16 +215,6 @@ def main() -> None:
         raise AssertionError('original rendered composed notice changed')
     golden=sha(raw)
     cases=check_rendered(raw)
-    # Cap save shares the actual exemption transport, but is the one
-    # authorized alternate catalog notice. Existing exemption golden stays
-    # byte-exact and the other producers remain unchanged.
-    cap=render(items,[dict(case,editor_phase='cap') for case in CASES])
-    index=next(i for i,(_,marker) in enumerate(TARGETS) if marker.endswith('exempt_saved'))
-    expected=json.loads(json.dumps(raw))
-    for row in expected:
-        row['pairs'][index][0]='✅ سقف مبلغ پرداخت ذخیره شد.'
-    assert cap==expected,(cap,expected)
-    cap_cases=check_rendered(cap)
     if args.print_audit:
         print(json.dumps({'source_sha256':origin,'golden_sha256':golden,'cases':cases}))
         return
@@ -233,7 +222,7 @@ def main() -> None:
         raise AssertionError('prechange PHP rendered output changed: '+golden)
     rejected=mutators(sources,origin)
     print(json.dumps({'status':'PASS','complete':True,'producers':len(items),
-                      'samples':len(CASES),'rendered_messages':cases,'cap_rendered_messages':cap_cases,
+                      'samples':len(CASES),'rendered_messages':cases,
                       'mutation_cases':rejected,'source_sha256':origin,
                       'golden_sha256':golden,'network_calls':0}))
 

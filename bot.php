@@ -518,12 +518,14 @@ if (is_string($data??null) &&
         $prior=achbotGatewayRuleStep((string)($userInfo['step']??''));
         $target=$prior && $prior['phase']==='confirm'
             ? 'gr|f|'.$prior['method'].'|'.$prior['category'].'|'.$prior['metric']
-            : ($prior && $prior['phase']==='delete'
+            : ($prior && in_array($prior['phase'],['delete','capconfirm'],true)
                 ? 'gr|m|'.$prior['method'] : 'gr|l');
         $page=achbotGatewayAdminPage($target);
         editText($message_id,
             ($operation['action']==='s'
-                ? \achbotMessage('bot.bot.gateway_audience_settings.message.fdfbaf2a40')
+                ? ($prior && $prior['phase']==='capconfirm'
+                    ? \achbotMessage('payment_settings.gateway_rule_admin.cap_saved')
+                    : \achbotMessage('bot.bot.gateway_audience_settings.message.fdfbaf2a40'))
                 : \achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02')).
             "\n".$page['text'],$page['keyboard']);
         return;
@@ -542,7 +544,8 @@ if (is_string($data??null) &&
 if (is_string($userInfo['step']??null) &&
     (str_starts_with($userInfo['step'],'gr|edit|') ||
      str_starts_with($userInfo['step'],'gr|exempt|') ||
-     str_starts_with($userInfo['step'],'gr|cap|'))) {
+     str_starts_with($userInfo['step'],'gr|cap|') ||
+     (str_starts_with($userInfo['step'],'gr|capconfirm|') && $text===achbotMessage('legacy_buttons.cancel')))) {
     if (!achbotAdminGatewayChange($update,(int)$from_id,
             (int)$chat_id,(int)$message_id,(int)$admin,'number',
             $userInfo['step'],(string)$text)) {
@@ -551,7 +554,8 @@ if (is_string($userInfo['step']??null) &&
         return;
     }
     if (str_starts_with($userInfo['step'],'gr|exempt|') ||
-        str_starts_with($userInfo['step'],'gr|cap|')) {
+        ((str_starts_with($userInfo['step'],'gr|cap|') || str_starts_with($userInfo['step'],'gr|capconfirm|')) &&
+            $text===achbotMessage('legacy_buttons.cancel'))) {
         $editor=achbotGatewayRuleStep($userInfo['step']);
         $method=$editor['method'];
         $page=achbotGatewayAdminPage('gr|m|'.$method);
@@ -559,9 +563,7 @@ if (is_string($userInfo['step']??null) &&
         // Finish the wizard first, then show the same method's current menu.
         sendMessage($text===(\achbotMessage('legacy_buttons.cancel')??null)
             ? \achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02')
-            : ($editor['phase']==='cap'
-                ? \achbotMessage('payment_settings.gateway_rule_admin.cap_saved')
-                : \achbotMessage('payment_settings.gateway_rule_admin.exempt_saved')),
+            : \achbotMessage('payment_settings.gateway_rule_admin.exempt_saved'),
             $removeKeyboard, 'HTML');
         sendMessage($page['text'],$page['keyboard'],'HTML');
         return;
@@ -572,7 +574,9 @@ if (is_string($userInfo['step']??null) &&
         return;
     }
     $sourceId=(int)($update->update_id??0);
-    sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.397d3e91b6').$text.\achbotMessage('bot.bot.gateway_audience_settings.message.c5bdeadc6b'),
+    $proposed=str_starts_with($userInfo['step'],'gr|cap|')
+        ? number_format(achbotGatewayAmountInput($text)) : $text;
+    sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.397d3e91b6').$proposed.\achbotMessage('bot.bot.gateway_audience_settings.message.c5bdeadc6b'),
         json_encode(['inline_keyboard'=>[
             [['text'=>\achbotMessage('bot.bot.gateway_audience_settings.button.9b026e4934'),'callback_data'=>'gr|s|'.$sourceId]],
             [['text'=>\achbotMessage('labels.dismiss'),'callback_data'=>'gr|x|'.$sourceId]]

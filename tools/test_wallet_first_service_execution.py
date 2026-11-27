@@ -120,6 +120,10 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null) {
         return ($x['unknown_ack']??false)?(object)['ok'=>false]:fixtureMessageAck($uid,
             $wireMessage??$mid);
     }
+    if ($x['op']==='addon_admin') {
+        $GLOBALS['fixtureQuoteMessages'][]=['text'=>$text,'keys'=>json_decode($keys??'null',true)];
+        return fixtureMessageAck((int)$GLOBALS['from_id'],12345);
+    }
     if ($x['op']==='telegram_addon_quote') {
         $GLOBALS['fixtureQuoteMessages'][]=['text'=>$text,'keys'=>json_decode($keys??'null',true)];
         $actor=(int)$GLOBALS['from_id'];
@@ -184,6 +188,7 @@ function editKeys($keys,$msgId,$ci) {return sendMessage($keys,null,'edit:'.$msgI
 function editText($msgId,$text,$keys=null,$mode=null,$uid=null) {
     if (isset($GLOBALS['achbotTelegramDiagnosticContext']['followup_id']))
         return sendMessage($text,$keys,'edit_text:'.$msgId,$uid);
+    if (($GLOBALS['x']['op']??'')==='addon_admin') return sendMessage($text,$keys,$mode,$uid);
     if (($GLOBALS['x']['op']??'')!=='telegram_review') throw new RuntimeException('fixture_unexpected_edit');
     $GLOBALS['fixtureReview'][]=['message'=>$msgId,'body'=>$text,'keys'=>json_decode($keys??'null',true),'mode'=>$mode,'user'=>$uid];
     return (object)['ok'=>true];
@@ -303,6 +308,56 @@ try {
         $o=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=?','i',[(int)$x['order']]);
         $a=\AchBot\Subscription\AccountDetails\orderPlanActions($db,$o);
         $r=['origin'=>achbotOrderMayUsePaidPlan($db,$o),'choose'=>$a['choose'],'paid'=>isset($a['paid'])&&$a['paid']!==null];
+    }
+    elseif ($x['op']==='addon_admin') {
+        $from_id=(int)$x['actor'];$chat_id=$from_id;$callbackId='fixture-admin';$message_id=722;
+        $userInfo=achbotProviderRow($db,'SELECT * FROM users WHERE userid=?','i',[$from_id]);
+        $data=$x['callback']??'';$text=$x['text']??'';
+        $cancelKey='{}';$removeKeyboard='{}';
+        $GLOBALS['fixtureAlerts']=[];$GLOBALS['fixtureQuoteMessages']=[];
+        $sender=(object)['id'=>$from_id];$chat=(object)['id'=>$from_id,'type'=>'private'];
+        $update=(object)['update_id'=>(int)$x['update_id']];
+        if ($data!=='') $update->callback_query=(object)['id'=>$callbackId,'data'=>$data,'from'=>$sender,
+            'message'=>(object)['message_id'=>$message_id,'chat'=>$chat]];
+        else $update->message=(object)['message_id'=>$message_id,'chat'=>$chat,'from'=>$sender,'text'=>$text];
+        register_shutdown_function(static function() use ($db,$from_id) {
+            $e=error_get_last();
+            if ($e && in_array($e['type'],[E_ERROR,E_PARSE,E_CORE_ERROR,E_COMPILE_ERROR],true)) return;
+            echo json_encode(['ok'=>true,'result'=>[
+                'messages'=>$GLOBALS['fixtureQuoteMessages'],'alerts'=>$GLOBALS['fixtureAlerts'],
+                'step'=>achbotProviderRow($db,'SELECT step FROM users WHERE userid=?','i',[$from_id])['step']
+            ]],JSON_THROW_ON_ERROR);
+        });
+        require $argv[1].'/src/Plans/Intervals.php';
+        exit;
+    }
+    elseif ($x['op']==='checkout_hosted_issue' || $x['op']==='checkout_hosted_verify') {
+        require_once $argv[1].'/src/Finance/HostedReceipt.php';
+        // No merchant network; use the documented SOAP response contract.
+        class SoapClient {
+            public function __construct($wsdl,$opts) {
+                if ($wsdl!=='https://www.zarinpal.com/pg/services/WebGate/wsdl')
+                    throw new RuntimeException('fixture_merchant_endpoint');
+            }
+            private function record(string $action,array $args): void {
+                $db=$GLOBALS['db'];
+                if ((int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0)
+                    throw new RuntimeException('fixture_merchant_inside_transaction');
+                $db->query("INSERT INTO fixture_addon_merchant(action,amount) VALUES ('".$action."',".(int)$args['Amount'].")");
+            }
+            public function PaymentRequest($args) {
+                $this->record('issue',$args);
+                return (object)['Status'=>100,'Authority'=>'fixture-addon-'.$GLOBALS['x']['pay']];
+            }
+            public function PaymentVerification($args) {
+                $this->record('verify',$args);
+                return (object)['Status'=>100,'RefID'=>123];
+            }
+        }
+        $uid=(int)$x['actor'];$pid=(int)$x['pay'];
+        $r=$x['op']==='checkout_hosted_issue'?
+            achbotHostedReceiptIssue($db,$pid,$uid,'zarinpal',null,[],[],'https://bot.fixture.invalid/','Fixture',[],null):
+            achbotHostedReceiptVerify($db,$pid,$uid,'zarinpal','fixture-addon-'.$pid);
     }
     elseif ($x['op']==='telegram_addon_quote') {
         $from_id=(int)$x['actor'];$chat_id=$from_id;$callbackId='fixture-addon';$message_id=721;
@@ -519,7 +574,7 @@ try {
     echo json_encode(['ok'=>true,'result'=>$r],JSON_THROW_ON_ERROR);
 } catch(Throwable $e) {
     $db->rollback();
-    echo json_encode(['ok'=>false,'reason'=>$e->getMessage()],JSON_THROW_ON_ERROR);
+    echo json_encode(['ok'=>false,'reason'=>$e->getMessage()]+array_intersect_key(achbotDiagnosticLocalFailure($e),['sql_errno'=>true]),JSON_THROW_ON_ERROR);
 }
 '''
 
@@ -766,10 +821,11 @@ def main():
                        (9,1,3,'Fixture PG alias',30,2,100,'description',1,'fixture','[1,2]'),
                        (10,1,2,'Fixture PG group change',30,2,100,'description',1,'fixture','[1]');""")
             sql('UPDATE users SET wallet=50000 WHERE userid=9002')
+            sql("CREATE TABLE fixture_addon_merchant(id INT AUTO_INCREMENT PRIMARY KEY,action VARCHAR(10),amount INT) ENGINE=InnoDB")
             driver=work/'execution.php';driver.write_text(PHP)
             last_diagnostics=[]
             def php(mysqli_mode,op,*,return_diagnostics=False,**kw):
-                p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=curl','-d','extension=gd',
+                p=subprocess.run(['php','-n','-d','extension=mysqlnd','-d','extension=mysqli','-d','extension=curl','-d','extension=gd','-d','extension=mbstring','-d','extension=ctype',
                     '-d','allow_url_fopen=0','-d','disable_functions=exec,shell_exec,system,passthru,popen,proc_open,mail',
                     str(driver),str(ROOT),str(work/'mysql.sock'),DB,mysqli_mode,json.dumps(dict(op=op,**kw))],
                     env=env,text=True,encoding="utf-8",capture_output=True,timeout=25)
@@ -796,6 +852,9 @@ def main():
                     assert any(all(item.get(k)==v for k,v in expected.items()) for item in diagnostics),(expected,diagnostics)
                 try:r=json.loads(p.stdout)
                 except ValueError as e:raise AssertionError((op,p.stdout,p.stderr)) from e
+                if kw.get('expect_concurrent_addon_denial'):
+                    assert not r['ok'] and (r['reason']=='checkout_addon_changed' or r.get('sql_errno') in (1020,1213)),r
+                    return r['reason']
                 if 'expect_error' in kw:
                     assert not r['ok'] and r['reason']==kw['expect_error'],r
                     return r['reason']
@@ -2868,6 +2927,174 @@ DELIMITER ;
                         addon_keys_value=saved_keys[0].replace("'","''")
                         sql("INSERT INTO setting(type,value) VALUES ('PAYMENT_KEYS','"+addon_keys_value+"')")
                     cases.append(mode+'_positive_addons_shared_configured_method_eligibility')
+                    # #240: genuine admin routes after noncanonical direct SQL.
+                    sql("INSERT INTO users(userid,name,username,refcode,wallet,date,isAdmin,first_start) VALUES (9011,'Fixture manager','fixture_manager','0',0,'1700000000',1,'sent'); INSERT INTO setting(type,value) VALUES ('ADMIN_ROLE_9011','manager')")
+                    admin_seq=200000
+                    def admin_call(actor=9001,callback='',text='',**kwargs):
+                        nonlocal admin_seq
+                        admin_seq+=1
+                        return php(mode,'addon_admin',actor=actor,callback=callback,text=text,update_id=admin_seq,**kwargs)
+                    def button(reply,prefix):
+                        choices=[b['callback_data'] for m in reply['messages'] for row in (m['keys'] or {}).get('inline_keyboard',[]) for b in row if b.get('callback_data','').startswith(prefix)]
+                        assert len(choices)==1,(prefix,choices,reply)
+                        return choices[0]
+                    def groups_editor(kind,actor=9001,edit=None,server=2):
+                        tag='Day' if kind=='day' else 'Volume'
+                        screen='dayPlanSettings' if kind=='day' else 'volumePlanSettings'
+                        start='addNew'+tag+'Plan'
+                        if edit is not None:
+                            start=button(admin_call(actor,callback=screen),'addonEditScope'+tag+str(edit)+'_')
+                        r=admin_call(actor,callback=start)
+                        r=admin_call(actor,callback=button(r,'addonScopeGroups_'))
+                        r=admin_call(actor,callback=button(r,'addonPickServer'+str(server)+'_'))
+                        assert r['step']=='addon:groups',r
+                        return admin_call(actor,text='1,2')
+                    cancel=subprocess.check_output(['php','-r','require "messages/loader.php"; echo achbotMessage("legacy_buttons.cancel");'],cwd=ROOT,text=True)
+                    def during_direct_edit(statement, action):
+                        # Commit an actual conflicting direct edit only after
+                        # the application is observed waiting on its DB lock.
+                        proc=subprocess.Popen(client+['--unbuffered'],stdin=subprocess.PIPE,
+                            stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,
+                            encoding='utf-8',env=env)
+                        try:
+                            proc.stdin.write("START TRANSACTION; "+statement+"; SELECT 'ready';\n")
+                            proc.stdin.flush()
+                            assert proc.stdout.readline().strip()=='ready'
+                            with ThreadPoolExecutor(max_workers=1) as pool:
+                                f=pool.submit(action)
+                                try:
+                                    deadline=time.monotonic()+8
+                                    waiting=False
+                                    # InnoDB information-schema lock snapshots are cached.
+                                    time.sleep(.3)
+                                    while time.monotonic()<deadline and not f.done():
+                                        if int(sql("SELECT COUNT(*) FROM information_schema.INNODB_LOCK_WAITS")):
+                                            waiting=True;break
+                                        time.sleep(.3)
+                                    assert waiting and not f.done(),('expected scoped lock wait',f.result() if f.done() else sql('SHOW FULL PROCESSLIST'))
+                                finally:
+                                    proc.stdin.write("COMMIT; SELECT 'done';\n");proc.stdin.flush()
+                                    assert proc.stdout.readline().strip()=='done'
+                                return f.result()
+                        finally:
+                            proc.stdin.close()
+                            proc.wait(timeout=5)
+                            assert proc.returncode==0,proc.stderr.read()
+                    def rejected(r):
+                        assert r['messages'] and all(not m['text'].startswith('✅') for m in r['messages']),r
+                        assert r['step']!='none',r
+                    for kind,table,tag,qtyfield in [('day','increase_day','Day','Day'),('volume','increase_plan','Volume','Volume')]:
+                        screen=kind+'PlanSettings'
+                        def add(q,scope,price=100,server=2):
+                            scope_sql='NULL' if scope is None else "'"+scope+"'"
+                            sql(f"INSERT INTO {table}(volume,price,server_id,group_ids) VALUES ({q},{price},{server},{scope_sql})")
+                            return int(sql(f"SELECT MAX(id) FROM {table}"))
+                        orig=add(73,'[2,1,1]');source=add(74,'[1,2]');other=add(73,None)
+                        before=sql(f"SELECT id,volume,price,server_id,group_ids FROM {table} ORDER BY id")
+                        assert groups_editor(kind)['step']=='addon:units'
+                        rejected(admin_call(text='73-200',expect_diagnostic={'event':'achbot.addon.admin_write_deferred','reason':'addon_admin_duplicate_scope'}))
+                        assert sql(f"SELECT id,volume,price,server_id,group_ids FROM {table} ORDER BY id")==before
+                        admin_call(text=cancel)
+                        rejected(groups_editor(kind,edit=other))
+                        assert sql(f"SELECT id,volume,price,server_id,group_ids FROM {table} ORDER BY id")==before
+                        admin_call(text=cancel)
+                        r=admin_call(callback=button(admin_call(callback=screen),'change'+tag+'Plan'+qtyfield+str(source)+'_'))
+                        assert r['step'].startswith('change')
+                        rejected(admin_call(text='73',expect_diagnostic={'event':'achbot.addon.admin_write_deferred','reason':'addon_admin_duplicate_scope'}))
+                        assert sql(f"SELECT volume FROM {table} WHERE id={source}")=='74'
+                        assert admin_call(text='74')['step']=='none'
+                        assert groups_editor(kind,edit=other,server=3)['step']=='none'
+                        assert sql(f"SELECT server_id FROM {table} WHERE id={other}")=='3'
+                        duplicate=add(73,'[1,2]')
+                        admin_call(callback=button(admin_call(callback=screen),'change'+tag+'Plan'+qtyfield+str(duplicate)+'_'))
+                        assert admin_call(text='75')['step']=='none'
+                        assert sql(f"SELECT volume FROM {table} WHERE id={duplicate}")=='75'
+                        for actor in (9001,9011):
+                            assert groups_editor(kind,actor=actor)['step']=='addon:units'
+                        admin_seq+=2
+                        with ThreadPoolExecutor(max_workers=2) as pool:
+                            outcomes=list(pool.map(lambda pair:php(mode,'addon_admin',actor=pair[0],text='76-100',update_id=pair[1],read_committed=True),[(9001,admin_seq-1),(9011,admin_seq)]))
+                        assert sql(f"SELECT COUNT(*) FROM {table} WHERE volume=76 AND server_id=2")=='1',outcomes
+                        assert sum(o['step']=='none' for o in outcomes)==1,outcomes
+                        for actor,o in zip((9001,9011),outcomes):
+                            if o['step']!='none':rejected(o);admin_call(actor,text=cancel)
+                        assert groups_editor(kind)['step']=='addon:units'
+                        admin_seq+=1
+                        r=during_direct_edit(f"INSERT INTO {table}(volume,price,server_id,group_ids) VALUES (77,100,2,'[2,1,1]')",
+                            lambda:php(mode,'addon_admin',actor=9001,text='77-200',update_id=admin_seq,read_committed=True,
+                                expect_diagnostic={'event':'achbot.addon.admin_write_deferred','reason':'addon_admin_duplicate_scope'}))
+                        rejected(r)
+                        assert sql(f"SELECT COUNT(*) FROM {table} WHERE volume=77")=='1'
+                        admin_call(text=cancel)
+                        sql(f"DELETE FROM {table} WHERE id IN ({orig},{source},{other},{duplicate}) OR volume IN (76,77)")
+                    cases.append(mode+'_addon_admin_semantic_conflicts_and_concurrent_writes')
+                    sql("DELETE FROM setting WHERE type='ADMIN_ROLE_9011'; DELETE FROM users WHERE userid=9011")
+                    # All payment entry points share the current winner.
+                    # Existing receipts retain originally admitted amounts.
+                    addon_state(walletState='on',cartToCartState='on',zarinpal='on')
+                    sql("DELETE FROM setting WHERE type='PAYMENT_KEYS'; INSERT INTO setting(type,value) VALUES ('PAYMENT_KEYS','{}')")
+                    addon_keys(base_keys|{'zarinpal':'fixture-merchant'})
+                    for kind,table,prefix in [('day','increase_day','selectPlanDayIncrease'),('volume','increase_plan','increaseVolumePlan')]:
+                        sql(f"INSERT INTO {table}(volume,price,server_id,group_ids) VALUES (78,100,2,'[2,1,1]')")
+                        offer=int(sql(f"SELECT id FROM {table} WHERE volume=78 AND server_id=2"))
+                        def fresh():
+                            r=php(mode,'telegram_addon_quote',actor=9002,callback=f'{prefix}{ordinary_zero}_{offer}')
+                            assert r['messages'],r
+                            h,pid,price=sql("SELECT hash_id,id,price FROM pays WHERE user_id=9002 ORDER BY id DESC LIMIT 1").split('\t')
+                            assert price=='100'
+                            return h,int(pid)
+                        def conflict():
+                            sql(f"INSERT INTO {table}(volume,price,server_id,group_ids) VALUES (78,100,2,'[1,2]')")
+                        def clear_conflict():
+                            sql(f"DELETE FROM {table} WHERE volume=78 AND group_ids='[1,2]'")
+                        def financial_counts():
+                            return finance(),sql("SELECT COUNT(*) FROM payment_attempts"),sql("SELECT COUNT(*) FROM service_operations"),sql("SELECT COUNT(*) FROM fixture_addon_merchant")
+                        for method in ('wallet','manual','hosted'):
+                            h,pid=fresh();conflict()
+                            before=financial_counts()
+                            if method=='wallet':
+                                php(mode,'checkout_wallet',hash=h,actor=9002,expect_error='checkout_addon_changed',read_committed=True)
+                            elif method=='manual':
+                                assert not php(mode,'checkout_manual',pay=pid,actor=9002,read_committed=True,
+                                    expect_diagnostic={'event':'achbot.finance.checkout_manual_admission_deferred','reason':'checkout_addon_changed'})
+                            else:
+                                php(mode,'checkout_hosted_issue',pay=pid,actor=9002,expect_error='checkout_addon_changed',read_committed=True)
+                            assert financial_counts()==before
+                            unrelated=sql(f"SELECT id FROM {table} WHERE volume=97 AND server_id IS NULL")
+                            r=php(mode,'telegram_addon_quote',actor=9002,callback=f'{prefix}{ordinary_zero}_{unrelated}')
+                            assert r['messages'],r
+                            clear_conflict()
+                        h,pid=fresh()
+                        before=financial_counts()
+                        during_direct_edit(f"INSERT INTO {table}(volume,price,server_id,group_ids) VALUES (78,100,2,'[1,2]')",
+                            lambda:php(mode,'checkout_wallet',hash=h,actor=9002,expect_concurrent_addon_denial=True,read_committed=True))
+                        assert financial_counts()==before
+                        # A retry after a retryable concurrent SQL abort still
+                        # sees the committed conflict, without taking money.
+                        php(mode,'checkout_wallet',hash=h,actor=9002,expect_error='checkout_addon_changed')
+                        assert financial_counts()==before
+                        clear_conflict()
+                        h,pid=fresh()
+                        sql(f"UPDATE {table} SET price=150 WHERE id={offer}")
+                        r=php(mode,'checkout_hosted_issue',pay=pid,actor=9002)
+                        assert r['status']=='issued',r
+                        assert sql("SELECT amount FROM fixture_addon_merchant ORDER BY id DESC LIMIT 1")=='100'
+                        original=sql(f"SELECT price,addon_scope_snapshot FROM pays WHERE id={pid}")
+                        conflict()
+                        r=php(mode,'checkout_hosted_verify',pay=pid,actor=9002)
+                        assert r['status']=='credited' and r['funding']=='funded',r
+                        counts=financial_counts()
+                        assert php(mode,'checkout_hosted_verify',pay=pid,actor=9002)['credit']['replayed']
+                        assert financial_counts()[:3]==counts[:3]
+                        assert sql(f"SELECT price,addon_scope_snapshot FROM pays WHERE id={pid}")==original
+                        op=int(sql(f"SELECT checkout_operation_id FROM pays WHERE id={pid}"))
+                        for stage in ('progressed','applied','completed'):step(mode,op,stage)
+                        clear_conflict()
+                        sql(f"DELETE FROM {table} WHERE id={offer}")
+                    sql("UPDATE setting SET value='"+saved_states+"' WHERE type='BOT_STATES'; DELETE FROM setting WHERE type='PAYMENT_KEYS'")
+                    if saved_keys:sql("INSERT INTO setting(type,value) VALUES ('PAYMENT_KEYS','"+saved_keys[0].replace("'","''")+"')")
+                    cases.append(mode+'_positive_addon_admission_conflict_and_original_settlement')
+
                     # A zero effective ordinary-mode BUY remains eligible after
                     # representative demotion, without rewriting its history.
                     assert php(mode,'commercial_plan',order=ordinary_zero)==dict(origin=True,choose=True,paid=True)

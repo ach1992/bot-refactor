@@ -125,7 +125,9 @@ operations-attention entry, for Owner, Manager and Operator (not
 Support), independently of the Manager-only general gateway/settings menu.
 Each method has a «سقف مبلغ پرداخت» row, displaying the current amount or
 «بدون محدودیت». Open it, enter a nonnegative whole Toman amount (0 removes
-the limit); the signed input saves and returns to the current method menu.
+the limit); numeric input stages the amount and presents the existing
+bound Save/Cancel confirmation. Save commits the exact normalized value
+and returns to the current method menu; Cancel preserves the old cap.
 A separate «بدون محدودیت» action clears a configured cap. Both are
 field-revision bound, so direct edits to another method are preserved and a
 stale same-method editor cannot overwrite a new value. No schema migration

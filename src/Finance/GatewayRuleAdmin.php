@@ -67,6 +67,13 @@ function achbotGatewayRuleStep(string $source): ?array {
         array_key_exists($p[2],achbotPayUxAudienceMethods()) &&
         preg_match('/\A[a-f0-9]{15}\z/D',$p[3])===1)
         return ['phase'=>'cap','method'=>$p[2],'baseline'=>$p[3]];
+    if (count($p)===6 && $p[0]==='gr' && $p[1]==='capconfirm' &&
+        array_key_exists($p[2],achbotPayUxAudienceMethods()) &&
+        achbotGatewayAmountNumber($p[3])!==null &&
+        preg_match('/\A[1-9][0-9]*\z/D',$p[4])===1 &&
+        preg_match('/\A[a-f0-9]{15}\z/D',$p[5])===1)
+        return ['phase'=>'capconfirm','method'=>$p[2],'value'=>$p[3],
+            'nonce'=>$p[4],'baseline'=>$p[5]];
     if (count($p)===3 && $p[0]==='gr' && $p[1]==='exempt' &&
         array_key_exists($p[2],achbotPayUxAudienceMethods()))
         return ['phase'=>'exempt','method'=>$p[2]];
@@ -158,17 +165,18 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
     if ($exempt===null) throw new RuntimeException('gateway_exempt_document_invalid');
     if ($kind==='number') {
         $s=achbotGatewayRuleStep($step);
-        if ($s && $s['phase']==='cap') {
+        if ($s && in_array($s['phase'],['cap','capconfirm'],true)) {
             if ($step!==$key || $value===null)
                 throw new RuntimeException('gateway_amount_input_not_owned');
             if ($value===achbotMessage('legacy_buttons.cancel')) {
                 $newStep='none';return $state;
             }
+            if ($s['phase']!=='cap') throw new RuntimeException('gateway_amount_confirmation_required');
             $n=achbotGatewayAmountInput($value);
             if ($n===null || !hash_equals($s['baseline'],achbotGatewayAmountTag($state,$s['method'])))
                 throw new RuntimeException('gateway_amount_value_or_editor_stale');
-            $newStep='none';
-            return achbotGatewayAmountSet($state,$s['method'],$n);
+            $newStep='gr|capconfirm|'.$s['method'].'|'.$n.'|'.$sourceId.'|'.$s['baseline'];
+            return $state; // No ceiling change until the bound Save action.
         }
         if ($s && $s['phase']==='exempt') {
             if ($step!==$key || $value===null)
@@ -223,11 +231,17 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
     }
     if ($act==='s' || $act==='x') {
         $s=achbotGatewayRuleStep($step);
-        if ($s===null || !in_array($s['phase'],['confirm','delete'],true) ||
+        if ($s===null || !in_array($s['phase'],['confirm','delete','capconfirm'],true) ||
             $s['nonce']!==$parsed['nonce'])
             throw new RuntimeException('gateway_rule_confirmation_stale');
         $newStep='none';
         if ($act==='x') return $state;
+        if ($s['phase']==='capconfirm') {
+            $n=achbotGatewayAmountNumber($s['value']);
+            if ($n===null || !hash_equals($s['baseline'],achbotGatewayAmountTag($state,$s['method'])))
+                throw new RuntimeException('gateway_amount_value_or_editor_stale');
+            return achbotGatewayAmountSet($state,$s['method'],$n);
+        }
         if ($s['phase']==='delete')
             throw new RuntimeException('gateway_rule_delete_requires_bound_action');
         $method=$s['method'];$category=$s['category'];

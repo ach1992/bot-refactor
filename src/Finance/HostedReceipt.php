@@ -148,7 +148,9 @@ function achbotHostedReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
     achbotHostedCallbackBase($botUrl);
     $credential=(string)($paymentKeys[$def['credential_setting']]??'');
     $quote??=[];
-    if (!$db->begin_transaction()) throw new RuntimeException('hosted_issue_begin');
+    if ($draftStates!==null) require_once __DIR__.'/../Plans/Addons.php';
+    if (!($draftStates!==null?achbotAddonBeginRangeTransaction($db):$db->begin_transaction()))
+        throw new RuntimeException('hosted_issue_begin');
     try {
         if ($draftStates!==null) {
             require_once __DIR__.'/CheckoutAdmission.php';

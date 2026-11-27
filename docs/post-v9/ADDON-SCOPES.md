@@ -22,7 +22,12 @@ semantic G / S:<server-id> / P:<server-id>:<sorted-comma-separated-group-ids>
 SHA-256 for quote evidence, without trusting the index key as another
 business value. The unique index rejects identical compact scope rows.
 Direct SQL can produce differently ordered but semantically duplicate
-Group-sets; the runtime detects competing winning offers per quantity. Do not confuse native PasarGuard groups with physical
+Group-sets; the runtime detects competing winning offers per quantity.
+Application creation and scope/quantity changes check semantic uniqueness
+under the destination quantity-range lock, excluding the edited row.
+Existing conflicts remain repairable; unchanged keys and price-only edits
+need no new uniqueness check. Direct SQL can still deliberately create a
+conflict after the transaction; fresh requests isolate it. Do not confuse native PasarGuard groups with physical
 panel_group_id. For a given extension kind and integer unit count,
 priority is exact native PasarGuard Group-set > server > Global.
 Multiple native Groups are one exact set, never a cheapest matching
@@ -104,7 +109,12 @@ server/provider identity, deleted offers or altered scopes fail closed
 for a refreshed quote or reconciliation, never automatic repricing.
 An already-issued quote must never silently change amount because of
 admin edits. New draft issuance fails when the selected offer price
-changed while the draft was being created.
+changed while the draft was being created. First admission for every
+payment method reuses the current locked winning-offer check, but keeps the
+original amount even after an ordinary base-price edit. The owning SQL
+transaction selects REPEATABLE READ for next-key protection of the quantity
+range (including gaps); it does not change the installation-wide isolation
+setting. Already admitted receipts never depend on current catalogue rows.
 
 Historical invoices without a current immutable quote retain evidence of the original amount and units but are not executable in the replacement runtime. Existing-instance reconciliation is separately authorized.
 Existing idempotency journals, wallet protections and gateway records

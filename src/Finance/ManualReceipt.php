@@ -15,7 +15,9 @@ function achbotManualReceiptIssue(mysqli $db,int $payId,int $userId,string $meth
     $def=achbotCreditMethodDefinition($method);
     if (!$def || !isset($def['manual_quote']))
         throw new DomainException('manual_method_unavailable');
-    if (!$db->begin_transaction()) throw new RuntimeException('manual_issue_begin');
+    if ($draftStates!==null) require_once __DIR__.'/../Plans/Addons.php';
+    if (!($draftStates!==null?achbotAddonBeginRangeTransaction($db):$db->begin_transaction()))
+        throw new RuntimeException('manual_issue_begin');
     try {
         $pay=achbotCheckoutPayLocked($db,$payId,$userId);
         $a=achbotProviderRow($db,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);

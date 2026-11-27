@@ -319,7 +319,7 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
             throw new DomainException('checkout_managed_service_unavailable');
         $q['order_id']=$oid;$q['variant']='managed';$q['remark']=$o['remark'];$q['uuid']=(string)$o['uuid'];
         if ($add) {
-            if (!achbotAddonPayLocal($db,$pay,$o)) throw new DomainException('checkout_addon_changed');
+            if (!achbotAddonCurrentLocked($db,$pay,$o)) throw new DomainException('checkout_addon_changed');
             $units=achbotPinnedAddonUnits($pay);
             if ($units===null) throw new DomainException('checkout_addon_changed');
             $q['kind']=$parts[1]==='DAY'?'ADD_TIME':'ADD_VOLUME';
@@ -567,7 +567,9 @@ function achbotManualApprovalCallbackData(array $pay): string {
 function achbotCheckoutWallet(mysqli $db,string $hash,int $actor,array $states): array {
     achbotPaymentEvidenceRequireAutocommit($db);
     achbotCheckoutRequireSchema($db);
-    if (!$db->begin_transaction()) throw new RuntimeException('checkout_wallet_begin');
+    // Resolve the subject only under its owner/pay locks. All first-admission
+    // transactions therefore use RR, so an add-on range cannot gain phantoms.
+    if (!achbotAddonBeginRangeTransaction($db)) throw new RuntimeException('checkout_wallet_begin');
     try {
         $owner=achbotWalletLockOwnerLocked($db,$actor);
         $s=achbotProviderStatement($db,'SELECT * FROM pays WHERE hash_id=? AND user_id=? LIMIT 2 FOR UPDATE','si',[$hash,$actor]);

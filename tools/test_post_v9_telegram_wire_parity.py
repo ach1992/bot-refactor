@@ -171,13 +171,15 @@ def compare_chili(before, after):
         "purchase.entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e":"legacy_messages.buy_sub_select_category",
         "purchase.entry_and_bulk.create_multiple_accounts.message.7f4d98ab9b":"legacy_messages.buy_sub_select_plan",
     }
-    # Exactly two argument changes for the cap editor, preserving original
-    # exempt input/cancel/return transport and all other direct sends.
+    # The cap editor uses the existing input and Save/Cancel transport.
+    # Pin only the three authorized argument deltas.
     bot_replacements={
         "achbotGatewayAdminExemptPrompt($operation['method'])":
             "$operation['action']==='k'?achbotGatewayAdminAmountPrompt($operation['method']):achbotGatewayAdminExemptPrompt($operation['method'])",
-        r"$text===($buttonValues['cancel']??null)?\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'):\achbotMessage('payment_settings.gateway_rule_admin.exempt_saved')":
-            r"$text===($buttonValues['cancel']??null)?\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'):($editor['phase']==='cap'?\achbotMessage('payment_settings.gateway_rule_admin.cap_saved'):\achbotMessage('payment_settings.gateway_rule_admin.exempt_saved'))"
+        r"""($operation['action']==='s'?\achbotMessage('bot.bot.gateway_audience_settings.message.fdfbaf2a40'):\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'))."\n".$page['text']""":
+            r"""($operation['action']==='s'?($prior&&$prior['phase']==='capconfirm'?\achbotMessage('payment_settings.gateway_rule_admin.cap_saved'):\achbotMessage('bot.bot.gateway_audience_settings.message.fdfbaf2a40')):\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'))."\n".$page['text']""",
+        r"\achbotMessage('bot.bot.gateway_audience_settings.message.397d3e91b6').$text.\achbotMessage('bot.bot.gateway_audience_settings.message.c5bdeadc6b')":
+            r"\achbotMessage('bot.bot.gateway_audience_settings.message.397d3e91b6').$proposed.\achbotMessage('bot.bot.gateway_audience_settings.message.c5bdeadc6b')"
     }
     seen=Counter()
     for name,rows in before.items():
@@ -190,7 +192,7 @@ def compare_chili(before, after):
                         if arg==php_args.canonical_expression("\\achbotMessage('"+old+"')"):
                             args[i]=php_args.canonical_expression("\\achbotMessage('"+new+"')")
                             seen[old]+=1
-            if name=='bot.php' and method=='sendMessage':
+            if name=='bot.php' and method in ('sendMessage','editText'):
                 for i,arg in enumerate(args):
                     if arg in bot_replacements:
                         args[i]=bot_replacements[arg]
