@@ -561,10 +561,14 @@ def main():
             assert not amount_allowed(z,500001,'bank_transfer',who=1002)
         assert not amount_allowed({**legacy,'gatewayAudience':{'bank_transfer':'invalid'}},1,'bank_transfer')
         assert not amount_allowed({**legacy,'gatewayAudience':None},1,'bank_transfer')
+        # Deliberately degrade the isolated unique index, as in the
+        # existing corrupt-schema identity regression above.
+        sql(w,e,"ALTER TABLE users DROP INDEX idx_users_userid_v1, ADD INDEX idx_users_userid_v1(userid)")
         sql(w,e,f"INSERT INTO users(userid,name,username,refcode,wallet,date,is_agent) "
             f"VALUES(1002,'Duplicate','duplicate_gateway_fixture','0',0,'{now}',1)")
         assert not amount_allowed(s,1,'bank_transfer',who=1002)
         sql(w,e,"DELETE FROM users WHERE username='duplicate_gateway_fixture'")
+        sql(w,e,"ALTER TABLE users DROP INDEX idx_users_userid_v1, ADD UNIQUE INDEX idx_users_userid_v1(userid)")
         cases.append('amount_fallback_all_methods_inclusive_disabled_zero_identity_policy_and_exemptions')
         # Rest of operator suite uses original source route and writer.
         store(initial)
