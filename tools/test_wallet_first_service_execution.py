@@ -141,6 +141,25 @@ function bot($method,$data=[]) {
         $GLOBALS['fixtureWalletProjection'][]=$data;
         return fixtureMessageAck((int)$data['chat_id'],(int)$data['message_id']);
     }
+    // An acknowledged, possibly late customer receipt may converge after its
+    // followup transaction commits. Test the actual projection independently
+    // of staff markup and financial-delivery sends.
+    if (in_array($x['op'],['followup','maintain_followups'],true) && $method==='editMessageText') {
+        $ref=achbotProviderRow($db,"SELECT r.*,p.user_id FROM payment_message_refs r JOIN pays p ON p.id=r.pay_row_id
+            WHERE r.chat_id=? AND r.message_id=? AND r.purpose='receipt_view' AND r.retired_reason IS NULL",
+            'ii',[(int)$data['chat_id'],(int)$data['message_id']]);
+        if (!$ref || (int)$ref['user_id']!==(int)$data['chat_id'] ||
+            (int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0 ||
+            ($data['parse_mode']??null)!=='HTML')
+            throw new RuntimeException('fixture_receipt_projection_target');
+        [$pay,$attempt]=achbotPayUxProjectionSource($db,(int)$ref['pay_row_id']);
+        if ($data['text']!==achbotPayUxStatusText($pay,$attempt) ||
+            $data['reply_markup']!==achbotPayUxStatusKeyboard((string)$pay['hash_id'],$pay,$attempt))
+            throw new RuntimeException('fixture_receipt_projection_content');
+        $s=achbotProviderStatement($db,'INSERT INTO fixture_receipt_projection(pay_id,chat_id,message_id,body,keys_json) VALUES (?,?,?,?,?)',
+            'iiiss',[(int)$ref['pay_row_id'],(int)$data['chat_id'],(int)$data['message_id'],$data['text'],$data['reply_markup']]);$s->close();
+        return fixtureMessageAck((int)$data['chat_id'],(int)$data['message_id']);
+    }
     if (!in_array($x['op'],['plan','plan_recover','plan_correct','reassign'],true) || $method!=='editMessageReplyMarkup' ||
         !in_array(array_keys($data),[['chat_id','message_id'],['chat_id','message_id','reply_markup']],true) ||
         (int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0)
@@ -709,6 +728,8 @@ def main():
 
             sql("""CREATE TABLE fixture_markup(id INT AUTO_INCREMENT PRIMARY KEY,
                 chat_id BIGINT NOT NULL,message_id BIGINT NOT NULL,markup TEXT NULL) ENGINE=InnoDB""")
+            sql("""CREATE TABLE fixture_receipt_projection(id INT AUTO_INCREMENT PRIMARY KEY,
+                pay_id BIGINT NOT NULL,chat_id BIGINT NOT NULL,message_id BIGINT NOT NULL,body TEXT,keys_json TEXT) ENGINE=InnoDB""")
             sql("""CREATE TABLE fixture_followup(id INT AUTO_INCREMENT PRIMARY KEY,intent_id BIGINT UNSIGNED NOT NULL,
                 recipient VARCHAR(128),text TEXT,mode VARCHAR(20),keys_json TEXT) ENGINE=InnoDB""")
             sql("""CREATE TABLE fixture_telegram (
