@@ -247,13 +247,13 @@ if (($isStart??false) || (!isset($update->callback_query) && ($text==='/start' |
             error_log('direct_gift_home_cancel_unconfirmed');
             return;
         }
-    } else $menuRow=\AchBot\Telegram\Conversation\transitionEditor($connection,$menuActor,$userInfo);
+    } else $menuRow=\AchBot\Telegram\Conversation\transitionEditor($connection,$menuActor,$userInfo,update:$update);
     if ($menuRow===null) return;
 
     require_once __DIR__.'/src/Telegram/UserProfile.php';
     achbotRefreshUserProfile($connection, $update ?? null, $menuActor);
     if (!in_array($menuRow['step'],['','none'],true))
-        sendMessage(\achbotMessage('legacy_messages.operation_canceled'),$removeKeyboard,'HTML');
+        \AchBot\Telegram\Conversation\removeReplyKeyboard(\achbotMessage('legacy_messages.operation_canceled'));
 
     if ($customerShortcut===null && $data==='navHome') {
         // This button is produced only for disposable catalogue/list screens.
@@ -1607,7 +1607,7 @@ if($data == "managePanel" and (($from_id == $admin || $userInfo['isAdmin'] == tr
         );
     } else {
         if (!\AchBot\Telegram\Conversation\source($update,(int)$from_id,true) ||
-            \AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo)===null) return;
+            \AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,update:$update)===null) return;
     }
     $msg = \achbotMessage('bot.bot.manage_panel.msg.5db5d59c90', ['first_name' => $first_name]);
     if ($walletPanelOutcome === 'canceled') {
@@ -1637,7 +1637,7 @@ if($data == 'reciveApplications') {
 // Final ordinary-editor cancellation (specialized workflows own theirs).
 if ($text===\achbotMessage('legacy_buttons.cancel') &&
     \AchBot\Telegram\Conversation\source($update,(int)$from_id,false)) {
-    $closed=\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo);
+    $closed=\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,update:$update);
     if ($closed===null) return;
     $idle=in_array($closed['step'],['','none'],true);
     \AchBot\Telegram\Conversation\removeReplyKeyboard($idle

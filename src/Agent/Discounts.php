@@ -192,7 +192,7 @@ if(preg_match('/^editAgentDiscount(Server|Plan|Normal)([1-9][0-9]*)_(0|userinfo|
     $source=\AchBot\Telegram\Conversation\source($update??null,(int)$from_id,true);
     $uid=achbotAgencyPositive($match[2]);
     if (!$source || !$uid || ($match[1]==='Normal'?!in_array($match[3],['0','userinfo'],true):achbotAgencyPositive($match[3])===null)) return;
-    if (!\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,$data.'_'.$source->message_id)) return;
+    if (!\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,$data.'_'.$source->message_id,update:$update)) return;
     try {delMessage();}catch(Throwable $ignored){}
     $fromUserInfo = $match[1] === 'Normal' && $match[3] === 'userinfo';
     $editorKeys = $fromUserInfo ? json_encode(['inline_keyboard'=>[[

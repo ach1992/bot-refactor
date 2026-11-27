@@ -92,7 +92,7 @@ if(preg_match('/\AselectCustomePlan(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-
     }
     if (!\AchBot\Telegram\Conversation\source($update,(int)$from_id,true) ||
         !\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,
-            "selectCustomPlanGB".$match[1]."_".$match[2]."_".$match['buyType'])) return;
+            "selectCustomPlanGB".$match[1]."_".$match[2]."_".$match['buyType'],update:$update)) return;
     [$price]=achbotAgencyPrice($userInfo,$botState,(int)$plan['id'],(int)$plan['server_id'],(int)$botState['gbPrice']);
     $prompt=sendMessage(str_replace("VOLUME-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_volume')),$cancelKey, 'HTML');
     if (\AchBot\Telegram\Conversation\acknowledgedMessage($prompt,(int)$from_id)!==null)

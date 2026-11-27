@@ -128,7 +128,7 @@ if (
 if (in_array($data,['searchAgentConfig','searchMyConfig','searchUsersConfig'],true)) {
     $source=\AchBot\Telegram\Conversation\source($update,$searchActor,true);
     if (!$source || ($data==='searchUsersConfig' && !achbotAdminCanFor($connection,$searchActor,(int)$admin,'orders'))) return;
-    if (\AchBot\Telegram\Conversation\transitionEditor($connection,$searchActor,$userInfo,$data.'_'.$source->message_id)!==null)
+    if (\AchBot\Telegram\Conversation\transitionEditor($connection,$searchActor,$userInfo,$data.'_'.$source->message_id,update:$update)!==null)
         sendMessage(achbotMessage('legacy_messages.send_config_remark'),$cancelKey,'HTML');
     return;
 }

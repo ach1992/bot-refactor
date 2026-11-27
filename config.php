@@ -526,12 +526,12 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
             return (int)$rows[0]['id'];
         };
         $pk=$findActor($connection,$actor);
-        $currentStep=null;
+        $currentStep=null;$currentEditor=null;
         $authorize=static function(mysqli $db) use(
-            $actor,$primary,$pk,$findActor,$key,&$currentStep
+            $actor,$primary,$pk,$findActor,$key,&$currentStep,&$currentEditor
         ): void {
             // FIRST read in the transaction: lock CURRENT actor privileges.
-            $stmt=$db->prepare('SELECT id,userid,isAdmin,step FROM users WHERE id=? FOR UPDATE');
+            $stmt=$db->prepare('SELECT id,userid,isAdmin,step,temp FROM users WHERE id=? FOR UPDATE');
             if (!$stmt) throw new RuntimeException('gateway_actor_lock_prepare');
             $stmt->bind_param('i',$pk);
             $ok=$stmt->execute();
@@ -546,10 +546,10 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
             if (!achbotAdminCanLocked($db,$actor,$primary,
                 str_starts_with($key,'gr|')?'gateway_rules':'gateways'))
                 throw new RuntimeException('gateway_actor_no_longer_authorized');
-            $currentStep=(string)$current['step'];
+            $currentStep=(string)$current['step'];$currentEditor=$current;
         };
         $apply=static function(array $state) use(
-            $connection,$kind,$key,$sourceId,$actor,$message,$value,$pk,&$currentStep
+            $connection,$kind,$key,$sourceId,$actor,$message,$value,$pk,&$currentStep,&$currentEditor
         ): array {
             // GET_LOCK in achbotMutateBotStates serializes all in-app writers.
             // setting.type is historically nonunique: refuse ambiguous rows.
@@ -603,6 +603,8 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
                     $currentStep??'',$sourceId,$newStep);
             }
             if ($newStep!==null) {
+                if (!\AchBot\Telegram\Conversation\editorAcceptsSequence($currentEditor,$sourceId,time()))
+                    throw new RuntimeException('gateway_rule_step_stale');
                 $stepStmt=$connection->prepare('UPDATE users SET step=? WHERE id=? AND step=?');
                 if (!$stepStmt) throw new RuntimeException('gateway_rule_step_prepare');
                 $stepStmt->bind_param('sis',$newStep,$pk,$currentStep);
@@ -2181,7 +2183,7 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
         if (!$ok || !$owner || (int)$owner['userid']!==(int)$admin)
             throw new RuntimeException('exempt_owner_lock_failed');
 
-        $stmt=$connection->prepare('SELECT id,userid,isAdmin,step FROM users WHERE id=? FOR UPDATE');
+        $stmt=$connection->prepare('SELECT id,userid,isAdmin,step,temp FROM users WHERE id=? FOR UPDATE');
         if (!$stmt) throw new RuntimeException('exempt_actor_lock_prepare');
         $stmt->bind_param('i',$actorPk);
         $ok=$stmt->execute();
@@ -2206,6 +2208,8 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
             throw new RuntimeException('exempt_state_protected');
         if (!$start && $nowStep!==$step)
             throw new RuntimeException('exempt_cached_step_stale');
+        if ($start && !\AchBot\Telegram\Conversation\editorAcceptsSequence($current,$source['update_id'],time()))
+            throw new RuntimeException('exempt_old_callback');
         if ($start && str_starts_with($nowStep,'achbotExempt:')) {
             if (preg_match('/\AachbotExempt:([1-9][0-9]*):/D',$nowStep,$m)!==1 ||
                 $source['update_id']<=(int)$m[1])
@@ -2687,7 +2691,7 @@ function achbotLegacyModerationTransition(
         if (!$db->begin_transaction())
             throw new RuntimeException('legacy_moderation_begin_failed');
         $started=true;
-        $stmt=$db->prepare('SELECT id,userid,isAdmin,step FROM users
+        $stmt=$db->prepare('SELECT id,userid,isAdmin,step,temp FROM users
             WHERE id IN (?,?) ORDER BY id FOR UPDATE');
         if (!$stmt) throw new RuntimeException('legacy_moderation_lock_prepare');
         $stmt->bind_param('ii',$actorPk,$targetPk);
@@ -2713,6 +2717,8 @@ function achbotLegacyModerationTransition(
         }
         $actorStep=(string)$actorRow['step'];
         if ($start) {
+            if (!\AchBot\Telegram\Conversation\editorAcceptsSequence($actorRow,$updateId,time()))
+                throw new RuntimeException('legacy_moderation_start_stale');
             if ($actorStep==='banned' ||
                 str_starts_with($actorStep,'achbotDirectGift') ||
                 str_starts_with($actorStep,'achbotExempt:'))
@@ -3003,12 +3009,12 @@ function generateUID(){
     return sprintf('%08s-%04s-%04x-%04x-%012s', $time_low, $time_mid, $time_hi_and_version, $clock_seq_hi_and_reserved, $node);
 }
 function setUser($value = 'none', $field = 'step'){
-    global $connection, $from_id, $username, $first_name, $userInfo;
+    global $connection, $from_id, $username, $first_name, $userInfo, $update;
 
     if ($field === 'wallet') throw new LogicException('wallet_requires_monetary_command');
     if ($field === 'step') {
         require_once __DIR__.'/src/Telegram/Conversation.php';
-        return \AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo??[],(string)$value)!==null;
+        return \AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo??[],(string)$value,update:$update??null)!==null;
     }
 
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");

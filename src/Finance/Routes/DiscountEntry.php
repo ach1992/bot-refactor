@@ -12,7 +12,7 @@ if (preg_match('/\AhaveDiscountCheckout_([1-9][0-9]*)\z/D',(string)$data,$match)
         alert(achbotMessage('legacy_messages.not_valid_discount_code'),true);
         return null;
     }
-    if (!\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,'discountCheckout_'.$match[1])) return null;
+    if (!\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,'discountCheckout_'.$match[1],update:$update)) return null;
     $prompt=sendMessage(achbotMessage('legacy_messages.insert_discount_code'),$cancelKey,'HTML');
     if (\AchBot\Telegram\Conversation\acknowledgedMessage($prompt,(int)$from_id)!==null)
         try {delMessage();}catch(Throwable $ignored) {}

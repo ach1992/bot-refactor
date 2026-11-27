@@ -21,7 +21,7 @@ function achbotTicketLeaveStep(mysqli $db,int $actor,array $cached): bool {
     return \AchBot\Telegram\Conversation\transitionEditor($db,$actor,$cached)!==null;
 }
 /** Navigation-only CAS. No dependence on existence/deletion of old prompt. */
-function achbotTicketBeginStep(mysqli $db,int $actor,array $cached,string $kind,int $id,int $source): bool {
+function achbotTicketBeginStep(mysqli $db,int $actor,array $cached,string $kind,int $id,int $source,$update): bool {
     try {
         if (!$db->begin_transaction()) return false;
         $row=\AchBot\Telegram\Conversation\lockEditor($db,$actor,$cached);
@@ -33,7 +33,7 @@ function achbotTicketBeginStep(mysqli $db,int $actor,array $cached,string $kind,
             $ticket=achbotTicketRow($db,$actor,$id,$kind==='answer',true);
             if (!$ticket || (int)$ticket['state']===2) throw new DomainException('ticket_closed');
         }
-        \AchBot\Telegram\Conversation\writeEditorLocked($db,$row,$kind.($kind==='addTicketCategory'?'':'_'.$id).'_'.$source,null);
+        \AchBot\Telegram\Conversation\writeEditorLocked($db,$row,$kind.($kind==='addTicketCategory'?'':'_'.$id).'_'.$source,null,$update);
         if (!$db->commit()) throw new RuntimeException('ticket_step_commit');
         return true;
     } catch (Throwable $e) {try {$db->rollback();}catch(Throwable $ignored){} return false;}

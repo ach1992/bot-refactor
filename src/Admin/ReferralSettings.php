@@ -7,29 +7,6 @@ require_once __DIR__.'/../Telegram/Presentation.php';
 require_once __DIR__.'/../Finance/ReferralReward.php';
 require_once __DIR__.'/../Panel/ProviderStorage.php';
 
-function achbotReferralSettingEditor(string $step): ?array {
-    if (preg_match('/^(editInviteAmount|editInviteBannerText)_([1-9][0-9]*)$/D',$step,$m)!==1) return null;
-    return ['action'=>$m[1],'source'=>(int)$m[2],
-        'type'=>$m[1]==='editInviteAmount'?'INVITE_BANNER_AMOUNT':'INVITE_BANNER_TEXT'];
-}
-/** The editor generation records the authenticated opening update and its
- * local admission time. A delayed older update may see the NEW actor row,
- * so a row CAS alone does not establish input ownership. */
-function achbotReferralSettingGeneration(array $cached): ?array {
-    if (preg_match('/^([1-9][0-9]*):([1-9][0-9]*)$/D',(string)($cached['temp']??''),$m)!==1)
-        return null;
-    return ['update'=>(int)$m[1],'opened_at'=>(int)$m[2]];
-}
-function achbotReferralSettingUpdateAfter(array $generation,$updateId,$eventTime): bool {
-    if (!is_int($updateId) || $updateId<=0) return false;
-    if ($updateId>$generation['update']) return true;
-    // Telegram may restart update IDs after a week without updates; a queued
-    // opening update can be delivered up to 24 hours late. A lower ID can
-    // therefore be new after that minimum interval, not an editor expiry.
-    // For typed input use Telegram's own message date, not processing time.
-    // https://core.telegram.org/bots/api#update
-    return is_int($eventTime) && $eventTime >= $generation['opened_at'] + (7-1)*86400;
-}
 function achbotReferralSettingAuthorize(mysqli $db,int $actor): void {
     if (!achbotAdminCanLocked($db,$actor,(int)$GLOBALS['admin'],'bot_settings'))
         throw new DomainException('referral_setting_role_revoked');
@@ -40,10 +17,10 @@ function achbotReferralSettingAuthorize(mysqli $db,int $actor): void {
  * No full-table singleton lookup locks or duplicate insertion, no dependence on BOT_STATES
  * or successful Telegram cleanup. A pre-existing ambiguous setting is not
  * silently overwritten or deduplicated. */
-function achbotReferralSettingSave(mysqli $db,int $actor,array $cached,string $value): bool {
-    $editor=achbotReferralSettingEditor((string)($cached['step']??''));
+function achbotReferralSettingSave(mysqli $db,int $actor,array $cached,string $value,$update): bool {
+    $editor=\AchBot\Telegram\Conversation\referralSettingEditor((string)($cached['step']??''));
     if (!$editor) return false;
-    $type=$editor['type'];
+    $type=$editor['action']==='editInviteAmount'?'INVITE_BANNER_AMOUNT':'INVITE_BANNER_TEXT';
     if ($type==='INVITE_BANNER_AMOUNT' && achbotPurchaseReferralAmount($value)===null) return false;
     $lock=null;$held=false;
     try {
@@ -70,7 +47,7 @@ function achbotReferralSettingSave(mysqli $db,int $actor,array $cached,string $v
                 }
                 $stored=achbotProviderRow($db,'SELECT value FROM setting WHERE id=? AND type=?','is',[$id,$type]);
                 if (!$stored || $stored['value']!==$value) throw new RuntimeException('referral_setting_write_unconfirmed');
-            })!==null;
+            },$update)!==null;
     } catch(Throwable $e) {
         error_log('achbot_referral_setting_deferred actor='.$actor.' class='.get_class($e));
         return false;
@@ -104,7 +81,7 @@ function achbotReferralSettingMenuAmount(mysqli $db): string {
 function achbotReferralSettingsRoute(mysqli $db,int $actor,$update,array $cached,string $cancelKey): bool {
     $data=$update->callback_query->data??null;
     $isCallback=in_array($data,['inviteSetting','inviteBanner','editInviteAmount','editInviteBannerText'],true);
-    $editor=achbotReferralSettingEditor((string)($cached['step']??''));
+    $editor=\AchBot\Telegram\Conversation\referralSettingEditor((string)($cached['step']??''));
     $text=$update->message->text??null;
     if (!$isCallback && (!$editor || isset($update->callback_query) ||
         $text===achbotMessage('legacy_buttons.cancel') ||
@@ -115,18 +92,18 @@ function achbotReferralSettingsRoute(mysqli $db,int $actor,$update,array $cached
         achbotAdminDeny();return true;
     }
     try {
-        $generation=$editor?achbotReferralSettingGeneration($cached):null;
+        $generation=$editor?\AchBot\Telegram\Conversation\editorOpeningGeneration($cached):null;
         $updateId=$update->update_id??null;
         if ($isCallback) {
             $edit=$data==='editInviteAmount' || $data==='editInviteBannerText';
             $openedAt=time();
             // A replayed older invitation control cannot replace the newer
             // active editor. Fresh navigation may recover malformed state.
-            if ($generation && !achbotReferralSettingUpdateAfter($generation,$updateId,$openedAt)) return true;
+            if ($generation && !\AchBot\Telegram\Conversation\updateAfterOpening($generation,$updateId,$openedAt)) return true;
             if ($edit && (!is_int($updateId) || $updateId<=0)) return true;
             $row=\AchBot\Telegram\Conversation\transitionEditor($db,$actor,$cached,
                 $edit?$data.'_'.$source->message_id:'none',$edit?$updateId.':'.$openedAt:null,
-                static fn(mysqli $db)=>achbotReferralSettingAuthorize($db,$actor));
+                static fn(mysqli $db)=>achbotReferralSettingAuthorize($db,$actor),$update);
             if (!$row) return true;
             if ($edit) {
                 // Telegram prompt retirement is optional, never a save gate.
@@ -135,7 +112,7 @@ function achbotReferralSettingsRoute(mysqli $db,int $actor,$update,array $cached
                     achbotMessage('bot.bot.edit_invite_banner_text.message.28f265f083'),$cancelKey,'HTML',$actor);
                 return true;
             }
-            if (achbotReferralSettingEditor($row['step']))
+            if (\AchBot\Telegram\Conversation\referralSettingEditor($row['step']))
                 \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.operation_canceled'),$actor);
             if ($data==='inviteSetting') {
                 \AchBot\Telegram\Conversation\replaceTransient($actor,$source->message_id,
@@ -157,7 +134,7 @@ function achbotReferralSettingsRoute(mysqli $db,int $actor,$update,array $cached
             return true;
         }
         if ($source->message_id<=$editor['source'] || !$generation ||
-            !achbotReferralSettingUpdateAfter($generation,$updateId,$source->date??null)) return true;
+            !\AchBot\Telegram\Conversation\updateAfterOpening($generation,$updateId,$source->date??null)) return true;
         if ($editor['action']==='editInviteAmount') {
             $raw=is_string($source->text??null)?trim($source->text):'';
             // Normalize ordinary digit input, then use exactly the reader's
@@ -165,7 +142,7 @@ function achbotReferralSettingsRoute(mysqli $db,int $actor,$update,array $cached
             $digits=ltrim($raw,'0');
             $amount=$raw===''?null:achbotPurchaseReferralAmount($digits===''?'0':$digits);
             if ($amount===null) {sendMessage(achbotMessage('legacy_messages.send_only_number'),null,'HTML',$actor);return true;}
-            if (!achbotReferralSettingSave($db,$actor,$cached,(string)$amount)) return true;
+            if (!achbotReferralSettingSave($db,$actor,$cached,(string)$amount,$update)) return true;
             \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.saved_successfuly'),$actor);
             sendMessage(achbotMessage('bot.bot.invite_setting.message.554f354e70'),achbotReferralSettingKeys(achbotReferralAmountLabel($amount)),'HTML',$actor);
         } else {
@@ -182,7 +159,7 @@ function achbotReferralSettingsRoute(mysqli $db,int $actor,$update,array $cached
                 sendMessage(achbotMessage('bot.bot.edit_invite_banner_text.message.155c179a84'),null,'HTML',$actor);
                 return true;
             }
-            if (!achbotReferralSettingSave($db,$actor,$cached,json_encode($banner,JSON_THROW_ON_ERROR))) return true;
+            if (!achbotReferralSettingSave($db,$actor,$cached,json_encode($banner,JSON_THROW_ON_ERROR),$update)) return true;
             \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.saved_successfuly'),$actor);
             $keys=achbotReferralBannerKeys();
             if ($banner['type']==='text')

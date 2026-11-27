@@ -83,6 +83,50 @@ function canReplaceRejectedEdit($response): bool {
     return \AchBot\Telegram\Response\editTargetFailure($response)!==null;
 }
 
+function referralSettingEditor(string $step): ?array {
+    if (preg_match('/^(editInviteAmount|editInviteBannerText)_([1-9][0-9]*)$/D',$step,$m)!==1) return null;
+    return ['action'=>$m[1],'source'=>(int)$m[2]];
+}
+/** The editor generation records the authenticated opening update and its
+ * local admission time. A delayed older update may see the NEW actor row,
+ * so a row CAS alone does not establish input ownership. */
+function editorOpeningGeneration(array $cached): ?array {
+    if (!referralSettingEditor((string)($cached['step']??''))) return null;
+    if (preg_match('/^([1-9][0-9]*):([1-9][0-9]*)$/D',(string)($cached['temp']??''),$m)!==1)
+        return null;
+    return ['update'=>(int)$m[1],'opened_at'=>(int)$m[2]];
+}
+function updateAfterOpening(array $generation,$updateId,$eventTime): bool {
+    if (!is_int($updateId) || $updateId<=0) return false;
+    if ($updateId>$generation['update']) return true;
+    // Telegram may restart update IDs after a week without updates; a queued
+    // opening update can be delivered up to 24 hours late. A lower ID can
+    // therefore be new after that minimum interval, not an editor expiry.
+    // For typed input use Telegram's own message date, not processing time.
+    // https://core.telegram.org/bots/api#update
+    return is_int($eventTime) && $eventTime >= $generation['opened_at'] + (7-1)*86400;
+}
+/**
+ * Only generation-bearing editors require a newer authenticated event.
+ * Other editors retain their existing ownership rules; a malformed
+ * generation can still be abandoned but cannot authorize a referral save.
+ */
+function editorAcceptsUpdate(array $row,int $actor,$update): bool {
+    $generation=editorOpeningGeneration($row);
+    if ($generation===null) return true;
+    $callback=isset($update->callback_query);
+    $message=source($update,$actor,$callback);
+    return $message!==null &&
+        updateAfterOpening($generation,$update->update_id??null,$callback?time():($message->date??null));
+}
+
+/** A dedicated route which has already authenticated its callback source
+ * may use the same generation decision while holding its own actor lock. */
+function editorAcceptsSequence(array $row,$updateId,$eventTime): bool {
+    $generation=editorOpeningGeneration($row);
+    return $generation===null || updateAfterOpening($generation,$updateId,$eventTime);
+}
+
 /** Shared editor ownership for ordinary local draft transitions. The actor
  * row is also the serialization boundary of stronger financial/Native
  * editors. Their protected states remain owned by their dedicated routes. */
@@ -102,7 +146,9 @@ function lockEditor(\mysqli $db,int $actor,array $cached): array {
         throw new \DomainException('conversation_editor_changed');
     return $row;
 }
-function writeEditorLocked(\mysqli $db,array $row,string $step,?string $temp): void {
+function writeEditorLocked(\mysqli $db,array $row,string $step,?string $temp,$update=null): void {
+    if (!editorAcceptsUpdate($row,(int)$row['userid'],$update))
+        throw new \DomainException('conversation_editor_update_stale');
     if ($row['step']===$step && $row['temp']===$temp) return;
     $s=\achbotProviderStatement($db,
         'UPDATE users SET step=?,temp=? WHERE id=? AND userid=? AND BINARY step=BINARY ?',
@@ -112,7 +158,7 @@ function writeEditorLocked(\mysqli $db,array $row,string $step,?string $temp): v
 }
 /** No Telegram request within this transaction. No old-message probe, no
  * durable journal for disposable UI. Return the consumed row on success. */
-function transitionEditor(\mysqli $db,int $actor,array $cached,string $next='none',?string $temp=null,?callable $mutate=null): ?array {
+function transitionEditor(\mysqli $db,int $actor,array $cached,string $next='none',?string $temp=null,?callable $mutate=null,$update=null): ?array {
     $started=false;
     try {
         $status=$db->query('SELECT @@in_transaction AS active');
@@ -120,8 +166,9 @@ function transitionEditor(\mysqli $db,int $actor,array $cached,string $next='non
         if (!$db->begin_transaction()) throw new \RuntimeException('conversation_begin');
         $started=true;
         $row=lockEditor($db,$actor,$cached);
+        if (!editorAcceptsUpdate($row,$actor,$update)) throw new \DomainException('conversation_editor_update_stale');
         if ($mutate!==null) $mutate($db,$row);
-        writeEditorLocked($db,$row,$next,$temp);
+        writeEditorLocked($db,$row,$next,$temp,$update);
         if (!$db->commit()) throw new \RuntimeException('conversation_commit');
         $started=false;
         return $row;
@@ -146,5 +193,5 @@ function removeReplyKeyboard(string $text,?int $actor=null): void {
 function transitionFromUpdate(\mysqli $db,int $actor,array $cached,$update,
     string $next='none',?string $temp=null): ?array {
     if (!source($update,$actor,isset($update->callback_query))) return null;
-    return transitionEditor($db,$actor,$cached,$next,$temp);
+    return transitionEditor($db,$actor,$cached,$next,$temp,update:$update);
 }

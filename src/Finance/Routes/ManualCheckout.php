@@ -21,7 +21,7 @@ if (preg_match('/\A(pm_([bg])|rs|rc|dc)_([A-Za-z0-9_-]{1,50})\z/D',$action,$manu
         if ($manual[1]==='rs') {
             $ref=achbotPayUxRecoveryRef($connection,(int)$pay['id'],$actor,(int)$message_id,$update);
             if (!$ref || !in_array($ref['purpose'],['invoice','status','receipt'],true)) return;
-            achbotReceiptOpenPrompt($connection,$pay,$actor,$receiptStep);
+            achbotReceiptOpenPrompt($connection,$pay,$actor,$receiptStep,$update);
         } elseif ($manual[1]==='rc') {
             // Only this current prompt owns cancellation, not the invoice.
             if ($receipt===null || $receipt['hash']!==$hash ||

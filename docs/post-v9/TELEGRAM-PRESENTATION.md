@@ -257,7 +257,13 @@ introduced. The current actor and editor generation, exact setting row and
 write result are checked before commit. The authenticated input must also
 follow the editor-opening update, even when a delayed webhook reads a newly
 opened editor for the same source message. Telegram's documented idle update-ID
-reset does not expire a still-valid editor. Concurrent creation is serialized
+reset does not expire a still-valid editor. The same opening-generation
+decision is enforced on the locked current actor row when Cancel, Home,
+admin-panel navigation or another editor actually abandons or replaces
+the referral editor. Fresh navigation does not depend on deleting the old
+prompt or holding settings-write permission; malformed state can be
+abandoned but cannot authorize a setting save. Independent retained
+business effects keep their own ownership boundaries. Concurrent creation is serialized
 within the same database and setting type; ambiguous existing rows are not
 silently overwritten or deduplicated.
 

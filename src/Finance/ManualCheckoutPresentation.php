@@ -7,17 +7,18 @@ require_once __DIR__.'/../Telegram/Conversation.php';
 
 /** Compare one current actor step, never replace an unrelated newer step.
  * This is a navigation claim only, not a payment or receipt decision. */
-function achbotReceiptStepChange(mysqli $db,int $actor,string $expected,string $next): bool {
+function achbotReceiptStepChange(mysqli $db,int $actor,string $expected,string $next,$update=null): bool {
     if ($actor<=0 || $expected==='banned' || str_starts_with($expected,'achbotDirectGift') ||
         str_starts_with($expected,'achbotExempt:')) return false;
     $begun=false;
     try {
         if (!$db->begin_transaction()) return false;
         $begun=true;
-        $s=$db->prepare('SELECT id,step FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? LIMIT 2 FOR UPDATE');
+        $s=$db->prepare('SELECT id,step,temp FROM users FORCE INDEX (idx_users_userid_v1) WHERE userid=? LIMIT 2 FOR UPDATE');
         $s->bind_param('i',$actor);$s->execute();
         $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
-        if (count($rows)!==1 || $rows[0]['step']!==$expected) {
+        if (count($rows)!==1 || $rows[0]['step']!==$expected ||
+            ($expected!==$next && !\AchBot\Telegram\Conversation\editorAcceptsUpdate($rows[0],$actor,$update))) {
             $db->rollback();return false;
         }
         if ($expected!==$next) {
@@ -94,7 +95,7 @@ function achbotManualPresentInvoice(mysqli $db,array $pay,int $actor,string $met
     else alert(achbotMessage('payment.checkout.alert.1a885aaca4'),true);
 }
 
-function achbotReceiptOpenPrompt(mysqli $db,array $pay,int $actor,string $expected): void {
+function achbotReceiptOpenPrompt(mysqli $db,array $pay,int $actor,string $expected,$update): void {
     $mode=achbotCheckoutMode($pay);$method=achbotManualSelectedMethod($db,$pay);
     if ($mode===null || $method===null || !achbotManualReceiptAllowed($db,$pay,$method,$actor,$mode)) {
         alert(achbotMessage('payment.checkout.alert.d06bc731eb'),true);return;
@@ -111,7 +112,7 @@ function achbotReceiptOpenPrompt(mysqli $db,array $pay,int $actor,string $expect
         return;
     }
     $opening='receipt:'.$pay['hash_id'].':'.bin2hex(random_bytes(8)).':';
-    if (!achbotReceiptStepChange($db,$actor,$expected,$opening.'0')) return;
+    if (!achbotReceiptStepChange($db,$actor,$expected,$opening.'0',$update)) return;
     $sent=sendMessage(achbotManualEvidencePrompt($db,$pay,$method),kbOnlyCancel($pay),'HTML',$actor);
     $message=\AchBot\Telegram\Conversation\acknowledgedMessage($sent,$actor);
     if ($message===null) return; // retain original receipt recovery; no blind send

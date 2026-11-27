@@ -40,7 +40,7 @@ if ($agencyCallback && preg_match('/^agency(Approve|Decline)([1-9][0-9]*)_([1-9]
             alert(achbotMessage('legacy_messages.config_not_found'));return;
         }
         if (\AchBot\Telegram\Conversation\transitionEditor($connection,$agencyActor,$userInfo,
-            'agencyApprove'.$applicant.'_'.$generation.'_'.$agencyCallback->message_id)!==null)
+            'agencyApprove'.$applicant.'_'.$generation.'_'.$agencyCallback->message_id,update:$update)!==null)
             sendMessage(achbotMessage('legacy_messages.send_agent_discount_percent'),$cancelKey,'HTML');
         return;
     }

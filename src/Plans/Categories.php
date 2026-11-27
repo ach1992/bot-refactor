@@ -6,6 +6,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__.'/../../messages/loader.php';
 require_once __DIR__.'/../Admin/ManagementFlow.php';
+require_once __DIR__.'/../Telegram/Conversation.php';
 
 function achbotCategoryMutation(mysqli $db,int $actor,int $primary,$update,string $data,?string $text,
     string $action,string $expectedStep,?int $categoryId=null): bool {
@@ -20,6 +21,8 @@ function achbotCategoryMutation(mysqli $db,int $actor,int $primary,$update,strin
             str_starts_with($step,'achbotManage|') || str_starts_with($step,'achbotField|'))
             throw new RuntimeException('management_other_flow');
         if ($action==='start') {
+            if (!\AchBot\Telegram\Conversation\editorAcceptsUpdate($user,$actor,$update))
+                throw new RuntimeException('management_stale');
             if ($categoryId!==null && !achbotManagementRow($db,
                 'SELECT id FROM server_categories WHERE id=? AND parent=0 AND active=1 FOR UPDATE','i',[$categoryId]))
                 throw new RuntimeException('management_stale');

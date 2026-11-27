@@ -31,7 +31,7 @@ if(($planSelectionCallback ||
 
     if(($botState['remark']??'') ==  "manual" && preg_match('/^selectPlan/',$data) && $match['buyType'] != "much"){
         if (!\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,
-            'enterAccountName'.$match[1].'_'.$match[2].'_'.$match['buyType'])) return;
+            'enterAccountName'.$match[1].'_'.$match[2].'_'.$match['buyType'],update:$update)) return;
         $prompt=sendMessage(\achbotMessage('legacy_messages.customer_custome_plan_name'), $cancelKey, 'HTML');
         if (\AchBot\Telegram\Conversation\acknowledgedMessage($prompt,(int)$from_id)!==null)
             try {delMessage();}catch(Throwable $ignored) {}
@@ -61,7 +61,7 @@ if(($planSelectionCallback ||
     } 
     else{ 
         if($match['buyType'] == "much"){ 
-            if (!\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,$data)) return;
+            if (!\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,$data,update:$update)) return;
             $prompt=sendMessage(\achbotMessage('legacy_messages.enter_account_amount'), $cancelKey, 'HTML');
             if (\AchBot\Telegram\Conversation\acknowledgedMessage($prompt,(int)$from_id)!==null)
                 try {delMessage();}catch(Throwable $ignored) {}

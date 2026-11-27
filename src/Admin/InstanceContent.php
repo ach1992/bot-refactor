@@ -131,7 +131,7 @@ function achbotHandleInstanceContent($update,$data,$text,array $cachedUser): boo
             }
             editText($message_id,achbotMessage('instance_content.title'),achbotInstanceMenu($GLOBALS['botState']??[]),'HTML');return true;}
         if(!preg_match('/^ic\|e\|([A-Za-z_]+)$/D',$data,$m)||!in_array($m[1],achbotInstanceFields(),true))return true;
-        $field=$m[1];if (!\AchBot\Telegram\Conversation\transitionEditor($connection,$actor,$cachedUser,'achbotInstance:'.$field)) return true;
+        $field=$m[1];if (!\AchBot\Telegram\Conversation\transitionEditor($connection,$actor,$cachedUser,'achbotInstance:'.$field,update:$update)) return true;
         $vars=['label'=>achbotInstanceLabel($field)];
         $prompt=in_array($field,achbotInstanceMessageFields(),true)
             ? achbotMessageHtml('instance_content.message_prompt',$vars)

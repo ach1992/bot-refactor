@@ -20,7 +20,7 @@ function achbotTicketCategoryKeys(mysqli $db): string {
     $rows[]=[['text'=>achbotMessage('legacy_buttons.back_button'),'callback_data'=>'ticketsList']];
     return achbotTicketKeys($rows);
 }
-function achbotTicketCategoryRoute(mysqli $db,int $actor,object $source,array $cached,?string $data,string $cancelKey,string $removeKeyboard): bool {
+function achbotTicketCategoryRoute(mysqli $db,int $actor,object $source,array $cached,?string $data,string $cancelKey,string $removeKeyboard,$update): bool {
     $step=(string)($cached['step']??'');
     if (!achbotAdminCanFor($db,$actor,(int)$GLOBALS['admin'],'operations')) {achbotAdminDeny();return true;}
     $cid=$source->message_id;
@@ -49,7 +49,7 @@ function achbotTicketCategoryRoute(mysqli $db,int $actor,object $source,array $c
         return true;
     }
     if ($data==='addTicketCategory') {
-        if (achbotTicketBeginStep($db,$actor,$cached,'addTicketCategory',0,$cid)) {
+        if (achbotTicketBeginStep($db,$actor,$cached,'addTicketCategory',0,$cid,$update)) {
             sendMessage(achbotMessage('support.categories.add_ticket_category.message.f17638132c'),$cancelKey,'HTML',$actor);
             try {delMessage($cid,$actor);} catch(Throwable $ignored){}
         }

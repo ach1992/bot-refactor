@@ -5,6 +5,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 require_once __DIR__ . '/WalletAdjustments.php';
+require_once __DIR__.'/../Telegram/Conversation.php';
 
 function achbotWalletTransferSource($update, $actor, $chatId, $messageId, $bound, string $kind): ?array
 {
@@ -184,7 +185,7 @@ function achbotWalletTransferAdvance(mysqli $db, array $source, string $action,
         if (!achbotWalletTransferFlowReady($db) || !$db->begin_transaction())
             throw new RuntimeException('transfer_state_unavailable');
         $active=true; $actorId=$source['actor_id'];
-        $stmt=$db->prepare('SELECT id,userid,wallet,step FROM users WHERE userid=? FOR UPDATE');
+        $stmt=$db->prepare('SELECT id,userid,wallet,step,temp FROM users WHERE userid=? FOR UPDATE');
         $stmt->bind_param('i',$actorId);
         if (!$stmt->execute()) throw new RuntimeException('transfer_state_actor_read_failed');
         $actors=$stmt->get_result()->fetch_all(MYSQLI_ASSOC); $stmt->close();
@@ -193,6 +194,9 @@ function achbotWalletTransferAdvance(mysqli $db, array $source, string $action,
         $state=$cursor['state'];
         $actual=(string)$actor['step'];
         if ($action==='start') {
+            if (!\AchBot\Telegram\Conversation\editorAcceptsSequence($actor,$source['update_id'],time())) {
+                $db->rollback();return 'stale';
+            }
             if (($state && $source['update_id']<=$state['last_update_id']) ||
                 (achbotWalletTransferPending($actual)!==null &&
                  (!$state || achbotWalletTransferStep($state)!==$actual))) {

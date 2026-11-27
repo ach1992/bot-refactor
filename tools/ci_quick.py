@@ -138,6 +138,10 @@ REQUIRED_CURRENT_CASES = {
         "delayed_banner_input_preserves_fresh_generation",
         "concurrent_singleton_creation_one_setting","concurrent_same_editor_one_winner",
         "write_failure_and_ambiguous_existing_setting_not_success","banner_text_photo_and_stale_cancel_ownership",
+        "old_cancel_home_and_panel_preserve_reentered_editors",
+        "fresh_navigation_and_cleanup_failure_are_independent",
+        "idle_reset_and_malformed_editor_escape","demoted_actor_can_leave_but_cannot_save",
+        "replacement_editor_starts_share_opening_generation",
     ),
     "wallet_first_service_execution": (
         "missing_current_report_attempt_no_legacy_fallback",

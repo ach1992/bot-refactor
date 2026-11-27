@@ -5,6 +5,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     exit;
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
+require_once __DIR__.'/../Telegram/Conversation.php';
 
 
 
@@ -86,6 +87,7 @@ if ($data==='showUUIDLeft') {
         $q->bind_param('i',$actor);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
         if (count($rows)!==1 || $rows[0]['step']==='banned' ||
             $rows[0]['step']!==($userInfo['step']??null) || $rows[0]['temp']!==($userInfo['temp']??null) ||
+            !\AchBot\Telegram\Conversation\editorAcceptsUpdate($rows[0],$actor,$update) ||
             str_starts_with((string)$rows[0]['step'],'achbotDirectGift') ||
             str_starts_with((string)$rows[0]['step'],'achbotExempt:') ||
             (($botState['searchState']??'off')!=='on' && $actor!==(int)$admin && (int)$rows[0]['isAdmin']!==1)) {

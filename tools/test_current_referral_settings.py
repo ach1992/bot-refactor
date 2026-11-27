@@ -39,6 +39,21 @@ function editText($mid,$body,$keys=null,$mode=null,$to=null){return wire('edit',
 function delMessage(...$args){$GLOBALS['events'][]=['kind'=>'delete','args'=>$args];if ($GLOBALS['spec']['delete_fail']??false) throw new RuntimeException('fixture_delete_fail');}
 function answerCallbackQuery(...$args){$GLOBALS['events'][]=['kind'=>'ack','body'=>$args[1]??''];}
 function getMainKeys(){return '{"inline_keyboard":[]}';}
+function getAdminKeys(){return '{"inline_keyboard":[]}';}
+require_once $root.'/tools/source_scan.php';
+foreach (['achbotAdminWalletIsPendingStep'] as $name)
+    eval(achbotExtractFunction($root.'/src/Finance/Routes/AdminWallet.php',$name));
+eval(str_replace('__DIR__',var_export($root,true),achbotExtractFunction($root.'/config.php','setUser')));
+eval(achbotExtractFunction($root.'/bot.php','achbotWebhookIngressAuthenticated'));
+$telegramWebhookSecret='Synthetic_Referral_Settings_2026';
+$_SERVER['REQUEST_METHOD']='POST';$_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']=$telegramWebhookSecret;
+$first_name='Fixture';$username='fixture';$removeKeyboard='{"remove_keyboard":true}';$botToken='999999:fixture';
+function section($start,$end) {
+    $source=file_get_contents($GLOBALS['root'].'/bot.php');
+    $a=strpos($source,$start);$b=strpos($source,$end,$a);
+    if ($a===false || $b===false) throw new RuntimeException('fixture_navigation_boundary');
+    return str_replace('__DIR__',var_export($GLOBALS['root'],true),substr($source,$a,$b-$a));
+}
 $userInfo=achbotProviderRow($connection,'SELECT * FROM users WHERE userid=?','i',[$from_id]);
 if (isset($spec['cached_step'])) $userInfo['step']=$spec['cached_step'];
 if (array_key_exists('cached_temp',$spec)) $userInfo['temp']=$spec['cached_temp'];
@@ -51,20 +66,39 @@ $update=$data!==''?(object)['update_id'=>$spec['update'],'callback_query'=>(obje
 if ($data==='' && $text!==null) $update->message->text=$text;
 if (isset($spec['photo'])) {$update->message->photo=[(object)['file_id'=>$spec['photo']]];$update->message->caption=$spec['caption']??'';}
 if (isset($spec['entities'])) $update->message->entities=json_decode(json_encode($spec['entities']));
-$status=achbotReferralSettingsRoute($connection,$from_id,$update,$userInfo,'{"keyboard":[]}');
-if (!$status && ($spec['cancel']??false)) {
-    // Exercise the actual generic Cancel route, not a fixture implementation.
-    $source=file_get_contents($root.'/bot.php');
-    $a=strpos($source,'// Final ordinary-editor cancellation');
-    $b=strpos($source,"\n?>",$a);
-    if ($a===false || $b===false) throw new RuntimeException('fixture_cancel_boundary');
-    eval(substr($source,$a,$b-$a));
+$message_id=$mid;$chat_id=$from_id;$customerShortcut=null;$status=false;$result=null;
+register_shutdown_function(static function() use ($connection,&$status,&$result,&$events){
+    $policy=null;$policyError=null;
+    try {$policy=achbotPurchaseReferralPolicyAmount($connection);}catch(Throwable $e){$policyError=$e->getMessage();}
+    echo json_encode(['handled'=>$status,'events'=>$events,'policy'=>$policy,'policy_error'=>$policyError,'result'=>$result,
+        'saved_text'=>achbotMessage('legacy_messages.saved_successfuly'),
+        'number_text'=>achbotMessage('legacy_messages.send_only_number')],JSON_THROW_ON_ERROR);
+});
+// The real ingress permission gate permits a demoted actor to abandon their
+// own stale settings editor without granting settings-write authority.
+if (!achbotAdminRequestAllowed($data,$text,(string)$userInfo['step'])) {achbotAdminDeny();return;}
+// Exercise the actual early Home block before invitation or final Cancel.
+if (\AchBot\Telegram\Conversation\homeRequested($update,$from_id)) {
+    eval(section('$paymentHomeMatch=[];',"if ((require __DIR__.'/src/Finance/Routes/ManualCheckout.php')"));
+    return;
 }
-$policy=null;$policyError=null;
-try {$policy=achbotPurchaseReferralPolicyAmount($connection);}catch(Throwable $e){$policyError=$e->getMessage();}
-echo json_encode(['handled'=>$status,'events'=>$events,'policy'=>$policy,'policy_error'=>$policyError,
-    'saved_text'=>achbotMessage('legacy_messages.saved_successfuly'),
-    'number_text'=>achbotMessage('legacy_messages.send_only_number')],JSON_THROW_ON_ERROR);
+$status=achbotReferralSettingsRoute($connection,$from_id,$update,$userInfo,'{"keyboard":[]}');
+if ($status) return;
+if ($data==='managePanel') {
+    eval(section('if($data == "managePanel"','if($data == \'reciveApplications\')'));
+} elseif ($spec['cancel']??false) {
+    eval(section('// Final ordinary-editor cancellation',"\n?>"));
+} elseif ($data==='fixtureOrdinaryEditor') {
+    // Invoke the actual generic writer used by ordinary menu editors.
+    $result=setUser('fixture_next');
+} elseif ($data==='fixtureTopup') {
+    require_once $root.'/src/Finance/WalletStart.php';
+    $result=achbotWalletTopupAdvance($connection,$from_id,null,
+        achbotWalletTopupStage('opening',$update->update_id,$mid),$update->update_id);
+} elseif ($data==='fixtureReceipt') {
+    require_once $root.'/src/Finance/ManualCheckoutPresentation.php';
+    $result=achbotReceiptStepChange($connection,$from_id,$userInfo['step'],'receipt:fixture:0123456789abcdef:0',$update);
+}
 """
 
 def main():
@@ -188,6 +222,81 @@ def main():
             r=run(mode,photo='fixture-file',caption='Photo LINK')
             assert json.loads(value('TEXT'))=={'type':'photo','caption':'Photo LINK','file_id':'fixture-file'} and row()==['none',''] and len(saved(r))==1,r
             case('banner_text_photo_and_stale_cancel_ownership')
+            # Delayed navigation observes a fresh actor row, not a stale
+            # cached temp. Reuse the same source message and exact old update.
+            for action,kind,payload in (
+                ('editInviteAmount','AMOUNT',{'text':'135'}),
+                ('editInviteBannerText','TEXT',{'text':'Fresh banner'})):
+                previous=start(mode,action=action)
+                old_id=int(previous[1].split(':')[0]);old_mid=int(previous[0].rsplit('_',1)[1])
+                old_cancel={'cancel':True,'update':old_id+1,'mid':old_mid+1,'date':int(time.time())}
+                r=run(mode,**old_cancel)
+                assert row()==['none',''] and not succeeded(r),r
+                fresh=start(mode,action=action,mid=old_mid)
+                before=value(kind)
+                assert int(fresh[1].split(':')[0])>old_cancel['update']
+                r=run(mode,**old_cancel)
+                assert row()==fresh and value(kind)==before and not r['events'],r
+                # Older typed and callback Home, as well as admin panel,
+                # must not leave the current editor or send a misleading menu.
+                for nav in ({'text':'/start'},{'callback':'mainMenu'},
+                    {'callback':'navHome'},{'callback':'evidenceHome'},
+                    {'callback':'ph_fixture'},{'callback':'managePanel'}):
+                    r=run(mode,**nav,update=old_id,mid=old_mid)
+                    assert row()==fresh and value(kind)==before and not r['events'],(nav,r)
+                r=run(mode,**payload)
+                expected='135' if kind=='AMOUNT' else 'Fresh banner'
+                actual=value(kind) if kind=='AMOUNT' else json.loads(value(kind))['text']
+                assert actual==expected and row()==['none',''] and len(saved(r))==1,r
+            case('old_cancel_home_and_panel_preserve_reentered_editors')
+            # A higher update on the same old message is intentional fresh
+            # navigation. No existence/deletion check is required.
+            for nav in ({'cancel':True},{'text':'/start'},{'callback':'navHome'},
+                {'callback':'mainMenu'},{'callback':'managePanel'}):
+                g=start(mode)
+                r=run(mode,**nav,mid=int(g[0].rsplit('_',1)[1]),cleanup_fail=True)
+                assert row()==['none',''] and len(r['events'])>=1,(nav,r)
+                if 'cancel' in nav or nav.get('text')=='/start' or nav.get('callback') in ('navHome','mainMenu'):
+                    assert len(r['events'])>=2,(nav,r)
+            case('fresh_navigation_and_cleanup_failure_are_independent')
+            # Old typed message date cannot masquerade as idle-reset input.
+            g=start(mode);gen=int(g[1].split(':')[0]);opened=int(time.time())-8*86400
+            sql(f"UPDATE users SET temp='{gen}:{opened}' WHERE userid=9001")
+            g=row()
+            r=run(mode,cancel=True,update=1,date=opened)
+            assert row()==g and not r['events'],r
+            r=run(mode,cancel=True,update=1,date=int(time.time()))
+            assert row()==['none',''] and r['events'],r
+            # Broken state must not trap a user or authorize a save.
+            g=start(mode);sql("UPDATE users SET temp='broken' WHERE userid=9001")
+            before=value();r=run(mode,text='333')
+            assert value()==before and row()[1]=='broken' and not succeeded(r),r
+            r=run(mode,cancel=True)
+            assert row()==['none',''] and r['events'],r
+            case('idle_reset_and_malformed_editor_escape')
+            for nav in ({'cancel':True},{'callback':'mainMenu'}):
+                g=start(mode,9002)
+                sql("UPDATE setting SET value='operator' WHERE type='ADMIN_ROLE_9002'")
+                before=value();r=run(mode,9002,text='789')
+                assert value()==before and row(9002)==g and not succeeded(r),r
+                r=run(mode,9002,**nav,update=int(g[1].split(':')[0])-1)
+                assert row(9002)==g and not r['events'],r
+                r=run(mode,9002,**nav)
+                assert row(9002)==['none',''] and r['events'],r
+                sql("UPDATE setting SET value='manager' WHERE type='ADMIN_ROLE_9002'")
+            case('demoted_actor_can_leave_but_cannot_save')
+            # The same ownership boundary applies to ordinary and dedicated
+            # editor starts, not to unrelated payments or retained records.
+            for callback,expected in (('fixtureOrdinaryEditor','fixture_next'),
+                ('fixtureTopup','achbotWalletTopup:opening:'),('fixtureReceipt','receipt:fixture:')):
+                g=start(mode);gen=int(g[1].split(':')[0]);mid=int(g[0].rsplit('_',1)[1])
+                r=run(mode,callback=callback,mid=mid,update=gen-1)
+                assert row()==g and r['result'] in (False,'stale'),(callback,r)
+                r=run(mode,callback=callback,mid=mid)
+                assert sql('SELECT step FROM users WHERE userid=9001').startswith(expected) and r['result'] in (True,'applied'),(callback,r)
+                sql("UPDATE users SET step='none',temp=NULL WHERE userid=9001")
+            case('replacement_editor_starts_share_opening_generation')
+
     result={'complete':True,'cases':len(checks),'checks':checks,'external_requests':0,'production_effects':0}
     if a.report:a.report.write_text(json.dumps(result))
     print(json.dumps(result))

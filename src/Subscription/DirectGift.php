@@ -9,6 +9,7 @@ require_once __DIR__.'/../Admin/Access.php';
  * Both lock owners and the durable journal MUST commit before remote effects.
  */
 require_once __DIR__.'/GiftBatch.php';
+require_once __DIR__.'/../Telegram/Conversation.php';
 
 function achbotDirectGiftInt($raw,int $min,int $max): ?int {
     if (!is_string($raw) || preg_match('/\A(?:0|[1-9][0-9]*)\z/D',$raw)!==1)
@@ -130,7 +131,7 @@ function achbotDirectGiftActorLocked(mysqli $db,int $actor,int $primary,array $p
         $pk=$pks[$id];
         if (!is_int($pk) || $pk<=0)
             throw new RuntimeException('direct_gift_actor_invalid');
-        $stmt=$db->prepare('SELECT id,userid,isAdmin,step FROM users
+        $stmt=$db->prepare('SELECT id,userid,isAdmin,step,temp FROM users
                             WHERE id=? AND userid=? FOR UPDATE');
         if (!$stmt) throw new RuntimeException('direct_gift_actor_pk_prepare');
         $stmt->bind_param('ii',$pk,$id);
@@ -265,6 +266,8 @@ function achbotDirectGiftStart(mysqli $db,array $source,int $serverId,int $prima
     if (!$db->begin_transaction()) throw new RuntimeException('direct_gift_begin_failed');
     try {
         $actor=achbotDirectGiftActorLocked($db,$source['actor_id'],$primary,$actorPks);
+        if (!\AchBot\Telegram\Conversation\editorAcceptsSequence($actor,$source['update_id'],time()))
+            throw new RuntimeException('direct_gift_stale_start');
         $lastUpdate=achbotDirectGiftStepUpdate((string)$actor['step']);
         if ($lastUpdate!==null && $source['update_id']<=$lastUpdate)
             throw new RuntimeException('direct_gift_stale_start');

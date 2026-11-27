@@ -32,7 +32,7 @@ function achbotSupportRoute(mysqli $db,int $actor,$update,array $cached,string $
         if ($attachment) {achbotTicketAttachment($db,$actor,(int)$picture[1]);return true;}
         if (($callback && (in_array($data,['ticketsList','ticketsCategory','addTicketCategory'],true) || str_starts_with($data,'delTicketCat_'))) ||
             ($categoryEditor && !$callback))
-            return achbotTicketCategoryRoute($db,$actor,$source,$cached,$data,$cancelKey,$removeKeyboard);
+            return achbotTicketCategoryRoute($db,$actor,$source,$cached,$data,$cancelKey,$removeKeyboard,$update);
         if ($callback) {
             if (in_array($data,['supportSection','usersNewTicket','usersOpenTickets','userAllTickets','openTickets','newTickets','allTickets'],true)) {
                 if (in_array($data,['openTickets','newTickets','allTickets'],true) &&
@@ -58,14 +58,14 @@ function achbotSupportRoute(mysqli $db,int $actor,$update,array $cached,string $
                 $rows=array_chunk($buttons,2);$rows[]=[['text'=>achbotMessage('legacy_buttons.back_button'),'callback_data'=>'navHome']];
                 \AchBot\Telegram\Conversation\replaceTransient($actor,$cid,achbotMessage('support.entry.users_new_ticket.message.adca0ba3c2'),achbotTicketKeys($rows));
             } elseif (preg_match('/^supportCat([1-9][0-9]*)$/D',$data,$m)) {
-                if (!achbotTicketBeginStep($db,$actor,$cached,'newTicket',(int)$m[1],$cid)) {alert(achbotMessage('support.entry.users_new_ticket.alert.46a8c85d10'));return true;}
+                if (!achbotTicketBeginStep($db,$actor,$cached,'newTicket',(int)$m[1],$cid,$update)) {alert(achbotMessage('support.entry.users_new_ticket.alert.46a8c85d10'));return true;}
                 sendMessage(achbotMessage('legacy_messages.enter_ticket_title'),$cancelKey,'HTML',$actor);
                 try {delMessage($cid,$actor);} catch(Throwable $ignored){}
             } elseif (preg_match('/^(replySupport|reply)_([1-9][0-9]*)$/D',$data,$m)) {
                 $staff=$m[1]==='reply';
                 $ticket=achbotTicketRow($db,$actor,(int)$m[2],$staff);
                 if (!$ticket) {achbotAdminDeny();return true;}
-                if (!achbotTicketBeginStep($db,$actor,$cached,$staff?'answer':'sendMsg',(int)$m[2],$cid)) {
+                if (!achbotTicketBeginStep($db,$actor,$cached,$staff?'answer':'sendMsg',(int)$m[2],$cid,$update)) {
                     alert(achbotMessage('support.queue_and_history.all_tickets.button.b1eee8adee'));return true;
                 }
                 // Source is a retained ticket record, not a disposable prompt.
