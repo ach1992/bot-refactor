@@ -137,7 +137,6 @@ return [
     'bot' => [
         // bot.webhook_ingress_authenticated
         'bot.webhook_ingress_authenticated.message.5e45680470' => ['text' => '⛔️ اکانت شما به دلیل اسپم مسدود شده است.' . "\n" . 'زمان آزادسازی اکانت شما: ' . "\n" . '{time}', 'parameters' => ['time']],
-        'bot.webhook_ingress_authenticated.alert.d4b0660226' => 'این دکمهٔ پرداخت معتبر نیست؛ لطفاً از فاکتور جدید استفاده کنید.',
         'bot.webhook_ingress_authenticated.inviter_msg.0a64da8ef5' => '🎉 تبریک! کاربر جدیدی با لینک دعوت شما عضو شد.' . "\n" . '' . "\n" . '',
         'bot.webhook_ingress_authenticated.text.750b1aaad1' => '💰 مبلغ هدیه شما: ',
         'bot.webhook_ingress_authenticated.text.81a62ff6c6' => ' تومان' . "\n" . '',

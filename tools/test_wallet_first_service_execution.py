@@ -138,7 +138,7 @@ function bot($method,$data=[]) {
             (int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0)
             throw new RuntimeException('fixture_wallet_projection_target');
         $GLOBALS['fixtureWalletProjection'][]=$data;
-        return (object)['ok'=>true];
+        return fixtureMessageAck((int)$data['chat_id'],(int)$data['message_id']);
     }
     if (!in_array($x['op'],['plan','plan_recover','plan_correct','reassign'],true) || $method!=='editMessageReplyMarkup' ||
         !in_array(array_keys($data),[['chat_id','message_id'],['chat_id','message_id','reply_markup']],true) ||

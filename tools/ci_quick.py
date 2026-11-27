@@ -101,6 +101,7 @@ REQUIRED_CURRENT_CASES = {
         "exact_owned","ambiguous_partial","literal_percent","literal_underscore",
         "my_scope","inactive","unauthorized_staff","staff_duplicate_exact",
         "stale_step","stale_temp","current_transition","protected_transition",
+        "changed_subscription_url_not_original_success",
     ),
     "agency_current": (
         "request_commits_before_send","independent_original_audience","request_known_failure_recovery_only",
@@ -370,6 +371,9 @@ REQUIRED_SCENARIOS = {
         "actual_invalid_discount_preserves_card_and_stale_target_consumes_nothing",
         "actual_shortcuts_and_callback_share_purchase_methods_and_entry_gates",
         "terminal_reply_keyboard_removed_and_idle_cancel_not_false_success",
+        "discount_admin_current_editor_atomic_commit_and_single_code",
+        "disposable_home_reuses_screen_retained_home_preserves_record",
+        "exemption_cancel_consumes_current_nonce_without_policy_change",
         "order_agent_callback_namespace_and_idempotent_desired_state",
         "actual_owned_renewal_discount_and_subscription_shortcut",
         "managed_trial_policy_and_revoked_draft_denied_before_effect",

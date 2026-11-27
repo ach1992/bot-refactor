@@ -58,11 +58,16 @@ function editText(...$args) {
 function fixtureReview(mysqli $db,array $spec): array {
     $connection=$db;$admin=9001;$from_id=(int)($spec['actor']??9001);
     $chat_id=(int)($spec['chat']??$from_id);$message_id=111;$callbackId='test-review';
-    $data=$spec['callback'];$text=$spec['text']??'';$userInfo=['step'=>$spec['step']??'none'];
+    $data=$spec['callback'];$text=$spec['text']??'';
+    $userInfo=achbotProviderRow($db,'SELECT * FROM users WHERE userid=?','i',[$from_id])??['step'=>'none'];
+    if (isset($spec['step'])) $userInfo['step']=$spec['step'];
     $botUsername='fixture_bot';$cancelKey=null;
     $update=(object)['update_id'=>(int)($spec['update_id']??12345),'callback_query'=>(object)[
         'data'=>$data,'from'=>(object)['id'=>$from_id],'message'=>(object)['message_id'=>$message_id,
         'chat'=>(object)['id'=>$chat_id,'type'=>$chat_id===$from_id?'private':'group']]]];
+    if ($data==='') $update=(object)['update_id'=>(int)($spec['update_id']??12345),
+        'message'=>(object)['message_id'=>$message_id,'text'=>$text,'from'=>(object)['id'=>$from_id],
+        'chat'=>(object)['id'=>$chat_id,'type'=>$chat_id===$from_id?'private':'group']]];
     $GLOBALS['from_id']=$from_id;$GLOBALS['chat_id']=$chat_id;$GLOBALS['data']=$data;$GLOBALS['callbackId']=$callbackId;
     $GLOBALS['review_sends']=[];$GLOBALS['review_alerts']=[];
     require dirname($GLOBALS['argv'][1]).'/Routes/ManualReceipts.php';
@@ -280,6 +285,10 @@ def main():
                     assert targets==(['1001','9001','9002','@fixture_report'] if actor==9002 else ['1001','9001','@fixture_report']),targets
                     assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='manual_reject' AND state<>'acknowledged'")=='0',(rendered,sql(f"SELECT role,recipient,state,last_result FROM payment_followup_intents WHERE pay_row_id={pid}"))
                     sends=[v['args'] for v in rendered['sends'] if v['kind']=='message']
+                    cleanup=[v for v in sends if v[1] and json.loads(v[1]).get('remove_keyboard') is True]
+                    assert len(cleanup)==1 and cleanup[0][3]==actor,rendered
+                    assert sql(f"SELECT CONCAT(step,':',temp IS NULL) FROM users WHERE userid={actor}")=='none:1'
+                    sends=[v for v in sends if v not in cleanup]
                     assert sorted(str(v[3]) for v in sends)==targets,(rendered,targets)
                     for body,keys,parse_mode,recipient in sends:
                         assert parse_mode=='HTML'

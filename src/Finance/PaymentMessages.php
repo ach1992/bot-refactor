@@ -73,24 +73,10 @@ function achbotPayUxRef(mysqli $db,int $payId,int $actor,int $message): ?array {
 function achbotPayUxSelectorRef(mysqli $db,int $payId,int $actor,int $message,$update): ?array {
     $row=achbotPayUxRef($db,$payId,$actor,$message);
     if ($row!==null) return $row['retired_reason']===null && $row['purpose']==='selector'?$row:null;
-    if (achbotPayUxVerifiedCallback($update,$actor,$message) &&
+    if (\AchBot\Telegram\Conversation\verifiedCallback($update,$actor,$message) &&
         achbotPayUxRegister($db,$payId,$actor,$message,'selector'))
         return achbotPayUxRef($db,$payId,$actor,$message);
     return null;
-}
-
-/** A Telegram callback does not by itself establish that its data still
- * exists on the bot's message. Recover unknown registrations only when
- * the actual bot identity and the exact original keyboard prove it. */
-function achbotPayUxVerifiedCallback($update,int $actor,int $message): bool {
-    $source=\AchBot\Telegram\Conversation\source($update,$actor,true);
-    $botId=explode(':',(string)($GLOBALS['botToken']??''),2)[0];
-    if (!$source || $source->message_id!==$message || preg_match('/\A[0-9]+\z/D',$botId)!==1 ||
-        ($source->from->is_bot??false)!==true || (string)($source->from->id??'')!==$botId) return false;
-    $action=$update->callback_query->data;
-    foreach ($source->reply_markup->inline_keyboard??[] as $buttons) foreach ($buttons as $button)
-        if (($button->callback_data??null)===$action) return true;
-    return false;
 }
 
 /** The source of a recovery click is retained rather than overwritten
@@ -98,7 +84,7 @@ function achbotPayUxVerifiedCallback($update,int $actor,int $message): bool {
 function achbotPayUxRecoveryRef(mysqli $db,int $payId,int $actor,int $message,$update): ?array {
     $row=achbotPayUxRef($db,$payId,$actor,$message);
     if ($row) return $row['retired_reason']===null?$row:null;
-    if (!achbotPayUxVerifiedCallback($update,$actor,$message) ||
+    if (!\AchBot\Telegram\Conversation\verifiedCallback($update,$actor,$message) ||
         !achbotPayUxRegister($db,$payId,$actor,$message,'receipt')) return null;
     return achbotPayUxRef($db,$payId,$actor,$message);
 }
@@ -380,7 +366,7 @@ function achbotPayUxNavigateBack(mysqli $db,int $actor,int $message,string $body
             if ($ref['retired_reason']==='navigation') {
                 // A retired projection may continue normal catalogue navigation
                 // only from the bot's actual keyboard, never a payment action.
-                if (achbotPayUxVerifiedCallback($GLOBALS['update']??null,$actor,$message))
+                if (\AchBot\Telegram\Conversation\verifiedCallback($GLOBALS['update']??null,$actor,$message))
                     editText($message,$body,$keys,'HTML',$actor);
                 return;
             }

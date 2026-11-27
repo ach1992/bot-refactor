@@ -47,7 +47,7 @@ function achbotSupportRoute(mysqli $db,int $actor,$update,array $cached,string $
                     [['text'=>achbotMessage('support.entry.support_section.button.47b4e6ab96'),'callback_data'=>'usersNewTicket']],
                     [['text'=>achbotMessage('support.entry.support_section.button.a203213e37'),'callback_data'=>'usersOpenTickets'],
                      ['text'=>achbotMessage('support.entry.support_section.button.b15cb57126'),'callback_data'=>'userAllTickets']],
-                    [['text'=>achbotMessage('legacy_buttons.back_button'),'callback_data'=>'mainMenu']]
+                    [['text'=>achbotMessage('legacy_buttons.back_button'),'callback_data'=>'navHome']]
                 ]);
                 \AchBot\Telegram\Conversation\replaceTransient($actor,$cid,achbotMessage('support.entry.support_section.message.7089955c27'),$keys);
             } elseif ($data==='usersNewTicket') {
@@ -55,7 +55,7 @@ function achbotSupportRoute(mysqli $db,int $actor,$update,array $cached,string $
                 if (!$categories) {alert(achbotMessage('support.entry.users_new_ticket.alert.46a8c85d10'));return true;}
                 $buttons=[];
                 foreach ($categories as $category) $buttons[]=['text'=>$category['value'],'callback_data'=>'supportCat'.$category['id']];
-                $rows=array_chunk($buttons,2);$rows[]=[['text'=>achbotMessage('legacy_buttons.back_button'),'callback_data'=>'mainMenu']];
+                $rows=array_chunk($buttons,2);$rows[]=[['text'=>achbotMessage('legacy_buttons.back_button'),'callback_data'=>'navHome']];
                 \AchBot\Telegram\Conversation\replaceTransient($actor,$cid,achbotMessage('support.entry.users_new_ticket.message.adca0ba3c2'),achbotTicketKeys($rows));
             } elseif (preg_match('/^supportCat([1-9][0-9]*)$/D',$data,$m)) {
                 if (!achbotTicketBeginStep($db,$actor,$cached,'newTicket',(int)$m[1],$cid)) {alert(achbotMessage('support.entry.users_new_ticket.alert.46a8c85d10'));return true;}

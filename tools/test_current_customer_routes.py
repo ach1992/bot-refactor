@@ -56,6 +56,7 @@ $update=$data!==''?(object)['callback_query'=>(object)['from'=>$sender,'data'=>$
       'reply_markup'=>(object)['inline_keyboard'=>[[(object)['callback_data'=>$data]]]]]]]:
     (object)['message'=>(object)['from'=>$sender,'chat'=>$chat,'message_id'=>(int)($spec['message_id']??82),'text'=>$text]];
 $update->update_id=(int)($spec['update_id']??100001);
+if (!empty($spec['unproven_button']) && isset($update->callback_query)) unset($update->callback_query->message->reply_markup);
 if (isset($spec['photo']) && isset($update->message)) $update->message->photo=[(object)['file_id'=>$spec['photo']]];
 function sendMessage($text,$keys=null,$mode=null,$uid=null){
     $GLOBALS['events'][]=['send',$text,$keys,$mode];
@@ -100,6 +101,15 @@ case 'delete_main':
     break;
 case 'cancel_idle':
     eval(fixtureSection("// Final ordinary-editor cancellation", "\n?>"));
+    break;
+case 'exemption':
+    eval(str_replace('__DIR__',var_export($root,true),achbotExtractFunction($root.'/config.php','achbotHandleChannelExemption')));
+    achbotHandleChannelExemption($data,$text,$userInfo);
+    break;
+case 'discount_admin':
+    require_once $root.'/settings/jdf.php';
+    require_once $root.'/src/Finance/Discounts.php';
+    require $root.'/src/Finance/Routes/DiscountAdministration.php';
     break;
 case 'plan_admin':
     function getPlanDetailsKeys($id){return json_encode(['inline_keyboard'=>[]]);}
@@ -216,6 +226,8 @@ def main():
             r=subprocess.run(args,env=env,capture_output=True,text=True,timeout=20)
             assert r.returncode==0,(op,kw,r.returncode,r.stdout[-1200:],r.stderr[-1600:])
             for line in r.stderr.splitlines():
+                if op=='exemption' and kw.get('update_id')==499 and 'admin_channel_exemption_source_or_commit_unconfirmed' in line:
+                    continue
                 assert line.startswith('[AChBot] '),(op,line)
                 diagnostic=json.loads(line[len('[AChBot] '):])
                 assert (op in ('manual_claim','manual_checkout') and diagnostic['event']=='achbot.finance.checkout_manual_admission_deferred') or (
@@ -299,6 +311,52 @@ def main():
         assert sql("SELECT step FROM users WHERE userid=9001")=='none'
         sql("DELETE FROM server_categories WHERE id>=100")
         cases.append('actual_category_actor_owned_drafts_concurrent_submit_and_revocation')
+        # Real discount editor: private typed input, atomic commit, terminal keyboard.
+        sql("INSERT INTO discounts(id,hash_id,type,amount,expire_date,expire_count,can_use,is_active) VALUES (990,'audit_discount','percent',10,0,20,1,1)")
+        r=run('discount_admin',actor=9001,callback='editD_990_amount')
+        assert r['user']['step']=='editDiscountAmount990',r
+        r=run('discount_admin',actor=9001,callback='wizwizch',text='25')
+        assert sql('SELECT amount FROM discounts WHERE id=990')=='10',r
+        r=run('discount_admin',actor=9001,text='25',chat_type='group')
+        assert sql('SELECT amount FROM discounts WHERE id=990')=='10',r
+        r=run('discount_admin',actor=9001,text='invalid')
+        assert r['user']['step']=='editDiscountAmount990',r
+        r=run('discount_admin',actor=9001,text='25%')
+        assert r['user']['step']=='none' and sql('SELECT amount FROM discounts WHERE id=990')=='25',r
+        assert any(e[0]=='send' and e[2] and json.loads(e[2]).get('remove_keyboard') for e in r['events']),r
+        assert 'editD_990_amount' in callbacks(r),r
+        run('discount_admin',actor=9001,text='25%')
+        assert sql('SELECT amount FROM discounts WHERE id=990')=='25'
+        # Concurrent creation with the same code across two authorized editors.
+        draft='addDiscountMaxDiscount'+json.dumps(dict(hash_id='audit_concurrent',type='percent',amount=10,date=0,count=20,can_use=1,audience_type='all',target_type='all',min_price=0),separators=(',',':'))
+        sql("UPDATE users SET step='"+draft+"' WHERE userid IN (9001,2003)")
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            runs=[pool.submit(run,'discount_admin',actor=actor,text='0') for actor in (9001,2003)]
+            rr=[f.result() for f in runs]
+        assert sql("SELECT COUNT(*) FROM discounts WHERE hash_id='audit_concurrent'")=='1',rr
+        assert sum(x['user']['step']=='none' for x in rr)==1,rr
+        sql("DELETE FROM discounts WHERE id=990 OR hash_id='audit_concurrent'; UPDATE users SET step='none',temp=NULL WHERE userid IN (9001,2003)")
+        cases.append('discount_admin_current_editor_atomic_commit_and_single_code')
+        # Classified transient Home is an edit, retained Home is a new menu.
+        r=run('shortcut',actor=2001,callback='navHome')
+        assert any(e[0]=='edit' for e in r['events']) and not any(e[0]=='send' for e in r['events']),r
+        r=run('shortcut',actor=2001,callback='mainMenu')
+        assert any(e[0]=='send' for e in r['events']) and not any(e[0]=='edit' for e in r['events']),r
+        r=run('shortcut',actor=2001,callback='navHome',unproven_button=True)
+        assert any(e[0]=='send' for e in r['events']) and not any(e[0]=='edit' for e in r['events']),r
+        cases.append('disposable_home_reuses_screen_retained_home_preserves_record')
+        r=run('exemption',actor=9001,callback='addExemptUser',update_id=500,message_id=50)
+        assert r['user']['step'].startswith('achbotExempt:500:50:'),r
+        assert any(e[0]=='send' and e[2] and json.loads(e[2]).get('keyboard') for e in r['events']),r
+        cancel=subprocess.check_output(['php','-r','require "messages/loader.php";echo achbotMessage("legacy_buttons.cancel");'],cwd=ROOT,text=True)
+        before=sql("SELECT value FROM setting WHERE type='EXEMPTED_USERS'")
+        old=run('exemption',actor=9001,text=cancel,update_id=499,message_id=49)
+        assert old['user']['step']==r['user']['step'] and not old['events'],old
+        done=run('exemption',actor=9001,text=cancel,update_id=501,message_id=51)
+        assert done['user']['step']=='none' and len(done['events'])==2,done
+        assert sql("SELECT value FROM setting WHERE type='EXEMPTED_USERS'")==before
+        assert any(e[0]=='send' and e[2] and json.loads(e[2]).get('remove_keyboard') for e in done['events']),done
+        cases.append('exemption_cancel_consumes_current_nonce_without_policy_change')
         # Real supported Native catalogue and intentionally non-saleable controls.
         sql("INSERT INTO server_categories(id,title,parent,active) VALUES (1,'Category',0,1),(2,'Inactive category',0,0)")
         for sid,active,server_state,capacity in [(2,1,1,100),(3,0,1,10),(4,1,2,10),(5,1,1,0),(6,1,1,10)]:

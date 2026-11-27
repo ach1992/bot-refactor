@@ -225,11 +225,28 @@ User-role and order agency buttons have distinct callback namespaces;
 order flags express a desired value instead of a replayable blind toggle.
 Former ambiguous toggle callbacks are not current actions.
 
+Current catalogue, trial, subscription-list and support navigation uses
+`navHome` only on disposable screens. The shared callback verifier checks
+the actual bot, private actor/chat, message ID and button before replacement;
+an unproven source receives a new Home without touching the source.
+Retained `mainMenu`, `evidenceHome` and payment navigation never overwrite
+the original record. A fresh typed exemption cancel consumes its own
+nonce and source marker without changing membership policy. A fresh typed
+Home can abandon an unsubmitted direct gift through the existing gift
+cancellation owner. No claimed financial/Native operation is canceled by
+navigation. Manual rejection commits its reason editor with the decision;
+reply keyboard cleanup is independent of the durable financial reports.
+Discount creation and typed edits use the same local editor transaction
+and one detail presenter. Concurrent creation of the same valid code is
+serialized by code; no new schema or durable queue is required.
+
+
 Subscription search prefers a unique exact name and otherwise permits a
 unique literal substring within the current authorized active order scope.
 Ambiguous matches ask for refinement, not an arbitrary first result.
 A refresh is a verified Native observation, never a new purchase or
-rotation. Render the proven result before claiming the exact approved
+rotation. Same-source rotation recovery must match both the verified
+Native proxy identity and subscription URL digest. Render the proven result before claiming the exact approved
 refresh/rotation success and retain both approved advice lines.
 
 First-start admission and original customer/staff/channel packets commit

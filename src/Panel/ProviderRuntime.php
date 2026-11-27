@@ -279,11 +279,13 @@ function achbotPgVerifiedRevokeReplay(mysqli $db,int $serverId,string $remark): 
     if (!in_array($key,$history['consumed_keys'],true) ||
         ($intent['action']??null)!=='revoke' || ($intent['result']??null)!=='verified' ||
         ($intent['identity']??null)!==$ctx['identity'] ||
-        !is_string($intent['verified_proxy_sha256']??null))
+        !is_string($intent['verified_proxy_sha256']??null) ||
+        !is_string($intent['verified_subscription_sha256']??null))
         throw new RuntimeException('pg_revoke_original_unverified');
     $remote=achbotProviderRenderPacket($db,$serverId,$remark);
     if (!is_string($remote->username??null) || ($remote->provider_links_verified??false)!==true ||
-        !hash_equals($intent['verified_proxy_sha256'],hash('sha256',json_encode(achbotProviderCanonicalValue($remote->proxy_settings??null),JSON_THROW_ON_ERROR))))
+        !hash_equals($intent['verified_proxy_sha256'],hash('sha256',json_encode(achbotProviderCanonicalValue($remote->proxy_settings??null),JSON_THROW_ON_ERROR))) ||
+        !hash_equals($intent['verified_subscription_sha256'],hash('sha256',(string)($remote->subscription_url??''))))
         throw new RuntimeException('pg_revoke_original_view_unverified');
     return (object)array_merge((array)$remote,['success'=>true,'verified'=>true,'reconciled'=>true]);
 }
@@ -824,8 +826,10 @@ function achbotPgFinishMutation(mysqli $db,array $ctx,array $intent,array $resul
     $id=(int)$ctx['account']['id'];$key=$intent['key'];
     $intent['verified_at']=gmdate('c');$intent['result']='verified';
     if (isset($result['user']['group_ids'])) $intent['current_group_ids']=$result['user']['group_ids'];
-    if (($intent['action']??null)==='revoke' && isset($result['user']['proxy_settings']))
+    if (($intent['action']??null)==='revoke') {
         $intent['verified_proxy_sha256']=hash('sha256',json_encode(achbotProviderCanonicalValue($result['user']['proxy_settings']),JSON_THROW_ON_ERROR));
+        $intent['verified_subscription_sha256']=hash('sha256',$result['user']['subscription_url']);
+    }
     $json=json_encode($intent,JSON_THROW_ON_ERROR);
     $s=$db->prepare("UPDATE service_effects SET provider_state=?,provider_mutation_snapshot=?,provider_evidence_updated_at=UTC_TIMESTAMP(),updated_at=updated_at WHERE provider_reference_id=? AND provider_state='mutating' AND provider_mutation_key=?");
     $s->bind_param('ssis',$state,$json,$id,$key);

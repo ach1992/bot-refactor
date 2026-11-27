@@ -2106,12 +2106,14 @@ function getOrderCountInRange($connection, $userId, $fromDate) {
  * nonunique users.userid and setting.type (no schema migration).
  */
 function achbotHandleChannelExemption($data, $text, $cached): bool {
-    global $connection, $admin, $from_id, $chat_id, $message_id, $update, $removeKeyboard;
+    global $connection, $admin, $from_id, $chat_id, $message_id, $update, $removeKeyboard, $cancelKey;
     $start=($data==='addExemptUser');
     $step=is_array($cached)?(string)($cached['step']??''):'';
     $continuing=str_starts_with($step,'achbotExempt:');
     if (!$start && !$continuing) return false;
     $begun=false;
+    $cancel=$continuing && !$start && ($text===achbotMessage('legacy_buttons.cancel') ||
+        (!isset($update->callback_query) && \AchBot\Telegram\Conversation\homeRequested($update,(int)$from_id)));
     try {
         if (!function_exists('achbotWebhookIngressAuthenticated') ||
             !achbotWebhookIngressAuthenticated() ||
@@ -2128,10 +2130,10 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
                 'addExemptUser','callback');
             $targetId=null;
         } else {
-            if (!is_string($text) ||
-                preg_match('/\A[1-9][0-9]{0,18}\z/D',$text)!==1)
+            if (!$cancel && (!is_string($text) ||
+                preg_match('/\A[1-9][0-9]{0,18}\z/D',$text)!==1))
                 throw new RuntimeException('exempt_target_invalid');
-            $targetId=filter_var($text,FILTER_VALIDATE_INT,
+            $targetId=$cancel?null:filter_var($text,FILTER_VALIDATE_INT,
                 ['options'=>['min_range'=>1,'max_range'=>PHP_INT_MAX]]);
             if ($targetId===false)
                 throw new RuntimeException('exempt_target_overflow');
@@ -2186,7 +2188,7 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
         $current=$ok?$stmt->get_result()->fetch_assoc():null;
         $stmt->close();
         if (!$ok || !$current || (int)$current['userid']!==$actor ||
-            ($actor!==(int)$admin && (int)$current['isAdmin']!==1))
+            (!$cancel && ($actor!==(int)$admin && (int)$current['isAdmin']!==1)))
             throw new RuntimeException('exempt_admin_revoked');
         // Reject duplicated userids even when they were introduced between
         // pretransaction discovery and acquisition of the owner PK lock.
@@ -2235,7 +2237,7 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
         $newStep=$start?
             'achbotExempt:'.$source['update_id'].':'.$source['message_id'].':'.bin2hex(random_bytes(16)):
             'none';
-        if (!$start) {
+        if (!$start && !$cancel) {
             // Load the nonunique global policy only AFTER the owner PK lock.
             // All current exemption writers must take this same lock first.
             $type='EXEMPTED_USERS';
@@ -2280,7 +2282,7 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
             }
         }
 
-        $stmt=$connection->prepare('UPDATE users SET step=? WHERE id=? AND userid=? AND step=?');
+        $stmt=$connection->prepare('UPDATE users SET step=?,temp=NULL WHERE id=? AND userid=? AND step=?');
         if (!$stmt) throw new RuntimeException('exempt_step_cas_prepare');
         $stmt->bind_param('siis',$newStep,$actorPk,$actor,$nowStep);
         $ok=$stmt->execute();$affected=$stmt->affected_rows;$stmt->close();
@@ -2317,7 +2319,10 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
         return true;
     }
     if ($start) {
-        sendMessage(\achbotMessage('admin_settings.config.handle_channel_exemption.message.f4395ba7cb'),$removeKeyboard, 'HTML');
+        sendMessage(\achbotMessage('admin_settings.config.handle_channel_exemption.message.f4395ba7cb'),$cancelKey, 'HTML');
+    } elseif ($cancel) {
+        \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.operation_canceled'),(int)$from_id);
+        sendMessage(achbotCurrentMessage('start_message'),getMainKeys(),'HTML');
     } elseif ($already) {
         sendMessage(\achbotMessage('admin_settings.config.handle_channel_exemption.message.cca4b2908c'),$removeKeyboard,"HTML");
     } else {

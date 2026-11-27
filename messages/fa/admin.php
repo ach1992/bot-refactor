@@ -243,7 +243,6 @@ return [
         'bot.webhook_ingress_authenticated.message.4e0fd88f4b' => '📅 لطفاً تاریخ شروع و پایان فروش را وارد کنید:' . "\n" . '' . "\n" . '',
         'bot.webhook_ingress_authenticated.message.9c3afd43bd' => 'فرمت نمونه:' . "\n" . '<code>2026-05-21 to 2026-05-22</code>' . "\n" . '',
         'bot.webhook_ingress_authenticated.message.312da09ba8' => 'یا' . "\n" . '<code>2026/05/21 تا 2026/05/22</code>',
-        'bot.webhook_ingress_authenticated.message.0108e71350' => '❌ عملیات لغو شد.',
         'bot.webhook_ingress_authenticated.message.f438b1a27b' => '❌ فرمت تاریخ درست نیست. لطفاً دقیقاً مثل نمونه وارد کنید:' . "\n" . '<code>2026-05-21 to 2026-05-22</code>',
         'bot.webhook_ingress_authenticated.message.4684e19e66' => '❌ تاریخ شروع نباید بعد از تاریخ پایان باشد.',
         'bot.webhook_ingress_authenticated.text.d4b423ba4f' => '👤 آمار کاربران',
@@ -1429,7 +1428,6 @@ return [
         // provider_admin.pg_server_admin_keys
         'provider_admin.handle_provider_admin.alert.057ec5448c' => '⛔️ دسترسی لازم وجود ندارد.',
         'provider_admin.handle_provider_admin.message.b3a3ec95dd' => '✅ مصرف اشتراک پس از بررسی صفر شد.',
-        'provider_admin.handle_provider_admin.message.bf4b28ea45' => '🔑 کلید API جدید را بفرستید.',
         'provider_admin.handle_provider_admin.message.254f747510' => 'شناسه گروه‌های دسترسی را با کاما بفرستید. برای ارث‌بری پلن از سرور /inherit را بفرستید.' . "\n" . '',
         'provider_admin.handle_provider_admin.message.7a19204ab5' => '✅ کلید API تأیید و تعویض شد.',
         'provider_admin.handle_provider_admin.message.2fb5824b4d' => '✅ گروه‌های دسترسی خریدهای آینده ذخیره شد. حساب‌های موجود تغییر نکردند.',

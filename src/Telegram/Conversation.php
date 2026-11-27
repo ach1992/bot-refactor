@@ -24,6 +24,39 @@ function source($update,int $actor,bool $callback): ?object {
     return $message;
 }
 
+/** A Telegram callback does not by itself establish that its data still
+ * exists on the bot's message. Recover unknown registrations only when
+ * the actual bot identity and the exact original keyboard prove it. */
+function verifiedCallback($update,int $actor,int $message): bool {
+    $source=source($update,$actor,true);
+    $botId=explode(':',(string)($GLOBALS['botToken']??''),2)[0];
+    if (!$source || $source->message_id!==$message || preg_match('/\A[0-9]+\z/D',$botId)!==1 ||
+        ($source->from->is_bot??false)!==true || (string)($source->from->id??'')!==$botId) return false;
+    $action=$update->callback_query->data;
+    foreach ($source->reply_markup->inline_keyboard??[] as $buttons) foreach ($buttons as $button)
+        if (($button->callback_data??null)===$action) return true;
+    return false;
+}
+
+/** Recognize the existing explicit Home/shortcut actions before an ordinary
+ * configuration editor can consume them as a credential or field value. */
+function homeRequested($update,int $actor): bool {
+    $callback=isset($update->callback_query);
+    $message=source($update,$actor,$callback);
+    if (!$message) return false;
+    if ($callback) {
+        $data=$update->callback_query->data;
+        if (in_array($data,['mainMenu','navHome','evidenceHome'],true) ||
+            preg_match('/^ph_[A-Za-z0-9_-]{1,50}$/D',$data)) return true;
+    } else {
+        $text=$message->text??null;
+        if (is_string($text) && (preg_match('~^/[Ss]tart(?:@[A-Za-z0-9_]{1,32})?(?:\s|$)~D',$text) ||
+            $text===\achbotMessage('legacy_buttons.back_to_main'))) return true;
+    }
+    require_once __DIR__.'/UserProfile.php';
+    return \achbotCustomerShortcut($update,$actor)!==null;
+}
+
 /** Only a complete, exact acknowledged Telegram response identifies a
  * disposable new message. Missing response data is not proof of delivery. */
 function acknowledgedMessage($response,int $actor): ?int {
@@ -103,8 +136,8 @@ function transitionEditor(\mysqli $db,int $actor,array $cached,string $next='non
 /** Completion feedback is a new message, not an edit: Telegram only accepts
  * ReplyKeyboardRemove on a send. The next inline menu remains independent.
  * Never send this for validation failures or unrelated asynchronous notices. */
-function removeReplyKeyboard(string $text): void {
-    try {\sendMessage($text,json_encode(['remove_keyboard'=>true],JSON_THROW_ON_ERROR),'HTML');}
+function removeReplyKeyboard(string $text,?int $actor=null): void {
+    try {\sendMessage($text,json_encode(['remove_keyboard'=>true],JSON_THROW_ON_ERROR),'HTML',$actor);}
     catch (\Throwable $e) {error_log('achbot_reply_keyboard_cleanup_deferred class='.get_class($e));}
 }
 

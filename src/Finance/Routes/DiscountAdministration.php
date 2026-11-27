@@ -1,5 +1,5 @@
 <?php
-/** AChBot V8: source-pinned financial compatibility module. */
+/** Current administrator discount configuration and presentation. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
@@ -7,8 +7,13 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__ . '/../../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__ . '/../../Admin/Access.php';
+require_once __DIR__.'/../../Telegram/Conversation.php';
+require_once __DIR__.'/../../Panel/ProviderStorage.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
+
+// All discount administration is private; other route includes remain independent.
+if (!\AchBot\Telegram\Conversation\source($update,(int)$from_id,isset($update->callback_query))) return true;
 
 // BEGIN Manage discount
 if(preg_match('/^discount_codes(_(\d+))?$/', $data, $m) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
@@ -20,14 +25,13 @@ if(preg_match('/^discount_codes(_(\d+))?$/', $data, $m) && achbotAdminCanFor($co
 
 // شروع ساخت کد تخفیف جدید
 if($data=="addDiscountCode" && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
-    delMessage(); 
+    if (!setUser("addDiscountCode")) return;
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.4c228aa43c').
         \achbotMessage('payment.discount_administration.add_discount_code.message.6d4dae8c41'),
         $cancelKey, 'HTML'
     ); 
-    // مرحله اول: منتظر دریافت متن کد
-    setUser("addDiscountCode"); 
+    return;
 } 
 
 // دریافت متن کد تخفیف از ادمین
@@ -58,7 +62,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && $userInfo
     $dInfo['hash_id'] = $code;
 
     // رفتن به مرحله بعد: مقدار تخفیف
-    setUser("addDiscountAmount" . json_encode($dInfo, JSON_UNESCAPED_UNICODE)); 
+    if (!setUser("addDiscountAmount" . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.75190ca5af').
         \achbotMessage('payment.discount_administration.add_discount_code.message.78fa15f8f0').
@@ -81,7 +85,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     if(is_numeric($text)){ 
         $dInfo['amount'] = (int)$text; 
 
-        setUser("addDiscountDate" . json_encode($dInfo, JSON_UNESCAPED_UNICODE)); 
+        if (!setUser("addDiscountDate" . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.1658fb52d4'), $cancelKey, 'HTML');
     }else{
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.84d623bbac'), null, 'HTML');
@@ -97,7 +101,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
         $days = (int)$text;
         $dInfo['date'] = $days != 0 ? time() + ($days * 24 * 60 * 60) : 0; 
          
-        setUser("addDiscountCount" . json_encode($dInfo,JSON_UNESCAPED_UNICODE)); 
+        if (!setUser("addDiscountCount" . json_encode($dInfo,JSON_UNESCAPED_UNICODE))) return;
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.1415403ff4'), $cancelKey, 'HTML');
     }else{
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'), null, 'HTML');
@@ -114,7 +118,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
         // 0 یا کمتر = نامحدود → -1
         $dInfo['count'] = $count > 0 ? $count : -1; 
          
-        setUser('addDiscountCanUse' . json_encode($dInfo,JSON_UNESCAPED_UNICODE)); 
+        if (!setUser('addDiscountCanUse' . json_encode($dInfo,JSON_UNESCAPED_UNICODE))) return;
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.4359ee21ce'), $cancelKey, 'HTML');
     }else{
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.50cd9cde9a'), null, 'HTML');
@@ -131,7 +135,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
         $dInfo['can_use'] = $perUser > 0 ? $perUser : -1; 
 
         // رفتن به مرحله انتخاب نوع کاربران هدف
-        setUser('addDiscountAudience' . json_encode($dInfo, JSON_UNESCAPED_UNICODE)); 
+        if (!setUser('addDiscountAudience' . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
 
         $keys = [
             'inline_keyboard' => [
@@ -162,6 +166,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
             ]
         ];
 
+        \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.receving_information'));
         sendMessage(
             \achbotMessage('payment.discount_administration.add_discount_code.message.2262c64bde'),
             json_encode($keys), 'HTML'
@@ -172,9 +177,9 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
 } 
 
 // هندل کردن انتخاب audience با دکمه اینلاین
-if(preg_match('/^addDiscountAudience(.*)/',$userInfo['step'],$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^addDiscountAudience(\{.*\})$/D',$userInfo['step'],$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
 
-    if(preg_match('/^setDiscountAudience_(.+)$/', $data, $m)){
+    if(preg_match('/^setDiscountAudience_(all|user|agents|non_agents|buyers|non_buyers|has_active_order|no_active_order)$/D', $data, $m)){
         $choice = $m[1];
 
         $dInfo = json_decode($match[1], true);
@@ -185,7 +190,7 @@ if(preg_match('/^addDiscountAudience(.*)/',$userInfo['step'],$match) && achbotAd
             $dInfo['audience_type']    = 'user';
             $dInfo['audience_user_id'] = 0;
 
-            setUser('addDiscountAudienceUser' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
+            if (!setUser('addDiscountAudienceUser' . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
             sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.9480571c47'), $cancelKey, 'HTML');
             return;
         }
@@ -218,7 +223,7 @@ if(preg_match('/^addDiscountAudience(.*)/',$userInfo['step'],$match) && achbotAd
 
         $dInfo['audience_user_id'] = isset($dInfo['audience_user_id']) ? (int)$dInfo['audience_user_id'] : 0;
 
-        setUser('addDiscountTargetType' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
+        if (!setUser('addDiscountTargetType' . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
 
         $keys = [
             'inline_keyboard' => [
@@ -259,7 +264,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     $dInfo['audience_type']    = 'user';
     $dInfo['audience_user_id'] = (int)$text;
 
-    setUser('addDiscountTargetType' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
+    if (!setUser('addDiscountTargetType' . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
 
     $keys = [
         'inline_keyboard' => [
@@ -278,6 +283,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
         ]
     ];
 
+    \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.receving_information'));
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.075324686f'),
         json_encode($keys), 'HTML'
@@ -298,7 +304,7 @@ if(preg_match('/^addDiscountTargetType(.*)/',$userInfo['step'],$match) && achbot
             $dInfo['target_id']   = 0;
 
             // میریم سراغ حداقل مبلغ
-            setUser('addDiscountMinPrice' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
+            if (!setUser('addDiscountMinPrice' . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
             sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ffc049ded2'), $cancelKey, 'HTML');
             return;
         }
@@ -306,7 +312,7 @@ if(preg_match('/^addDiscountTargetType(.*)/',$userInfo['step'],$match) && achbot
         // اگر نیاز به انتخاب سرور / دسته / پلن داریم:
         if($choice == 'server'){
             $dInfo['target_type'] = 'server';
-            setUser('addDiscountTargetServer' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
+            if (!setUser('addDiscountTargetServer' . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
 
             $keys = ['inline_keyboard' => []];
             $stmt = $connection->prepare("SELECT `id`,`title` FROM `server_info` WHERE `active` = 1");
@@ -332,7 +338,7 @@ if(preg_match('/^addDiscountTargetType(.*)/',$userInfo['step'],$match) && achbot
 
         if($choice == 'category'){
             $dInfo['target_type'] = 'category';
-            setUser('addDiscountTargetCategory' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
+            if (!setUser('addDiscountTargetCategory' . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
 
             $keys = ['inline_keyboard' => []];
             $stmt = $connection->prepare("SELECT `id`,`title` FROM `server_categories` WHERE `active` = 1");
@@ -358,7 +364,7 @@ if(preg_match('/^addDiscountTargetType(.*)/',$userInfo['step'],$match) && achbot
 
         if($choice == 'plan'){
             $dInfo['target_type'] = 'plan';
-            setUser('addDiscountTargetPlan' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
+            if (!setUser('addDiscountTargetPlan' . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
 
             $keys = ['inline_keyboard' => []];
             $stmt = $connection->prepare("SELECT `id`,`title` FROM `server_plans` WHERE `active` = 1");
@@ -392,7 +398,7 @@ if(preg_match('/^addDiscountTargetServer(.*)/',$userInfo['step'],$match) && achb
 
         $dInfo['target_id'] = (int)$m[1];
 
-        setUser('addDiscountMinPrice' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
+        if (!setUser('addDiscountMinPrice' . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ffc049ded2'), $cancelKey, 'HTML');
     }
 }
@@ -405,7 +411,7 @@ if(preg_match('/^addDiscountTargetCategory(.*)/',$userInfo['step'],$match) && ac
 
         $dInfo['target_id'] = (int)$m[1];
 
-        setUser('addDiscountMinPrice' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
+        if (!setUser('addDiscountMinPrice' . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ffc049ded2'), $cancelKey, 'HTML');
     }
 }
@@ -418,7 +424,7 @@ if(preg_match('/^addDiscountTargetPlan(.*)/',$userInfo['step'],$match) && achbot
 
         $dInfo['target_id'] = (int)$m[1];
 
-        setUser('addDiscountMinPrice' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
+        if (!setUser('addDiscountMinPrice' . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ffc049ded2'), $cancelKey, 'HTML');
     }
 }
@@ -437,7 +443,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     $minPrice = (int)$text;
     $dInfo['min_price'] = $minPrice > 0 ? $minPrice : 0;
 
-    setUser('addDiscountMaxDiscount' . json_encode($dInfo, JSON_UNESCAPED_UNICODE));
+    if (!setUser('addDiscountMaxDiscount' . json_encode($dInfo, JSON_UNESCAPED_UNICODE))) return;
     sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.685284b2e1'), $cancelKey, 'HTML');
 }
 
@@ -470,34 +476,42 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     $minPrice       = isset($dInfo['min_price'])        ? (int)$dInfo['min_price']   : 0;
     $maxDiscount    = isset($dInfo['max_discount'])     ? (int)$dInfo['max_discount'] : 0;
 
-    $stmt = $connection->prepare("
-        INSERT INTO `discounts` 
-            (`hash_id`, `type`, `amount`, `expire_date`, `expire_count`, `used_by`, `can_use`,
-             `audience_type`, `audience_user_id`, `target_type`, `target_id`, `min_price`, `max_discount`)
-        VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?,?)
-    "); 
+    $actor=(int)$from_id;
+    $dbName=achbotProviderRow($connection,'SELECT DATABASE() AS name')['name'];
+    $lease='discount-code:'.substr(hash('sha256',$dbName.':'.strtolower($hashId)),0,48);
+    $acquired=achbotProviderRow($connection,'SELECT GET_LOCK(?,0) AS acquired','s',[$lease]);
+    if ((int)($acquired['acquired']??0)!==1) {
+        sendMessage(achbotMessage('instance_content.save_unavailable'),null,'HTML');
+        return;
+    }
+    $duplicate=false;
+    try {
+        $closed=\AchBot\Telegram\Conversation\transitionEditor($connection,$actor,$userInfo,'none',null,
+            static function(mysqli $db) use($actor,$admin,$hashId,$type,$amount,$date,$count,$canUse,
+                $audienceType,$audienceUserId,$targetType,$targetId,$minPrice,$maxDiscount,&$duplicate): void {
+                if (!achbotAdminCanLocked($db,$actor,(int)$admin,'operations'))
+                    throw new DomainException('discount_editor_role_changed');
+                if (achbotProviderRow($db,'SELECT id FROM discounts WHERE hash_id=? LIMIT 1 FOR UPDATE','s',[$hashId])) {
+                    $duplicate=true;throw new DomainException('discount_code_exists');
+                }
+                $q=achbotProviderStatement($db,'INSERT INTO discounts
+                    (hash_id,type,amount,expire_date,expire_count,used_by,can_use,audience_type,
+                    audience_user_id,target_type,target_id,min_price,max_discount)
+                    VALUES (?,?,?,?,?,NULL,?,?,?,?,?,?,?)','ssiiiisisiii',
+                    [$hashId,$type,$amount,$date,$count,$canUse,$audienceType,$audienceUserId,$targetType,$targetId,$minPrice,$maxDiscount]);
+                $q->close();
+            });
+    } finally {
+        try {$q=achbotProviderStatement($connection,'SELECT RELEASE_LOCK(?)','s',[$lease]);$q->close();}
+        catch (Throwable $ignored) {}
+    }
+    if (!$closed) {
+        sendMessage($duplicate?achbotMessage('payment.discount_administration.add_discount_code.message.d4e0464259'):
+            achbotMessage('instance_content.save_unavailable'),null,'HTML');
+        return;
+    }
 
-    $stmt->bind_param(
-        "ssiiiisisiii",
-        $hashId,
-        $type,
-        $amount,
-        $date,
-        $count,
-        $canUse,
-        $audienceType,
-        $audienceUserId,
-        $targetType,
-        $targetId,
-        $minPrice,
-        $maxDiscount
-    );
-
-    $stmt->execute(); 
-    $stmt->close(); 
-
-    sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.f12309f24f', ['hashId' => $hashId]), $removeKeyboard, "HTML");
-    if (!setUser()) return;
+    sendMessage(\achbotMessageHtml('payment.discount_administration.add_discount_code.message.f12309f24f', ['hashId' => $hashId]), $removeKeyboard, "HTML");
     sendMessage(\achbotMessage('payment.discount_administration.message.bfaa0cb7fb'), getDiscountCodeKeys(), 'HTML');
 } 
 
@@ -531,10 +545,7 @@ if(preg_match('/^delDiscount(\d+)/',$data,$match) && achbotAdminCanFor($connecti
 }
 
 // ✏️ نمایش منوی ویرایش برای یک کد تخفیف
-if(preg_match('/^editDiscount(\d+)/', $data, $m) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
-
-    $discountId = (int)$m[1];
-
+function achbotDiscountAdminDetails(mysqli $connection,int $discountId): ?array {
     $stmt = $connection->prepare("SELECT * FROM `discounts` WHERE `id` = ? LIMIT 1");
     $stmt->bind_param("i", $discountId);
     $stmt->execute();
@@ -542,8 +553,7 @@ if(preg_match('/^editDiscount(\d+)/', $data, $m) && achbotAdminCanFor($connectio
     $stmt->close();
 
     if(!$row){
-        alert(\achbotMessage('payment.discount_administration.add_discount_code.alert.fa58f63a4f'));
-        return;
+        return null;
     }
 
     $hashId = $row['hash_id'];
@@ -626,15 +636,15 @@ if(preg_match('/^editDiscount(\d+)/', $data, $m) && achbotAdminCanFor($connectio
         $targetText = \achbotMessage('payment.discount_administration.add_discount_code.target_text.f172411291') . $title;
     }
 
-    $text = \achbotMessage('payment.discount_administration.add_discount_code.text.3a4c0517b4', ['hashId' => $hashId]).
-            \achbotMessage('payment.discount_administration.add_discount_code.text.66fafb9fd4', ['amountText' => $amountText]).
-            \achbotMessage('payment.discount_administration.add_discount_code.text.d4169dd62d', ['dateText' => $dateText]).
-            \achbotMessage('payment.discount_administration.add_discount_code.text.9cd9d5658f', ['countText' => $countText]).
-            \achbotMessage('payment.discount_administration.add_discount_code.text.5919cd752d', ['canUseText' => $canUseText]).
-            \achbotMessage('payment.discount_administration.add_discount_code.text.b7cf332a32', ['audienceText' => $audienceText]).
-            \achbotMessage('payment.discount_administration.add_discount_code.text.77f1958ae0', ['targetText' => $targetText]).
-            \achbotMessage('payment.discount_administration.add_discount_code.text.d2d2b624b9', ['minPriceText' => $minPriceText]).
-            \achbotMessage('payment.discount_administration.add_discount_code.text.0b9a6e5bc7', ['maxDiscountText' => $maxDiscountText]);
+    $text = \achbotMessageHtml('payment.discount_administration.add_discount_code.text.3a4c0517b4', ['hashId' => $hashId]).
+            \achbotMessageHtml('payment.discount_administration.add_discount_code.text.66fafb9fd4', ['amountText' => $amountText]).
+            \achbotMessageHtml('payment.discount_administration.add_discount_code.text.d4169dd62d', ['dateText' => $dateText]).
+            \achbotMessageHtml('payment.discount_administration.add_discount_code.text.9cd9d5658f', ['countText' => $countText]).
+            \achbotMessageHtml('payment.discount_administration.add_discount_code.text.5919cd752d', ['canUseText' => $canUseText]).
+            \achbotMessageHtml('payment.discount_administration.add_discount_code.text.b7cf332a32', ['audienceText' => $audienceText]).
+            \achbotMessageHtml('payment.discount_administration.add_discount_code.text.77f1958ae0', ['targetText' => $targetText]).
+            \achbotMessageHtml('payment.discount_administration.add_discount_code.text.d2d2b624b9', ['minPriceText' => $minPriceText]).
+            \achbotMessageHtml('payment.discount_administration.add_discount_code.text.0b9a6e5bc7', ['maxDiscountText' => $maxDiscountText]);
 
     $keys = [
         'inline_keyboard' => [
@@ -663,14 +673,43 @@ if(preg_match('/^editDiscount(\d+)/', $data, $m) && achbotAdminCanFor($connectio
         ]
     ];
 
-    editText($message_id, $text, json_encode($keys), "HTML");
+    return [$text,json_encode($keys,JSON_THROW_ON_ERROR)];
+}
+function achbotDiscountAdminShow(mysqli $db,int $discountId,?int $source=null): void {
+    $view=achbotDiscountAdminDetails($db,$discountId);
+    if (!$view) {
+        sendMessage(achbotMessage('payment.discount_administration.add_discount_code.alert.fa58f63a4f'),null,'HTML');
+        return;
+    }
+    if ($source!==null)
+        \AchBot\Telegram\Conversation\replaceTransient((int)$GLOBALS['from_id'],$source,$view[0],$view[1]);
+    else sendMessage($view[0],$view[1],'HTML');
+}
+if(preg_match('/^editDiscount([1-9][0-9]*)$/D', (string)$data, $m) &&
+    achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')) {
+    if (!\AchBot\Telegram\Conversation\source($update,(int)$from_id,true)) return;
+    achbotDiscountAdminShow($connection,(int)$m[1],(int)$message_id);
+    return;
+}
+
+/** Consume a current typed discount editor and its single SQL write in
+ * the same transaction. Lock the discount row shared with redemption. */
+function achbotDiscountAdminWrite(mysqli $db,int $actor,int $primary,array $editor,int $id,
+    string $sql,string $types,array $values): bool {
+    return \AchBot\Telegram\Conversation\transitionEditor($db,$actor,$editor,'none',null,
+        static function(mysqli $db) use($actor,$primary,$id,$sql,$types,$values): void {
+            if (!achbotAdminCanLocked($db,$actor,$primary,'operations') ||
+                !achbotProviderRow($db,'SELECT id FROM discounts WHERE id=? FOR UPDATE','i',[$id]))
+                throw new DomainException('discount_editor_target_changed');
+            $q=achbotProviderStatement($db,$sql,$types,$values);$q->close();
+        })!==null;
 }
 
 // ویرایش مقدار تخفیف
 if(preg_match('/^editD_(\d+)_amount$/', $data, $m) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
 
-    setUser("editDiscountAmount{$discountId}");
+    if (!setUser("editDiscountAmount{$discountId}")) return;
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.d2ff3672fa').
         \achbotMessage('payment.discount_administration.add_discount_code.message.78fa15f8f0').
@@ -694,22 +733,19 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
 
     $amount = (int)$val;
 
-    $stmt = $connection->prepare("UPDATE `discounts` SET `type` = ?, `amount` = ? WHERE `id` = ?");
-    $stmt->bind_param("sii", $newType, $amount, $discountId);
-    $stmt->execute();
-    $stmt->close();
-
-    if (!setUser()) return;
+    if (!achbotDiscountAdminWrite($connection,(int)$from_id,(int)$admin,$userInfo,$discountId,
+        'UPDATE `discounts` SET `type` = ?, `amount` = ? WHERE `id` = ?','sii',[$newType, $amount, $discountId])) return;
 
     sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.04d142737e'), $removeKeyboard, 'HTML');
-    $data = "editDiscount".$discountId;
+    achbotDiscountAdminShow($connection,$discountId,isset($update->callback_query)?(int)$message_id:null);
+    return;
 }
 
 // ویرایش تاریخ انقضا
 if(preg_match('/^editD_(\d+)_expire$/', $data, $m) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
 
-    setUser("editDiscountExpire{$discountId}");
+    if (!setUser("editDiscountExpire{$discountId}")) return;
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.a12d0d9f77').
         \achbotMessage('payment.discount_administration.add_discount_code.message.615519a0c3'),
@@ -728,21 +764,18 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     $days = (int)$text;
     $newDate = $days != 0 ? time() + ($days * 24 * 60 * 60) : 0;
 
-    $stmt = $connection->prepare("UPDATE `discounts` SET `expire_date` = ? WHERE `id` = ?");
-    $stmt->bind_param("ii", $newDate, $discountId);
-    $stmt->execute();
-    $stmt->close();
-
-    if (!setUser()) return;
+    if (!achbotDiscountAdminWrite($connection,(int)$from_id,(int)$admin,$userInfo,$discountId,
+        'UPDATE `discounts` SET `expire_date` = ? WHERE `id` = ?','ii',[$newDate, $discountId])) return;
     sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.15c9736bbe'), $removeKeyboard, 'HTML');
-    $data = "editDiscount".$discountId;
+    achbotDiscountAdminShow($connection,$discountId,isset($update->callback_query)?(int)$message_id:null);
+    return;
 }
 
 // ویرایش تعداد کل استفاده
 if(preg_match('/^editD_(\d+)_count$/', $data, $m) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
 
-    setUser("editDiscountCount{$discountId}");
+    if (!setUser("editDiscountCount{$discountId}")) return;
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.0e04aa052a').
         \achbotMessage('payment.discount_administration.add_discount_code.message.ccba40e01f'),
@@ -761,21 +794,18 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     $count = (int)$text;
     $newCount = $count > 0 ? $count : -1;
 
-    $stmt = $connection->prepare("UPDATE `discounts` SET `expire_count` = ? WHERE `id` = ?");
-    $stmt->bind_param("ii", $newCount, $discountId);
-    $stmt->execute();
-    $stmt->close();
-
-    if (!setUser()) return;
+    if (!achbotDiscountAdminWrite($connection,(int)$from_id,(int)$admin,$userInfo,$discountId,
+        'UPDATE `discounts` SET `expire_count` = ? WHERE `id` = ?','ii',[$newCount, $discountId])) return;
     sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.ca05319dfd'), $removeKeyboard, 'HTML');
-    $data = "editDiscount".$discountId;
+    achbotDiscountAdminShow($connection,$discountId,isset($update->callback_query)?(int)$message_id:null);
+    return;
 }
 
 // ویرایش تعداد استفاده هر کاربر
 if(preg_match('/^editD_(\d+)_canuse$/', $data, $m) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
 
-    setUser("editDiscountCanUse{$discountId}");
+    if (!setUser("editDiscountCanUse{$discountId}")) return;
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.dfbb7e73b3').
         \achbotMessage('payment.discount_administration.add_discount_code.message.ccba40e01f'),
@@ -794,14 +824,11 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     $v = (int)$text;
     $newVal = $v > 0 ? $v : -1;
 
-    $stmt = $connection->prepare("UPDATE `discounts` SET `can_use` = ? WHERE `id` = ?");
-    $stmt->bind_param("ii", $newVal, $discountId);
-    $stmt->execute();
-    $stmt->close();
-
-    if (!setUser()) return;
+    if (!achbotDiscountAdminWrite($connection,(int)$from_id,(int)$admin,$userInfo,$discountId,
+        'UPDATE `discounts` SET `can_use` = ? WHERE `id` = ?','ii',[$newVal, $discountId])) return;
     sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.52e38e4607'), $removeKeyboard, 'HTML');
-    $data = "editDiscount".$discountId;
+    achbotDiscountAdminShow($connection,$discountId,isset($update->callback_query)?(int)$message_id:null);
+    return;
 }
 
 // شروع ویرایش گروه کاربران
@@ -841,12 +868,12 @@ if(preg_match('/^editD_(\d+)_audience$/', $data, $m) && achbotAdminCanFor($conne
 }
 
 // ست کردن audience (به جز حالت user)
-if(preg_match('/^editDAud_(\d+)_(.+)$/', $data, $m) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
+if(preg_match('/^editDAud_(\d+)_(all|user|agents|non_agents|buyers|non_buyers|has_active_order|no_active_order)$/D', $data, $m) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
     $choice     = $m[2];
 
     if($choice == 'user'){
-        setUser("editDiscountAudienceUser{$discountId}");
+        if (!setUser("editDiscountAudienceUser{$discountId}")) return;
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.9480571c47'), $cancelKey, 'HTML');
         return;
     }
@@ -871,7 +898,8 @@ if(preg_match('/^editDAud_(\d+)_(.+)$/', $data, $m) && achbotAdminCanFor($connec
 
     if (!setUser()) return;
     sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.2cdb116acd'), $removeKeyboard, 'HTML');
-    $data = "editDiscount".$discountId;
+    achbotDiscountAdminShow($connection,$discountId,isset($update->callback_query)?(int)$message_id:null);
+    return;
 }
 
 // گرفتن userid برای audience = user
@@ -886,14 +914,11 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     $uid = (int)$text;
 
     $audienceType = 'user';
-    $stmt = $connection->prepare("UPDATE `discounts` SET `audience_type` = ?, `audience_user_id` = ? WHERE `id` = ?");
-    $stmt->bind_param("sii", $audienceType, $uid, $discountId);
-    $stmt->execute();
-    $stmt->close();
-
-    if (!setUser()) return;
+    if (!achbotDiscountAdminWrite($connection,(int)$from_id,(int)$admin,$userInfo,$discountId,
+        'UPDATE `discounts` SET `audience_type` = ?, `audience_user_id` = ? WHERE `id` = ?','sii',[$audienceType, $uid, $discountId])) return;
     sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.12c329225f', ['uid' => $uid]), $removeKeyboard, 'HTML');
-    $data = "editDiscount".$discountId;
+    achbotDiscountAdminShow($connection,$discountId,isset($update->callback_query)?(int)$message_id:null);
+    return;
 }
 
 // شروع ویرایش هدف سرویس
@@ -934,7 +959,8 @@ if(preg_match('/^editDT_(\d+)_(.+)$/', $data, $m) && achbotAdminCanFor($connecti
         $stmt->close();
 
         sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.d0ed7fc76f'), null, 'HTML');
-        $data = "editDiscount".$discountId;
+        achbotDiscountAdminShow($connection,$discountId,isset($update->callback_query)?(int)$message_id:null);
+    return;
         return;
     }
 
@@ -1019,7 +1045,8 @@ if(preg_match('/^editDTServer_(\d+)_(\d+)$/', $data, $m) && achbotAdminCanFor($c
     $stmt->close();
 
     sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.e8670a5dc8'), null, 'HTML');
-    $data = "editDiscount".$discountId;
+    achbotDiscountAdminShow($connection,$discountId,isset($update->callback_query)?(int)$message_id:null);
+    return;
 }
 
 // انتخاب دسته
@@ -1034,7 +1061,8 @@ if(preg_match('/^editDTCategory_(\d+)_(\d+)$/', $data, $m) && achbotAdminCanFor(
     $stmt->close();
 
     sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.7c7e281370'), null, 'HTML');
-    $data = "editDiscount".$discountId;
+    achbotDiscountAdminShow($connection,$discountId,isset($update->callback_query)?(int)$message_id:null);
+    return;
 }
 
 // انتخاب پلن
@@ -1049,14 +1077,15 @@ if(preg_match('/^editDTPlan_(\d+)_(\d+)$/', $data, $m) && achbotAdminCanFor($con
     $stmt->close();
 
     sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.cbc249f44a'), null, 'HTML');
-    $data = "editDiscount".$discountId;
+    achbotDiscountAdminShow($connection,$discountId,isset($update->callback_query)?(int)$message_id:null);
+    return;
 }
 
 // شروع ویرایش حداقل مبلغ
 if(preg_match('/^editD_(\d+)_minprice$/', $data, $m) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
 
-    setUser("editDiscountMinPrice{$discountId}");
+    if (!setUser("editDiscountMinPrice{$discountId}")) return;
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.06fba4d16a').
         \achbotMessage('payment.discount_administration.add_discount_code.message.2bf46895aa'),
@@ -1075,21 +1104,18 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     $v = (int)$text;
     $minPrice = $v > 0 ? $v : 0;
 
-    $stmt = $connection->prepare("UPDATE `discounts` SET `min_price` = ? WHERE `id` = ?");
-    $stmt->bind_param("ii", $minPrice, $discountId);
-    $stmt->execute();
-    $stmt->close();
-
-    if (!setUser()) return;
+    if (!achbotDiscountAdminWrite($connection,(int)$from_id,(int)$admin,$userInfo,$discountId,
+        'UPDATE `discounts` SET `min_price` = ? WHERE `id` = ?','ii',[$minPrice, $discountId])) return;
     sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.e996f76ad0'), $removeKeyboard, 'HTML');
-    $data = "editDiscount".$discountId;
+    achbotDiscountAdminShow($connection,$discountId,isset($update->callback_query)?(int)$message_id:null);
+    return;
 }
 
 // شروع ویرایش سقف تخفیف
 if(preg_match('/^editD_(\d+)_maxdiscount$/', $data, $m) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')){
     $discountId = (int)$m[1];
 
-    setUser("editDiscountMaxDiscount{$discountId}");
+    if (!setUser("editDiscountMaxDiscount{$discountId}")) return;
     sendMessage(
         \achbotMessage('payment.discount_administration.add_discount_code.message.516eca7a7b').
         \achbotMessage('payment.discount_administration.add_discount_code.message.ef6e2a0bbd'),
@@ -1108,21 +1134,18 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     $v = (int)$text;
     $maxDiscount = $v > 0 ? $v : 0;
 
-    $stmt = $connection->prepare("UPDATE `discounts` SET `max_discount` = ? WHERE `id` = ?");
-    $stmt->bind_param("ii", $maxDiscount, $discountId);
-    $stmt->execute();
-    $stmt->close();
-
-    if (!setUser()) return;
+    if (!achbotDiscountAdminWrite($connection,(int)$from_id,(int)$admin,$userInfo,$discountId,
+        'UPDATE `discounts` SET `max_discount` = ? WHERE `id` = ?','ii',[$maxDiscount, $discountId])) return;
     sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.81f7d3347d'), $removeKeyboard, 'HTML');
-    $data = "editDiscount".$discountId;
+    achbotDiscountAdminShow($connection,$discountId,isset($update->callback_query)?(int)$message_id:null);
+    return;
 }
 
 if (preg_match('/^editDRemoveUser(\d+)$/', $data, $m) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'operations')) {
     $discountId = (int)$m[1];
 
     // ذخیره step برای ادمین
-    setUser("removeDiscountUser" . $discountId);
+    if (!setUser("removeDiscountUser" . $discountId)) return;
 
     global $cancelKey;
 
@@ -1149,62 +1172,40 @@ if (isset($update->message->text) && !isset($update->callback_query) && preg_mat
 
     $userToRemove = (int)$userToRemove;
 
-    // گرفتن used_by و expire_count از جدول discounts
-    $stmt = $connection->prepare("SELECT `used_by`, `expire_count` FROM `discounts` WHERE `id` = ? LIMIT 1");
-    $stmt->bind_param("i", $discountId);
-    $stmt->execute();
-    $row = $stmt->get_result()->fetch_assoc();
-    $stmt->close();
-
-    if (!$row) {
-        if (!setUser()) return;
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.f145bd0b48'), $removeKeyboard, 'HTML');
+    $removedCount=0;$exists=false;
+    $closed=\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,'none',null,
+        static function(mysqli $db) use($from_id,$admin,$discountId,$userToRemove,&$removedCount,&$exists): void {
+            if (!achbotAdminCanLocked($db,(int)$from_id,(int)$admin,'operations'))
+                throw new DomainException('discount_editor_role_changed');
+            $row=achbotProviderRow($db,'SELECT used_by,expire_count FROM discounts WHERE id=? FOR UPDATE','i',[$discountId]);
+            if (!$row) return;
+            $exists=true;
+            $usedBy=$row['used_by']===null?[]:json_decode($row['used_by'],true,64,JSON_THROW_ON_ERROR);
+            if (!is_array($usedBy)) throw new RuntimeException('discount_history_invalid');
+            $filtered=array_values(array_filter($usedBy,static fn($uid)=>(int)$uid!==$userToRemove));
+            $removedCount=count($usedBy)-count($filtered);
+            if ($removedCount===0) return;
+            $count=(int)$row['expire_count'];
+            if ($count!==-1) $count=max(0,$count+$removedCount);
+            $q=achbotProviderStatement($db,'UPDATE discounts SET used_by=?,expire_count=? WHERE id=?','sii',
+                [json_encode($filtered,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$count,$discountId]);$q->close();
+        });
+    if (!$closed) return;
+    if (!$exists) {
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.f145bd0b48'),$removeKeyboard,'HTML');
         return;
     }
-
-    // تبدیل used_by به آرایه
-    $usedBy = !is_null($row['used_by']) ? json_decode($row['used_by'], true) : [];
-    if (!is_array($usedBy)) $usedBy = [];
-
-    $beforeCount = count($usedBy);
-
-    $filtered = [];
-    foreach ($usedBy as $uid) {
-        if ((int)$uid !== $userToRemove) {
-            $filtered[] = $uid;
-        }
-    }
-
-    $afterCount   = count($filtered);
-    $removedCount = $beforeCount - $afterCount;
-
-    if ($removedCount <= 0) {
-        if (!setUser()) return;
-        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.dcce341470'), $removeKeyboard, 'HTML');
+    if ($removedCount===0) {
+        sendMessage(\achbotMessage('payment.discount_administration.add_discount_code.message.dcce341470'),$removeKeyboard,'HTML');
+        achbotDiscountAdminShow($connection,$discountId);
         return;
     }
-
-    // آپدیت used_by
-    $encodeUsedBy = json_encode($filtered, JSON_UNESCAPED_UNICODE);
-
-    $expireCount = (int)$row['expire_count'];
-    if ($expireCount != -1) { 
-        $expireCount += $removedCount;
-        if ($expireCount < 0) $expireCount = 0;
-    }
-
-    $stmt = $connection->prepare("UPDATE `discounts` SET `used_by` = ?, `expire_count` = ? WHERE `id` = ?");
-    $stmt->bind_param("sii", $encodeUsedBy, $expireCount, $discountId);
-    $stmt->execute();
-    $stmt->close();
-
-    if (!setUser()) return;
     sendMessage(
-        \achbotMessage('payment.discount_administration.add_discount_code.message.660c08da0a', ['userToRemove' => $userToRemove, 'removedCount' => $removedCount]).
+        \achbotMessage('payment.discount_administration.add_discount_code.message.660c08da0a',['userToRemove'=>$userToRemove,'removedCount'=>$removedCount]).
         \achbotMessage('payment.discount_administration.add_discount_code.message.31e02058f4'),
-        $removeKeyboard,
-        "HTML"
-    );
+        $removeKeyboard,"HTML");
+    achbotDiscountAdminShow($connection,$discountId);
+    return;
 }
 
 // 🔄 فعال / غیرفعال کردن کد تخفیف

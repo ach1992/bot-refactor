@@ -156,7 +156,7 @@ function achbotAdminButtonCapability(string $key): string {
 /** Existing callback/state families, grouped by the same visible admin tasks.
  * A null result is a customer action and keeps its own current authorization. */
 function achbotAdminRequestCapability(string $value): ?string {
-    if ($value==='' || in_array($value,['none','mainMenu','evidenceHome','wizwizch'],true)) return null;
+    if ($value==='' || in_array($value,['none','mainMenu','navHome','evidenceHome','wizwizch'],true)) return null;
     $groups=[
         'admin'=>'~^managePanel$~D',
         'admins'=>'~^(?:adminsList|addNewAdmin|delAdmin|adminRole\\||adminAssign\\||adminNotify\\|)~D',
@@ -165,7 +165,7 @@ function achbotAdminRequestCapability(string $value): ?string {
         'gateways'=>'~^(?:gateWays_Channels|changeGateWays|changePaymentKeys|achbotPaymentKey\\||cycleGatewayAudience_|paymentPolicy|editPaymentPolicy_)~D',
         'bot_settings'=>'~^(?:botSettings|changeBot|changeConfigRemarkType|editSupportID|editRewardChannel|editLockChannel|inviteSetting|inviteBanner|editInvite|editRewaredTime|addExemptUser|removeExempt|achbotExempt:|ic\\||achbotInstance:)~D',
         'stats'=>'~^(?:botReports|show_stats_menu|stats_|top_50_|agent_users_list|plan_sales|server_sales|custom_sales_date|awaitingDateRange)~D',
-        'servers'=>'~^(?:serversSetting|nextServerPage|showServerSettings|toggleServerState|setServerState|addManagedServer|managePanelGroups|addPanelGroup|newPanelGroup|deletePanelGroup_|editPanelGroup|setServerPanelGroup_|changesServer|editServer|wizwizdeleteserver|yesDeleteServer|cancelDeleteServer|editSubLinks|subLinksInput|serverDisplay|achbotDisplay\\||achbotManage\\||achbotField\\||am\\||addServer|pg:|pgRotate|pgServerGroups)~D',
+        'servers'=>'~^(?:serversSetting|nextServerPage|showServerSettings|toggleServerState|setServerState|addManagedServer|managePanelGroups|addPanelGroup|newPanelGroup|deletePanelGroup_|editPanelGroup|setServerPanelGroup_|changesServer|editServer|wizwizdeleteserver|yesDeleteServer|cancelDeleteServer|editSubLinks|subLinksInput|serverDisplay|achbotDisplay\\||achbotManage\\||achbotField\\||am\\||addServer|pg:|pgRotateServerKey)~D',
         'plans'=>'~^(?:backplan|planDetails|plansList|togglePlanState|setPlanSale|confirmDeletePlan|cancelDeletePlan|newPlanForServer|addManagedPlan|planDays|planVolume|pgPlanGroups|categoriesSetting|nextCategoryPage|addNewCategory|wizwizcategory|wizwizplan|editCustom|volumePlanSettings|dayPlanSettings|addNewDayPlan|addNewVolumePlan|deleteDayPlan|deleteVolumePlan|changeDayPlan|changeVolumePlan|addon)~D',
         'agents'=>'~^(?:agentsList|nextAgentList|agentDetails|removeAgent|toggleUserAgent_|toggleOrderAgent_|agentPercentDetails|editAgentDiscount|nextAgentDiscount|addDiscountServerAgent|addDiscountPlanAgent|removePercentOfAgent|agencyApprove|agencyDecline|rejectedAgentList|releaseRejectedAgent)~D',
         'customers'=>'~^(?:userReports|userInfoDetails|quickUserDetails)~D',
@@ -180,9 +180,11 @@ function achbotAdminRequestCapability(string $value): ?string {
 function achbotAdminRequestAllowed(?string $callback,?string $text,string $step): bool {
     // Home/cancel always allows leaving a stale staff editor after demotion.
     // Callback message text is not fresh typed input and cannot provide escape.
-    if (in_array($callback,['mainMenu','evidenceHome'],true) ||
+    if (in_array($callback,['mainMenu','navHome','evidenceHome'],true) ||
+        preg_match('/^ph_[A-Za-z0-9_-]{1,50}$/D',(string)$callback) ||
         (($callback??'')==='' && $text!==null &&
          (preg_match('~^/[Ss]tart(?:@[A-Za-z0-9_]{1,32})?(?:\\s|$)~D',$text) ||
+          in_array($text,['/buy','/mysubs'],true) ||
           $text===achbotMessage('legacy_buttons.back_to_main') ||
           $text===achbotMessage('legacy_buttons.cancel')))) return true;
     foreach (array_unique([(string)$callback,$step]) as $value) {

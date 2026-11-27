@@ -136,6 +136,11 @@ def main():
         check('rotation_preserves_original_record',orig==sql("SELECT link,token,uuid FROM orders_list WHERE id=91"))
         r=call('link',order=91,rotate=True,id=400)
         check('same_update_get_only_recovery',r['result']=='shown' and server.write_count==1 and r['events'][0]['url'].endswith('/changed'))
+        previous_url=server.user['subscription_url']
+        server.user['subscription_url']=previous_url+'/external-change'
+        r=call('link',order=91,rotate=True,id=400)
+        check('changed_subscription_url_not_original_success',r['result']=='review' and server.write_count==1 and not r['events'])
+        server.user['subscription_url']=previous_url
         server.user['proxy_settings']={'vless':{'id':'external-change'}}
         r=call('link',order=91,rotate=True,id=400)
         check('changed_native_identity_not_original_success',r['result']=='review' and server.write_count==1 and not r['events'])

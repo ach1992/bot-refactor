@@ -23,7 +23,7 @@ if(in_array($data,['agentOneBuy','buySubscription','agentMuchBuy'],true)){
         $keyboard=[[
             ['text'=>\achbotMessage('legacy_buttons.agent_one_buy'),'callback_data'=>'agentOneBuy'],
             ['text'=>\achbotMessage('legacy_buttons.agent_much_buy'),'callback_data'=>'agentMuchBuy']
-        ],[['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>'mainMenu']]];
+        ],[['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>'navHome']]];
         sendMessage(\achbotMessage('admin_settings.config.get_callback_from_command.message.ce7759512b'),json_encode(['inline_keyboard'=>$keyboard]),'HTML');
         return;
     }
@@ -41,7 +41,7 @@ if(in_array($data,['agentOneBuy','buySubscription','agentMuchBuy'],true)){
     foreach($servers as $id=>$p){
         $keyboard[] = [['text'=>$p['server_flag'].' '.$p['server_title'],'callback_data'=>"selectServer{$id}_{$buyType}"]];
     }
-    $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"mainMenu"]];
+    $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.back_to_main'),'callback_data'=>"navHome"]];
     $markup=json_encode(['inline_keyboard'=>$keyboard]);
     if ($shortcut) sendMessage(\achbotMessage('legacy_messages.buy_sub_select_location'),$markup,'HTML');
     else editText($message_id, \achbotMessage('legacy_messages.buy_sub_select_location'), $markup);

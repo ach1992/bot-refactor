@@ -38,12 +38,14 @@ if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text
 
 require_once __DIR__.'/src/Panel/ProviderAdmin.php';
 require_once __DIR__.'/src/Admin/ManagementFlow.php';
-if (achbotHandleManagement()) return;
-if (achbotHandleManagementFields()) return;
 require_once __DIR__.'/src/Subscription/ServerDisplaySettings.php';
-if (achbotHandleServerDisplayAdmin()) return;
-require_once __DIR__.'/src/Panel/ProviderAdmin.php';
-if (achbotHandleProviderAdmin()) return;
+$ordinaryAdminHome=\AchBot\Telegram\Conversation\homeRequested($update,(int)$from_id);
+if (!$ordinaryAdminHome) {
+    if (achbotHandleManagement()) return;
+    if (achbotHandleManagementFields()) return;
+    if (achbotHandleServerDisplayAdmin()) return;
+    if (achbotHandleProviderAdmin()) return;
+}
 // Source-authenticated and IP-checked before any administrative moderation.
 if (handleToggleCallbacks($data??null,$chat_id??null,$message_id??null)) return;
 // Channel-exemption settings are admin-only and cannot execute before check().
@@ -80,20 +82,6 @@ if(is_numeric($checkSpam)){
 // Interpret genuine private shortcuts as Home navigation before payment-step dispatch.
 require_once __DIR__.'/src/Telegram/UserProfile.php';
 if (is_object($update->message??null) && achbotCustomerShortcut($update,(int)$from_id)!==null) $text='/start';
-
-// Reject malformed direct wallet callback frames before
-// another payment route can interpret a substring as a different action.
-if (is_string($data) && preg_match(
-    '/\Apay(?:Buy|Custom|Renew|IncreaseDay|Increase)WithWallet/',
-    $data, $paymentAction)) {
-    if (strlen($data) > 64 || !preg_match(
-        '/\A' . preg_quote($paymentAction[0], '/') . '[A-Za-z0-9_-]{1,50}\z/D',
-        $data)) {
-        answerCallbackQuery($callbackId,
-            \achbotMessage('bot.bot.webhook_ingress_authenticated.alert.d4b0660226'), true);
-        return;
-    }
-}
 
 if ((require __DIR__ . '/src/Finance/Routes/PrePayment.php') === null) return;
 // END Pre Pay Check By ACh
@@ -241,12 +229,25 @@ $paymentHomeMatch=[];
 $paymentHome=is_string($data) && preg_match('/^ph_([A-Za-z0-9_-]{1,50})$/D',$data,$paymentHomeMatch)===1;
 if (($isStart??false) || (!isset($update->callback_query) && ($text==='/start' ||
     $text===\achbotMessage('legacy_buttons.back_to_main'))) ||
-    $data==='mainMenu' || $data==='evidenceHome' || $paymentHome) {
+    $data==='mainMenu' || $data==='navHome' || $data==='evidenceHome' || $paymentHome) {
 
     $menuActor=(int)$from_id;
     require_once __DIR__.'/src/Telegram/Conversation.php';
     if (!\AchBot\Telegram\Conversation\source($update,$menuActor,isset($update->callback_query))) return;
-    $menuRow=\AchBot\Telegram\Conversation\transitionEditor($connection,$menuActor,$userInfo);
+    if (!isset($update->callback_query) && str_starts_with((string)($userInfo['step']??''),'achbotDirectGift')) {
+        // Only a fresh authenticated typed navigation may abandon an unsubmitted gift.
+        // A claimed/committed gift no longer has this wizard step.
+        require_once __DIR__.'/src/Subscription/DirectGift.php';
+        try {
+            $source=achbotDirectGiftWebhook($update,$menuActor,(int)$chat_id,(int)$message_id,$update->message->text??null,'message');
+            achbotDirectGiftCancel($connection,$source,(int)$admin,$userInfo['step']);
+            $menuRow=$userInfo;
+            $userInfo['step']='none';
+        } catch (Throwable $error) {
+            error_log('direct_gift_home_cancel_unconfirmed');
+            return;
+        }
+    } else $menuRow=\AchBot\Telegram\Conversation\transitionEditor($connection,$menuActor,$userInfo);
     if ($menuRow===null) return;
 
     require_once __DIR__.'/src/Telegram/UserProfile.php';
@@ -254,7 +255,12 @@ if (($isStart??false) || (!isset($update->callback_query) && ($text==='/start' |
     if (!in_array($menuRow['step'],['','none'],true))
         sendMessage(\achbotMessage('legacy_messages.operation_canceled'),$removeKeyboard,'HTML');
 
-    if ($customerShortcut===null && isset($data) && ($data == "mainMenu" || $data == "evidenceHome" || $paymentHome)) {
+    if ($customerShortcut===null && $data==='navHome') {
+        // This button is produced only for disposable catalogue/list screens.
+        if (\AchBot\Telegram\Conversation\verifiedCallback($update,$menuActor,(int)$message_id))
+            \AchBot\Telegram\Conversation\replaceTransient($menuActor,(int)$message_id,achbotCurrentMessage('start_message'),getMainKeys());
+        else sendMessage(achbotCurrentMessage('start_message'),getMainKeys(),'HTML');
+    } elseif ($customerShortcut===null && isset($data) && ($data == "mainMenu" || $data == "evidenceHome" || $paymentHome)) {
         // Legacy Home buttons can be on untracked financial/support evidence.
         // Always send the actor's own menu; never edit/delete the source or
         // read another customer's invoice merely to navigate Home.
@@ -315,7 +321,7 @@ if(isset($update->message) && !isset($update->callback_query) && preg_match('/^s
 // هندلر فروش در بازه دلخواه
 // این بخش باید در bot.php باشد تا بعد از require_once config.php و در مسیر اصلی ربات اجرا شود.
 if (isset($data) && $data == "custom_sales_date" && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    setUser("awaitingDateRange", "step");
+    if (!setUser("awaitingDateRange", "step")) return;
     sendMessage(
         \achbotMessage('bot.bot.webhook_ingress_authenticated.message.4e0fd88f4b') .
         \achbotMessage('bot.bot.webhook_ingress_authenticated.message.9c3afd43bd') .
@@ -329,19 +335,10 @@ if (isset($data) && $data == "custom_sales_date" && ($from_id == $admin || $user
 if (
     isset($userInfo['step']) &&
     $userInfo['step'] == "awaitingDateRange" &&
+    isset($update->message->text) && !isset($update->callback_query) &&
+    $text!==achbotMessage('legacy_buttons.cancel') &&
     ($from_id == $admin || $userInfo['isAdmin'] == true)
 ) {
-    if (isset($text) && $text == \achbotMessage('legacy_buttons.cancel')) {
-        setUser("none", "step");
-        sendMessage(\achbotMessage('bot.bot.webhook_ingress_authenticated.message.0108e71350'), $removeKeyboard, "HTML");
-        exit;
-    }
-
-    // اگر آپدیت فعلی callback بود، این بخش نباید متن تاریخ را پردازش کند.
-    if (isset($data) && !empty($data)) {
-        exit;
-    }
-
     $dateRange = trim($text ?? '');
     $dates = parseStatsDateRange($dateRange);
 

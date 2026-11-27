@@ -42,8 +42,8 @@ function achbotPgAdminReturn(string $step,string $notice): void {
     global $removeKeyboard;
     sendMessage($notice,$removeKeyboard??json_encode(['remove_keyboard'=>true]), 'HTML');
     $sid=0;$plan=0;
-    if (preg_match('/^pg:groups:(plan|server):([1-9][0-9]*)$/D',$step,$m)) {
-        if ($m[1]==='plan') $plan=(int)$m[2];else $sid=(int)$m[2];
+    if (preg_match('/^pg:groups:plan:([1-9][0-9]*)$/D',$step,$m)) {
+        $plan=(int)$m[1];
     } elseif (preg_match('/^pg:key:[1-9][0-9]*:([1-9][0-9]*)$/D',$step,$m)) $sid=(int)$m[1];
     if ($plan>0 && function_exists('getPlanDetailsKeys')) {
         sendMessage(\achbotMessage('admin_settings.management.plan_list'),getPlanDetailsKeys($plan), 'HTML');return;
@@ -86,7 +86,7 @@ function achbotPgAdminFinish(mysqli $db,string $step): void {
 function achbotHandleProviderAdmin(): bool {
     global $connection,$from_id,$admin,$userInfo,$data,$text,$cancelKey,$update,$message_id,$chat_id;
     $step=(string)($userInfo['step']??'');
-    $native=is_string($data??null) && preg_match('/^pg(?:RotateServerKey|RotateKey|ServerGroups|PlanGroups|ResetAccount)/D',$data);
+    $native=is_string($data??null) && preg_match('/^pg(?:RotateServerKey|PlanGroups|ResetAccount)/D',$data);
     if (!$native && !str_starts_with($step,'pg:')) return false;
     if (!((int)$from_id===(int)$admin || (int)($userInfo['isAdmin']??0)===1)) {
         alert(\achbotMessage('provider.provider_admin.handle_provider_admin.alert.057ec5448c'),true);return true;
@@ -125,26 +125,18 @@ function achbotHandleProviderAdmin(): bool {
             if (($r->success??false)!==true) throw new RuntimeException('pg_reset_requires_review');
             sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.b3a3ec95dd'), null, 'HTML');return true;
         }
-        if (preg_match('/^pg(RotateServerKey|RotateKey|ServerGroups|PlanGroups)([1-9][0-9]*)$/D',(string)$data,$m)) {
+        if (preg_match('/^pg(RotateServerKey|PlanGroups)([1-9][0-9]*)$/D',(string)$data,$m)) {
             $id=(int)$m[2];$mode=$m[1];
             if ($mode==='RotateServerKey') {
                 $panel=achbotPgServerPanel($connection,$id);
-                setUser('pg:key:'.(int)$panel['id'].':'.$id);
+                if (!setUser('pg:key:'.(int)$panel['id'].':'.$id)) return true;
                 sendMessage(\achbotMessage('admin_settings.management.shared_key_notice'),$cancelKey, 'HTML');return true;
             }
-            if ($mode==='RotateKey') {achbotProviderPanel($connection,$id);setUser('pg:key:'.$id);sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.bf4b28ea45'),$cancelKey, 'HTML');return true;}
-            if ($mode==='ServerGroups') {
-                // Legacy cached button: no native Groups are editable at server level.
-                sendMessage(\achbotMessage('admin_settings.management.plan_groups'), null, 'HTML');
-                return true;
-            }
-            $sid=$id;
-            if ($mode==='PlanGroups') {
-                $s=$connection->prepare('SELECT server_id FROM server_plans WHERE id=?');$s->bind_param('i',$id);$s->execute();$sid=(int)($s->get_result()->fetch_assoc()['server_id']??0);$s->close();
-            }
+            $s=achbotProviderStatement($connection,'SELECT server_id FROM server_plans WHERE id=?','i',[$id]);
+            $sid=(int)($s->get_result()->fetch_assoc()['server_id']??0);$s->close();
             $p=achbotPgServerPanel($connection,$sid);$r=achbotPgGroups($p);
             if (($r['success']??false)!==true) throw new RuntimeException('pg_groups_unverified');
-            setUser('pg:groups:plan:'.$id);
+            if (!setUser('pg:groups:plan:'.$id)) return true;
             $names=[];foreach ($r['groups'] as $g) if (!$g['is_disabled']) $names[]=$g['id'].' = '.$g['name'];
             sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.254f747510').htmlspecialchars(implode("\n",$names),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'),$cancelKey,'HTML');return true;
         }
@@ -153,7 +145,7 @@ function achbotHandleProviderAdmin(): bool {
         if (!is_object($msg) || ($msg->chat->type??'')!=='private' ||
             (int)($msg->from->id??0)!==(int)$from_id || (int)($msg->chat->id??0)!==(int)$from_id ||
             !is_string($msg->text??null) || $msg->text!==$text) throw new RuntimeException('pg_setup_private_message_required');
-        if (preg_match('/^pg:key:([1-9][0-9]*)(?::([1-9][0-9]*))?$/D',$step,$m)) {
+        if (preg_match('/^pg:key:([1-9][0-9]*):([1-9][0-9]*)$/D',$step,$m)) {
             $id=(int)$m[1];$p=achbotProviderPanel($connection,$id);
             $before=$p['api_key'];$p['api_key']=trim($text);$r=achbotPgCheck($p);
             if (($r['success']??false)!==true) throw new RuntimeException('pg_key_check_unverified');
@@ -176,12 +168,10 @@ function achbotHandleProviderAdmin(): bool {
             } catch (Throwable $error) {try{$connection->rollback();}catch(Throwable $ignored){}throw $error;}
             achbotPgAdminReturn($step,\achbotMessage('provider.provider_admin.handle_provider_admin.message.7a19204ab5'));return true;
         }
-        if (preg_match('/^pg:groups:(plan|server):([1-9][0-9]*)$/D',$step,$m)) {
-            if ($m[1]!=='plan') throw new RuntimeException('pg_server_native_groups_retired');
-            $id=(int)$m[2];$sid=$id;
-            if ($m[1]==='plan') {
-                $s=$connection->prepare('SELECT server_id FROM server_plans WHERE id=?');$s->bind_param('i',$id);$s->execute();$sid=(int)($s->get_result()->fetch_assoc()['server_id']??0);$s->close();
-            }
+        if (preg_match('/^pg:groups:plan:([1-9][0-9]*)$/D',$step,$m)) {
+            $id=(int)$m[1];
+            $s=achbotProviderStatement($connection,'SELECT server_id FROM server_plans WHERE id=?','i',[$id]);
+            $sid=(int)($s->get_result()->fetch_assoc()['server_id']??0);$s->close();
             $panel=achbotPgServerPanel($connection,$sid);
             $table='server_plans';
             $s=$connection->prepare("SELECT provider_group_ids FROM $table WHERE id=?");
@@ -219,6 +209,12 @@ function achbotHandleProviderAdmin(): bool {
         throw new RuntimeException('pg_setup_step_invalid');
     } catch (Throwable $error) {
         error_log('achbot_pg_admin_action_deferred class='.get_class($error));
-        sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.6d701e69e5'),$cancelKey, 'HTML');return true;
+        $keys=null;
+        try {
+            $current=achbotProviderRow($connection,'SELECT step FROM users WHERE userid=? LIMIT 1','i',[(int)$from_id]);
+            if ($current && $current['step']===$step && str_starts_with($step,'pg:') &&
+                achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'servers')) $keys=$cancelKey;
+        } catch (Throwable $ignored) {}
+        sendMessage(\achbotMessage('provider.provider_admin.handle_provider_admin.message.6d701e69e5'),$keys, 'HTML');return true;
     }
 }

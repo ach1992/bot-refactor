@@ -33,7 +33,7 @@ EXPECTED_SHA256 = "371c4da8b98ab3d88b4ecb167f7010f992c9cfbca4b23eaa51c34a5a28eba
 # Independent of the ten sendMessage call-site fingerprints: executable PHP
 # tokens from the owning conditional through the send retain reviewed control
 # flow. Whitespace/comments are deliberately ignored.
-EXPECTED_UID_PATH_SHA256 = "15a8a6e5321add50aaefdbac4ba43276f5a053d734f0cf48638a09ca0301e90d"
+EXPECTED_UID_PATH_SHA256 = "85b35946e2f94b133dff8089e75404a2dfd782c18d867711f43f5585bc45c011"
 
 
 

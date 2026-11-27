@@ -105,7 +105,7 @@ if (
 
     $keyboard[] = [[
         'text' => \achbotMessage('legacy_buttons.back_to_main'),
-        'callback_data' => "mainMenu"
+        'callback_data' => "navHome"
     ]];
 
     if (($customerShortcut??null)!=='mysubs') {
@@ -194,11 +194,11 @@ if (preg_match('/^(updateConfigConnectionLink|changAccountConnectionLink)([1-9][
             achbotMessage('subscription.customer_routes.cancel_search_keyboard.success_message.6d1ad0af39');
         sendMessage($heading."\n\n".achbotMessage('subscription.customer_routes.link_update_advice'),null,'HTML');
     } elseif ($result==='denied') {
-        alert(achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'),true);
+        sendMessage(achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.724ff90245'),null,'HTML');
     } elseif ($result==='view_unconfirmed') {
         sendMessage(achbotMessage('subscription.customer_routes.link_view_unconfirmed'),null,'HTML');
     } elseif ($rotate) {
-        alert(achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.001c06ff23'),true);
+        sendMessage(achbotMessage('subscription.customer_routes.cancel_search_keyboard.alert.001c06ff23'),null,'HTML');
     } else {
         sendMessage(achbotMessage('subscription.customer_routes.cancel_search_keyboard.error_message.496a7eede8').
             achbotMessage('subscription.customer_routes.cancel_search_keyboard.text.fd5bccf56e').

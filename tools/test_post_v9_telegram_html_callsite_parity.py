@@ -109,14 +109,14 @@ PLAIN = re.compile(r"""\Anull\Z""", re.I)
 # then use --print-audit to propose the new digest for an independent review.
 # A changed count, key order, parsed argument, or literal catalog text fails CI.
 AUDITED = {
-    'src/Finance/Routes/DiscountAdministration.php': (53, '7bc0e8f5f6f92734b9b232881893346de43ad1007d70a863c2dc7226e5f4c744'),
+    'src/Finance/Routes/DiscountAdministration.php': (55, '1e7deda493957a08c6ecb43897c3cad7c66d9249fa0350685201a59b810cc42f'),
     'src/Plans/Intervals.php': (13, '57b3a0e239d448b46404fc7af0fb56944d4e902b71962958836ff155dd14a666'),
     'src/Plans/Administration.php': (13, 'ca9721526e4152fd04ddca631db4c92f613a8bf620df73502a28ab41c4060007'),
     'src/Plans/AddonAdmin.php': (5, '77eb5d7a03d05ab9da955a61f38be342857f3d08f620ec7d0c07b6f1cac1bc22'),
     'src/Plans/Categories.php': (3, 'f5e5f232dab62ecb5bd39adf2a808bf03672d109e5d58f9a8eff2ab1b387f82e'),
-    'bot.php': (84, '8f98b77458328ab6180c91efece483ef7042579a4d5a1ee34c615aa1b0db009d'),
-    'config.php': (9, '45bf623a42aff594f2b1274f704da504c4901456d82a2e97cfed682d983c6c72'),
-    'src/Subscription/CustomerRoutes.php': (11, '9e1c9bc100ed816666f6728b1b24d163daed570554042a75cfb60e6738b9f64b'),
+    'bot.php': (83, 'c977c1a485368d00cd47a72bd79187397f47d80a6753f039b77e7310feace305'),
+    'config.php': (9, 'dbaf1ae680155d7ef586812945559d5101f122856ef9bf96f14f30e57a096395'),
+    'src/Subscription/CustomerRoutes.php': (13, 'e7bcb1144c28ed3eb81f885cb2ca7cd7efa2c779365b6ffdaa21a97d26f34d80'),
     'src/Purchase/Catalogue.php': (11, '1a544aae8fc0b43153f4d553abebd24fb655379b1cdae7aff355051673baf143'),
     'src/Purchase/EntryAndBulk.php': (14, 'c59df040c3867082ab25daeb848352660278b80e56cf06da4fa05867448a5fc1'),
     'src/Purchase/SelectPlan.php': (5, '8d30395245f8a0430e0bf576691eb2c589484a38942b1b5577ec999d22c5a19d'),
@@ -139,7 +139,7 @@ AUDITED = {
     'src/Finance/Routes/RenewalCheckout.php': (3, '9d873db4993b88b092836c969c076e17954f4891b7add7324c578b121aca376d'),
     'src/Finance/Routes/WalletRecharge.php': (6, 'e744032b77cae5cb419a1eb38bc79a265314e2a3ab1271f0f8c392abe8d637e6'),
     'src/Finance/Routes/WalletTransfer.php': (13, '08b78de4a9ec758301b184ff78384095064c18d2f284557753fce60af6de63e3'),
-    'src/Panel/ProviderAdmin.php': (8, '83172b94fa08ca51589c44a38ffcaf4fe458f549a2dde5a9e01f5b26d807102a'),
+    'src/Panel/ProviderAdmin.php': (6, '7db5ce42cacaf001659f5371a2dadb045d4ff8461cca83c02e2b9e678da86776'),
     'src/Subscription/ExternalAccounts.php': (4, '4f0b987cfd63ac45858aa292c5eaa54faed9f0f722b0315ce4e88b10bd2240bf'),
     'src/Subscription/ManualAccounts.php': (2, '478b9ee6891fa454375d79a200ce0f5309b198e5d6394dbab5dece0e022eb70f'),
     'src/Subscription/ServerDisplaySettings.php': (2, 'd61d0711698c58159189fd9a69146bd35fc1f5687a5326a571406d36a6b398a9'),

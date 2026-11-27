@@ -157,6 +157,11 @@ foreach (['managePanelGroups','addPanelGroup','newPanelGroup','deletePanelGroup_
     'editPanelGroup2','setServerPanelGroup_2_0'] as $current) {
     yes(achbotAdminRequestCapability($current)==='servers','current_group_capability_'.$current);
 }
+foreach (['pgServerGroups2','pgRotateKey10'] as $old) {
+    $data=$old;$userInfo=['step'=>'none'];
+    yes(achbotHandleProviderAdmin()===false,'retired_provider_route_inert_'.$old);
+    yes(achbotAdminRequestCapability($old)===null,'retired_provider_capability_absent_'.$old);
+}
 $data='';
 $groupManagement=callbacks(getPanelGroupsManagementKeys());
 containsAll($groupManagement,[
@@ -184,6 +189,14 @@ containsAll($pgPlanKeyboard,['pgPlanGroups42'],
 noCallbacks($pgPlanKeyboard,'/^editPanelGroup/',
     'physical_group_changes_never_start_from_pg_plan_access');
 $before=$connection->query('SHOW CREATE TABLE server_info')->fetch_row()[1];
+$userInfo=$connection->query('SELECT * FROM users WHERE userid=9001')->fetch_assoc();
+$data='pgPlanGroups999';$text='';$events=[];
+$update=(object)['update_id'=>98,'callback_query'=>(object)['data'=>$data,'from'=>(object)['id'=>9001],
+    'message'=>(object)['message_id'=>10,'chat'=>(object)['id'=>9001,'type'=>'private']]]];
+yes(achbotHandleProviderAdmin()===true,'unavailable_provider_request_consumed');
+yes(count($events)===1 && $events[0][1]===null,'unavailable_provider_start_no_cancel_keyboard');
+$data='';$text=null;
+
 $events=[];achbotServerDisplayShow($connection,2);
 yes(str_contains($events[0][0],'PG &lt;title&gt;') && !str_contains($events[0][0],'PG <title>') &&
     $events[0][2]==='HTML','display editor identifies and escapes the server');
@@ -208,25 +221,25 @@ foreach ([
     containsAll(callbacks($events[1][1]),[$target],'cancel returns to edited object');
     yes(!str_contains(json_encode($events),'private-draft-not-echoed'),'cancel never echoes private state');
 }
-$connection->query("UPDATE users SET step='pg:groups:server:2',isAdmin=0 WHERE userid=9002");
-$from_id=$chat_id=9002;$userInfo=['step'=>'pg:groups:server:2','isAdmin'=>1];$data='';$text=$buttonValues['cancel'];
+$connection->query("UPDATE users SET step='pg:groups:plan:42',isAdmin=0 WHERE userid=9002");
+$from_id=$chat_id=9002;$userInfo=['step'=>'pg:groups:plan:42','isAdmin'=>1];$data='';$text=$buttonValues['cancel'];
 $update=(object)['update_id'=>200,'message'=>(object)['message_id'=>10,'text'=>$buttonValues['cancel'],
     'from'=>(object)['id'=>9002],'chat'=>(object)['id'=>9002,'type'=>'private']]];
 yes(achbotHandleProviderAdmin()===true,'revoked cached administrator receives safe response');
-yes($connection->query('SELECT step FROM users WHERE userid=9002')->fetch_row()[0]==='pg:groups:server:2',
+yes($connection->query('SELECT step FROM users WHERE userid=9002')->fetch_row()[0]==='pg:groups:plan:42',
     'revoked administrator cannot mutate state');
-$from_id=$chat_id=9001;$userInfo=['step'=>'pg:groups:server:2','isAdmin'=>1];
+$from_id=$chat_id=9001;$userInfo=['step'=>'pg:groups:plan:42','isAdmin'=>1];
 $connection->query("UPDATE users SET step='protected-new-flow',temp='keep' WHERE userid=9001");
 $update=(object)['update_id'=>201,'message'=>(object)['message_id'=>10,'text'=>$buttonValues['cancel'],
     'from'=>(object)['id'=>9001],'chat'=>(object)['id'=>9001,'type'=>'private']]];
 yes(achbotHandleProviderAdmin()===true,'stale cancel consumed without generic fallthrough');
 yes($connection->query('SELECT step FROM users WHERE userid=9001')->fetch_row()[0]==='protected-new-flow',
     'stale cancel preserves newer workflow');
-$connection->query("UPDATE users SET step='pg:groups:server:2' WHERE userid=9001");
-$userInfo['step']='pg:groups:server:2';
+$connection->query("UPDATE users SET step='pg:groups:plan:42' WHERE userid=9001");
+$userInfo['step']='pg:groups:plan:42';
 $update->message->from->id=1001;
 yes(achbotHandleProviderAdmin()===true,'forged sender rejected');
-yes($connection->query('SELECT step FROM users WHERE userid=9001')->fetch_row()[0]==='pg:groups:server:2',
+yes($connection->query('SELECT step FROM users WHERE userid=9001')->fetch_row()[0]==='pg:groups:plan:42',
     'forged cancel makes no write');
 yes($connection->query('SHOW CREATE TABLE server_info')->fetch_row()[1]===$before,'no schema mutation by menus or cancellation');
 echo json_encode(['complete'=>true,'checks'=>$checks,'network_calls'=>0,

@@ -54,18 +54,18 @@
   "baseline": "484c80e6ee030e8656da96edc3000311d10327b5",
   "changes": {
     "bot.php": {
-      "reason": "F7 retire unsupported shared availability, F8 dispatch authenticated shortcuts through canonical Home and customer routes; F6 denied content reads do not send values #209: 3 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged. #51: remove retired bank timer prompt branch; preserve reward report editor.; Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts. Combine first-start welcome and Home, preserving only Telegram-length fallback; #236. #236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation. #236: Shared actor-owned Home/cancel and durable combined welcome, replacing direct unsolicited notice.; #236 terminal lifecycle: Typed-input ownership, terminal reply-keyboard removal, idle cancellation and separate retained report prompt.",
+      "reason": "Classified disposable Home reuses the current screen; stale editor navigation and old wallet branches removed.",
       "before_count": 200,
-      "after_count": 166,
+      "after_count": 165,
       "before_sha256": "cff48d8a700a865d62d8c96389da43e7a2d34431deff1f650f3bd4b107808baa",
-      "after_sha256": "5587d349be2f96d4620962a260e3c2a05d313b62986b626cccc694d92586e176"
+      "after_sha256": "2b2f3a60409f0301d51a19df011da00838cc2259c9ac5a662d1910e076b8ef99"
     },
     "config.php": {
-      "reason": "F8 remove duplicate configuration-time shortcut dispatch; F7 retire shared availability toggle; #236 terminal lifecycle: Retire the unused bootstrap cancellation callback; shared editor completion.",
+      "reason": "Current exemption editor cancel consumes nonce without policy write; actual input prompt carries cancel keyboard.",
       "before_count": 23,
-      "after_count": 17,
+      "after_count": 18,
       "before_sha256": "f10f2b6ae51d9503f2cce6cb4dbf30d12caed7abc89c91dba6688e931cbaae20",
-      "after_sha256": "86f7fb5cbfa46611c1a16d4cd969d9c538ce994c9a86cc5c840402679a258f8f"
+      "after_sha256": "4c5adc3ddf0c4257c9f9bffea2b59879fd9cac4b02faaeb30e78a90ca83ce997"
     },
     "pay/checkout.php": {
       "after_count": 0,
@@ -299,11 +299,11 @@
       "reason": "Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts."
     },
     "src/Panel/ProviderAdmin.php": {
-      "after_count": 10,
-      "after_sha256": "d3c56c52a905a030b6bb9c88972307ba03c03a963106988cf36c8417a78e6050",
+      "reason": "Retire unreachable provider aliases; only a current input editor has cancel markup.",
       "before_count": 10,
+      "after_count": 8,
       "before_sha256": "82569d44e2178d362da7d253e7be45b7ac82450d7ad6f1e58946ceaa6e96b278",
-      "reason": "#209: 1 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged.; Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts."
+      "after_sha256": "60be6a2ea38d5936ecffd4917ea131b8eb815f4e3eb953a6e5daa3f1a8f60007"
     },
     "src/Plans/AddonAdmin.php": {
       "after_count": 7,
@@ -383,11 +383,11 @@
       "reason": "Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts."
     },
     "src/Subscription/CustomerRoutes.php": {
-      "after_count": 15,
-      "after_sha256": "8601d4b58a34db50e3d3abced277b405d260b3375fc2ade3bbc3ad4c753eb115",
+      "reason": "Report action failure visibly after callback is already acknowledged.",
       "before_count": 23,
+      "after_count": 17,
       "before_sha256": "3dd3773833d6d1001eb2967ff89317f8e1db3902af1e9921d5644a5aac9dd877",
-      "reason": "F8 send own subscription menu for a genuine shortcut #236: Unique scoped literal search and verified link view before exact approved success advice."
+      "after_sha256": "4df4085447c20b591c17e09d2d5ee358ab0583744e513295a0edaa2ca1294299"
     },
     "src/Subscription/Delivery.php": {
       "after_count": 2,
@@ -495,11 +495,11 @@
       "after_sha256": "13f9a9e614fce1609438ba4417f3f35453f623bb20c386bdca8e6fe2892f64b7"
     },
     "src/Finance/Routes/DiscountAdministration.php": {
-      "reason": "#236 terminal lifecycle: Remove completed discount editors reply keyboard, retain retry prompts.",
+      "reason": "Atomic current discount editor, explicit terminal keyboard removal and shared detail projection.",
       "before_count": 70,
-      "after_count": 70,
+      "after_count": 73,
       "before_sha256": "b4eb8bec5d1aa1d4317012268e5e41d537181dd2bf4b7b50b2d3547b4783af23",
-      "after_sha256": "2c979b31bef136c84f5d34f72a7f5bfab8276d17b3519a951a463e52bbb9c657"
+      "after_sha256": "61691c8a309b0f78ca73dfe00b258598443f2b5e387cb9ee44cd694ec2fa67e0"
     }
   },
   "removed": [
