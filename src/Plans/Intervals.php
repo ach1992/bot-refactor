@@ -101,11 +101,12 @@ if ($achbotIntervalOwned) {
 
 /** Serialize add-on writes with a fresh admin and the exact current editor. */
 function achbotIntervalWrite(mysqli $db,string $sql,string $types,array $params,bool $clear=true,?string $next=null,
-                             ?array $flow=null,bool $requireAffected=false): bool {
+                             ?array $flow=null,bool $requireAffected=false,?array $offerChange=null): bool {
     global $from_id,$admin,$userInfo,$update;
     $actor=(int)$from_id;$GLOBALS['achbotIntervalWriteUncertain']=false;
     try {
-        if (!$db->begin_transaction()) throw new RuntimeException('interval_write_begin');
+        if (!($offerChange===null?$db->begin_transaction():achbotAddonBeginRangeTransaction($db)))
+            throw new RuntimeException('interval_write_begin');
         $q=$db->prepare('SELECT id,userid,isAdmin,step,temp FROM users WHERE userid=? LIMIT 2 FOR UPDATE');
         $q->bind_param('i',$actor);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
         if (count($rows)!==1 || $rows[0]['step']==='banned' ||
@@ -119,7 +120,7 @@ function achbotIntervalWrite(mysqli $db,string $sql,string $types,array $params,
             (!is_int($stored['source']??null) || ($update->update_id??0)<=$stored['source'])) {
             $db->rollback();return false;
         }
-        $step=$rows[0]['step'];
+        $step=$rows[0]['step'];$offer=null;$kind=null;
         if ($step!=='none' && !preg_match('/^(?:changeDayPlan(?:Price|Day)[1-9][0-9]*_[a-f0-9]{20}|changeVolumePlan(?:Price|Volume)[1-9][0-9]*_[a-f0-9]{20}|addon:[a-z]+)$/D',$step)) {
             $db->rollback();return false;
         }
@@ -143,7 +144,24 @@ function achbotIntervalWrite(mysqli $db,string $sql,string $types,array $params,
             if (!$offer || !hash_equals(achbotAddonOfferRevision($kind,$offer),$target[3])) {
                 $db->rollback();return false;
             }
-            if ($sql!=='') $requireAffected=true;
+            if ($sql!=='') $requireAffected=str_starts_with($sql,'DELETE ');
+        }
+        // The scope editor keeps the original row revision in its stored
+        // flow. Check it again at save, not the stale/generated hash.
+        if ($sql!=='' && ($stored['flow']['action']??null)==='edit' && str_starts_with($step,'addon:')) {
+            $original=$stored['flow']['original']??[];
+            $kind=$stored['flow']['kind']??'';
+            $table=achbotAddonTable($kind);$offerId=$original['id']??0;
+            $q=$db->prepare("SELECT * FROM $table WHERE id=? FOR UPDATE");
+            $q->bind_param('i',$offerId);$q->execute();$offer=$q->get_result()->fetch_assoc();$q->close();
+            if (!$offer || !is_string($original['revision']??null) ||
+                !hash_equals(achbotAddonOfferRevision($kind,$offer),$original['revision'])) {
+                $db->rollback();return false;
+            }
+        }
+        if ($sql!=='' && $offerChange!==null) {
+            $kind??=$offerChange['kind']??null;
+            achbotAddonCheckWriteLocked($db,$kind,$offer,$offerChange);
         }
         if ($sql!=='') {
             $q=$db->prepare($sql);
@@ -166,7 +184,9 @@ function achbotIntervalWrite(mysqli $db,string $sql,string $types,array $params,
     } catch (Throwable $error) {
         try {$db->rollback();} catch (Throwable $ignored) {}
         $GLOBALS['achbotIntervalWriteUncertain']=$error instanceof RuntimeException && $error->getMessage()==='interval_write_commit_unknown';
-        error_log('achbot_interval_write_deferred');return false;
+        achbotDiagnosticEvent('achbot.addon.admin_write_deferred',[
+            'actor_id'=>$actor,'operational_ref'=>'telegram_update:'.(int)($update->update_id??0)]+achbotDiagnosticLocalFailure($error),'warning');
+        return false;
     }
 }
 
@@ -189,8 +209,13 @@ function achbotIntervalShow(mysqli $db,string $kind,?int $editMessageId=null): v
         $keys[]=[['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>achbotAddonOfferCallback($day?'deleteDayPlan':'deleteVolumePlan',$kind,$row)],
             ['text'=>number_format($row['price']).\achbotMessage('labels.currency_toman_suffix'),'callback_data'=>achbotAddonOfferCallback($day?'changeDayPlanPrice':'changeVolumePlanPrice',$kind,$row)],
             ['text'=>(string)$row['volume'],'callback_data'=>achbotAddonOfferCallback($day?'changeDayPlanDay':'changeVolumePlanVolume',$kind,$row)]];
-        $scope=achbotAddonScopeRow($row);
-        $keys[]=[['text'=>achbotAddonAdminScopeLabel($scope),
+        try { $scopeLabel=achbotAddonAdminScopeLabel(achbotAddonScopeRow($row)); }
+        catch (RuntimeException $error) {
+            $scopeLabel=achbotMessage('addon_scopes.choose_scope');
+            achbotDiagnosticEvent('achbot.addon.admin_scope_deferred',[
+                'operational_ref'=>'addon:'.$kind.':'.(int)$row['id']]+achbotDiagnosticLocalFailure($error),'warning');
+        }
+        $keys[]=[['text'=>$scopeLabel,
             'callback_data'=>achbotAddonOfferCallback('addonEditScope'.($day?'Day':'Volume'),$kind,$row)]];
     }
     $keys[]=[['text'=>$day?\achbotMessage('plans.intervals.day_plan_settings.button.4e0a1e41c8'):\achbotMessage('plans.intervals.volume_plan_settings.button.a3524cb835'),'callback_data'=>$day?'addNewDayPlan':'addNewVolumePlan']];
@@ -230,9 +255,9 @@ if(preg_match('/^changeDayPlanDay([1-9][0-9]*)_[a-f0-9]{20}$/D',$data,$match) an
     exit;
 }
 if($achbotIntervalMessage && preg_match('/^changeDayPlanDay([1-9][0-9]*)_[a-f0-9]{20}$/D',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) and $text != \achbotMessage('legacy_buttons.cancel')) {
-    $days=achbotWholeServiceUnits($text,achbotServiceDaysMax());
+    $days=achbotCatalogServiceUnits($text,achbotServiceDaysMax());
     if ($days===null) {sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.a2684ce4cc'),$cancelKey, 'HTML');return;}
-    if (!achbotIntervalWrite($connection,"UPDATE `increase_day` SET `volume` = ? WHERE `id` = ?",'ii',[$days,(int)$match[1]],true)) {achbotIntervalWriteNotice();return;}
+    if (!achbotIntervalWrite($connection,"UPDATE `increase_day` SET `volume` = ? WHERE `id` = ?",'ii',[$days,(int)$match[1]],true,null,null,false,['volume'=>$days])) {achbotIntervalWriteNotice();return;}
     sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.d03501095b'),$removeKeyboard, 'HTML');
     achbotIntervalShow($connection,'day');
 }
@@ -264,7 +289,7 @@ if(preg_match('/^changeVolumePlanVolume([1-9][0-9]*)_[a-f0-9]{20}$/D',$data) and
 if($achbotIntervalMessage && preg_match('/^changeVolumePlanVolume([1-9][0-9]*)_[a-f0-9]{20}$/D',$userInfo['step'], $match) and $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
     $volume=achbotCatalogServiceUnits($text,achbotServiceVolumeMax());
     if ($volume===null) {sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.a2684ce4cc'),$cancelKey, 'HTML');return;}
-    if (!achbotIntervalWrite($connection,"UPDATE `increase_plan` SET `volume` = ? WHERE `id` = ?",'ii',[$volume,(int)$match[1]],true)) {achbotIntervalWriteNotice();return;}
+    if (!achbotIntervalWrite($connection,"UPDATE `increase_plan` SET `volume` = ? WHERE `id` = ?",'ii',[$volume,(int)$match[1]],true,null,null,false,['volume'=>$volume])) {achbotIntervalWriteNotice();return;}
     sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.d03501095b'),$removeKeyboard, 'HTML');
     achbotIntervalShow($connection,'volume');
 }

@@ -93,6 +93,26 @@ function achbotGatewayRuleExemptUsersDecode($raw): ?array {
     }
     return $raw;
 }
+/** Optional method cap. Missing/null/zero is unlimited, invalid explicit
+ * value is not. Accept decimal strings from ordinary direct SQL JSON edits. */
+function achbotGatewayAmountNumber($value): ?int {
+    if (is_int($value)) return $value>=0?$value:null;
+    if (!is_string($value) || preg_match('/\A[0-9]+\z/D',trim($value))!==1) return null;
+    $digits=ltrim(trim($value),'0');
+    if ($digits==='') return 0;
+    $n=filter_var($digits,FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
+    return $n===false?null:$n;
+}
+function achbotGatewayAmountLimit(array $states,string $method): ?int {
+    $map=$states['gatewayMaxAmountToman']??[];
+    if (!is_array($map) || ($map && array_is_list($map))) return null;
+    return achbotGatewayAmountNumber($map[$method]??0);
+}
+function achbotGatewayAmountAllowed(array $states,string $method,int $price): bool {
+    $limit=achbotGatewayAmountLimit($states,$method);
+    return $price>=0 && $limit!==null && ($limit===0 || $price<=$limit);
+}
+
 function achbotGatewayRuleMatchesUser(mysqli $db,int $userId,array $rule,
                                       array $user,bool $final,int $now): bool {
     $category=$rule['category'];

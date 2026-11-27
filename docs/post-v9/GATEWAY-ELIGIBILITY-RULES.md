@@ -6,9 +6,9 @@ authorizing installed tests.
 
 ## Scope and data model
 
-Registered payment methods share the **same protected authorization
-entrypoint** `achbotPayUxAudienceAllowed()` in
-`src/Finance/PaymentLifecycle.php`. The feature uses existing
+Registered payment methods share `achbotCheckoutMethodAllowedLocked()` in
+`src/Finance/CheckoutAdmission.php` for the original checkout amount and
+`achbotPayUxAudienceAllowedInState()` for current audience and enable flags. The feature uses existing
 `setting.type=BOT_STATES`, `users`, `pays` and `orders_list` rows and
 existing indexed reads; **no new table, migration, provider network call or
 historical backfill**.
@@ -39,6 +39,20 @@ historical backfill**.
   null is invalid and is rejected in previews, final payment authorization,
   administrator pages and authenticated policy writes without advancing
   their source watermark.
+- Optional `BOT_STATES.gatewayMaxAmountToman` is a map of independent
+  method ceilings, e.g. `{"bank_transfer":500000}`. Missing/null/zero means
+  unlimited. Positive integral Toman values (including decimal strings
+  directly edited in JSON) are inclusive maximums. Invalid explicit values
+  deny the affected method; a malformed map denies new monetary checkout
+  rather than silently bypassing configured policy. The cap is an AND
+  condition outside audience rules and exemptions, applied to the final
+  discounted original invoice amount (bulk total, recharge amount, renewal
+  or extension), not the randomized bank transfer amount, converted currency
+  or individual item price. Zero-price service paths remain nonmonetary.
+  Display and first admission use the same locked current setting; a prior
+  admitted/issued invoice retains original settlement eligibility. Scheduled
+  automatic renewal is a separate no-invoice wallet service command under
+  its existing independently configured policy, not method selection.
 - `BOT_STATES.gatewayRules` is optional and versioned:
   `{"version":1,"methods":{"wallet":[{"category":"non_agents","enabled":true,"registration_age_days":90,"metrics":{"buy":{"count":5,"days":90,"direction":"older"},"renew":{"count":0,"days":0,"direction":"older"},"volume":{"count":0,"days":0,"direction":"older"},"time":{"count":0,"days":0,"direction":"older"},"topup":{"count":0,"days":0,"direction":"older"}}}]}}`.
   **The example numbers are not defaults or UI limits.** All count and day
@@ -109,7 +123,15 @@ confirmations and revoked/non-admin/wrong-chat actions fail closed.
 The eligibility menu appears in the main administrator menu below the
 operations-attention entry, for Owner, Manager and Operator (not
 Support), independently of the Manager-only general gateway/settings menu.
-Each payment method has a single «معاف کاربر از قوانین» button immediately
+Each method has a «سقف مبلغ پرداخت» row, displaying the current amount or
+«بدون محدودیت». Open it, enter a nonnegative whole Toman amount (0 removes
+the limit); numeric input stages the amount and presents the existing
+bound Save/Cancel confirmation. Save commits the exact normalized value
+and returns to the current method menu; Cancel preserves the old cap.
+A separate «بدون محدودیت» action clears a configured cap. Both are
+field-revision bound, so direct edits to another method are preserved and a
+stale same-method editor cannot overwrite a new value. No schema migration
+is required for this setting. Each payment method has a single «معاف کاربر از قوانین» button immediately
 before Back. It opens a signed private input for one or more positive decimal
 IDs separated by whitespace or commas; prefixing IDs with - removes them
 from the same method's exemption list. Duplicates are ignored, invalid batches

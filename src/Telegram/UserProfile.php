@@ -70,8 +70,11 @@ function achbotCustomerShortcut($update,int $actor): ?string {
         $command=$m[1]?:$m[2];
     } elseif (is_object($callback) && !is_object($message)) {
         $sender=$callback->from??null;$chat=$callback->message->chat??null;
-        if (!preg_match('~\AhaveJoined/start (buy|mysubs)\z~D',(string)($callback->data??''),$m)) return null;
-        $command=$m[1];
+        $command=match($callback->data??null) {
+            'shortcutBuy'=>'buy', 'shortcutMySubs'=>'mysubs',
+            default=>preg_match('~\AhaveJoined/start (buy|mysubs)\z~D',(string)($callback->data??''),$m)?$m[1]:null
+        };
+        if ($command===null) return null;
     } else return null;
     if ($actor<=0 || ($sender->id??null)!==$actor || ($sender->is_bot??false)===true ||
         ($chat->type??null)!=='private' || ($chat->id??null)!==$actor) return null;

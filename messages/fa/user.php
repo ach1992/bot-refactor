@@ -161,6 +161,7 @@ return [
 
     // ── کیف پول و انتقال موجودی ──
     'wallet' => [
+        'topup_success' => ['text'=>"✅ افزایش حساب شما با موفقیت تایید شد.\n💰 مبلغ <b>{amount} تومان</b> به کیف پول شما اضافه شد.\n🧰 جهت <b>استفاده از موجودی</b> روی یکی از دکمه های زیر بزنید. همچنین اگر اشتراک دارید می توانید <b>تمدید خودکار</b> را برای آن <b>روشن</b> کنید.\n\n💬 پشتیبانی: {supportID}",'parameters'=>['amount','supportID']],
         // admin_wallet.admin_wallet_report_result
         'admin_wallet.admin_wallet_report_result.customer.a5b15e454e' => '✅ مبلغ ',
         'admin_wallet.admin_wallet_report_result.text.bfb7221456' => ' تومان ',
@@ -239,9 +240,7 @@ return [
         // core.get_server_info_and_config
         'core.get_server_info_and_config.alert.c0552cb2f5' => '❌ اطلاعات سرور یا تنظیمات آن یافت نشد.',
         // entry_and_bulk.create_multiple_accounts
-        'entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e' => '📂 مرحلهٔ دوم' . "\n" . '' . "\n" . 'دسته بندی مورد نظرت رو انتخاب کن 🤭',
         'entry_and_bulk.create_multiple_accounts.alert.5223e5a747' => '💡 پلنی در این دسته بندی وجود ندارد. ',
-        'entry_and_bulk.create_multiple_accounts.message.7f4d98ab9b' => '📋 مرحلهٔ سوم' . "\n" . '' . "\n" . 'یکی از پلن هارو انتخاب کن و برو برای پرداختش 🤲',
         'entry_and_bulk.create_multiple_accounts.alert.d3fb64c4d9' => '⛔️ طرح انتخابی در حال حاضر قابل خرید نیست.',
         'entry_and_bulk.create_multiple_accounts.message.c754e347bf' => '⏳ مدت اعتبار اشتراک‌ها را به روز وارد کنید:',
         'entry_and_bulk.create_multiple_accounts.message.f018216ab3' => '📦 حجم هر اشتراک را به گیگابایت (GB) وارد کنید:',
@@ -338,7 +337,7 @@ return [
         'customer_routes.cancel_search_keyboard.button.0d56714222' => '➡',
         'customer_routes.cancel_search_keyboard.alert.724ff90245' => '⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.',
         'customer_routes.link_view_unconfirmed' => '⚠️ نمایش اطلاعات جدید تأیید نشد. اطلاعات اشتراک را دوباره باز کنید؛ نیازی به تکرار تغییر لینک نیست.',
-        'customer_routes.link_update_advice' => "🔄 لینک <b>اشتراک قبلی</b> را از نرم افزار <b>حذف</b> کنید و <b>لینک جدید</b> را از بالا بردارید و <b>وارد</b> کنید.\n⚠️ اگر <b>لینک اصلی</b> کار نکرد از <b>لینک کمکی</b> استفاده کنید.\n⚠️ برای دریافت کانفیگ ها به صورت تک تک می توانید دکمه <b>کیوآرکد کانفیگ</b> را بزنید.",
+        'customer_routes.link_update_advice' => "🔄 لینک <b>اشتراک قبلی</b> را از نرم افزار <b>حذف</b> کنید و <b>لینک جدید</b> را از بالا بردارید و <b>وارد</b> کنید.\n⚠️ اگر <b>لینک اصلی</b> کار نکرد از <b>لینک کمکی</b> استفاده کنید.\n⬇️ برای دریافت کانفیگ ها به صورت تک تک می توانید دکمه <b>کیوآرکد کانفیگ</b> را بزنید.",
         'customer_routes.cancel_search_keyboard.success_message.6d1ad0af39' => '<b>✅ بروزرسانی موفق بود!</b>',
         'customer_routes.cancel_search_keyboard.error_message.496a7eede8' => '<b>❌ خطا در بروزرسانی</b>' . "\n" . '' . "\n" . '',
         'customer_routes.cancel_search_keyboard.text.fd5bccf56e' => 'متأسفانه عملیات بروزرسانی با مشکل مواجه شد.' . "\n" . '',
@@ -508,7 +507,7 @@ return [
         // discounts.apply_discount_to_pay
         'select_method' => '💳 لطفاً روش پرداخت را انتخاب کنید:',
         'no_available_method' => '⚠️ در حال حاضر هیچ روش پرداختی برای این درخواست در دسترس نیست.',
-        'discounts.no_monetary_method' => '⚠️ هیچ روش پرداختی برای این سفارش در دسترس نیست. در این شرایط فقط کد تخفیفی که مبلغ نهایی را صفر کند قابل استفاده است.',
+        'discounts.no_monetary_method' => '⚠️ هیچ روش پرداختی برای مبلغ فعلی در دسترس نیست. کد تخفیف در صورتی قابل استفاده است که مبلغ نهایی صفر شود یا یکی از روش‌های پرداخت برای مبلغ جدید در دسترس باشد.',
         'discounts.apply_discount_to_pay.button.16e81418a3' => '❤️',
         // payment_lifecycle.pay_ux_reference
         'payment_lifecycle.pay_ux_reference.label.edb6e627ea' => '🧾 شناسه سفارش: <code>',
@@ -623,8 +622,6 @@ return [
         'manual_crypto.alert.93decba032' => 'این شبکه برای سفارش در دسترس نیست.',
         'manual_crypto.alert.5216f25f85' => 'وضعیت سفارش قابل خواندن نیست؛ لطفاً بعداً تلاش کنید.',
         // manual_receipts.message
-        'manual_receipts.message.f568baa065' => '✅ افزایش حساب شما با موفقیت تایید شد.' . "\n" . '💰 مبلغ <b>',
-        'manual_receipts.message.f6331b33af' => ['text' => ' تومان</b> به کیف پول شما اضافه شد.' . "\n" . '' . "\n" . '<blockquote>' . "\n" . '⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:' . "\n" . '🛒 <b>خرید اشتراک جدید</b>' . "\n" . 'یا <b>🔄 مشاهده اشتراک‌ها</b>' . "\n" . 'و در مرحله پرداخت روی دکمه زیر بزنید:' . "\n" . '💳 <b>پرداخت با موجودی</b>' . "\n" . '</blockquote>' . "\n" . '💬 پشتیبانی: {supportID}', 'parameters' => ['supportID']],
         // manual_receipts.button
         'manual_receipts.button.e3517e568b' => '🔄 درخواست دوباره',
         // manual_receipts.message
@@ -657,7 +654,6 @@ return [
         'gateway_return.np_reconcile_batch.message.1d15981671' => 'درگاه پرداخت شناسایی نشد.',
         // gateway_return.np_defer_uncertain_remote_effect
         'gateway_return.perform_payment_effect.text.275b4903d9' => '↪️ بازگشت به منوی اصلی',
-        'gateway_return.perform_payment_effect.message.dd866497c7' => ['text' => ' تومان به حساب شما اضافه شد.' . "\n" . '' . "\n" . '<blockquote>' . "\n" . '⚠️ لطفا دقت کنید شما فقط کیف پول خودتان را شارژ کرده‌اید، برای خرید یا تمدید باید از دکمه های زیر استفاده کنید:' . "\n" . '' . "\n" . '🛒 <b>خرید اشتراک جدید</b>' . "\n" . 'یا <b>🔄 مشاهده اشتراک‌ها</b>' . "\n" . '' . "\n" . 'و در مرحله پرداخت روی دکمه زیر بزنید:' . "\n" . '' . "\n" . '💰 <b>پرداخت با موجودی</b>' . "\n" . '' . "\n" . '</blockquote>' . "\n" . '💬 پشتیبانی: {supportID}', 'parameters' => ['supportID']],
         'gateway_return.perform_payment_effect.message.a3b46e7d37' => ['text' => '✅ پرداخت شما با موفقیت انجام شد. اشتراک {remark} با موفقیت تمدید شد.', 'parameters' => ['remark']],
         'gateway_return.perform_payment_effect.message.8ab1d455cf' => ['text' => '✅ پرداخت شما با موفقیت انجام شد. {plusDays} روز به مدت زمان اشتراک شما اضافه شد.', 'parameters' => ['plusDays']],
         'gateway_return.perform_payment_effect.message.20ac3e8049' => ['text' => '✅ پرداخت شما با موفقیت انجام شد. {plusVolume} گیگ به حجم اشتراک شما اضافه شد.', 'parameters' => ['plusVolume']],

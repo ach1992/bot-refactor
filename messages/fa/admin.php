@@ -10,8 +10,8 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_co
 return [
 
     'operational_reports' => [
-        'resolution_subject' => ['text'=>'اشتراک: {remark} | شناسه: {order}','parameters'=>['remark','order']],
-        'import_report' => ['text'=>"📥 ثبت اشتراک موجود\nکاربر: {user}\nاشتراک: {remark}\nشناسهٔ اشتراک: {order}\nسرور: {server}\nثبت‌کننده: {actor}",'parameters'=>['user','remark','order','server','actor']],
+        'resolution_subject' => ['text'=>'🎈 اشتراک: {remark} | شناسه: {order}','parameters'=>['remark','order']],
+        'import_report' => ['text'=>"📥 ثبت اشتراک موجود\n🎫 کاربر: {user}\n🎈 اشتراک: {remark}\n🎈 شناسهٔ اشتراک: {order}\n🚦 سرور: {server}\n🎫 ثبت‌کننده: {actor}",'parameters'=>['user','remark','order','server','actor']],
         'credit_title' => '<b>💰 افزایش موجودی کیف پول</b>',
         'funded_title' => '<b>💳 ثبت پرداخت و تأمین مالی سرویس</b>',
         'service_zero_title' => '<b>🧾 ثبت درخواست سرویس</b>',
@@ -20,8 +20,8 @@ return [
         'service_delivery_pending' => '📨 تأیید کامل ارسال پیام‌های اشتراک به کاربر هنوز ثبت نشده است.',
         'service_delivery_confirmed' => '✅ ارسال همه پیام‌های اشتراک به کاربر توسط Telegram تأیید شد.',
         'debit_title' => '<b>💸 کاهش موجودی کیف پول</b>',
-        'payment_context' => ['text' => "روش پرداخت: {method}\nنوع تأیید: {basis}\nشناسهٔ پرداخت: <code>{payment}</code>\nعملیات سرویس: <code>{service}</code>\nشناسهٔ اشتراک: <code>{order}</code>\nنتیجه: {result}", 'parameters' => ['method','basis','payment','service','order','result']],
-        'wallet_facts' => ['text' => "🎫 شناسه عددی کاربر: <code>{user}</code>\n💵 مبلغ: {amount} تومان\nموجودی پیش از تراکنش: {before} تومان\nموجودی پس از تراکنش: {after} تومان\nشناسهٔ تراکنش کیف پول: <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}", 'parameters' => ['user','amount','before','after','entry','date']],
+        'payment_context' => ['text' => "💳 روش پرداخت: {method}\n✅ نوع تأیید: {basis}\n🧾 شناسهٔ پرداخت: <code>{payment}</code>\n🔖 عملیات سرویس: <code>{service}</code>\n🎈 شناسهٔ اشتراک: <code>{order}</code>\n📋 نتیجه: {result}", 'parameters' => ['method','basis','payment','service','order','result']],
+        'wallet_facts' => ['text' => "🎫 شناسه عددی کاربر: <code>{user}</code>\n💵 مبلغ: {amount} تومان\n💰 موجودی پیش از تراکنش: {before} تومان\n💰 موجودی پس از تراکنش: {after} تومان\n🔖 شناسهٔ تراکنش کیف پول: <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}", 'parameters' => ['user','amount','before','after','entry','date']],
         'actor' => ['text' => '🎫 شناسه عددی ادمین: <code>{actor}</code>', 'parameters' => ['actor']],
         'basis_manual' => 'تأیید دستی ادمین',
         'basis_api' => 'تأیید خودکار API',
@@ -36,7 +36,7 @@ return [
         'service_renew' => '♻️ تمدید اشتراک تکمیل شد',
         'service_days' => '📅 افزایش زمان اشتراک تکمیل شد',
         'service_volume' => '📦 افزایش حجم اشتراک تکمیل شد',
-        'service_context' => ['text' => "🎫 شناسه عددی کاربر: <code>{user}</code>\n💳 روش پرداخت: {method}\n💵 مبلغ: {amount} تومان\n🎈 اشتراک: <code>{remark}</code>\n🚦 سرور: <code>{server}</code> | پلن: <code>{plan}</code>\nشناسهٔ پرداخت/درخواست: <code>{reference}</code>\nشناسهٔ عملیات: <code>svc_{service}</code>", 'parameters' => ['user','method','amount','remark','server','plan','reference','service']],
+        'service_context' => ['text' => "🎫 شناسه عددی کاربر: <code>{user}</code>\n💳 روش پرداخت: {method}\n💵 مبلغ: {amount} تومان\n🎈 اشتراک: <code>{remark}</code>\n🚦 سرور: <code>{server}</code> | پلن: <code>{plan}</code>\n🧾 شناسهٔ پرداخت/درخواست: <code>{reference}</code>\n🔖 شناسهٔ عملیات: <code>svc_{service}</code>", 'parameters' => ['user','method','amount','remark','server','plan','reference','service']],
         'service_units' => ['text' => "📦 حجم: {volume}\n📅 مدت: {days} روز", 'parameters' => ['volume','days']],
         'unlimited_volume' => 'نامحدود',
         'finite_volume' => ['text' => '{volume} گیگابایت', 'parameters' => ['volume']],
@@ -45,15 +45,15 @@ return [
         'service_wallet_title' => '<b>💰 گردش کیف پول</b>',
         'service_wallet_credit' => ['text' => "➕ اعتبار پرداخت: {amount} تومان | <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}", 'parameters' => ['entry','amount','date']],
         'service_wallet_debit' => ['text' => "➖ کسر بابت سرویس: {amount} تومان | <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}", 'parameters' => ['entry','amount','date']],
-        'service_wallet_balance' => ['text' => "موجودی قبل: {before} تومان\nموجودی بعد: {after} تومان", 'parameters' => ['before','after']],
-        'service_wallet_net' => ['text' => 'خالص تغییر موجودی: {net} تومان', 'parameters' => ['net']],
-        'service_order' => ['text' => 'شناسهٔ اشتراک: <code>{order}</code>', 'parameters' => ['order']],
+        'service_wallet_balance' => ['text' => "💰 موجودی قبل: {before} تومان\n💰 موجودی بعد: {after} تومان", 'parameters' => ['before','after']],
+        'service_wallet_net' => ['text' => '💰 خالص تغییر موجودی: {net} تومان', 'parameters' => ['net']],
+        'service_order' => ['text' => '🎈 شناسهٔ اشتراک: <code>{order}</code>', 'parameters' => ['order']],
         'source_adjustment' => 'تغییر موجودی توسط ادمین',
         'source_transfer' => 'انتقال موجودی کیف پول',
         'source_onboarding' => 'پاداش معرفی کاربر جدید',
-        'source_reference' => ['text' => 'شناسهٔ مرجع: <code>{reference}</code>', 'parameters' => ['reference']],
-        'transfer_sender' => ['text' => "فرستنده: <code>{sender}</code>\nموجودی فرستنده پیش از انتقال: {before} تومان\nموجودی فرستنده پس از انتقال: {after} تومان", 'parameters' => ['sender','before','after']],
-        'invited' => ['text' => 'کاربر معرفی‌شده: <code>{user}</code>', 'parameters' => ['user']],
+        'source_reference' => ['text' => '🔖 شناسهٔ مرجع: <code>{reference}</code>', 'parameters' => ['reference']],
+        'transfer_sender' => ['text' => "🎫 فرستنده: <code>{sender}</code>\n💰 موجودی فرستنده پیش از انتقال: {before} تومان\n💰 موجودی فرستنده پس از انتقال: {after} تومان", 'parameters' => ['sender','before','after']],
+        'invited' => ['text' => '🎫 کاربر معرفی‌شده: <code>{user}</code>', 'parameters' => ['user']],
         'wallet_report_case' => 'گزارش کیف پول',
     ],
 
@@ -811,12 +811,6 @@ return [
         'manual_receipts.button.85f4d0ad41' => ['text' => '✅ مسدود شد: {m_1}', 'parameters' => ['m_1']],
     ],
 
-    // ── درگاه‌ها و صفحه وضعیت پرداخت ──
-    'gateway' => [
-        // gateway_return.np_alert_operator
-        'gateway_return.perform_payment_effect.message.a5b15e454e' => '✅ مبلغ ',
-    ],
-
     // ── اعلان‌های اشتراک ──
     'notifications' => [
         // warnings.channel_message
@@ -1448,6 +1442,16 @@ return [
         'invite_reward_hint' => "🎁 مبلغ پاداش را با عدد صحیح انگلیسی از 0 تا 999999999 به تومان وارد کنید؛ برای غیرفعال‌کردن 0 یا /clear را بفرستید.",
 
         // Dedicated payment-rule navigation and direct method exemptions
+        'gateway_rule_admin.cap_button' => ['text'=>'💰 سقف مبلغ پرداخت — {limit}','parameters'=>['limit']],
+        'gateway_rule_admin.cap_unlimited' => 'بدون محدودیت',
+        'gateway_rule_admin.cap_invalid' => 'نامعتبر',
+        'gateway_rule_admin.cap_value' => ['text'=>'{amount} تومان','parameters'=>['amount']],
+        'gateway_rule_admin.cap_clear' => '♾️ بدون محدودیت',
+        'gateway_rule_admin.cap_prompt' => [
+            'text'=>"💰 سقف مبلغ پرداخت: {method}\n📋 سقف فعلی: {limit}\n\nمبلغ سقف را به تومان وارد کنید. برای حذف سقف، 0 را ارسال کنید.",
+            'parameters'=>['method','limit']
+        ],
+        'gateway_rule_admin.cap_saved' => '✅ سقف مبلغ پرداخت ذخیره شد.',
         'gateway_rule_admin.exempt_button' => '🔓 معاف کاربر از قوانین',
         'gateway_rule_admin.exempt_prompt' => [
             'text' => "🔓 معافیت قوانین: {method}\n👥 تعداد شناسه‌های معاف: {count}\n🎫 شناسه‌های فعلی: <code>{ids}</code>\n\n👤 شناسه‌های عددی را با فاصله، ویرگول یا در چند خط ارسال کنید.\n➕ افزودن: <code>123456 789012</code>\n➖ حذف: <code>-123456 -789012</code>\n💡 این معافیت فقط وقتی روش پرداخت روشن باشد معتبر است.",

@@ -2,22 +2,27 @@
 /** AChBot current-only scoped extension catalog; requires the current scoped-offer schema. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {http_response_code(404);exit;}
 
+require_once __DIR__.'/../Diagnostics/EventLog.php';
+require_once __DIR__.'/../Panel/ProviderStorage.php';
+
 /** Only the current scoped-offer schema can serve offers. */
 function achbotAddonSchema(mysqli $db): bool {
     $required=['increase_day'=>['server_id','group_ids','scope_hash'],
         'increase_plan'=>['server_id','group_ids','scope_hash'],
         'pays'=>['addon_scope_snapshot']];
-    $q=$db->query("SELECT TABLE_NAME,COLUMN_NAME FROM information_schema.COLUMNS
+    $q=$db->query("SELECT TABLE_NAME,COLUMN_NAME,IS_GENERATED FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('increase_day','increase_plan','pays')
         AND COLUMN_NAME IN ('server_id','group_ids','scope_hash','addon_scope_snapshot')");
     if (!$q) throw new RuntimeException('addon_schema_unavailable');
-    $seen=[];while($row=$q->fetch_assoc()) $seen[$row['TABLE_NAME']][$row['COLUMN_NAME']]=true;
+    $seen=[];while($row=$q->fetch_assoc()) $seen[$row['TABLE_NAME']][$row['COLUMN_NAME']]=$row['IS_GENERATED'];
     $q->free();$count=0;
     foreach($required as $table=>$columns) foreach($columns as $col) {
         if (!empty($seen[$table][$col])) $count++;
     }
     if ($count===0) throw new RuntimeException('addon_schema_missing');
     if ($count!==7) throw new RuntimeException('addon_schema_partial');
+    foreach (['increase_day','increase_plan'] as $table)
+        if ($seen[$table]['scope_hash']!=='ALWAYS') throw new RuntimeException('addon_schema_incompatible');
     // Missing/altered DB uniqueness is not a usable migration: two concurrent
     // admins could insert competing prices for the same quantity and scope.
     $requiredIndexes=['increase_day'=>'uq_addon_day_units_scope',
@@ -64,9 +69,8 @@ function achbotAddonOfferRevision(string $kind,array $row): string {
     achbotAddonTable($kind);
     if (!isset($row['id'],$row['volume'],$row['price']) || (int)$row['id']<=0)
         throw new RuntimeException('addon_admin_offer_invalid');
-    $scope=achbotAddonScopeRow($row);
     return substr(hash('sha256',json_encode([$kind,(int)$row['id'],
-        (string)$row['volume'],(string)$row['price'],$scope['scope_hash']],
+        (string)$row['volume'],(string)$row['price'],$row['server_id'],$row['group_ids']],
         JSON_THROW_ON_ERROR)),0,20);
 }
 function achbotAddonOfferCallback(string $prefix,string $kind,array $row): string {
@@ -97,19 +101,65 @@ function achbotAddonScopeRow(array $row): array {
     if ($json!==null) {
         if ($sid===null || !is_string($json))
             throw new RuntimeException('addon_scope_groups_invalid');
-        try {$groups=json_decode($json,true,64,JSON_THROW_ON_ERROR);}
+        try {$groups=json_decode($json,false,64,JSON_THROW_ON_ERROR);}
         catch(Throwable $error) {throw new RuntimeException('addon_scope_groups_invalid');}
-        if (!is_array($groups) || !array_is_list($groups) ||
-            $groups!==achbotAddonGroups($groups,true) ||
-            json_encode($groups,JSON_THROW_ON_ERROR)!==$json)
+        if (!is_array($groups) || !array_is_list($groups))
             throw new RuntimeException('addon_scope_groups_invalid');
+        $groups=achbotAddonGroups($groups,true);
     } else $groups=null;
     $hash=achbotAddonScopeHash($sid,$groups);
-    if (!is_string($row['scope_hash']) ||
-        !hash_equals($hash,$row['scope_hash']))
-        throw new RuntimeException('addon_scope_hash_changed');
+    // The actual business columns own scope. The database-generated key
+    // is an index aid; it is never a second source of business truth.
     return ['server_id'=>$sid,'groups'=>$groups,'scope_hash'=>$hash];
 }
+/** Range locks require next-key locking, including for an empty destination.
+ * Select RR for this transaction only; never change the server/session default.
+ * The owning transaction must begin before any offer read or financial write. */
+function achbotAddonBeginRangeTransaction(mysqli $db): bool {
+    return $db->query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ') && $db->begin_transaction();
+}
+function achbotAddonQuantityRowsLocked(mysqli $db,string $kind,int $units): array {
+    $table=achbotAddonTable($kind);
+    $index=$kind==='day'?'uq_addon_day_units_scope':'uq_addon_volume_units_scope';
+    $q=achbotProviderStatement($db,"SELECT * FROM $table FORCE INDEX ($index) WHERE volume=? FOR UPDATE",
+        'i',[$units]);
+    try {
+        $result=$q->get_result();
+        if (!$result) throw achbotProviderStorageFailure($db,$q);
+        return $result->fetch_all(MYSQLI_ASSOC);
+    } finally { $q->close(); }
+}
+/** Only writes introducing a new semantic quantity/scope key need this
+ * constraint. Existing conflicts may be edited/repaired/deleted; malformed
+ * scopes are not reinterpreted as Global. Direct SQL remains supported. */
+function achbotAddonCheckWriteLocked(mysqli $db,string $kind,?array $original,array $changes): void {
+    $target=array_replace($original??[],$changes);
+    $units=achbotCatalogServiceUnits($target['volume'],$kind==='day'?achbotServiceDaysMax():achbotServiceVolumeMax());
+    if ($units===null) {
+        if ($original!==null && !array_key_exists('volume',$changes)) return;
+        throw new RuntimeException('addon_admin_units_invalid');
+    }
+    try {$scope=achbotAddonScopeRow($target);}
+    catch (RuntimeException $error) {
+        // Quantity edits of an already-malformed row remain repairable.
+        // Creation and scope edits must still provide a valid scope.
+        if ($original!==null && !array_key_exists('server_id',$changes)) return;
+        throw $error;
+    }
+    if ($original!==null && (float)$original['volume']===(float)$units) {
+        try {$old=achbotAddonScopeRow($original);}
+        catch (RuntimeException $error) {$old=null;}
+        if ($old!==null && $old['scope_hash']===$scope['scope_hash']) return;
+    }
+    foreach (achbotAddonQuantityRowsLocked($db,$kind,$units) as $row) {
+        if ($original!==null && (int)$row['id']===(int)$original['id']) continue;
+        try {$other=achbotAddonScopeRow($row);}
+        catch (RuntimeException $error) {continue;}
+        if ($other['scope_hash']===$scope['scope_hash'])
+            throw new RuntimeException('addon_admin_duplicate_scope');
+    }
+}
+
 /** Fetching every candidate also detects duplicated/conflicting offers; no lowest-price selection. */
 function achbotAddonCatalog(mysqli $db,string $kind,array $context,?array $rows=null): array {
     $table=achbotAddonTable($kind);
@@ -119,12 +169,24 @@ function achbotAddonCatalog(mysqli $db,string $kind,array $context,?array $rows=
         if (!$q || !$q->execute()) throw new RuntimeException('addon_catalog_unavailable');
         $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     }
-    $found=[];$verifiedPgGroups=null;
+    $found=[];$blocked=[];$verifiedPgGroups=null;
     foreach($rows as $r) {
         $units=achbotWholeServiceUnits($r['volume'],$kind==='day'?achbotServiceDaysMax():achbotServiceVolumeMax());
         if ($units===null || !is_numeric($r['price']) || (int)$r['price']<0 ||
             (int)$r['price']>2147483647) continue;
-        $scope=achbotAddonScopeRow($r);
+        // Do not let an invalid offer for another server poison this list.
+        if ($r['server_id']!==null && ctype_digit((string)$r['server_id']) &&
+            (int)$r['server_id']>0 && (int)$r['server_id']!==$context['server_id']) continue;
+        try { $scope=achbotAddonScopeRow($r); }
+        catch (RuntimeException $error) {
+            // A malformed potentially applicable row blocks only its own
+            // quantity, not other valid quantities. Never guess its price/scope.
+            $blocked[$units]=true;
+            achbotDiagnosticEvent('achbot.addon.catalog_deferred',[
+                'operational_ref'=>'addon:'.$kind.':'.(int)$r['id'],
+                'server_id'=>(int)$context['server_id']]+achbotDiagnosticLocalFailure($error),'warning');
+            continue;
+        }
         $rank=0;
         if ($scope['server_id']===null) $rank=1;
         elseif ($scope['server_id']!==$context['server_id']) continue;
@@ -151,9 +213,16 @@ function achbotAddonCatalog(mysqli $db,string $kind,array $context,?array $rows=
             'scope_hash'=>$scope['scope_hash'],'scope_server_id'=>$scope['server_id'],
             'scope_groups'=>$scope['groups']];
         if (!isset($found[$units]) || $rank>$found[$units]['rank'])
-            $found[$units]=['rank'=>$rank,'offer'=>$offer];
+            $found[$units]=['rank'=>$rank,'offer'=>$offer,'ambiguous'=>false];
         elseif ($rank===$found[$units]['rank'])
-            throw new RuntimeException('addon_catalog_ambiguous');
+            $found[$units]['ambiguous']=true;
+    }
+    foreach ($found as $units=>$candidate) {
+        if ($candidate['ambiguous'])
+            achbotDiagnosticEvent('achbot.addon.catalog_deferred',[
+                'operational_ref'=>'addon:'.$kind.':'.$candidate['offer']['id'],
+                'server_id'=>(int)$context['server_id'],'reason'=>'addon_catalog_ambiguous'],'warning');
+        if (isset($blocked[$units]) || $candidate['ambiguous']) unset($found[$units]);
     }
     ksort($found,SORT_NUMERIC);
     return array_values(array_map(static fn(array $item)=>$item['offer'],$found));
@@ -217,7 +286,7 @@ function achbotAddonQuote(array $order,array $context,string $kind,array $offer,
         JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
 }
 /** Local quote and catalog checks: no provider HTTP; safe inside a locked SQL claim. */
-function achbotAddonPayLocal(mysqli $db,array $pay,array $order): bool {
+function achbotAddonCurrentLocked(mysqli $db,array $pay,array $order,bool $matchBasePrice=false): bool {
     $type=(string)($pay['type']??'');
     if (preg_match('/^INCREASE_(DAY|VOLUME)_([1-9][0-9]*)_([1-9][0-9]*)$/D',$type,$parts)!==1)
         return false;
@@ -245,51 +314,33 @@ function achbotAddonPayLocal(mysqli $db,array $pay,array $order): bool {
         $s['native_groups']!==achbotAddonGroups($s['native_groups']) ||
         ($s['provider']==='pasarguard' && !is_string($s['native_identity']??null)))
         return false;
-    $row=$db->prepare("SELECT * FROM ".achbotAddonTable($kind)." WHERE id=?");
-    $row->bind_param('i',$offerId);$row->execute();$offer=$row->get_result()->fetch_assoc();$row->close();
-    if (!$offer || achbotWholeServiceUnits($offer['volume'],$kind==='day'?achbotServiceDaysMax(0):achbotServiceVolumeMax())!==$units)
-        return false;
-    $scope=achbotAddonScopeRow($offer);
-    return hash_equals($scope['scope_hash'],$s['scope_hash']);
+    $sid=(int)$pay['server_id'];
+    $type=$db->prepare('SELECT type FROM server_config WHERE id=? LOCK IN SHARE MODE');
+    if (!$type || !$type->bind_param('i',$sid) || !$type->execute())
+        throw new RuntimeException('addon_server_lock_failed');
+    $server=$type->get_result()->fetch_assoc();$type->close();
+    if (!$server || $server['type']!==$s['provider']) return false;
+    // Use the original, locally pinned Native identity and Group-set.
+    // Current Native authority remains the adapter's separate responsibility.
+    $context=['provider'=>$s['provider'],'server_id'=>$sid,'groups'=>$s['native_groups'],
+        'pg_groups_checked'=>$s['native_groups']];
+    $offers=achbotAddonCatalog($db,$kind,$context,achbotAddonQuantityRowsLocked($db,$kind,$units));
+    if (count($offers)!==1) return false;
+    $chosen=$offers[0];
+    return $chosen['id']===$offerId &&
+        hash_equals($chosen['scope_hash'],$s['scope_hash']) &&
+        $chosen['volume']===$units &&
+        (!$matchBasePrice || $chosen['price']===$s['base_price']);
 }
-/** Complete verification requires native readback and highest-specificity selection. */
-/** Extra issuance fence: an admin edit between menu display and COMMIT must
- * never create a new quote at the stale, unpinned menu price.
- */
+/** New draft creation verifies the displayed base price as well as scope.
+ * First admission reuses the same locked selection without repricing. */
 function achbotAddonDraftCurrent(mysqli $db,int $payId): bool {
     try {
-        achbotAddonSchema($db);
-        $q=$db->prepare('SELECT * FROM pays WHERE id=?');
-        $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
+        $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=? FOR UPDATE','i',[$payId]);
         if (!$pay || preg_match('/^INCREASE_(DAY|VOLUME)_([1-9][0-9]*)_([1-9][0-9]*)$/D',
-            (string)$pay['type'],$m)!==1 || !is_string($pay['addon_scope_snapshot']??null))
-            return false;
-        $oid=(int)$m[2];$q=$db->prepare('SELECT * FROM orders_list WHERE id=?');
-        $q->bind_param('i',$oid);$q->execute();$order=$q->get_result()->fetch_assoc();$q->close();
-        if (!$order || (int)($order['userid']??0)!==(int)$pay['user_id'] ||
-            !achbotAddonPayLocal($db,$pay,$order)) return false;
-        $kind=strtolower($m[1]);$snap=json_decode($pay['addon_scope_snapshot'],true,32,JSON_THROW_ON_ERROR);
-        $type=$db->prepare('SELECT type FROM server_config WHERE id=? LOCK IN SHARE MODE');
-        $sid=(int)$pay['server_id'];$type->bind_param('i',$sid);$type->execute();
-        $server=$type->get_result()->fetch_assoc();$type->close();
-        if (!$server || $server['type']!==$snap['provider']) return false;
-        $context=['provider'=>$snap['provider'],'server_id'=>$sid,'groups'=>$snap['native_groups'],
-            'pg_groups_checked'=>$snap['native_groups']];
-        $table=achbotAddonTable($kind);
-        $units=(int)$snap['units'];
-        // Current locking read of the entire quantity range protects the
-        // selected scope and the precedence against a concurrent admin
-        // insert, delete, re-scope or price edit through COMMIT. A plain
-        // transaction-snapshot SELECT would be stale under REPEATABLE READ.
-        $q=$db->prepare("SELECT * FROM ".$table." WHERE volume=? ORDER BY id FOR UPDATE");
-        $q->bind_param('i',$units);$q->execute();
-        $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
-        $offers=achbotAddonCatalog($db,$kind,$context,$rows);
-        if (count($offers)!==1) return false;
-        $chosen=$offers[0];
-        return $chosen['id']===(int)$m[3] &&
-            hash_equals($chosen['scope_hash'],$snap['scope_hash']) &&
-            $chosen['volume']===$units &&
-            $chosen['price']===$snap['base_price'];
+            (string)$pay['type'],$m)!==1) return false;
+        $order=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=? FOR UPDATE','i',[(int)$m[2]]);
+        return $order!==null && (int)$order['userid']===(int)$pay['user_id'] &&
+            achbotAddonCurrentLocked($db,$pay,$order,true);
     } catch(Throwable $error) {return false;}
 }

@@ -91,7 +91,7 @@ if ((require __DIR__ . '/src/Finance/Routes/PrePayment.php') === null) return;
 require_once __DIR__.'/src/Telegram/UserProfile.php';
 $customerShortcut=achbotCustomerShortcut($update??null,(int)$from_id);
 $isJoinCallback = is_string($data) &&
-    (preg_match('/\AhaveJoined(?:\/start(?: [1-9][0-9]{0,18})?)?\z/D', $data) === 1 || ($customerShortcut!==null && is_object($update->callback_query??null)));
+    (preg_match('/\AhaveJoined(?:\/start(?: [1-9][0-9]{0,18})?)?\z/D', $data) === 1 || ($customerShortcut!==null && is_object($update->callback_query??null) && str_starts_with($data,'haveJoined/start ')));
 if ($isJoinCallback) {
     // The join button is usable only in the same actor's private bot chat.
     // Validate before potentially deleting its message or writing identity.
@@ -484,12 +484,14 @@ if (is_string($data??null) &&
         // A rejection must never leave a stale editor that invites more
         // unsafe clicks. Re-validate authorization before showing fresh data.
         if ($operation!==null &&
-            in_array($operation['action'],['t','v','c','n','p','h'],true) &&
+            in_array($operation['action'],['t','v','c','n','p','h','k','u'],true) &&
             achbotGatewayAdminCanView($update,(int)$from_id,
                 (int)$chat_id,(int)$message_id,(int)$admin,$data)) {
-            $refresh=in_array($operation['action'],['v','c','p'],true)
-                ? 'gr|f|'.$operation['method'].'|'.$operation['category'].'|'.$operation['metric']
-                : 'gr|r|'.$operation['method'].'|'.$operation['category'];
+            $refresh=match($operation['action']) {
+                'k','u'=>'gr|m|'.$operation['method'],
+                'v','c','p'=>'gr|f|'.$operation['method'].'|'.$operation['category'].'|'.$operation['metric'],
+                default=>'gr|r|'.$operation['method'].'|'.$operation['category']
+            };
             $page=achbotGatewayAdminPage($refresh);
             editText($message_id,
                 \achbotMessage('bot.bot.gateway_audience_settings.message.553d718ccf').
@@ -497,8 +499,10 @@ if (is_string($data??null) &&
         }
         return;
     }
-    if ($operation['action']==='e') {
-        sendMessage(achbotGatewayAdminExemptPrompt($operation['method']),$cancelKey,'HTML');
+    if (in_array($operation['action'],['e','k'],true)) {
+        sendMessage($operation['action']==='k'
+            ? achbotGatewayAdminAmountPrompt($operation['method'])
+            : achbotGatewayAdminExemptPrompt($operation['method']),$cancelKey,'HTML');
         return;
     }
     if ($operation['action']==='n') {
@@ -514,17 +518,19 @@ if (is_string($data??null) &&
         $prior=achbotGatewayRuleStep((string)($userInfo['step']??''));
         $target=$prior && $prior['phase']==='confirm'
             ? 'gr|f|'.$prior['method'].'|'.$prior['category'].'|'.$prior['metric']
-            : ($prior && $prior['phase']==='delete'
+            : ($prior && in_array($prior['phase'],['delete','capconfirm'],true)
                 ? 'gr|m|'.$prior['method'] : 'gr|l');
         $page=achbotGatewayAdminPage($target);
         editText($message_id,
             ($operation['action']==='s'
-                ? \achbotMessage('bot.bot.gateway_audience_settings.message.fdfbaf2a40')
+                ? ($prior && $prior['phase']==='capconfirm'
+                    ? \achbotMessage('payment_settings.gateway_rule_admin.cap_saved')
+                    : \achbotMessage('bot.bot.gateway_audience_settings.message.fdfbaf2a40'))
                 : \achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02')).
             "\n".$page['text'],$page['keyboard']);
         return;
     }
-    $target=$operation['action']==='d'
+    $target=in_array($operation['action'],['d','u'],true)
         ? 'gr|m|'.$operation['method']
         : ($operation['action']==='q' ? 'gr|q|'.$operation['method'].'|'.$operation['category']
         : (in_array($operation['action'],['v','c','p'],true)
@@ -537,7 +543,9 @@ if (is_string($data??null) &&
 }
 if (is_string($userInfo['step']??null) &&
     (str_starts_with($userInfo['step'],'gr|edit|') ||
-     str_starts_with($userInfo['step'],'gr|exempt|'))) {
+     str_starts_with($userInfo['step'],'gr|exempt|') ||
+     str_starts_with($userInfo['step'],'gr|cap|') ||
+     (str_starts_with($userInfo['step'],'gr|capconfirm|') && $text===achbotMessage('legacy_buttons.cancel')))) {
     if (!achbotAdminGatewayChange($update,(int)$from_id,
             (int)$chat_id,(int)$message_id,(int)$admin,'number',
             $userInfo['step'],(string)$text)) {
@@ -545,8 +553,11 @@ if (is_string($userInfo['step']??null) &&
                     $cancelKey, 'HTML');
         return;
     }
-    if (str_starts_with($userInfo['step'],'gr|exempt|')) {
-        $method=substr($userInfo['step'],strlen('gr|exempt|'));
+    if (str_starts_with($userInfo['step'],'gr|exempt|') ||
+        ((str_starts_with($userInfo['step'],'gr|cap|') || str_starts_with($userInfo['step'],'gr|capconfirm|')) &&
+            $text===achbotMessage('legacy_buttons.cancel'))) {
+        $editor=achbotGatewayRuleStep($userInfo['step']);
+        $method=$editor['method'];
         $page=achbotGatewayAdminPage('gr|m|'.$method);
         // An inline keyboard cannot also remove the temporary ReplyKeyboard.
         // Finish the wizard first, then show the same method's current menu.
@@ -563,7 +574,9 @@ if (is_string($userInfo['step']??null) &&
         return;
     }
     $sourceId=(int)($update->update_id??0);
-    sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.397d3e91b6').$text.\achbotMessage('bot.bot.gateway_audience_settings.message.c5bdeadc6b'),
+    $proposed=str_starts_with($userInfo['step'],'gr|cap|')
+        ? number_format(achbotGatewayAmountInput($text)) : $text;
+    sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.397d3e91b6').$proposed.\achbotMessage('bot.bot.gateway_audience_settings.message.c5bdeadc6b'),
         json_encode(['inline_keyboard'=>[
             [['text'=>\achbotMessage('bot.bot.gateway_audience_settings.button.9b026e4934'),'callback_data'=>'gr|s|'.$sourceId]],
             [['text'=>\achbotMessage('labels.dismiss'),'callback_data'=>'gr|x|'.$sourceId]]

@@ -31,7 +31,8 @@ declare(strict_types=1);
 mysqli_report($argv[4]==='strict'?MYSQLI_REPORT_ERROR|MYSQLI_REPORT_STRICT:MYSQLI_REPORT_OFF);
 $telegramWebhookSecret='SyntheticHostedEvidenceSecret_2026';
 $GLOBALS['telegramWebhookSecret']=$telegramWebhookSecret;
-$GLOBALS['admin']=9001;$GLOBALS['botState']=[];
+$GLOBALS['admin']=9001;$GLOBALS['botState']=[];$GLOBALS['supportID']='@fixture_support';
+$GLOBALS['fixture_sends']=[];
 $GLOBALS['loopback']=$argv[6];
 class SoapClient {
     function __construct($wsdl,$opts){
@@ -60,6 +61,7 @@ $botState['rewardChannel']='@fixture_report';
 if (isset($c['stale_state'])) $botState=array_replace($botState,$c['stale_state']);
 if (isset($c['stale_keys'])) $paymentKeys=array_replace($paymentKeys,$c['stale_keys']);
 function sendMessage(...$args){
+    $GLOBALS['fixture_sends'][]=$args;
     if (isset($GLOBALS['achbotTelegramDiagnosticContext']['followup_id'])) return fixtureMessageAck($args[3]);
     return (object)['ok'=>true,'result'=>(object)['message_id'=>572]];
 }
@@ -102,6 +104,11 @@ try {
         'expire'=>achbotPayUxExpireInvoice($db,$id,(int)$c['clock']),
         'review'=>achbotGatewayReviewCommit($db,(int)($c['actor']??9001),(int)$c['attempt'],$c['decision'],9001),
         'outcome'=>achbotCheckoutReceiptOutcome($db,$id),
+        'report'=>(static function() use ($db,$c) {
+            require_once $GLOBALS['argv'][1].'/src/Finance/FollowupOutbox.php';
+            $status=achbotFollowupDispatchOne($db,(int)$c['report']);
+            return ['status'=>$status,'sends'=>$GLOBALS['fixture_sends']];
+        })(),
         default=>throw new RuntimeException('fixture_unknown_op')
     };
     if ($c['op']==='fund' && !$db->commit()) throw new RuntimeException('fixture_fund_commit');
@@ -245,6 +252,19 @@ def main():
                 assert replay['credit']['replayed'] and len(calls)==start and bal()==b+100
                 assert sql(f"SELECT p.state,a.stage FROM pays p JOIN payment_attempts a ON p.id=a.pay_row_id WHERE p.id={pid}")=='paid\tdone'
                 assert sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")=='customer,service_admin,service_channel'
+                iid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='wallet_credit' AND role='customer'"))
+                notice=result(mode,'report',report=iid)
+                assert notice['status']=='acknowledged' and len(notice['sends'])==1,notice
+                sent_args=notice['sends'][0]
+                expected=("✅ افزایش حساب شما با موفقیت تایید شد.\n"
+                    "💰 مبلغ <b>100 تومان</b> به کیف پول شما اضافه شد.\n"
+                    "🧰 جهت <b>استفاده از موجودی</b> روی یکی از دکمه های زیر بزنید. همچنین اگر اشتراک دارید می توانید <b>تمدید خودکار</b> را برای آن <b>روشن</b> کنید.\n\n"
+                    "💬 پشتیبانی: @fixture_support")
+                assert sent_args[0]==expected and sent_args[2]=='HTML' and int(sent_args[3])==1001,notice
+                assert json.loads(sent_args[1])=={'inline_keyboard':[[
+                    {'text':'🛍 خرید اشتراک جدید','callback_data':'shortcutBuy'},
+                    {'text':'🔄 مشاهده اشتراک‌ها','callback_data':'shortcutMySubs'}]]},notice
+                assert not result(mode,'report',report=iid)['sends']
                 case('nextpay_receipt_once')
                 pid=seed(mode+'-zarin');ref=mode+'-authority'
                 responses['/soap/issue']=(200,dict(Status=100,Authority=ref))
@@ -440,8 +460,16 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                         responses['/np/issue']=(200,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
                         query=dict(nowpayment='',NP_id=child,hash_id=name)
                     start=len(calls)
+                    sql("UPDATE setting SET value=JSON_SET(value,'$.gatewayMaxAmountToman',JSON_OBJECT('"+method+"',204)) WHERE type='BOT_STATES'")
+                    before=snapshot()
+                    assert result(mode,'browser_issue',flag=flag,hash=name,
+                        stale_state={'gatewayMaxAmountToman':{method:0}})['status']!=302
+                    assert len(calls)==start and snapshot()==before
+                    assert sql(f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}')=='0'
+                    sql("UPDATE setting SET value=JSON_SET(value,'$.gatewayMaxAmountToman',JSON_OBJECT('"+method+"',205)) WHERE type='BOT_STATES'")
                     assert result(mode,'browser_issue',flag=flag,hash=name)['status']==302
                     assert sql(f"SELECT provider FROM payment_attempts WHERE pay_row_id={pid}")==method
+                    sql("UPDATE setting SET value=JSON_SET(value,'$.gatewayMaxAmountToman',JSON_OBJECT('"+method+"',1)) WHERE type='BOT_STATES'")
                     assert result(mode,'browser_issue',flag=flag,hash=name)['status']==302
                     assert len(calls)==start+1 and bal()==b
                     deadline=int(sql(f"SELECT invoice_expires_at FROM payment_attempts WHERE pay_row_id={pid}"))
@@ -468,6 +496,8 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                     result(mode,'browser_return',query=query)
                     assert bal()==b+205
                     case('actual_public_'+flag+'_checkout_expiry_and_late_return')
+                    case('actual_public_'+flag+'_cap_first_admission_and_original_settlement')
+                    sql("UPDATE setting SET value=JSON_REMOVE(value,'$.gatewayMaxAmountToman') WHERE type='BOT_STATES'")
 
                 # The actual browser route must use exactly the same local
                 # quote input and validation as method availability. Invalid

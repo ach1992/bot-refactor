@@ -13,10 +13,21 @@ Current scope metadata has three meanings:
 | Server | logical server ID, group_ids NULL | Exact supported logical server (currently PasarGuard) |
 | PasarGuard Group-set | logical PasarGuard server ID plus canonical Group ID JSON | Exact native Group-set on the selected native account |
 
-Hash the unambiguous scope strings G, S:<server-id>, and
-P:<server-id>:<sorted-comma-separated-group-ids> with SHA-256.
-These are stored as scope_hash; an index prevents duplicate
-quantity+scope pairs. Do not confuse native PasarGuard groups with physical
+The editable scope is only server_id and group_ids. MariaDB automatically
+maintains the generated scope_hash index key from these fields (compacting
+JSON, not sorting arrays); app-written group sets are canonical. A direct
+SQL edit never needs to update a hash. The runtime normalizes valid
+Group-set JSON to sorted distinct positive integer IDs and derives the
+semantic G / S:<server-id> / P:<server-id>:<sorted-comma-separated-group-ids>
+SHA-256 for quote evidence, without trusting the index key as another
+business value. The unique index rejects identical compact scope rows.
+Direct SQL can produce differently ordered but semantically duplicate
+Group-sets; the runtime detects competing winning offers per quantity.
+Application creation and scope/quantity changes check semantic uniqueness
+under the destination quantity-range lock, excluding the edited row.
+Existing conflicts remain repairable; unchanged keys and price-only edits
+need no new uniqueness check. Direct SQL can still deliberately create a
+conflict after the transaction; fresh requests isolate it. Do not confuse native PasarGuard groups with physical
 panel_group_id. For a given extension kind and integer unit count,
 priority is exact native PasarGuard Group-set > server > Global.
 Multiple native Groups are one exact set, never a cheapest matching
@@ -28,8 +39,11 @@ CREATE/plan defaults still require nonempty native Groups. A pinned
 existing-account snapshot may preserve [] only with valid account/identity
 references and must pass the usual current provider-authority checks both
 before payment and again after the durable effect claim, before PUT.
-Show at most one offer per quantity. Ambiguous/corrupt
-catalog entries fail closed.
+Show at most one offer per quantity. An ambiguous winning scope or malformed
+potentially applicable scope suppresses only that quantity, with a private
+diagnostic. Other quantities and unrelated server scopes stay usable. A
+higher-specificity valid scope can supersede lower-rank duplicate offers.
+No malformed scope is silently treated as Global.
 
 ## Administrator workflow
 
@@ -55,9 +69,11 @@ in its Scope and Server picker callbacks. A newer Telegram update ID alone
 never authorizes an old keyboard from another editing session. Every current offer
 edit/delete/scope button also contains a 20-hex
 content revision for the exact displayed kind, ID, scope, quantity and
-price. The existing authenticated SQL transaction locks and checks that
-row before any write; deleted or changed rows are rejected, not silently
-reinterpreted. Unbound historical callbacks are refused; no pre-015 runtime fallback remains. All callback payloads stay inside Telegram's 64-byte limit.
+price. The existing authenticated SQL transaction locks and checks actual
+row values before any write; deleted or changed rows are rejected, not
+silently reinterpreted. Fresh lists use current edited data; a no-op
+confirmed save is successful. A malformed scope remains editable using the
+existing scope picker, without hiding the other offers. Unbound historical callbacks are refused; no pre-015 runtime fallback remains. All callback payloads stay inside Telegram's 64-byte limit.
 
 New steps retain the existing role, private Telegram frame and update-ID
 fences. Incorrect or stale input does not change pricing.
@@ -93,7 +109,12 @@ server/provider identity, deleted offers or altered scopes fail closed
 for a refreshed quote or reconciliation, never automatic repricing.
 An already-issued quote must never silently change amount because of
 admin edits. New draft issuance fails when the selected offer price
-changed while the draft was being created.
+changed while the draft was being created. First admission for every
+payment method reuses the current locked winning-offer check, but keeps the
+original amount even after an ordinary base-price edit. The owning SQL
+transaction selects REPEATABLE READ for next-key protection of the quantity
+range (including gaps); it does not change the installation-wide isolation
+setting. Already admitted receipts never depend on current catalogue rows.
 
 Historical invoices without a current immutable quote retain evidence of the original amount and units but are not executable in the replacement runtime. Existing-instance reconciliation is separately authorized.
 Existing idempotency journals, wallet protections and gateway records
@@ -120,9 +141,19 @@ reprice, or blindly replay a remote mutation.
 
 ## Installation and verification
 
-The mandatory current schema contains both scoped unique indexes. Partial
-or incompatible schema is rejected. No optional migration or old schema
-mode is supported. The current CI suites include wallet_first_funding,
+The mandatory current schema contains both generated scope keys and scoped
+unique indexes. Partial or incompatible schema is rejected. No optional
+migration or old schema mode is supported. Fresh-install construction
+includes 057_derived_addon_scope.sql; it is not run from the bot. For an
+already-current v0.12.1 installation, separately authorize the controlled
+schema transition and rehearse it on a restore-tested backup before
+activation. Audit both tables for actual business scopes, invalid/duplicate
+quantities and affected original quotes, then convert only the redundant
+derived key, preserving IDs, editable fields and all original financial
+snapshots. Do not replay the historical migration chain. Record any changed
+scope interpretation (including old stale hash evidence) before rollout;
+a generated index collision must be reconciled explicitly, not by deleting
+rows or guessing prices. Retain the protected original backup. The current CI suites include wallet_first_funding,
 wallet_first_service_execution, wallet_first_fresh_schema and
 current_payment_readiness; see [CI validation](CI-VALIDATION.md). Source
 acceptance does not authorize live installation, data transfer, or provider

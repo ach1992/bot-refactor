@@ -24,6 +24,56 @@ if (($argv[4]??'')==='missing_delivery_contract') {
 if (($argv[4]??'')==='missing_followup_index') {
     echo achbotFollowupSchemaReady($db)?'UNSAFE':'REJECTED';exit;
 }
+if (($argv[4]??'')==='addon_catalog') {
+    require_once $argv[1].'/src/Plans/Addons.php';
+    function must($value,string $reason): void {
+        if (!$value) throw new RuntimeException($reason);
+    }
+    $context=['server_id'=>18,'order_id'=>41,'remark'=>'fixture','provider'=>'pasarguard',
+        'groups'=>[2,5],'pg_groups_checked'=>[2,5],'identity'=>str_repeat('a',64)];
+    $order=['id'=>41,'server_id'=>18,'remark'=>'fixture'];
+    $db->begin_transaction();
+    foreach (['day'=>'increase_day','volume'=>'increase_plan'] as $kind=>$table) {
+        $db->query("INSERT INTO $table(id,volume,price,server_id,group_ids) VALUES
+            (1,5,30000,NULL,NULL),(2,50,250000,NULL,NULL),(3,100,450000,18,'[ 5,2,2 ]'),
+            (4,5,50000,16,'not-json')");
+        $offers=static fn()=>array_column(achbotAddonCatalog($db,$kind,$context),'id','volume');
+        must($offers()===[5=>1,50=>2,100=>3],'direct_global_and_normalized_groups');
+        $row=$db->query("SELECT * FROM $table WHERE id=2")->fetch_assoc();
+        $rev=achbotAddonOfferRevision($kind,$row);
+        must($row['scope_hash']===hash('sha256','G'),'initial_generated_global_key');
+        $quote=achbotAddonQuote($order,$context,$kind,achbotAddonOfferById($db,$kind,$context,2),250000);
+        // The operator touches ONLY real business fields.
+        $db->query("UPDATE $table SET volume=51,price=260000,server_id=18,group_ids='[2,5]' WHERE id=2");
+        $row=$db->query("SELECT * FROM $table WHERE id=2")->fetch_assoc();
+        must($row['scope_hash']===hash('sha256','P:18:2,5'),'direct_edit_key_is_derived');
+        must(achbotAddonOfferRevision($kind,$row)!==$rev,'direct_edit_invalidates_only_stale_editor');
+        $new=achbotAddonOfferById($db,$kind,$context,2);
+        must($new['volume']===51 && $new['price']===260000 && $new['scope_groups']===[2,5],
+            'fresh_quote_uses_current_direct_edits');
+        $old=json_decode($quote,true,32,JSON_THROW_ON_ERROR);
+        must($old['units']===50 && $old['final_price']===250000 &&
+            $old['scope_hash']===hash('sha256','G'),'original_quote_unchanged');
+        $db->query("UPDATE $table SET group_ids='[5, 2]' WHERE id=2");
+        must(achbotAddonOfferById($db,$kind,$context,2)['scope_hash']===$new['scope_hash'],
+            'equivalent_group_order_does_not_change_semantic_scope');
+        $db->query("INSERT INTO $table(id,volume,price,server_id,group_ids) VALUES
+            (5,51,999999,18,'[2,5]'),(6,5,1,18,'broken')");
+        must($offers()===[100=>3],'conflict_and_bad_scope_isolate_quantities');
+        // Fixing the underlying configuration directly is sufficient.
+        $db->query("UPDATE $table SET volume=52 WHERE id=5");
+        $db->query("UPDATE $table SET server_id=16 WHERE id=6");
+        must($offers()===[5=>1,51=>2,52=>5,100=>3],'direct_edit_restores_only_affected_rows');
+        $db->query("UPDATE $table SET server_id=NULL,group_ids=NULL WHERE id=2");
+        must($db->query("SELECT scope_hash FROM $table WHERE id=2")->fetch_row()[0]===hash('sha256','G'),
+            'direct_scope_removal_recomputes_global');
+        // JSON objects are not Group lists even when object keys are numeric.
+        $db->query("UPDATE $table SET group_ids='{\"0\":2,\"1\":5}' WHERE id=3");
+        must($offers()===[5=>1,51=>2,52=>5],'invalid_object_not_misread_as_group_array');
+    }
+    $db->rollback();
+    echo 'PASS';exit;
+}
 if (($argv[4]??'')==='settings_menu') {
     set_error_handler(static function($severity,$message){
         if ($severity & (E_WARNING|E_NOTICE|E_USER_WARNING))
@@ -180,10 +230,19 @@ def main():
                 assert all(sql('fresh_chain','SHOW CREATE TABLE '+t)==d for t,d in defs.items())
                 sql('fresh_chain',"DELETE FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP'")
                 checks.append('construction_refuses_populated_hygiene_source')
+            if migration.name=='057_derived_addon_scope.sql':
+                sql('fresh_chain', "INSERT INTO increase_plan(id,volume,price,server_id,group_ids,scope_hash) VALUES (4,50,250000,NULL,NULL,SHA2('P:16:1,2',256)),(7,200,850000,NULL,NULL,SHA2('S:16',256)); INSERT INTO increase_day(id,volume,price,server_id,group_ids,scope_hash) VALUES(3,30,100000,18,'[2,5]',SHA2('G',256)); INSERT INTO pays(hash_id,user_id,type,price,request_date,state,addon_scope_snapshot) VALUES('fixture-original',1001,'INCREASE_DAY_1_3',100000,1700000000,'paid','original snapshot');")
+                before=sql('fresh_chain','SELECT id,volume,price,server_id,group_ids FROM increase_plan ORDER BY id; SELECT id,volume,price,server_id,group_ids FROM increase_day ORDER BY id; SELECT * FROM pays')
             try:
                 sql('fresh_chain',migration.read_text())
             except subprocess.CalledProcessError as error:
                 raise AssertionError((migration.name,error.stderr)) from error
+            if migration.name=='057_derived_addon_scope.sql':
+                assert sql('fresh_chain','SELECT id,volume,price,server_id,group_ids FROM increase_plan ORDER BY id; SELECT id,volume,price,server_id,group_ids FROM increase_day ORDER BY id; SELECT * FROM pays')==before
+                assert sql('fresh_chain',"SELECT COUNT(*) FROM increase_plan WHERE scope_hash=SHA2('G',256)")=='2'
+                assert sql('fresh_chain',"SELECT COUNT(*) FROM increase_day WHERE scope_hash=SHA2('P:18:2,5',256)")=='1'
+                sql('fresh_chain','DELETE FROM increase_plan; DELETE FROM increase_day; DELETE FROM pays')
+                checks.append('derived_scope_conversion_preserves_business_fields_and_original_financial_evidence')
         sql('fresh_single',(ROOT/'database/current-schema.sql').read_text())
         old=set(sql('fresh_chain','SHOW TABLES').splitlines())
         new=set(sql('fresh_single','SHOW TABLES').splitlines())
@@ -240,6 +299,13 @@ def main():
                 env=env,capture_output=True,text=True,timeout=20)
             assert p.returncode==0 and p.stdout=='PASS' and not p.stderr,(p.stdout,p.stderr)
             checks.append(mode+':fresh_and_partial_settings_menus_and_current_toggle_routes')
+            p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode,'addon_catalog'],
+                env=env,capture_output=True,text=True,timeout=20)
+            assert p.returncode==0 and p.stdout=='PASS',(p.stdout,p.stderr)
+            diagnostics=[json.loads(line[len('[AChBot] '):]) for line in p.stderr.splitlines() if line.startswith('[AChBot] ')]
+            assert len(diagnostics)==6 and all(x['event']=='achbot.addon.catalog_deferred' for x in diagnostics),p.stderr
+            assert {x['reason'] for x in diagnostics}=={'addon_catalog_ambiguous','addon_scope_groups_invalid'},diagnostics
+            checks.append(mode+':direct_addon_business_edits_generated_scope_and_conflict_isolation')
         for table,key,columns in (
             ('payment_delivery_intents','uq_delivery_effect','effect_id'),
             ('payment_delivery_intents','uq_delivery_service_ordinal','service_operation_id,ordinal'),

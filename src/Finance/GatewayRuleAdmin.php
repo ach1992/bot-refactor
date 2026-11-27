@@ -18,6 +18,11 @@ function achbotGatewayRuleCallback(string $data): ?array {
     $p=explode('|',$data);
     if (count($p)<2 || $p[0]!=='gr') return null;
     $action=$p[1];
+    if (in_array($action,['k','u'],true)) {
+        return count($p)===4 && array_key_exists($p[2],achbotPayUxAudienceMethods()) &&
+            preg_match('/\A[a-f0-9]{15}\z/D',$p[3])===1
+            ? ['action'=>$action,'method'=>$p[2],'expected_tag'=>$p[3]] : null;
+    }
     if ($action==='e') {
         return count($p)===3 &&
             array_key_exists($p[2],achbotPayUxAudienceMethods())
@@ -58,6 +63,17 @@ function achbotGatewayRuleCallback(string $data): ?array {
 }
 function achbotGatewayRuleStep(string $source): ?array {
     $p=explode('|',$source);
+    if (count($p)===4 && $p[0]==='gr' && $p[1]==='cap' &&
+        array_key_exists($p[2],achbotPayUxAudienceMethods()) &&
+        preg_match('/\A[a-f0-9]{15}\z/D',$p[3])===1)
+        return ['phase'=>'cap','method'=>$p[2],'baseline'=>$p[3]];
+    if (count($p)===6 && $p[0]==='gr' && $p[1]==='capconfirm' &&
+        array_key_exists($p[2],achbotPayUxAudienceMethods()) &&
+        achbotGatewayAmountNumber($p[3])!==null &&
+        preg_match('/\A[1-9][0-9]*\z/D',$p[4])===1 &&
+        preg_match('/\A[a-f0-9]{15}\z/D',$p[5])===1)
+        return ['phase'=>'capconfirm','method'=>$p[2],'value'=>$p[3],
+            'nonce'=>$p[4],'baseline'=>$p[5]];
     if (count($p)===3 && $p[0]==='gr' && $p[1]==='exempt' &&
         array_key_exists($p[2],achbotPayUxAudienceMethods()))
         return ['phase'=>'exempt','method'=>$p[2]];
@@ -89,6 +105,33 @@ function achbotGatewayRuleTextInteger(string $text,bool $days): ?int {
     $n=filter_var($text,FILTER_VALIDATE_INT,['options'=>['min_range'=>0]]);
     return $n!==false && achbotGatewayRuleInteger($n,$days)?$n:null;
 }
+/** Normalize only the admin's display formatting, not arbitrary JSON data. */
+function achbotGatewayAmountInput(string $value): ?int {
+    $value=strtr(trim($value),array_combine(
+        preg_split('//u','۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩',-1,PREG_SPLIT_NO_EMPTY),
+        str_split('01234567890123456789')));
+    if (preg_match('/\A[0-9]{1,3}(?:[,٬][0-9]{3})+\z/uD',$value)===1)
+        $value=str_replace([',','٬'],'',$value);
+    return achbotGatewayAmountNumber($value);
+}
+/** Compare just this method's effective cap, including malformed field
+ * evidence. Unrelated direct edits or other administrators remain independent. */
+function achbotGatewayAmountTag(array $state,string $method): string {
+    $map=$state['gatewayMaxAmountToman']??[];
+    $limit=achbotGatewayAmountLimit($state,$method);
+    $value=$limit!==null?['limit',$limit]:['invalid',is_array($map) && !array_is_list($map)?($map[$method]??null):$map];
+    return achbotGatewayRuleControlTag($value);
+}
+function achbotGatewayAmountSet(array $state,string $method,int $limit): array {
+    $map=$state['gatewayMaxAmountToman']??[];
+    if (!is_array($map) || ($map && array_is_list($map))) throw new RuntimeException('gateway_amount_map_invalid');
+    if ($limit===0) unset($map[$method]);
+    else $map[$method]=$limit;
+    if ($map) $state['gatewayMaxAmountToman']=$map;
+    else unset($state['gatewayMaxAmountToman']);
+    return $state;
+}
+
 /** One signed Telegram input may add or remove multiple numeric user IDs. */
 function achbotGatewayExemptChanges(string $value): ?array {
     $tokens=preg_split('/[\\s,،]+/u',trim($value));
@@ -122,6 +165,19 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
     if ($exempt===null) throw new RuntimeException('gateway_exempt_document_invalid');
     if ($kind==='number') {
         $s=achbotGatewayRuleStep($step);
+        if ($s && in_array($s['phase'],['cap','capconfirm'],true)) {
+            if ($step!==$key || $value===null)
+                throw new RuntimeException('gateway_amount_input_not_owned');
+            if ($value===achbotMessage('legacy_buttons.cancel')) {
+                $newStep='none';return $state;
+            }
+            if ($s['phase']!=='cap') throw new RuntimeException('gateway_amount_confirmation_required');
+            $n=achbotGatewayAmountInput($value);
+            if ($n===null || !hash_equals($s['baseline'],achbotGatewayAmountTag($state,$s['method'])))
+                throw new RuntimeException('gateway_amount_value_or_editor_stale');
+            $newStep='gr|capconfirm|'.$s['method'].'|'.$n.'|'.$sourceId.'|'.$s['baseline'];
+            return $state; // No ceiling change until the bound Save action.
+        }
         if ($s && $s['phase']==='exempt') {
             if ($step!==$key || $value===null)
                 throw new RuntimeException('gateway_exempt_input_not_owned');
@@ -161,17 +217,31 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
     $parsed=achbotGatewayRuleCallback($key);
     if ($parsed===null) throw new RuntimeException('gateway_rule_action_invalid');
     $act=$parsed['action'];
+    if (in_array($act,['k','u'],true)) {
+        $method=$parsed['method'];
+        if (!hash_equals($parsed['expected_tag'],achbotGatewayAmountTag($state,$method)))
+            throw new RuntimeException('gateway_amount_stale_operator_button');
+        if ($act==='u') return achbotGatewayAmountSet($state,$method,0);
+        $newStep='gr|cap|'.$method.'|'.$parsed['expected_tag'];
+        return $state;
+    }
     if ($act==='e') {
         $newStep='gr|exempt|'.$parsed['method'];
         return $state;
     }
     if ($act==='s' || $act==='x') {
         $s=achbotGatewayRuleStep($step);
-        if ($s===null || !in_array($s['phase'],['confirm','delete'],true) ||
+        if ($s===null || !in_array($s['phase'],['confirm','delete','capconfirm'],true) ||
             $s['nonce']!==$parsed['nonce'])
             throw new RuntimeException('gateway_rule_confirmation_stale');
         $newStep='none';
         if ($act==='x') return $state;
+        if ($s['phase']==='capconfirm') {
+            $n=achbotGatewayAmountNumber($s['value']);
+            if ($n===null || !hash_equals($s['baseline'],achbotGatewayAmountTag($state,$s['method'])))
+                throw new RuntimeException('gateway_amount_value_or_editor_stale');
+            return achbotGatewayAmountSet($state,$s['method'],$n);
+        }
         if ($s['phase']==='delete')
             throw new RuntimeException('gateway_rule_delete_requires_bound_action');
         $method=$s['method'];$category=$s['category'];
@@ -290,6 +360,20 @@ function achbotGatewayAdminExemptPrompt(string $method): string {
         'method'=>achbotPayUxAudienceMethods()[$method],
         'count'=>count($ids),'ids'=>$current]);
 }
+function achbotGatewayAdminAmountLabel(array $state,string $method): string {
+    $n=achbotGatewayAmountLimit($state,$method);
+    return $n===null?achbotMessage('payment_settings.gateway_rule_admin.cap_invalid'):
+        ($n===0?achbotMessage('payment_settings.gateway_rule_admin.cap_unlimited'):
+        achbotMessage('payment_settings.gateway_rule_admin.cap_value',['amount'=>number_format($n)]));
+}
+function achbotGatewayAdminAmountPrompt(string $method): string {
+    $state=achbotGatewayAdminCurrent();
+    if ($state===null || !array_key_exists($method,achbotPayUxAudienceMethods()))
+        return achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.36e4da5935');
+    return achbotMessage('payment_settings.gateway_rule_admin.cap_prompt',[
+        'method'=>achbotPayUxAudienceMethods()[$method],
+        'limit'=>achbotGatewayAdminAmountLabel($state,$method)]);
+}
 function achbotGatewayAdminMarkup(array $rows): string {
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 }
@@ -367,6 +451,13 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
             $rows[]=[['text'=>$label.\achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.text.3b2e8119b6').$tag,
                 'callback_data'=>'gr|r|'.$method.'|'.$category]];
         }
+        $tag=achbotGatewayAmountTag($state,$method);
+        $rows[]=[['text'=>achbotMessage('payment_settings.gateway_rule_admin.cap_button',[
+            'limit'=>achbotGatewayAdminAmountLabel($state,$method)]),
+            'callback_data'=>'gr|k|'.$method.'|'.$tag]];
+        if (achbotGatewayAmountLimit($state,$method)!==0)
+            $rows[]=[['text'=>achbotMessage('payment_settings.gateway_rule_admin.cap_clear'),
+                'callback_data'=>'gr|u|'.$method.'|'.$tag]];
         $rows[]=[['text'=>achbotMessage('payment_settings.gateway_rule_admin.exempt_button'),
             'callback_data'=>'gr|e|'.$method]];
         return ['text'=>$text,'keyboard'=>achbotGatewayAdminMarkup(

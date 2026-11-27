@@ -319,7 +319,7 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
             throw new DomainException('checkout_managed_service_unavailable');
         $q['order_id']=$oid;$q['variant']='managed';$q['remark']=$o['remark'];$q['uuid']=(string)$o['uuid'];
         if ($add) {
-            if (!achbotAddonPayLocal($db,$pay,$o)) throw new DomainException('checkout_addon_changed');
+            if (!achbotAddonCurrentLocked($db,$pay,$o)) throw new DomainException('checkout_addon_changed');
             $units=achbotPinnedAddonUnits($pay);
             if ($units===null) throw new DomainException('checkout_addon_changed');
             $q['kind']=$parts[1]==='DAY'?'ADD_TIME':'ADD_VOLUME';
@@ -339,6 +339,15 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
     return achbotServiceQuoteRequest($q);
 }
 
+/** One amount + audience decision for method display and first admission.
+ * The cap is outside audience exemptions and is always applied to the final
+ * original Toman amount, not individual items or merchant-side adjustments. */
+function achbotCheckoutMethodAllowedLocked(mysqli $db,string $method,int $actor,array $states,
+    string $type,int $price): bool {
+    return achbotGatewayAmountAllowed($states,$method,$price) &&
+        achbotPayUxAudienceAllowedInState($db,$method,$actor,$states,true,$type);
+}
+
 /** Configured audience-eligible methods for a positive quote; safe
  * network names only. The same pure configuration/quote builders are used
  * when issuing the original invoice, with no provider HTTP under locks. */
@@ -348,7 +357,7 @@ function achbotCheckoutPaymentOptionsLocked(mysqli $db,int $actor,string $type,i
     $keys=null;$methods=[];
     foreach (achbotPayUxAudienceMethods() as $method=>$label) {
         if ($type==='INCREASE_WALLET' && $method==='wallet') continue;
-        if (!achbotPayUxAudienceAllowedInState($db,$method,$actor,$states,true,$type)) continue;
+        if (!achbotCheckoutMethodAllowedLocked($db,$method,$actor,$states,$type,$price)) continue;
         $networks=[];
         if ($method!=='wallet') {
             $keys??=achbotPayUxCurrentDocumentLocked($db,'PAYMENT_KEYS')??[];
@@ -475,7 +484,8 @@ function achbotCheckoutAdmitDraftLocked(mysqli $db,array $pay,?array $attempt,
     if (!achbotPayUxUnclaimedDraftUsable($db,$pay,true) ||
         ((int)$pay['price']<0 || ($method!=='wallet' && (int)$pay['price']===0)) || !preg_match('/\A[A-Za-z0-9_-]{1,50}\z/D',$pay['hash_id']))
         throw new DomainException('checkout_draft_unavailable');
-    if (!$freeCommercial && !achbotPayUxAudienceAllowed($db,$method,$uid,true,$pay['type']))
+    if (!$freeCommercial && !achbotCheckoutMethodAllowedLocked($db,$method,$uid,
+        achbotPayUxCurrentStatesLocked($db)??[],$pay['type'],(int)$pay['price']))
         throw new DomainException('checkout_method_unavailable');
     if (achbotProviderRow($db,'SELECT id FROM service_effects WHERE pay_row_id=? LIMIT 1 FOR UPDATE','i',[$id]))
         throw new DomainException('checkout_historical_effect_pending');
@@ -557,7 +567,9 @@ function achbotManualApprovalCallbackData(array $pay): string {
 function achbotCheckoutWallet(mysqli $db,string $hash,int $actor,array $states): array {
     achbotPaymentEvidenceRequireAutocommit($db);
     achbotCheckoutRequireSchema($db);
-    if (!$db->begin_transaction()) throw new RuntimeException('checkout_wallet_begin');
+    // Resolve the subject only under its owner/pay locks. All first-admission
+    // transactions therefore use RR, so an add-on range cannot gain phantoms.
+    if (!achbotAddonBeginRangeTransaction($db)) throw new RuntimeException('checkout_wallet_begin');
     try {
         $owner=achbotWalletLockOwnerLocked($db,$actor);
         $s=achbotProviderStatement($db,'SELECT * FROM pays WHERE hash_id=? AND user_id=? LIMIT 2 FOR UPDATE','si',[$hash,$actor]);

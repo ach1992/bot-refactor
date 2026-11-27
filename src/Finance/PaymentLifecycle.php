@@ -227,7 +227,9 @@ function achbotPayUxLockDraftOwner(mysqli $db, int $userId): void {
 function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, array $pricingPolicy, bool $scopedAddon = false, array $display = [], array $states = [], ?array $editor = null): int {
     $started=false;
     try {
-        if (!$db->begin_transaction()) throw new RuntimeException('draft_begin_failed');
+        if ($scopedAddon) require_once __DIR__.'/../Plans/Addons.php';
+        if (!($scopedAddon?achbotAddonBeginRangeTransaction($db):$db->begin_transaction()))
+            throw new RuntimeException('draft_begin_failed');
         $started=true;
         achbotPayUxLockDraftOwner($db,$actor);
         $editorRow=null;

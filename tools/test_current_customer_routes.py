@@ -126,6 +126,8 @@ case 'order_agent':
     break;
 case 'plan_category':
     require $root.'/src/Plans/Categories.php';break;
+case 'addon_admin':
+    require $root.'/src/Plans/Intervals.php';break;
 case 'ticket':
     require_once $root.'/src/Support/Routes.php';
     achbotSupportRoute($connection,$from_id,$update,$userInfo,$cancelKey,$removeKeyboard);break;
@@ -243,7 +245,10 @@ def main():
                     continue
                 assert line.startswith('[AChBot] '),(op,line)
                 diagnostic=json.loads(line[len('[AChBot] '):])
-                assert (op in ('manual_claim','manual_checkout') and diagnostic['event']=='achbot.finance.checkout_manual_admission_deferred') or (
+                assert (op=='addon_admin' and diagnostic['event']=='achbot.addon.admin_scope_deferred') or (
+                    op=='extensions' and diagnostic['event']=='achbot.addon.route_deferred' and
+                    diagnostic.get('action') in ('day_list','day_quote','volume_list','volume_quote') and
+                    isinstance(diagnostic.get('order_id'),int) and isinstance(diagnostic.get('server_id'),int)) or (op in ('manual_claim','manual_checkout') and diagnostic['event']=='achbot.finance.checkout_manual_admission_deferred') or (
                     op=='shortcut' and diagnostic['event']=='achbot.delivery.followup_result' and
                     diagnostic.get('operational_ref','').startswith('welcome:') and diagnostic.get('result')=='acknowledged'),(op,diagnostic)
             return json.loads(r.stdout)
@@ -285,6 +290,34 @@ def main():
         run('ticket',actor=2003,callback='delTicketCat_10')
         assert sql('SELECT COUNT(*) FROM setting WHERE id IN (9,10)')=='0'
         cases.append('actual_content_deletion_scope_and_staff_capability')
+        # An actual invalid manually edited scope must remain repairable in
+        # the ordinary admin list, with working creation and same-value save.
+        for kind,table,menu,add,prefix in [
+            ('Volume','increase_plan','volumePlanSettings','addNewVolumePlan','changeVolumePlanPrice'),
+            ('Day','increase_day','dayPlanSettings','addNewDayPlan','changeDayPlanPrice')]:
+            sql(f"INSERT INTO {table}(id,volume,price,server_id,group_ids) VALUES(51,5,30000,NULL,NULL),(52,50,250000,18,'bad-json')")
+            r=run('addon_admin',actor=9001,callback=menu,update_id=201)
+            c=callbacks(r)
+            assert add in c and any(k.startswith(prefix+'51_') for k in c),r
+            repair=next(k for k in c if k.startswith('addonEditScope'+kind+'52_'))
+            r=run('addon_admin',actor=9001,callback=repair,update_id=202)
+            assert r['user']['step']=='addon:scope',r
+            select=next(k for k in callbacks(r) if k.startswith('addonScopeGlobal_'))
+            r=run('addon_admin',actor=9001,callback=select,update_id=203)
+            assert r['user']['step']=='none' and sql(f"SELECT CONCAT(server_id IS NULL,':',group_ids IS NULL,':',scope_hash=SHA2('G',256)) FROM {table} WHERE id=52")=='1:1:1',r
+            sql(f"UPDATE {table} SET volume=51,price=260000 WHERE id=52")
+            r=run('addon_admin',actor=9001,callback=menu,update_id=204)
+            price=next(k for k in callbacks(r) if k.startswith(prefix+'52_'))
+            r=run('addon_admin',actor=9001,callback=price,update_id=205)
+            assert r['user']['step']==price,r
+            r=run('addon_admin',actor=9001,text='260000',update_id=206)
+            assert r['user']['step']=='none' and sql(f'SELECT price FROM {table} WHERE id=52')=='260000',r
+            r=run('addon_admin',actor=9001,callback=add,update_id=207)
+            r=run('addon_admin',actor=9001,callback=next(k for k in callbacks(r) if k.startswith('addonScopeGlobal_')),update_id=208)
+            r=run('addon_admin',actor=9001,text='20-90000',update_id=209)
+            assert r['user']['step']=='none' and sql(f"SELECT COUNT(*) FROM {table} WHERE volume=20 AND price=90000")=='1',r
+            sql(f'DELETE FROM {table}')
+        cases.append('actual_addon_admin_repair_direct_edit_noop_and_create')
         # Two administrators may open category creation independently. Neither
         # draft creates or deletes shared catalogue rows; typed submission
         # consumes only its own locked step, exactly once.
@@ -383,6 +416,15 @@ def main():
         assert [c for c in callbacks(run('catalogue',callback='selectCategory1_2_none')) if c.startswith('selectPlan')]==['selectPlan7_1_none']
         assert 'availableServers' not in callbacks(run('menu'))
         cases.append('actual_capacity_entry_catalogue_share_current_native_saleability')
+        # Use precisely the same prompt in single purchase and staff bulk routes.
+        for staff,customer,expected in [
+            ('createAccServer2','selectServer2_none','createAccCategory1_2'),
+            ('createAccCategory1_2','selectCategory1_2_none','createAccPlan7')]:
+            staff_result=run('entry',actor=9001,callback=staff)
+            customer_result=run('catalogue',callback=customer)
+            assert expected in callbacks(staff_result),staff_result
+            assert [e[1] for e in staff_result['events'] if e[0]=='edit']==[e[1] for e in customer_result['events'] if e[0]=='edit'],(staff_result,customer_result)
+        cases.append('staff_bulk_and_customer_single_catalogue_prompts_identical')
         # All references, even inactive plans, prevent category deletion.
         sql("INSERT INTO server_categories(id,title,parent,active) VALUES (90,'Referenced',0,1),(91,'Empty',0,1)")
         sql("UPDATE server_plans SET catid=90 WHERE id=8")
@@ -425,9 +467,18 @@ def main():
             if mode=='custom': assert quote['days']==3 and quote['volume']==2 and quote['remark']=='custom12345',quote
             return r
         original=run('standard',callback='selectPlan7_1_none')
+        original_id=latest(2001)[0]
         sql('UPDATE server_plans SET price=250 WHERE id=7')
         redeem(2001,original,'standard','standard','selectCategory1_2_none',80)
-        sql('UPDATE server_plans SET price=100 WHERE id=7')
+        original_context=json.loads(sql(f"SELECT checkout_draft_context FROM pays WHERE id={original_id}"))
+        assert (original_context['days'],original_context['volume'])==(30,2),original_context
+        sql('UPDATE server_plans SET days=31,volume=3 WHERE id=7')
+        fresh=run('standard',callback='selectPlan7_1_none')
+        fresh_id,_,price,_=latest(2001)
+        fresh_context=json.loads(sql(f"SELECT checkout_draft_context FROM pays WHERE id={fresh_id}"))
+        assert fresh_id!=original_id and int(price)==250 and (fresh_context['days'],fresh_context['volume'])==(31,3),(fresh,fresh_context)
+        sql('UPDATE server_plans SET price=100,days=30,volume=2 WHERE id=7')
+        cases.append('direct_standard_plan_edits_apply_to_fresh_quotes_preserve_original')
         redeem(2002,run('standard',actor=2002,callback='selectPlan7_1_one'),'agentone','standard','selectCategory1_2_one',80)
         before_bulk=sql('SELECT COUNT(*) FROM pays')
         run('standard',actor=2002,callback='selectPlan7_1_much')
@@ -512,6 +563,15 @@ def main():
         assert 'selectServer2_none' not in callbacks(run('shortcut',text='/buy',forced='@fixture',member=False))
         assert 'haveJoined/start buy' in callbacks(run('shortcut',text='/buy',forced='@fixture',member=False))
         assert 'selectServer2_none' in callbacks(run('shortcut',callback='haveJoined/start buy',forced='@fixture',member=True))
+        for callback,expected in [('shortcutBuy','selectServer2_none'),('shortcutMySubs',f'orderDetails{oid}')]:
+            r=run('shortcut',callback=callback,record_delete=True)
+            assert expected in callbacks(r) and not any(e[0] in ('edit','delete') for e in r['events']),r
+        assert 'haveJoined/start buy' in callbacks(run('shortcut',callback='shortcutBuy',forced='@fixture',member=False))
+        assert 'agentOneBuy' in callbacks(run('shortcut',actor=2002,callback='shortcutBuy'))
+        state(sellState='off')
+        assert 'selectServer2_none' not in callbacks(run('shortcut',callback='shortcutBuy'))
+        state()
+        cases.append('wallet_credit_shortcuts_preserve_evidence_and_current_entry_guards')
         state(botState='off')
         assert 'selectServer2_none' not in callbacks(run('shortcut',text='/buy'))
         state()
@@ -786,7 +846,7 @@ def main():
         cases.append('full_discount_zero_confirmation_without_wallet_or_gateway')
         # Fresh discount discovery works for each existing commercial route
         # with all monetary methods off, or an ineligible method audience.
-        no_method_notice='\u26a0\ufe0f \u0647\u06cc\u0686 \u0631\u0648\u0634 \u067e\u0631\u062f\u0627\u062e\u062a\u06cc \u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0633\u0641\u0627\u0631\u0634 \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a. \u062f\u0631 \u0627\u06cc\u0646 \u0634\u0631\u0627\u06cc\u0637 \u0641\u0642\u0637 \u06a9\u062f \u062a\u062e\u0641\u06cc\u0641\u06cc \u06a9\u0647 \u0645\u0628\u0644\u063a \u0646\u0647\u0627\u06cc\u06cc \u0631\u0627 \u0635\u0641\u0631 \u06a9\u0646\u062f \u0642\u0627\u0628\u0644 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0627\u0633\u062a.'
+        no_method_notice='⚠️ هیچ روش پرداختی برای مبلغ فعلی در دسترس نیست. کد تخفیف در صورتی قابل استفاده است که مبلغ نهایی صفر شود یا یکی از روش\u200cهای پرداخت برای مبلغ جدید در دسترس باشد.'
         def buttons(r):
             return [b for e in r['events'] if e[0] in ('send','edit') and len(e)>2 and e[2]
                 for row in json.loads(e[2]).get('inline_keyboard',[]) for b in row]
@@ -935,6 +995,12 @@ def main():
                     return any('?'+prefix+'&hash_id='+h in b.get('url','') for b in buttons(r))
                 return prefix+h in callbacks(r)
             assert method_visible(r), (method,r)
+            state(**({'walletState':'off',flag:'on'} if flag!='walletState' else {'walletState':'on'}),
+                gatewayMaxAmountToman={method:80})
+            r=run('standard',callback='selectPlan7_1_none')
+            pid,h,price,_=latest(2001)
+            assert int(price)==100 and not method_visible(r),(method,r)
+            no_money_card(r,pid)
             code='methodpositive'+str(index)
             sql(f"INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('{code}','percent',20,0,2,-1)")
             run('discount',callback='haveDiscountCheckout_'+pid)
@@ -951,6 +1017,29 @@ def main():
         sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
         state()
         cases.append('all_eight_configured_methods_positive_discount_and_crypto_audience_exactness')
+        cases.append('all_eight_method_caps_and_final_discount_inclusive_boundary')
+        state(gatewayMaxAmountToman={'wallet':100})
+        run('standard',actor=2002,callback='selectPlan7_1_much')
+        r=run('standard',actor=2002,text='3')
+        pid,h,price,_=latest(2002)
+        assert int(price)>100 and 'pw_'+h not in callbacks(r),r
+        state(gatewayMaxAmountToman={'wallet':100})
+        r=run('standard',callback='selectPlan7_1_none');pid,h,price,_=latest(2001)
+        assert 'pw_'+h in callbacks(r) and int(price)==100,r
+        state(gatewayMaxAmountToman={'wallet':99},gatewayAudience={'wallet':'off'},
+            gatewayRuleExemptUsers={'wallet':[2001]})
+        before=tuple(sql(q) for q in ('SELECT COUNT(*) FROM service_operations',
+            'SELECT COUNT(*) FROM wallet_entries','SELECT wallet FROM users WHERE userid=2001'))
+        rr=run('wallet',hash=h,expect_denied=True,stale_state={'gatewayMaxAmountToman':{'wallet':0}})
+        assert rr['events']==[['denied','checkout_method_unavailable']],rr
+        assert tuple(sql(q) for q in ('SELECT COUNT(*) FROM service_operations',
+            'SELECT COUNT(*) FROM wallet_entries','SELECT wallet FROM users WHERE userid=2001'))==before
+        assert sql(f'SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}')=='1'
+        state(gatewayMaxAmountToman={'wallet':100},gatewayAudience={'wallet':'off'},
+            gatewayRuleExemptUsers={'wallet':[2001]})
+        assert run('wallet',hash=h)['events'][0][1]['status']=='funded'
+        state()
+        cases.append('bulk_total_and_locked_wallet_cap_with_exemption_and_stale_request')
         # Invalid destination types are unavailable, never an implicit
         # string conversion into a bank recipient or crypto destination.
         state(walletState='off',cartToCartState='on',giftCardState='on',manualUsdtState='on')
@@ -1003,6 +1092,26 @@ def main():
             else:
                 assert_topup_methods(set() if method=='wallet' else expected)
         cases.append('configured_methods_shared_by_independent_topup_no_wallet_self_payment')
+        sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
+        state(walletState='off',cartToCartState='on',gatewayMaxAmountToman={'bank_transfer':99999})
+        assert_topup_methods(set())
+        state(walletState='off',cartToCartState='on',gatewayMaxAmountToman={'bank_transfer':'100000'})
+        assert_topup_methods({'bank_transfer'})
+        pid,h,_,_=latest(2001)
+        # The random transfer amount is not the cap input.
+        state(walletState='off',cartToCartState='on',gatewayMaxAmountToman={'bank_transfer':99999})
+        before=sql('SELECT COUNT(*) FROM payment_attempts')
+        rr=run('manual_claim',pay=int(pid),method='bank_transfer',mode='topup',
+            stale_state={'gatewayMaxAmountToman':{'bank_transfer':0}})
+        assert ['claim',False] in rr['events'] and sql('SELECT COUNT(*) FROM payment_attempts')==before,rr
+        state(walletState='off',cartToCartState='on',gatewayMaxAmountToman={'bank_transfer':100000})
+        rr=run('manual_claim',pay=int(pid),method='bank_transfer',mode='topup')
+        assert ['claim',True] in rr['events'],rr
+        issued=sql(f'SELECT quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}')
+        state(walletState='off',cartToCartState='on',gatewayMaxAmountToman={'bank_transfer':1})
+        rr=run('manual_claim',pay=int(pid),method='bank_transfer',mode='topup')
+        assert ['claim',True] in rr['events'] and sql(f'SELECT quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}')==issued,rr
+        cases.append('topup_manual_cap_uses_invoice_amount_and_preserves_admitted_receipt')
         state(walletState='off',zarinpal='on',nextpay='on',nowPaymentOther='on',nowPaymentWallet='on')
         sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
         assert_topup_methods(set(),stale_keys={'zarinpal':'stale','nextpay':'stale','nowpayment':'stale','manualUsdtRateToman':'1000'})

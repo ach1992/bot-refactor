@@ -95,16 +95,25 @@ def main() -> None:
               "semantic_copy_not_equal:"+name)
         expected[target]=value
         semantic_values[name]=value
+    chili = json.loads((ROOT / "tools/chili_acceptance_copy_corrections.json").read_text())
+    chili_base = at_revision(chili["baseline"])
+    check(expected==chili_base, "chili_copy_baseline_mismatch")
+    for name, change in chili["changes"].items():
+        check(expected.get(name)==change["before"], "chili_copy_before_mismatch:"+name)
+        if change["after"] is None:
+            del expected[name]
+        else:
+            expected[name]=change["after"]
     check(new==expected, "current_copy_bytes_changed_outside_explicit_mapping")
     ux_retired = {k for k, change in ux["changes"].items() if change["after"] is None}
-    retired = sorted(set(prior_retired)|set(mapping["equal"])|set(mapping["dead"])|ux_retired|set(semantic))
+    retired = sorted(set(prior_retired)|set(mapping["equal"])|set(mapping["dead"])|ux_retired|set(semantic)|{k for k,v in chili["changes"].items() if v["after"] is None})
     sources = {p:(ROOT/p).read_text() for p in package_current.members()
                if p.endswith(".php") and p not in owner.AUDIENCES}
     restored = {topic:dict(entries) for topic,entries in owner.loaded_catalog().items()}
     for name in retired:
         topic,key=name.split(".",1)
         restored.setdefault(topic,{})[key]=(semantic_values[name] if name in semantic_values else
-            ux_base[name] if name in ux_retired else previous[name] if name in previous else old[name])
+            ux_base[name] if name in ux_retired else chili_base[name] if name in chili["changes"] else previous[name] if name in previous else old[name])
     check(owner.unresolved_copy_orphans(restored,sources)==retired,"retired_copy_has_live_consumer")
     check(not owner.unresolved_copy_orphans(owner.loaded_catalog(),sources),"unresolved_current_copy")
     print(json.dumps({"complete":True,"status":"PASS","baseline":stable,

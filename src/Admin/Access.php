@@ -176,7 +176,7 @@ function achbotAdminRequestCapability(string $value): ?string {
 function achbotAdminRequestAllowed(?string $callback,?string $text,string $step): bool {
     // Home/cancel always allows leaving a stale staff editor after demotion.
     // Callback message text is not fresh typed input and cannot provide escape.
-    if (in_array($callback,['mainMenu','navHome','evidenceHome'],true) ||
+    if (in_array($callback,['mainMenu','navHome','evidenceHome','shortcutBuy','shortcutMySubs'],true) ||
         preg_match('/^ph_[A-Za-z0-9_-]{1,50}$/D',(string)$callback) ||
         (($callback??'')==='' && $text!==null &&
          (preg_match('~^/[Ss]tart(?:@[A-Za-z0-9_]{1,32})?(?:\\s|$)~D',$text) ||

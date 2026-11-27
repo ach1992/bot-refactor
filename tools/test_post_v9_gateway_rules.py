@@ -28,6 +28,7 @@ $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
 $connection->set_charset('utf8mb4');
 $botState=$spec['snapshot']??[];
 require $argv[1].'/src/Finance/PaymentLifecycle.php';
+require_once $argv[1].'/src/Finance/CheckoutAdmission.php';
 if (!empty($spec['history_boundary'])) {
     $result=achbotCustomerHistoryCount(
        $connection,(int)$spec['actor'],'buy',90,
@@ -43,7 +44,10 @@ try {
         if (!$connection->begin_transaction()) throw new RuntimeException('begin');
         achbotPayUxLockDraftOwner($connection,(int)$spec['actor']);
     }
-    $allowed=achbotPayUxAudienceAllowed($connection,
+    if (array_key_exists('amount',$spec)) {
+        $allowed=achbotCheckoutMethodAllowedLocked($connection,$spec['method'],(int)$spec['actor'],
+            achbotPayUxCurrentStatesLocked($connection)??[],$spec['subject'],(int)$spec['amount']);
+    } else $allowed=achbotPayUxAudienceAllowed($connection,
         $spec['method'],(int)$spec['actor'],(bool)$spec['final'],$spec['subject']);
 } catch (Throwable $e) { $allowed=false; }
 if ($spec['final']) $connection->rollback();
@@ -488,6 +492,29 @@ def main():
             assert not allowed(policy('wallet',[blank('all')],
                                      gatewayRuleExemptUsers=bad)),bad
         cases.append('malformed_exemption_fails_closed')
+        # Invalid individual values do not affect other methods.
+        def amount_allowed(s,amount,method='wallet',subject='BUY_SUB',who=1001):
+            store(s)
+            return php(eva,{'snapshot':initial,'method':method,'actor':who,
+                'final':True,'subject':subject,'amount':amount})['allowed']
+        for method in ('nowpayments','zarinpal','nextpay','bank_transfer','gift_card','manual_usdt','manual_trx','wallet'):
+            for raw in (None,0,'0','000',100,'100',' 0100 '):
+                s={**initial,'gatewayMaxAmountToman':{method:raw}}
+                assert amount_allowed(s,100,method)
+                assert amount_allowed(s,101,method)==(raw in (None,0,'0','000'))
+            for raw in (-1,True,1.5,'-1','1e3',{},[]):
+                s={**initial,'gatewayMaxAmountToman':{method:raw}}
+                assert not amount_allowed(s,1,method),raw
+                other='bank_transfer' if method=='wallet' else 'wallet'
+                assert amount_allowed(s,1,other),raw
+        for malformed in ('invalid',123,[100]):
+            assert not amount_allowed({**initial,'gatewayMaxAmountToman':malformed},1)
+        s=policy('wallet',[],gatewayRuleExemptUsers={'wallet':[1001]},gatewayMaxAmountToman={'wallet':100})
+        assert amount_allowed(s,100) and not amount_allowed(s,101)
+        assert not amount_allowed({**s,'walletState':'off'},100)
+        assert amount_allowed({**initial,'gatewayMaxAmountToman':{'nowpayments':100}},100,'nowpayments','INCREASE_WALLET')
+        assert not amount_allowed({**initial,'gatewayMaxAmountToman':{'nowpayments':100}},101,'nowpayments','INCREASE_WALLET')
+        cases.append('amount_caps_all_methods_inclusive_exemption_independent_and_bad_value_isolation')
         # Rest of operator suite uses original source route and writer.
         store(initial)
         sequence=[1000]
@@ -537,6 +564,94 @@ def main():
                         assert cb and len(cb.encode('utf8'))<=64,(screen,cb)
         store(initial)
         cases.append('operator_all_methods_longest_category_callbacks_under_64_bytes')
+        def cap_button(method,action='k',who=9001):
+            events,_=act('gr|m|'+method,who=who)
+            for event in events:
+                if event[0]!='edit':continue
+                for row in json.loads(event[2])['inline_keyboard']:
+                    for b in row:
+                        if b['callback_data'].startswith('gr|'+action+'|'+method+'|'):
+                            assert len(b['callback_data'].encode())<=64
+                            return b
+            raise AssertionError(('missing_cap_button',events))
+        cb=cap_button('bank_transfer')
+        assert 'بدون محدودیت' in cb['text'],cb
+        events,_=act(cb['callback_data'])
+        assert any(e[0]=='send' and 'تومان' in e[1] for e in events),events
+        before=state()
+        for bad in ('-1','1.5','1,00','abc','99999999999999999999999999999'):
+            act(text=bad,message=True)
+            assert state()==before
+        def propose_cap(value,who=9001):
+            prior=state()
+            events,nonce=act(text=value,who=who,message=True)
+            assert state()==prior,(events,state(),prior)
+            assert sql(w,e,f'SELECT step FROM users WHERE userid={who}').startswith('gr|capconfirm|'),events
+            keys=[item['callback_data'] for event in events if event[0]=='send' and event[2]
+                  for row in json.loads(event[2]).get('inline_keyboard',[]) for item in row]
+            assert keys==['gr|s|'+str(nonce),'gr|x|'+str(nonce)],events
+            return nonce,events
+        nonce,events=propose_cap('۵۰۰٬۰۰۰')
+        assert '500,000' in events[-1][1],events
+        assert 'gatewayMaxAmountToman' not in state()
+        for who,invalid in ((9002,None),(1001,None),(9001,'token'),(9001,'group')):
+            act('gr|s|'+str(nonce),who=who,invalid=invalid)
+            assert 'gatewayMaxAmountToman' not in state()
+        events,_=act('gr|s|'+str(nonce))
+        assert state()['gatewayMaxAmountToman']=={'bank_transfer':500000}
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        assert any(e[0]=='edit' and '500,000' in e[2] for e in events),events
+        act('gr|s|'+str(nonce))
+        assert state()['gatewayMaxAmountToman']=={'bank_transfer':500000}
+        act(cap_button('bank_transfer')['callback_data'])
+        cancel_nonce,_=propose_cap('600000')
+        act('gr|x|'+str(cancel_nonce))
+        assert state()['gatewayMaxAmountToman']=={'bank_transfer':500000}
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        wallet_button=cap_button('wallet',who=9001);gift_button=cap_button('gift_card',who=9002)
+        act(wallet_button['callback_data'],who=9001);act(gift_button['callback_data'],who=9002)
+        wallet_nonce,_=propose_cap('100',who=9001)
+        gift_nonce,_=propose_cap('200',who=9002)
+        act('gr|s|'+str(gift_nonce),who=9002)
+        act('gr|s|'+str(wallet_nonce),who=9001)
+        assert state()['gatewayMaxAmountToman']=={'bank_transfer':500000,'wallet':100,'gift_card':200}
+        wallet_button=cap_button('wallet')
+        act(wallet_button['callback_data'])
+        stale_nonce,_=propose_cap('400')
+        sql(w,e,"UPDATE setting SET value=JSON_SET(value,'$.gatewayMaxAmountToman.wallet',300) WHERE type='BOT_STATES'")
+        act('gr|s|'+str(stale_nonce))
+        assert state()['gatewayMaxAmountToman']['wallet']==300
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001').startswith('gr|capconfirm|')
+        act('gr|x|'+str(stale_nonce))
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        # Typed cancel remains available before and after confirmation, and
+        # arbitrary text cannot silently modify a staged proposal.
+        act(cap_button('wallet')['callback_data'])
+        cancel_nonce,_=propose_cap('450')
+        act(text='999',message=True)
+        assert state()['gatewayMaxAmountToman']['wallet']==300
+        act(text='❌ لغو عملیات',message=True)
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        act('gr|s|'+str(cancel_nonce))
+        assert state()['gatewayMaxAmountToman']['wallet']==300
+        clear=cap_button('wallet','u')
+        act(clear['callback_data'])
+        assert 'wallet' not in state()['gatewayMaxAmountToman']
+        act(clear['callback_data'])
+        assert 'wallet' not in state()['gatewayMaxAmountToman']
+        act(cap_button('gift_card')['callback_data'])
+        clear_nonce,_=propose_cap('0')
+        assert state()['gatewayMaxAmountToman']['gift_card']==200
+        act('gr|s|'+str(clear_nonce))
+        assert state()['gatewayMaxAmountToman']=={'bank_transfer':500000}
+        for who,invalid in ((1001,None),(9001,'token'),(9001,'group')):
+            before=state()
+            act(cap_button('bank_transfer')['callback_data'],who=who,invalid=invalid)
+            assert state()==before
+            assert sql(w,e,f'SELECT step FROM users WHERE userid={who}')=='none'
+        store(initial)
+        cases.append('operator_amount_cap_create_clear_direct_edit_cas_independent_methods_and_authorization')
+        cases.append('operator_amount_cap_staged_save_cancel_and_replay')
         events,_=act('gr|l')
         assert any(x[0]=='edit' and 'روش‌های پرداخت' in x[1] for x in events)
         events,_=act('gr|r|wallet|non_agents')
