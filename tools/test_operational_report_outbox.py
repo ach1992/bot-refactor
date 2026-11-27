@@ -152,6 +152,12 @@ foreach ([$pre,(object)['ok'=>false,'error_code'=>429,'description'=>'Too Many R
     $held=achbotProviderRow($other,'SELECT GET_LOCK(?,0) AS owned','s',[$lease]);
     ensure((int)$held['owned']===1 && achbotFollowupDispatchOne($connection,$peer)==='acknowledged',
         'peer_destination_independent_'.$i);
+    ensure(achbotFollowupDispatchOne($connection,$id)==='busy','held_recipient_lease_busy_'.$i);
+    // Closing a client socket does not prove the server has already
+    // processed disconnect and released its named locks. Synchronize the
+    // fixture's deliberate lease release, without retrying delivery.
+    $released=achbotProviderRow($other,'SELECT RELEASE_LOCK(?) AS released','s',[$lease]);
+    ensure((int)$released['released']===1,'fixture_lease_release_confirmed_'.$i);
     $other->close();
     query('UPDATE payment_followup_intents SET next_attempt_at=NOW(6) WHERE id='.$id);
     $recovered=achbotFollowupDispatchOne($connection,$id);
