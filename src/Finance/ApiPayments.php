@@ -340,6 +340,9 @@ function achbotApiPaymentCheckGift(mysqli $db,array $claim,callable $settle): st
     if(in_array($status,['used','revoked','expired'],true)) {
         if(achbotPaymentEvidenceRejectGiftCode($db,$id,$code,$status))achbotApiPaymentRememberGiftRejection($db,$id,$code,$status);return $status;
     }
+    // No usable pre-consumption verification response. Preserve the
+    // recoverable read failure; pending consumption is handled above.
+    if($status==='unavailable')return 'unavailable';
     if(empty($result['ok']) || $status!=='active')return 'review';
     $e=achbotPaymentEvidenceGiftNormalize($result['data']??[],$claim['profile'],$claim['attempt']);
     if($e===null) {$why=achbotPaymentEvidenceGiftNormalizationStatus($result['data']??[],$claim['profile'],$claim['attempt']);if($why==='mismatch' && achbotPaymentEvidenceRejectGiftCode($db,$id,$code,'mismatch'))achbotApiPaymentRememberGiftRejection($db,$id,$code,'mismatch');return $why==='mismatch'?'mismatch':'review';}

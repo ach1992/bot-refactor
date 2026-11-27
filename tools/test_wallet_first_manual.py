@@ -563,6 +563,30 @@ DELIMITER ;
                 r=result(mode,'issue',pid,method='bank_transfer',api=True,service=oid)
                 assert result(mode,'admit',pid,file='fixture-sms',api=True)
                 assert send_original(mode,pid,api=True,fail_send=True)['status']=='unknown'
+                # Exercise the actual checker through admission and durable
+                # observations, not an injected evidence_state renderer row.
+                b=balance()
+                def check_observation(expected,stored):
+                    sql(f"UPDATE payment_attempts SET evidence_next_check_at=NOW() WHERE pay_row_id={pid}")
+                    assert result(mode,'check',pid)==expected
+                    assert sql(f"SELECT CONCAT(stage,':',evidence_state,':',evidence_claim_token IS NULL,':',evidence_next_check_at>NOW()) FROM payment_attempts WHERE pay_row_id={pid}")==f'review:{stored}:1:1'
+                    assert sql(f"SELECT state FROM pays WHERE id={pid}")=='have_sent'
+                    assert balance()==b
+                check_observation('monitoring','monitoring')
+                reads=server.read_requests
+                server.read_faults=[503]
+                check_observation('monitoring','monitoring')
+                assert not server.read_faults and server.read_requests>reads+1
+                reads=server.read_requests
+                server.read_faults=[503]*3
+                check_observation('unavailable','unavailable')
+                assert not server.read_faults and server.read_requests==reads+3
+                assert result(mode,'attention',pid) is True
+                assert sql(f"SELECT COUNT(*) FROM payment_transactions WHERE attempt_id=(SELECT id FROM payment_attempts WHERE pay_row_id={pid})")=='0'
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='receipt_admitted' AND role='customer'")=='1'
+                check_observation('monitoring','monitoring')
+                case('bank_read_unavailable_persists_and_recovers_to_monitoring')
+                sql(f"UPDATE payment_attempts SET evidence_next_check_at=NOW() WHERE pay_row_id={pid}")
                 ident='100' if mode=='strict' else '200'
                 now=datetime.now(timezone.utc).replace(microsecond=0)
                 server.messages[ident]=dict(id=int(ident),public_uid='UID'+ident,provider='BANK_FIXTURE',provider_sms_id='sms'+ident,
@@ -571,6 +595,13 @@ DELIMITER ;
                 sql('UPDATE server_info SET active=0 WHERE id=2')
                 b=balance();server.fail_once=True
                 assert result(mode,'check',pid)=='pending' and balance()==b
+                # An unavailable readback after durable consumption dispatch
+                # is an uncertain effect, NOT the pre-dispatch outage state.
+                assert sql(f"SELECT evidence_state FROM payment_attempts WHERE pay_row_id={pid}")=='uncertain'
+                server.read_faults=[503]*3
+                check_observation('pending','uncertain')
+                assert not server.read_faults and server.consumes[ident]==1
+                assert run(mode,'reject',pid)['reason']=='manual_reject_original_evidence_pending'
                 sql(f'UPDATE payment_attempts SET evidence_next_check_at=NOW() WHERE pay_row_id={pid}')
                 assert result(mode,'check',pid)=='settled' and balance()==b+100
                 assert result(mode,'check',pid)=='settled' and balance()==b+100 and server.consumes[ident]==1
@@ -579,6 +610,7 @@ DELIMITER ;
                 assert roles(pid)=='customer,service_admin,service_channel',roles(pid)
                 assert sql(f"SELECT COUNT(*) FROM payment_followup_attempts a JOIN payment_followup_intents f ON f.id=a.intent_id WHERE f.pay_row_id={pid} AND f.stage='receipt_admitted' AND a.result='acknowledged'")=='0'
                 case('actual_bank_scan_without_staff_ack_service_invalidated')
+                case('dispatched_bank_read_failure_retains_uncertain_effect')
                 # A receipt already submitted before service supersession is
                 # still real money. Never revive the invalidated service.
                 oid=result(mode,'quote',reference=mode+'-superseded',request=q)
@@ -624,19 +656,32 @@ DELIMITER ;
                     redeem_amount=1000,display_amount=1000,face_value=10,currency_label='fixture',order_id=1234,
                     order_number='WEB-2026-0042',order_created_at='2026-09-09T07:00:00+00:00',created_at='2026-09-10T08:05:00+00:00')
                 submit(mode,pid,'gift_card',code,api=True)
-                b=balance()
+                b=balance();consumes=server.gift_consumes
+                verifies=server.verify_requests
+                server.verify_faults=[503]*3
+                check_observation('unavailable','unavailable')
+                assert not server.verify_faults and server.verify_requests==verifies+3
+                assert server.gift_consumes==consumes
+                assert result(mode,'attention',pid) is True
+                assert sql(f"SELECT COUNT(*) FROM payment_transactions WHERE attempt_id=(SELECT id FROM payment_attempts WHERE pay_row_id={pid})")=='0'
+                sql(f"UPDATE payment_attempts SET evidence_next_check_at=NOW() WHERE pay_row_id={pid}")
+                # Recovery uses the existing read retry and original proof owner.
+                server.verify_faults=[503]
                 # Fail the actual local money insertion after successful
                 # external consume. The protected proof must survive.
                 sql("CREATE TRIGGER fixture_credit_fail BEFORE INSERT ON wallet_entries FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture'")
                 try:
                     r=run(mode,'check',pid)
                     assert not r['ok'] and balance()==b,r
+                    assert not server.verify_faults and server.gift_consumes==consumes+1
+                    assert sql(f"SELECT evidence_state FROM payment_attempts WHERE pay_row_id={pid}")=='proven'
                 finally:sql('DROP TRIGGER fixture_credit_fail')
                 assert run(mode,'reject',pid)['reason']=='manual_reject_original_evidence_pending'
                 assert result(mode,'check',pid)=='settled' and balance()==b+1000
                 assert result(mode,'check',pid)=='settled' and balance()==b+1000
                 assert roles(pid)=='customer,receipt_primary,service_admin,service_channel',roles(pid)
                 case('actual_gift_proven_local_rollback_recovery_reject_denied')
+                case('gift_verify_unavailable_recovers_original_proof')
 
                 # Existing cooldown policy must use current receipt facts,
                 # not retired approved rows or automatic settlements.
@@ -803,6 +848,20 @@ DELIMITER ;
                 assert result(mode,'check',scan)=='settled' and server.consumes[str(first+400)]==1
                 for n in range(401):del server.messages[str(first+n)]
                 case('bank_filtered_search_resumes_after_page_budget')
+                pid=seed(mode+'-bank-manual-horizon',price=93871)
+                old=int(datetime.now(timezone.utc).timestamp())-31*3600
+                r=result(mode,'issue',pid,method='bank_transfer',api=True,issued_time=old)
+                assert r['status']=='closed'
+                deadline=int(sql(f"SELECT invoice_expires_at FROM payment_attempts WHERE pay_row_id={pid}"))
+                assert result(mode,'expire',pid,clock=deadline) is True
+                submit(mode,pid,'bank_transfer','manual-horizon-photo',api=True)
+                reads=server.read_requests;b=balance()
+                assert result(mode,'check',pid)=='manual'
+                assert server.read_requests==reads
+                assert sql(f"SELECT evidence_state FROM payment_attempts WHERE pay_row_id={pid}")=='manual'
+                assert result(mode,'attention',pid) is True
+                assert result(mode,'reject',pid)=='declined' and balance()==b
+                case('bank_review_horizon_remains_manual_not_unavailable')
             assert sum(server.consumes.values())==10 and server.gift_consumes==2
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
     report=dict(complete=True,cases=len(cases),checks=cases,owned_socket_mariadb=True,

@@ -113,7 +113,7 @@ function achbotManualReceiptCheckApi(mysqli $db,int $payId): string {
                 !achbotPaymentEvidencePending($db,$payId)) return 'awaiting_receipt';
             $claim=achbotPaymentEvidenceClaim($db,$payId);
             if (!$claim) return 'pending';
-            $status='unavailable';
+            $status=null;
             try {
                 $status=($def['api_checker'])($db,$claim,$settle);
                 if ($status==='settled') {
@@ -130,7 +130,11 @@ function achbotManualReceiptCheckApi(mysqli $db,int $payId): string {
                     'review'=>'review',
                     'manual'=>'manual',
                     'pending'=>'uncertain',
-                    default=>'monitoring',
+                    'monitoring'=>'monitoring',
+                    'unavailable'=>'unavailable',
+                    // An exception or an unknown checker result is not a
+                    // completed observation; retain the last durable state.
+                    default=>null,
                 };
                 achbotPaymentEvidenceDefer($db,$payId,(string)$claim['token'],$state,
                     $status==='pending'?20:60);

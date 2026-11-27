@@ -107,7 +107,15 @@ retirement and retry deadline; a failed or removed staff message does
 not force repeated edits of healthy recipients. Recheck current staff
 authorization and the original payment state under the existing target
 lease. Unknown and rate-limited results are not acknowledgements.
-Normal API monitoring is distinct from exceptional review. The established
+A successful evidence search without a match records normal monitoring.
+A failed pre-consumption provider read with no usable evidence records
+`unavailable` in the existing attempt evidence state; a later successful
+no-match read restores monitoring. The existing retry/backoff and human
+review remain available. An original journaled external operation retains
+its own reserved/dispatched/uncertain/review or proven evidence instead of
+being downgraded by an unavailable read; an exception without a completed
+observation retains the last durable state. No new payment owner or schema
+is involved. Normal API monitoring is distinct from exceptional review. The established
 3/30-minute waiting guidance remains unchanged in ordinary receipt waiting
 views; invalid, uncertain and final outcomes use their own truthful status. Staff retain
 currently admissible manual actions and the actual review-case link. A persisted
