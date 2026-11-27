@@ -34,7 +34,6 @@ function achbotPasarGuardServiceTargetLocked(mysqli $db,array $q,?array $o,?arra
         $target['physical']='pg:'.$panel['instance_key'];
         $target['panel_id']=$panel['id'];
         if ($o!==null) {
-            if ((int)$o['inbound_id']!==0) throw new DomainException('service_order_changed');
             // A pending mutation is not cancellation proof. The execution
             // worker serializes it using the pinned physical identity.
             $ctx=achbotPgOrderContext($db,$q['order_id'],true,true);
@@ -42,7 +41,7 @@ function achbotPasarGuardServiceTargetLocked(mysqli $db,array $q,?array $o,?arra
             if ($a['state']==='mutating' &&
                 !preg_match('/^service:[1-9][0-9]*$/D',(string)$a['mutation_key']))
                 throw new DomainException('service_account_mutation_pending');
-            $lock='achbot-plan-'.substr(hash('sha256','pg:'.$a['id']),0,40);
+            $lock=achbotPhysicalJournalKey((int)$a['id']);
             if (achbotServicePlanChangePendingLocked($db,$lock))
                 throw new DomainException('service_plan_change_pending');
             if ($a['source_kind']==='service_operation') {
@@ -53,7 +52,6 @@ function achbotPasarGuardServiceTargetLocked(mysqli $db,array $q,?array $o,?arra
             $target['account']=achbotPgServiceOrderTarget($ctx)['account'];
         }
         if ($p!==null) {
-            if ((int)$p['inbound_id']!==0) throw new DomainException('service_plan_unavailable');
             if ((int)$p['server_id']!==$sid) {
                 $alias=achbotProviderRow($db,'SELECT c.type,c.provider_connection_id
                     FROM server_info i JOIN server_config c ON c.id=i.id WHERE i.id=? FOR UPDATE',

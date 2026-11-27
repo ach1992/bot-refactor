@@ -192,7 +192,6 @@ if (
 
     $price      = isset($plan['price']) ? (int)$plan['price'] : 0;
     $server_id  = (int)$plan['server_id'];
-    $inbound_id = (int)$plan['inbound_id'];
 
 
     ensureServerCapacity($connection, $server_id);
@@ -262,13 +261,13 @@ if (
         [$response, $remark, , $effectId] = achbotCreateNonPaymentAccount(
             $connection,'admin_bulk',$bulkSource,$uid,$i,$count,[
                 'user_id'=>$uid,'server_type'=>$serverType,
-                'server_id'=>$server_id,'inbound_id'=>$inbound_id,
+                'server_id'=>$server_id,
                 'plan_id'=>$fidFromStep,'remark'=>$remark,'naming_mode'=>$remarkMode,'volume'=>$volume,
                 'days'=>$days
             ]
         );
 
-        ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
+        ensureAccountCreationSucceeded($response, $serverInfo, $admin);
         $expire_date=(int)$response->expire;
 
         require_once __DIR__.'/../Subscription/Delivery.php';
@@ -280,7 +279,7 @@ if (
         try {
             $orderId=insertOrder(
                 $connection,$uid,'',$fidFromStep,$server_id,
-                $inbound_id,$remark,$uniqid,$expire_date,$delivery['link'],$price,
+                $remark,$uniqid,$expire_date,$delivery['link'],$price,
                 $date,0,true);
             achbotLinkNonPaymentAccountEffect($connection,$effectId,$orderId);
             $deliveryId=achbotNonpaidDeliveryInsertLocked($connection,$effectId,$orderId,$delivery['packet']);

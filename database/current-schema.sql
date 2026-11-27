@@ -142,7 +142,6 @@ CREATE TABLE `increase_order` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `userid` varchar(30) NOT NULL,
   `server_id` int(11) NOT NULL,
-  `inbound_id` int(11) NOT NULL,
   `remark` varchar(100) NOT NULL,
   `amount` int(11) NOT NULL,
   `date` varchar(30) NOT NULL,
@@ -183,7 +182,6 @@ CREATE TABLE `orders_list` (
   `transid` varchar(150) NOT NULL,
   `fileid` int(11) NOT NULL,
   `server_id` int(11) NOT NULL,
-  `inbound_id` int(11) NOT NULL DEFAULT 0,
   `remark` varchar(100) NOT NULL,
   `uuid` varchar(200) DEFAULT NULL,
   `expire_date` int(11) NOT NULL,
@@ -200,7 +198,6 @@ CREATE TABLE `orders_list` (
   PRIMARY KEY (`id`),
   KEY `idx_remark_userid` (`remark`,`userid`),
   KEY `idx_orders_status_notif` (`status`,`notif`),
-  KEY `idx_orders_uuid` (`uuid`),
   KEY `idx_orders_userid_v1` (`userid`),
   KEY `idx_order_provider_effect` (`provider_effect_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -224,7 +221,6 @@ CREATE TABLE `payment_attempts` (
   `provider_status` varchar(32) DEFAULT NULL,
   `last_checked_at` datetime DEFAULT NULL,
   `review_notice_claim_token` char(32) DEFAULT NULL,
-  `review_notice_claimed_at` datetime DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
   `evidence_profile` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
@@ -237,7 +233,6 @@ CREATE TABLE `payment_attempts` (
   `evidence_code_sha256` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `evidence_review_sent_at` datetime DEFAULT NULL,
   `evidence_projection_checked_at` datetime DEFAULT NULL,
-  `evidence_staff_digest` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `wallet_invoice_sha256` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `wallet_merchant_profile` text CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `wallet_credit_entry_id` bigint(20) unsigned DEFAULT NULL,
@@ -581,7 +576,6 @@ CREATE TABLE `server_config` (
   `provider_version` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `provider_enabled` tinyint(3) unsigned NOT NULL DEFAULT 1,
   PRIMARY KEY (`id`),
-  KEY `idx_server_id` (`id`),
   KEY `idx_server_provider_connection` (`provider_connection_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
@@ -605,7 +599,6 @@ CREATE TABLE `server_plans` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `catid` int(11) NOT NULL,
   `server_id` int(11) NOT NULL,
-  `inbound_id` int(11) NOT NULL DEFAULT 0,
   `title` varchar(150) NOT NULL,
   `days` float NOT NULL,
   `volume` float NOT NULL,

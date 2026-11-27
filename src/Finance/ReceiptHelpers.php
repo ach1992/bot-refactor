@@ -24,13 +24,6 @@ if (!function_exists('payTypeToDescription')) {
     }
 }
 
-function prepareStartFallback() {
-    global $text, $data, $callbackId;
-    if (is_string($callbackId??null) && $callbackId!=='') answerCallbackQuery($callbackId);
-    $text = '';
-    $data = 'mainMenu';
-}
-
 function inlineKeyboard(array $rows): string {
     require_once dirname(__DIR__, 2) . '/src/Telegram/Markup.php';
     return \AchBot\Telegram\Markup\inlineKeyboard($rows);
@@ -570,11 +563,11 @@ function achbotManualReceiptKeyboard(array $pay,array $attempt): string {
         if (is_string($url) && achbotManualGiftSellerUrlValid($url))
             $row[]=['text'=>achbotMessage('telegram.markup.receipt_and_cancel.button.4595a70ab5'),'url'=>$url];
     }
-    return inlineKeyboard([$row,[['text'=>achbotMessage('telegram.markup.receipt_and_cancel.button.cc357a4c9f'),
+    return inlineKeyboard([$row,[['text'=>achbotMessage('legacy_buttons.cancel'),
         'callback_data'=>$action['cancel']]]]);
 }
 function kbOnlyCancel(array $pay): string {
-    return inlineKeyboard([[['text'=>achbotMessage('telegram.markup.receipt_and_cancel.button.cc357a4c9f'),
+    return inlineKeyboard([[['text'=>achbotMessage('legacy_buttons.cancel'),
         'callback_data'=>'rc_'.$pay['hash_id']]]]);
 }
 

@@ -323,7 +323,6 @@ return [
         'bot.edit_reward_channel.message.f400fa3a23' => '⚠️ ابتدا ربات را به‌عنوان مدیر به کانال اضافه کنید، سپس شناسهٔ کانال را ارسال کنید.',
         // bot.edit_lock_channel
         'bot.edit_lock_channel.message.b324b87609' => '🤗 لطفاً ربات رو در کانال ادمین کن و آیدی کانال رو بفرست',
-        'bot.edit_lock_channel.message.949fda751f' => '❗️ربات در کانال ادمین نیست یا دسترسی کافی ندارد.',
         // bot.edit_support_i_d
         'bot.edit_support_i_d.message.2e136a38a2' => '🔗 نشانی پشتیبانی را بفرستید؛ نام کاربری تلگرام یا نشانی کامل وب پذیرفته می‌شود.' . "\n" . 'نمونهٔ تلگرام: @example_support' . "\n" . 'نمونهٔ وب: https://example.com/support' . "\n" . 'برای پاک‌کردن نشانی، دستور /clear را بفرستید.',
         'bot.edit_support_i_d.message.6279ae207e' => '✅ آیدی پشتیبانی با موفقیت ذخیره شد.',
@@ -369,18 +368,18 @@ return [
         'bot.servers_setting.message.4c0e6ed6fc' => '☑️ مدیریت سرور ها:',
         'bot.servers_setting.message.ac9cd6d52a' => ['text' => '☑️ مدیریت سرور ها: {cname}', 'parameters' => ['cname']],
         // bot.add_new_server
-        'bot.manage_marzban_panel_groups.message.59d5170317' => '🗂 گروه‌های مشترک پنل: فقط سرورهای متصل به یک پنل واقعی پاسارگارد را هم‌گروه کنید. مشابه بودن آدرس یا نام، دلیل یکسان بودن پنل فیزیکی نیست. تشخیص پنل واقعی بر عهدهٔ ادمین است.',
-        // bot.add_marzban_panel_group
-        'bot.add_marzban_panel_group.message.01f02c2ac6' => 'نام گروه پنل جدید را وارد کنید (1 تا 60 حرف؛ فارسی مجاز است).' . "\n" . '',
-        'bot.add_marzban_panel_group.message.31116063c0' => 'توجه: گروه مشترک فقط برای سرورهایی است که واقعاً به یک پنل فیزیکی پاسارگارد متصل‌اند. سرورهای متصل به پنل‌های متفاوت را در یک گروه قرار ندهید.',
-        'bot.add_marzban_panel_group.message.c697bdb683' => '⚠️ نام گروه نامعتبر است؛ حداکثر 60 کاراکتر و بدون خط جدید.',
-        'bot.add_marzban_panel_group.message.cfb10ede6f' => '⚠️ این نام قبلاً تعریف شده است یا معتبر نیست؛ نام دیگری وارد کنید.',
-        'bot.add_marzban_panel_group.message.7c6b361e59' => '⚠️ ذخیره گروه پنل انجام نشد.',
-        'bot.add_marzban_panel_group.message.1de4f68601' => '✅ گروه پنل ثبت شد.',
-        'bot.add_marzban_panel_group.alert.a77f2c705d' => '❌ حذف گروه پنل ناموفق بود.',
-        'bot.add_marzban_panel_group.alert.2b2b180a96' => 'گروه استفاده‌نشده حذف شد.',
-        'bot.add_marzban_panel_group.alert.cc8538eba9' => 'گروه پیدا نشد یا هنوز به سرور متصل است؛ ابتدا سرورها را از آن خارج کنید.',
-        'bot.add_marzban_panel_group.message.def9f141f2' => '🗂 مدیریت گروه‌های مشترک پنل',
+        'bot.manage_panel_groups.message.59d5170317' => '🗂 گروه‌های مشترک پنل: فقط سرورهای متصل به یک پنل واقعی پاسارگارد را هم‌گروه کنید. مشابه بودن آدرس یا نام، دلیل یکسان بودن پنل فیزیکی نیست. تشخیص پنل واقعی بر عهدهٔ ادمین است.',
+        // bot.add_panel_group
+        'bot.add_panel_group.message.01f02c2ac6' => 'نام گروه پنل جدید را وارد کنید (1 تا 60 حرف؛ فارسی مجاز است).' . "\n" . '',
+        'bot.add_panel_group.message.31116063c0' => 'توجه: گروه مشترک فقط برای سرورهایی است که واقعاً به یک پنل فیزیکی پاسارگارد متصل‌اند. سرورهای متصل به پنل‌های متفاوت را در یک گروه قرار ندهید.',
+        'bot.add_panel_group.message.c697bdb683' => '⚠️ نام گروه نامعتبر است؛ حداکثر 60 کاراکتر و بدون خط جدید.',
+        'bot.add_panel_group.message.cfb10ede6f' => '⚠️ این نام قبلاً تعریف شده است یا معتبر نیست؛ نام دیگری وارد کنید.',
+        'bot.add_panel_group.message.7c6b361e59' => '⚠️ ذخیره گروه پنل انجام نشد.',
+        'bot.add_panel_group.message.1de4f68601' => '✅ گروه پنل ثبت شد.',
+        'bot.add_panel_group.alert.a77f2c705d' => '❌ حذف گروه پنل ناموفق بود.',
+        'bot.add_panel_group.alert.2b2b180a96' => 'گروه استفاده‌نشده حذف شد.',
+        'bot.add_panel_group.alert.cc8538eba9' => 'گروه پیدا نشد یا هنوز به سرور متصل است؛ ابتدا سرورها را از آن خارج کنید.',
+        'bot.add_panel_group.message.def9f141f2' => '🗂 مدیریت گروه‌های مشترک پنل',
         // bot.add_new_marzban_panel
         'bot.addserver_name.alert.27e6f9c466' => '⚠️ نوع پنل این سرور برای گروه‌بندی پشتیبانی نمی‌شود.',
         'bot.addserver_name.message.c31e264971' => '🏷 گروه پنل این سرور را انتخاب کنید. این گروه را مدیر برای سرورهای متعلق به یک پنل فیزیکی یکسان تعیین می‌کند؛ حتی اگر آدرس یا اطلاعات ورود آن‌ها متفاوت باشد.',
@@ -459,7 +458,6 @@ return [
         // trial_provision.channel_message
         'trial_provision.channel_message.d22e3c7448' => ['text' => '' . "\n" . '🔄 اشتراک تست ایجاد شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{userId}</code>' . "\n" . '👤 اسم کاربر: {fullName}' . "\n" . '🔖 نام کاربری: {usernameText}' . "\n" . '🔄 نام کاربری اشتراک: <code>{remark}</code>' . "\n" . '📦 حجم اولیه اشتراک: {volume} گیگ' . "\n" . '📅 مدت اشتراک: {days} روز' . "\n" . '', 'parameters' => ['userId', 'fullName', 'usernameText', 'remark', 'volume', 'days']],
         // order_writes.ensure_account_creation_succeeded
-        'order_writes.ensure_account_creation_succeeded.admin_message.inbound_missing' => ['text' => '⚠️ ساخت اشتراک انجام نشد.' . "\n" . 'سرویس: {title}' . "\n" . 'علت: inbound_not_found' . "\n" . 'شناسه ورودی: {inbound_id}', 'parameters' => ['title', 'inbound_id']],
     ],
 
     // ── اطلاعات و مدیریت اشتراک ──
@@ -552,7 +550,6 @@ return [
         'order_management.show_order_management_panel.alert.057ec5448c' => '⛔️ دسترسی لازم وجود ندارد.',
         'order_management.show_order_management_panel.alert.3e801d365f' => '⛔️ سفارش یا اتصال پاسارگارد معتبر نیست.',
         'order_management.show_order_management_panel.alert.7a6ebab798' => '⚠️ هیچ سرور دیگری متصل به همین پنل پاسارگارد وجود ندارد.',
-        'order_management.show_order_management_panel.button.b35a2352f5' => '↪️ بازگشت',
         'order_management.show_order_management_panel.message.557fb66856' => '🌐 سرور منطقی مقصد را انتخاب کنید. تنظیمات مقصد پس از بررسی اشتراک اعمال می‌شود.',
         'order_management.show_order_management_panel.alert.c5dae93802' => '⛔️ مقصد با اشتراک فعلی سازگار نیست یا نتیجه نیاز به بررسی دارد.',
         'order_management.show_order_management_panel.message.88e0b88b0d' => '✅ مقصد اشتراک پس از بررسی به‌روزرسانی شد.',
@@ -707,7 +704,6 @@ return [
         'discount_administration.add_discount_code.message.ed39e0ee1b' => '🔘 لطفا فقط عدد به تومان وارد کنید یا 0 برای بدون سقف وارد کنید.',
         'discount_administration.add_discount_code.message.f12309f24f' => ['text' => '✅ کد تخفیف جدید (<code>{hashId}</code>) با موفقیت ساخته شد.', 'parameters' => ['hashId']],
         'discount_administration.add_discount_code.button.689da8336a' => '✅ بله، حذف شود',
-        'discount_administration.add_discount_code.button.a766691671' => '↪️ بازگشت',
         'discount_administration.add_discount_code.message.e8830dbcad' => '⚠️ آیا از حذف این کد تخفیف مطمئن هستید؟',
         'discount_administration.add_discount_code.alert.f007c663c6' => '✅ کد تخفیف مورد نظر با موفقیت حذف شد.',
         'discount_administration.add_discount_code.alert.fa58f63a4f' => '⚠️ کد تخفیف یافت نشد.',
@@ -1010,7 +1006,6 @@ return [
 
         'management.intro' => "📝 اطلاعات را مرحله‌به‌مرحله وارد کنید. تا تأیید نهایی چیزی ثبت نمی‌شود؛ هر زمان می‌توانید برگردید یا لغو کنید.",
         'management.back' => "↪️ بازگشت به مرحله قبل",
-        'management.cancel' => "❌ لغو عملیات",
         'management.canceled' => "✅ عملیات لغو شد.",
         'management.server_list' => "🌐 مدیریت سرورها",
         'management.plan_list' => "📋 مدیریت پلن‌ها",
@@ -1112,14 +1107,13 @@ return [
         'config.get_agents_list.button.bee87e34d1' => '⚙️',
         'config.get_agents_list.button.6b88de15f3' => ' »» صفحه بعدی »»',
         'config.get_agents_list.button.78d753bffb' => ' «« صفحه قبلی ««',
-        // config.get_marzban_panel_group_keys
-        'config.get_marzban_panel_group_keys.button.62b58eccfe' => '🏷 ',
-        'config.get_marzban_panel_group_keys.button.9bdffdaedc' => '⭕ بدون گروه (انتقال غیرفعال)',
-        'config.get_marzban_panel_group_keys.text.b35a2352f5' => '↪️ بازگشت',
-        // config.get_marzban_panel_groups_management_keys
-        'config.get_marzban_panel_groups_management_keys.button.eb25cfbc94' => '🗑 حذف گروه بدون سرور',
-        'config.get_marzban_panel_groups_management_keys.button.d376787114' => 'هنوز گروهی تعریف نشده',
-        'config.get_marzban_panel_groups_management_keys.button.a6b2138672' => '➕ تعریف گروه پنل جدید',
+        // config.get_panel_group_keys
+        'config.get_panel_group_keys.button.62b58eccfe' => '🏷 ',
+        'config.get_panel_group_keys.button.9bdffdaedc' => '⭕ بدون گروه (انتقال غیرفعال)',
+        // config.get_panel_groups_management_keys
+        'config.get_panel_groups_management_keys.button.eb25cfbc94' => '🗑 حذف گروه بدون سرور',
+        'config.get_panel_groups_management_keys.button.d376787114' => 'هنوز گروهی تعریف نشده',
+        'config.get_panel_groups_management_keys.button.a6b2138672' => '➕ تعریف گروه پنل جدید',
         // config.get_server_config_keys
         'config.get_server_config_keys.button.a726d3f27d' => '⚠️ پنل پشتیبانی نمی‌شود',
         'config.get_server_config_keys.text.176dbab285' => 'بدون گروه',
@@ -1453,7 +1447,6 @@ return [
         'api.incomplete_guidance' => "تنظیمات لازم کامل نیست. پیش از روشن‌کردن بررسی خودکار، موارد لازم را تکمیل کنید.",
         'api.read_unavailable' => "خواندن تنظیمات فعلاً ممکن نیست. صفحه را دوباره باز کنید.",
         'api.advanced' => "تنظیمات پیشرفته و فیلترهای اختیاری",
-        'api.back' => "↪️ بازگشت",
         'api.clear_hint' => "برای پاک‌کردن این مقدار <code>/clear</code> بفرستید؛ برای برگشت، لغو را بزنید.",
         'api.denied' => "این بخش برای شما در دسترس نیست.",
         'api.change_unconfirmed' => "تغییر ثبت نشد. تنظیمات لازم را کامل کنید و صفحه را دوباره باز کنید.",
@@ -1513,8 +1506,6 @@ return [
         'gateway_rule_admin.gateway_admin_method_flags.text.11735aabd3' => '، ',
         // gateway_rule_admin.gateway_admin_page
         'gateway_rule_admin.gateway_admin_page.button.36e4da5935' => '⛔️ تنظیمات پرداخت خواندنی نیست؛ هیچ قانون نامعتبر خودکار فعال نمی‌شود.',
-        'gateway_rule_admin.gateway_admin_page.button.b233883d0d' => '↪️ بازگشت',
-        'gateway_rule_admin.gateway_admin_page.button.b35a2352f5' => '↪️ بازگشت',
         'gateway_rule_admin.gateway_admin_page.text.778e46431a' => '🔐 مدیریت دسترسی به روش‌های پرداخت' . "\n" . '',
         'gateway_rule_admin.gateway_admin_page.text.557fcc0258' => 'قوانین هر روش و هر دسته مستقل‌اند. خاموش‌بودن درگاه همیشه مانع پرداخت است.' . "\n" . '',
         'gateway_rule_admin.gateway_admin_page.text.5c034d60ca' => ' قانون',
@@ -1615,7 +1606,6 @@ return [
         'routes.message2_all.button.0bb9320093' => '📚 تاریخچه ارسال‌ها',
         'routes.message2_all.message.3c4afc11a6' => '📍لطفا انتخاب کنید:',
         'routes.message2_all.button.7dba3a00f7' => '📨 ارسال پیام جدید',
-        'routes.message2_all.button.b233883d0d' => '↪️ بازگشت',
         // routes.broadcast_start
         'routes.broadcast_start.message.76bb0d02d0' => '💬 پیام را به کدام گروه می‌خواهید ارسال کنید؟',
         'routes.broadcast_start.button.fac6686c54' => '👥 همه کاربران',
@@ -1697,7 +1687,6 @@ return [
         'routes.pm_noop.message.48a8e21213' => '⚠️ ویرایش برای پیام‌های فورواردی فعال نیست.',
         'routes.pm_noop.message.656de1721c' => '✏️ متن/کپشن جدید را ارسال کنید.',
         'routes.pm_noop.message.d433f90c40' => '❌ این ارسال وجود ندارد یا هنوز کامل نشده است.',
-        'routes.pm_noop.button.b35a2352f5' => '↪️ بازگشت',
         'routes.pm_noop.message.eeefb6dde3' => '⚠️ این ارسال قبلاً برای همه حذف شده است و امکان پین/آنپین ندارد.',
         'routes.pm_noop.message.30bfbbe059' => '⚠️ این عملیات از قبل در صف/حال اجراست.',
         'routes.pm_noop.message.55c6d689fd' => '⚠️ خطا در ساخت عملیات، دوباره تلاش کنید.',

@@ -115,7 +115,7 @@ function getServerInfoAndConfig($connection,$sid) {
 }
 function generateUID(){return 'fixtureuuid';}
 function getNextPortAndIncrease(...$args){throw new RuntimeException('unexpected_native_port_allocation');}
-function ensureAccountCreationSucceeded($response,$serverInfo,$inbound,$admin,$throw=false) {
+function ensureAccountCreationSucceeded($response,$serverInfo,$admin,$throw=false) {
     if (!is_object($response) || ($response->success??false)!==true)
         throw new RuntimeException('fixture_remote_unconfirmed');
 }
@@ -131,7 +131,7 @@ if (($spec['route']??'trial')==='import_occupancy') {
     try {
         achbotCreateNonPaymentAccount($connection,$kind,$ref,$actor,1,1,[
             'is_primary_admin'=>true,'user_id'=>$actor,'server_type'=>'pasarguard',
-            'server_id'=>2,'inbound_id'=>0,'plan_id'=>(int)($spec['plan']??8),
+            'server_id'=>2,'plan_id'=>(int)($spec['plan']??8),
             'remark'=>'fixture-denied','volume'=>2,'days'=>30]);
         $GLOBALS['events'][]=['name'=>'ADMITTED'];
     } catch (DomainException $e) {$GLOBALS['events'][]=['name'=>'DENIED','reason'=>$e->getMessage()];}
@@ -305,9 +305,9 @@ def check():
                 storage.text(url)+",'pasarguard','','fixture-private-key');"
                 "INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES(2,'Fixture purchase server',10,'buyfixture','',1,1);"
                 "INSERT INTO server_categories(id,title,parent,active) VALUES(1,'Fixture category',0,1);"
-                "INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES "
-                "(7,1,2,0,'Fixture',30,2,100,'description',1,'fixture','[1,2]'),"
-                "(8,1,2,0,'Free fixture',30,2,0,'fixture-free',1,'fixture','[1,2]');")
+                "INSERT INTO server_plans(id,catid,server_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES "
+                "(7,1,2,'Fixture',30,2,100,'description',1,'fixture','[1,2]'),"
+                "(8,1,2,'Free fixture',30,2,0,'fixture-free',1,'fixture','[1,2]');")
             sql(work,env,storage.connection(2,2,url))
             sql(work,env,"UPDATE users SET step='none',freetrial=NULL,temp=NULL,wallet=50000,is_agent=0,discount_percent=NULL; "
                 "UPDATE users SET is_agent=1,discount_percent='{\"normal\":10,\"plans\":{},\"servers\":{}}' WHERE userid=9002")

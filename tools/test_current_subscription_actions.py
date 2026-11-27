@@ -84,8 +84,8 @@ def main():
         sql(f"""INSERT INTO server_categories(id,title,parent,active) VALUES (1,'Fixture',0,1);
         INSERT INTO server_config(id,panel_url,type,username,password) VALUES(2,'{url}','pasarguard','fixture','fixture-private-key');
         INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES(2,'Fixture','100','pg','',1,1);
-        INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)
-        VALUES(7,1,2,0,'Fixture',30,2,100,'description',1,'fixture','[2,5]');
+        INSERT INTO server_plans(id,catid,server_id,title,days,volume,price,descr,active,date,provider_group_ids)
+        VALUES(7,1,2,'Fixture',30,2,100,'description',1,'fixture','[2,5]');
         INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,remark,uuid,expire_date,link,amount,status,date,agent_bought)
         VALUES (91,1001,'original','fixture',7,2,'fixture_user','fixture-uuid',2000000000,'["vless://original"]',100,1,'fixture',0),
         (92,1001,'token','fixture',7,2,'fixture_user_extra','fixture-uuid',2000000000,'[]',100,1,'fixture',1),

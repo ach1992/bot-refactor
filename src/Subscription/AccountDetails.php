@@ -65,7 +65,7 @@ function getServerConfigById($server_id) {
 }
 
 
-function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id, ?object $provenRemote=null) {
+function getOrderTrafficInfo($serverType, $server_id, $remark, ?object $provenRemote=null) {
     require_once __DIR__.'/../Panel/ServiceLifecycle.php';
     $result = [
         'found'=>false,'enable'=>false,
@@ -73,7 +73,7 @@ function getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_i
         'netType'=>null,'security'=>null,'uncertain'=>true,'status'=>null,
         'expire'=>null,'actionable'=>false,
     ];
-    if (!achbotSupportsAccount($serverType,$inbound_id)) return $result;
+    if (!achbotSupportsProviderType($serverType)) return $result;
     $observed=$provenRemote===null?achbotServiceObserve((int)$server_id,(string)$remark):
         achbotServiceObservation($provenRemote,(string)$remark);
     if (!$observed['verified']) return $result;
@@ -135,6 +135,58 @@ function orderPlanActions(\mysqli $db,array $order): array {
     }
 }
 
+/** Read-only observation and mutation admission are intentionally separate.
+ * The caller authorizes the audience before calling this shared presentation.
+ */
+function prepareOrderDetail(\mysqli $db,array $order,array $botState,?object $provenRemote): ?array {
+    $server_id=$order['server_id'];
+    $remark=$order['remark'];
+    $planActions=orderPlanActions($db,$order);
+
+    $server      = getServerConfigById($server_id);
+    $serverType  = $server['type'] ?? '';
+    // A successful Native GET is independent from the permission to START
+    // another Native write. A pending PasarGuard mutation must never hide
+    // live status/links/QR; it must still fence new renewal/addon/revoke/
+    // toggle/delete/plan-change buttons until its original claim is settled.
+    $mutationEligible=\achbotSupportsOrder($db,(int)$order['id'],
+            null,(int)$order['userid']);
+
+    if ($provenRemote!==null && !achbotProviderRenderProofValid($provenRemote,$order,$serverType)) return null;
+    $renderRemote=$provenRemote??(achbotSupportsProviderType($serverType)?
+        achbotProviderRenderPacket($db,(int)$server_id,(string)$remark):null);
+    $traffic = getOrderTrafficInfo($serverType, $server_id, $remark,$renderRemote);
+
+    $found      = $traffic['found'] ?? false;
+    $enableBool = $traffic['enable'] ?? false;
+    $leftgb     = $traffic['leftgb'] ?? \achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d');
+
+    $uncertain=($traffic['uncertain']??true)===true;
+    $actionable=($traffic['actionable']??false)===true;
+    $expire_date=$uncertain?\achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d'):
+        ($traffic['expire']===null?\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'):jdate('Y-m-d H:i',$traffic['expire'],'','Asia/Tehran','en'));
+    $canToggle=in_array($traffic['status']??null,['active','disabled'],true);
+    $canExtendTime=!$uncertain && $traffic['expire']!==null;
+    // Use the verified total allowance, not the finite remaining balance.
+    $canExtendVolume=$canExtendTime && (int)($renderRemote->data_limit??0)>0;
+    $enableText=getOrderStatusText($traffic,$serverType);
+
+    $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'','notice_html'=>'']:
+        achbotOrderPresentation($db,$order,$server,$botState,$renderRemote);
+    $msg = \AchBot\Subscription\Presentation\fitMessage($presentation,
+        static function(array $p) use ($enableText,$remark,$serverType,$uncertain,$planActions): string {
+            $msg=buildConfigMessage($enableText,$remark,$p['config_html'],$p['subscription_html'],$p['backup_html'],$serverType);
+            if ($p['notice_html']!=='') $msg.="\n\n".$p['notice_html'];
+            if ($uncertain && !str_contains($msg,$enableText)) $msg.="\n\n".$enableText;
+            if (!$planActions['certain']) $msg.="\n\n".\achbotMessage('subscription.account_details.get_order_status_text.label.ff02acf7a2');
+            return $msg;
+        });
+
+    return compact('planActions','mutationEligible','found','enableBool','leftgb',
+        'uncertain','actionable','expire_date','canToggle','canExtendTime',
+        'canExtendVolume','presentation','msg');
+}
+
 function getUserOrderDetailKeys($id, $offset = 0, ?object $provenRemote=null){
     global $botState, $botUrl;
     if (!canReadAdminOrderDetails()) return null;
@@ -148,51 +200,17 @@ function getUserOrderDetailKeys($id, $offset = 0, ?object $provenRemote=null){
     $date        = jdate("Y-m-d H:i", $order['date']);
 
     $remark      = $order['remark'];
-    $uuid        = $order['uuid'] ?? "0";
     $token       = $order['token'];
     $server_id   = $order['server_id'];
-    $inbound_id  = $order['inbound_id'];
     $agentBought = $order['agent_bought'];
     $autoRenew   = $order['autoRenew'] ?? "off";
-    $planActions=orderPlanActions($GLOBALS['connection'],$order);
-
-    $server      = getServerConfigById($server_id);
-    $serverType  = $server['type'] ?? '';
-    // A successful Native GET is independent from the permission to START
-    // another Native write. A pending PasarGuard mutation must never hide
-    // live status/links/QR; it must still fence new renewal/addon/revoke/
-    // toggle/delete/plan-change buttons until its original claim is settled.
-    // Marzban's existing button admission behavior is unchanged.
-    $mutationEligible=$serverType!=='pasarguard' ||
-        \achbotSupportsOrder($GLOBALS['connection'],(int)$order['id'],
-            null,(int)$order['userid']);
-    $panelUrl    = $server['panel_url'] ?? '';
-    $subLinksRaw = $server['sub_links'] ?? '';
-
-    if ($provenRemote!==null && !achbotProviderRenderProofValid($provenRemote,$order,$serverType)) return null;
-    $renderRemote=$provenRemote??(achbotSupportsAccount($serverType,$inbound_id)?
-        achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null);
-    $traffic     = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id,$renderRemote);
-
-    $leftgb      = $traffic['leftgb'] ?? \achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d');
-    $enableBool  = $traffic['enable'] ?? false;
-    $uncertain=($traffic['uncertain']??true)===true;
-    $actionable=($traffic['actionable']??false)===true;
-    $expire_date=$uncertain?\achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d'):
-        ($traffic['expire']===null?\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'):jdate('Y-m-d H:i',$traffic['expire'],'','Asia/Tehran','en'));
-    $canToggle=in_array($traffic['status']??null,['active','disabled'],true);
-    $enableText=getOrderStatusText($traffic,$serverType);
-
-    $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'','notice_html'=>'']:
-        achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState,$renderRemote);
-    $msg = \AchBot\Subscription\Presentation\fitMessage($presentation,
-        static function(array $p) use ($enableText,$remark,$serverType,$uncertain,$planActions): string {
-            $msg=buildConfigMessage($enableText,$remark,$p['config_html'],$p['subscription_html'],$p['backup_html'],$serverType);
-            if ($p['notice_html']!=='') $msg.="\n\n".$p['notice_html'];
-            if ($uncertain && !str_contains($msg,$enableText)) $msg.="\n\n".$enableText;
-            if (!$planActions['certain']) $msg.="\n\n".\achbotMessage('subscription.account_details.get_order_status_text.label.ff02acf7a2');
-            return $msg;
-        });
+    $detail=prepareOrderDetail($GLOBALS['connection'],$order,$botState,$provenRemote);
+    if ($detail===null) return null;
+    ['planActions'=>$planActions,'mutationEligible'=>$mutationEligible,'found'=>$found,
+     'enableBool'=>$enableBool,'leftgb'=>$leftgb,'uncertain'=>$uncertain,
+     'actionable'=>$actionable,'expire_date'=>$expire_date,'canToggle'=>$canToggle,
+     'canExtendTime'=>$canExtendTime,'canExtendVolume'=>$canExtendVolume,
+     'presentation'=>$presentation,'msg'=>$msg]=$detail;
 
     // ---- Admin Keyboard ----
     $keyboard = [];
@@ -294,57 +312,17 @@ function getOrderDetailKeys($from_id, $id, $offset = 0, ?object $provenRemote=nu
 
 
     $remark      = $order['remark'];
-    $uuid        = $order['uuid'] ?? "0";
     $token       = $order['token'];
     $server_id   = $order['server_id'];
-    $inbound_id  = $order['inbound_id'];
     $agentBought = $order['agent_bought'];
     $autoRenew   = $order['autoRenew'] ?? "off";
-    $planActions=orderPlanActions($GLOBALS['connection'],$order);
-    $price       = $order['amount'];
-
-    $server      = getServerConfigById($server_id);
-    $serverType  = $server['type'] ?? '';
-    // A successful Native GET is independent from the permission to START
-    // another Native write. A pending PasarGuard mutation must never hide
-    // live status/links/QR; it must still fence new renewal/addon/revoke/
-    // toggle/delete/plan-change buttons until its original claim is settled.
-    // Marzban's existing button admission behavior is unchanged.
-    $mutationEligible=$serverType!=='pasarguard' ||
-        \achbotSupportsOrder($GLOBALS['connection'],(int)$order['id'],
-            null,(int)$order['userid']);
-    $panelUrl    = $server['panel_url'] ?? '';
-    $subLinksRaw = $server['sub_links'] ?? '';
-
-    if ($provenRemote!==null && !achbotProviderRenderProofValid($provenRemote,$order,$serverType)) return null;
-    $renderRemote=$provenRemote??(achbotSupportsAccount($serverType,$inbound_id)?
-        achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null);
-    $traffic = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id,$renderRemote);
-
-    $found      = $traffic['found'] ?? false;
-    $enableBool = $traffic['enable'] ?? false;
-    $leftgb     = $traffic['leftgb'] ?? \achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d');
-
-    $uncertain=($traffic['uncertain']??true)===true;
-    $actionable=($traffic['actionable']??false)===true;
-    $expire_date=$uncertain?\achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d'):
-        ($traffic['expire']===null?\achbotMessage('subscription.account_deletion.no_dont_delete.text.5e6ee5eaa1'):jdate('Y-m-d H:i',$traffic['expire'],'','Asia/Tehran','en'));
-    $canToggle=in_array($traffic['status']??null,['active','disabled'],true);
-    $canExtendTime=!$uncertain && $traffic['expire']!==null;
-    // Use the verified total allowance, not the finite remaining balance.
-    $canExtendVolume=$canExtendTime && (int)($renderRemote->data_limit??0)>0;
-    $enableText=getOrderStatusText($traffic,$serverType);
-
-    $presentation=$uncertain?['config_html'=>'','subscription_html'=>'','backup_html'=>'','notice_html'=>'']:
-        achbotOrderPresentation($GLOBALS['connection'],$order,$server,$botState,$renderRemote);
-    $msg = \AchBot\Subscription\Presentation\fitMessage($presentation,
-        static function(array $p) use ($enableText,$remark,$serverType,$uncertain,$planActions): string {
-            $msg=buildConfigMessage($enableText,$remark,$p['config_html'],$p['subscription_html'],$p['backup_html'],$serverType);
-            if ($p['notice_html']!=='') $msg.="\n\n".$p['notice_html'];
-            if ($uncertain && !str_contains($msg,$enableText)) $msg.="\n\n".$enableText;
-            if (!$planActions['certain']) $msg.="\n\n".\achbotMessage('subscription.account_details.get_order_status_text.label.ff02acf7a2');
-            return $msg;
-        });
+    $detail=prepareOrderDetail($GLOBALS['connection'],$order,$botState,$provenRemote);
+    if ($detail===null) return null;
+    ['planActions'=>$planActions,'mutationEligible'=>$mutationEligible,'found'=>$found,
+     'enableBool'=>$enableBool,'leftgb'=>$leftgb,'uncertain'=>$uncertain,
+     'actionable'=>$actionable,'expire_date'=>$expire_date,'canToggle'=>$canToggle,
+     'canExtendTime'=>$canExtendTime,'canExtendVolume'=>$canExtendVolume,
+     'presentation'=>$presentation,'msg'=>$msg]=$detail;
 
     // ---- User Keyboard ----
     $keyboard = [];

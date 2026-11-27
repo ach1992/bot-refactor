@@ -100,12 +100,12 @@ noCallbacks($mb,'/^(?:editPanelGroup|editServer|changesServerLoginInfo|editSubLi
 // Shared physical-panel grouping is independent of native plan access and
 // has a single provider-neutral administrator selector (not a PG server Group).
 $connection->query("INSERT INTO setting(type,value) VALUES
-    ('ACHBOT_MARZBAN_PANEL_GROUP','Physical Marzban fixture'),
-    ('ACHBOT_MARZBAN_PANEL_GROUP','Physical PasarGuard fixture')");
+    ('ACHBOT_PANEL_GROUP','Physical Marzban fixture'),
+    ('ACHBOT_PANEL_GROUP','Physical PasarGuard fixture')");
 $marzbanGroup=(int)$connection->query("SELECT id FROM setting
-    WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' AND value='Physical Marzban fixture'")->fetch_row()[0];
+    WHERE type='ACHBOT_PANEL_GROUP' AND value='Physical Marzban fixture'")->fetch_row()[0];
 $pgGroup=(int)$connection->query("SELECT id FROM setting
-    WHERE type='ACHBOT_MARZBAN_PANEL_GROUP' AND value='Physical PasarGuard fixture'")->fetch_row()[0];
+    WHERE type='ACHBOT_PANEL_GROUP' AND value='Physical PasarGuard fixture'")->fetch_row()[0];
 yes($marzbanGroup>0 && $pgGroup>0 && $marzbanGroup!==$pgGroup,
     'two_distinct_manual_physical_panel_groups');
 $connection->query("UPDATE server_info SET panel_group_id=$marzbanGroup WHERE id=1");

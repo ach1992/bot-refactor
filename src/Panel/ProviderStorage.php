@@ -2,6 +2,13 @@
 /** AChBot native identity and operation evidence in shared tables. Migration 012 is operator-only. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) { http_response_code(404); exit; }
 require_once __DIR__.'/PasarGuard.php';
+require_once __DIR__.'/../Database/Lock.php';
+
+/** Stable original Native account anchor, separate from a session lock. */
+function achbotPhysicalJournalKey(int $reference): string {
+    if ($reference<=0) throw new RuntimeException('physical_reference_invalid');
+    return 'achbot-plan-'.substr(hash('sha256','pg:'.$reference),0,40);
+}
 
 /** Preserve SQL classification in both MySQLi reporting modes without
  * logging the SQL, bound values or credentials. */
@@ -181,8 +188,8 @@ function achbotProviderSnapshot(mysqli $db,int $serverId,?int $planId=null): arr
     $panel=achbotProviderPanel($db,achbotProviderPositiveInt($r['provider_connection_id']));
     if (rtrim((string)$r['panel_url'],'/')!==rtrim($panel['api_url'],'/'))
         throw new RuntimeException('provider_endpoint_changed');
-    $p=achbotProviderRow($db,'SELECT server_id,inbound_id,provider_group_ids FROM server_plans WHERE id=?','i',[$planId]);
-    if (!$p || (int)$p['server_id']!==$serverId || (int)$p['inbound_id']!==0)
+    $p=achbotProviderRow($db,'SELECT server_id,provider_group_ids FROM server_plans WHERE id=?','i',[$planId]);
+    if (!$p || (int)$p['server_id']!==$serverId)
         throw new RuntimeException('provider_plan_invalid');
     // Every PG plan owns a nonempty explicit native Group set. The obsolete
     // server defaults are never used as a fallback.
@@ -621,7 +628,7 @@ function achbotProviderAdoptAccount(mysqli $db,int $serverId,array $native,array
     if ($n!==1) throw new RuntimeException('provider_adoption_owner_invalid');
     $o=achbotProviderRow($db,'SELECT * FROM orders_list WHERE id=? FOR UPDATE','i',[$orderId]);
     if (!$o || (int)$o['userid']!==$owner || (int)$o['server_id']!==$serverId ||
-        (int)$o['fileid']!==0 || (int)$o['inbound_id']!==0 || $o['remark']!==$native['username'] ||
+        (int)$o['fileid']!==0 || $o['remark']!==$native['username'] ||
         $o['token']!==$proof['token'] || (int)$o['status']!==1 || (int)$o['amount']!==0 ||
         ($o['autoRenew']??null)!=='off')
         throw new RuntimeException('provider_adoption_order_invalid');

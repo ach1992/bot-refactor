@@ -269,7 +269,7 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, arr
             if (!achbotServerCommerceAvailable($db,(int)$pay['server_id'],$buy,true))
                 throw new RuntimeException('draft_server_disabled');
             if ($buy &&
-                !achbotSupportsPlan($db,(int)$pay['plan_id'],0,(int)$pay['server_id'],true))
+                !achbotSupportsPlan($db,(int)$pay['plan_id'],(int)$pay['server_id'],true))
                 throw new RuntimeException('draft_new_plan_unavailable');
         }
         if ($scopedAddon) {
@@ -699,7 +699,7 @@ function achbotPayUxUnadmittedClosed(mysqli $db,array $pay,?array $attempt): boo
 
 /**
  * Conservative semantic projection from durable local facts. 'paid' by itself
- * NEVER proves that Marzban delivery or a top-up effect was completed.
+ * NEVER proves that Native delivery or a top-up effect was completed.
  */
 function achbotPayUxState(array $pay, ?array $attempt): string {
     if (!empty($pay['projection_unknown'])) return 'needs_review';

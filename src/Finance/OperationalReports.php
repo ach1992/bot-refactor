@@ -74,8 +74,7 @@ function achbotOperationalReportValidateLocked(mysqli $db,array $r): ?array {
     return $allowed?$packet:null;
 }
 function achbotOperationalReportLock(mysqli $db,string $reference): string {
-    $name=achbotProviderRow($db,'SELECT DATABASE() AS db')['db'];
-    return 'achbot-operational-'.substr(hash('sha256',$name.':'.$reference),0,40);
+    return achbotDatabaseLockName($db,'operational:'.$reference);
 }
 /** A successful effect does not depend on immediate Telegram delivery.
  * Pending/rejected/unknown have exactly the same worker and attempt rules

@@ -15,7 +15,7 @@ require_once __DIR__.'/../Panel/ProviderRuntime.php';
 
 /** Current customer references are attachments to one native service, not gifts. */
 function achbotGiftOrder(mysqli $db,int $id,bool $lock=false): array {
-    $stmt=$db->prepare('SELECT id,userid,server_id,inbound_id,fileid,
+    $stmt=$db->prepare('SELECT id,userid,server_id,fileid,
         remark,uuid,status,expire_date FROM orders_list WHERE id=?'.($lock?' FOR UPDATE':''));
     if (!$stmt) throw new RuntimeException('gift_order_prepare');
     $stmt->bind_param('i',$id);
@@ -29,11 +29,13 @@ function achbotGiftOrder(mysqli $db,int $id,bool $lock=false): array {
          filter_var($rawUserid,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]])!==false)))
         throw new RuntimeException('gift_recipient_identity_invalid');
     $order=[];
+    // Preserve the original sealed reference encoding. The reserved zero slot
+    // is not provider configuration or a database column.
     foreach (['id','userid','server_id','inbound_id','fileid','status','expire_date'] as $key)
-        $order[$key]=(int)$row[$key];
+        $order[$key]=$key==='inbound_id'?0:(int)$row[$key];
     foreach (['remark','uuid'] as $key) $order[$key]=$row[$key];
     if (min($order['id'],$order['userid'],$order['server_id'])<=0 ||
-        $order['fileid']<0 || $order['status']!==1 || $order['inbound_id']!==0 ||
+        $order['fileid']<0 || $order['status']!==1 ||
         $order['expire_date']<0 || $order['expire_date']>2147483647 ||
         !is_string($order['remark']) || $order['remark']==='' ||
         !($order['uuid']===null || is_string($order['uuid'])))
@@ -86,7 +88,7 @@ function achbotGiftPgOrderContext(mysqli $db,int $orderId,bool $lock=false): arr
     if (!$server || !$account || ($server['type']??null)!=='pasarguard')
         throw new RuntimeException('gift_pg_identity_changed');
     $context=achbotPgOrderContext($db,$orderId);
-    foreach (['id','userid','server_id','inbound_id','fileid','remark','uuid','status',
+    foreach (['id','userid','server_id','fileid','remark','uuid','status',
               'expire_date','provider_effect_id','provider_remote_user_id',
               'provider_remote_created_at'] as $key)
         if (($context['order'][$key]??null)!==($order[$key]??null))
@@ -110,7 +112,7 @@ function achbotGiftPgOrderContext(mysqli $db,int $orderId,bool $lock=false): arr
 /** No count cap and no broad FOR UPDATE scan on unindexed customer/name fields. */
 function achbotGiftReferences(mysqli $db,int $serverId,string $remark,bool $lock=false,bool $aliases=true): array {
     $stmt=$db->prepare('SELECT id,server_id FROM orders_list
-        WHERE BINARY remark=BINARY ? AND inbound_id=0 AND status=1 ORDER BY id');
+        WHERE BINARY remark=BINARY ? AND status=1 ORDER BY id');
     if (!$stmt) throw new RuntimeException('gift_references_prepare');
     $stmt->bind_param('s',$remark);
     $ok=$stmt->execute();$ids=$ok?$stmt->get_result()->fetch_all(MYSQLI_ASSOC):null;$stmt->close();

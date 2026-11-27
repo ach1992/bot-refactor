@@ -53,7 +53,7 @@ function achbotServiceExecuteStep(mysqli $db,int $id,array $presentation=[],bool
             throw new RuntimeException('service_worker_funding_missing');
         $adapter=achbotProviderDefinition($quote['target']['provider']??null);
         if ($op['kind']!=='BUY' && isset($adapter['service_account_lock'])) {
-            $lock=($adapter['service_account_lock'])($db,$quote['request']['order_id']);
+            $lock=achbotPhysicalSessionLockName($db,($adapter['service_account_lock'])($db,$quote['request']['order_id']));
             $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$lock]);
             if ((int)($held['acquired']??0)!==1) throw new RuntimeException('service_edit_account_busy');
             $physicalLock=$lock;

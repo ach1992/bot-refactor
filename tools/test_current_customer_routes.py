@@ -361,8 +361,8 @@ def main():
         sql("INSERT INTO server_categories(id,title,parent,active) VALUES (1,'Category',0,1),(2,'Inactive category',0,0)")
         for sid,active,server_state,capacity in [(2,1,1,100),(3,0,1,10),(4,1,2,10),(5,1,1,0),(6,1,1,10)]:
             sql(f"INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES ({sid},'Server {sid}','{capacity}','fixture','',{active},{server_state}); INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled) VALUES ({sid},'https://fixture.invalid','pasarguard','fixture','fixture',{sid},REPEAT('a',32),'5.5.1',1)")
-        for pid,sid,cat,active,inbound,groups in [(7,2,1,1,0,'[1]'),(8,2,1,0,0,'[1]'),(9,3,1,1,0,'[1]'),(10,4,1,1,0,'[1]'),(11,5,1,1,0,'[1]'),(12,6,1,1,9,'[1]'),(13,6,2,1,0,'[1]')]:
-            sql(f"INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES ({pid},{cat},{sid},{inbound},'Plan {pid}',30,2,100,'description',{active},'fixture','{groups}')")
+        for pid,sid,cat,active,groups in [(7,2,1,1,'[1]'),(8,2,1,0,'[1]'),(9,3,1,1,'[1]'),(10,4,1,1,'[1]'),(11,5,1,1,'[1]'),(12,6,1,1,'[]'),(13,6,2,1,'[1]')]:
+            sql(f"INSERT INTO server_plans(id,catid,server_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES ({pid},{cat},{sid},'Plan {pid}',30,2,100,'description',{active},'fixture','{groups}')")
         r=run('capacity',callback='availableServers2')
         body=json.dumps(r,ensure_ascii=False)
         assert 'Plan 7' in body and all(f'Plan {i}' not in body for i in range(8,14)),r
@@ -467,7 +467,7 @@ def main():
         cases.append('actual_owned_renewal_discount_and_subscription_shortcut')
         # Deny new commands for an actual trial even if its template or
         # historical amount/agent flag changes. No provider call is permitted.
-        sql("INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids) SELECT 14,catid,server_id,inbound_id,'Trial fixture',days,volume,0,descr,active,date,provider_group_ids FROM server_plans WHERE id=7")
+        sql("INSERT INTO server_plans(id,catid,server_id,title,days,volume,price,descr,active,date,provider_group_ids) SELECT 14,catid,server_id,'Trial fixture',days,volume,0,descr,active,date,provider_group_ids FROM server_plans WHERE id=7")
         trial=run('seed_order',trial=True)['events'][0][1]
         before=sql("SELECT COUNT(*) FROM pays")
         for phase in (0,1):
@@ -529,7 +529,7 @@ def main():
         # Trial-only category and server, with an explicit custom purpose.
         sql("INSERT INTO server_categories(id,title,parent,active) VALUES (3,'Trial category',0,1)")
         sql("INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (8,'Trial server','10','fixture','',1,1); INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled) VALUES (8,'https://fixture.invalid','pasarguard','fixture','fixture',8,REPEAT('b',32),'5.5.1',1)")
-        sql("INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES (80,3,8,0,'Trial only',1,1,0,'description',1,'fixture','[1]'),(81,1,2,0,'Mixed trial',1,1,0,'description',1,'fixture','[1]'),(82,3,2,0,'Only trial category',1,1,0,'description',1,'fixture','[1]')")
+        sql("INSERT INTO server_plans(id,catid,server_id,title,days,volume,price,descr,active,date,provider_group_ids) VALUES (80,3,8,'Trial only',1,1,0,'description',1,'fixture','[1]'),(81,1,2,'Mixed trial',1,1,0,'description',1,'fixture','[1]'),(82,3,2,'Only trial category',1,1,0,'description',1,'fixture','[1]')")
         state(plandelkhahState='off',testAccount='on')
         assert 'selectServer8_none' not in callbacks(run('entry',callback='buySubscription'))
         assert 'selectCategory3_2_none' not in callbacks(run('catalogue',callback='selectServer2_none'))

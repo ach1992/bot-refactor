@@ -48,27 +48,40 @@ def digest(keys: list[str]) -> str:
 
 def main() -> None:
     stable = "484c80e6ee030e8656da96edc3000311d10327b5"
-    with tempfile.TemporaryDirectory(prefix="achbot-copy-stable-") as folder:
-        files = {}
-        for audience in ("user", "admin"):
-            p = Path(folder) / (audience + ".php")
-            p.write_bytes(subprocess.check_output([
-                "git", "show", stable + ":messages/fa/" + audience + ".php"
-            ], cwd=ROOT))
-            files[audience] = p
-        old = load(files)
+    def at_revision(revision):
+        with tempfile.TemporaryDirectory(prefix="achbot-copy-stable-") as folder:
+            files = {}
+            for audience in ("user", "admin"):
+                p = Path(folder) / (audience + ".php")
+                p.write_bytes(subprocess.check_output([
+                    "git", "show", revision + ":messages/fa/" + audience + ".php"
+                ], cwd=ROOT))
+                files[audience] = p
+            return load(files)
+    old = at_revision(stable)
+    mapping = json.loads((ROOT / "tools/current_storage_copy_mapping.json").read_text())
+    previous = at_revision(mapping["baseline"])
     new = load({a: ROOT / "messages/fa" / (a + ".php") for a in ("user","admin")})
-    retired = sorted(set(old)-set(new))
+    prior_retired = sorted(set(old)-set(previous))
     allowed = json.loads((ROOT / "tools/wallet_first_copy_corrections.json").read_text())
-    actual = {k: {"before": old.get(k), "after": new[k]} for k in new if k not in old or old[k]!=new[k]}
-    check(actual == allowed, "retained_copy_bytes_changed")
-    check(len(retired)==481 and digest(retired)==RETIREMENT_SHA256, "retired_copy_set_changed")
+    actual = {k: {"before": old.get(k), "after": previous[k]} for k in previous if k not in old or old[k]!=previous[k]}
+    check(actual == allowed, "prior_retained_copy_bytes_changed")
+    check(len(prior_retired)==481 and digest(prior_retired)==RETIREMENT_SHA256, "prior_retired_copy_set_changed")
+    expected = dict(previous)
+    for k, target in mapping["equal"].items():
+        value = expected.pop(k)
+        check(target not in expected or expected[target]==value,"semantic_copy_not_equal:"+k)
+        expected[target] = value
+    for k in mapping["dead"]:
+        del expected[k]
+    check(new==expected, "current_copy_bytes_changed_outside_explicit_mapping")
+    retired = sorted(set(prior_retired)|set(mapping["equal"])|set(mapping["dead"]))
     sources = {p:(ROOT/p).read_text() for p in package_current.members()
                if p.endswith(".php") and p not in owner.AUDIENCES}
     restored = {topic:dict(entries) for topic,entries in owner.loaded_catalog().items()}
     for name in retired:
         topic,key=name.split(".",1)
-        restored.setdefault(topic,{})[key]=old[name]
+        restored.setdefault(topic,{})[key]=previous[name] if name in previous else old[name]
     check(owner.unresolved_copy_orphans(restored,sources)==retired,"retired_copy_has_live_consumer")
     check(not owner.unresolved_copy_orphans(owner.loaded_catalog(),sources),"unresolved_current_copy")
     print(json.dumps({"complete":True,"status":"PASS","baseline":stable,

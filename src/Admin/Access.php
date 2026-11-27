@@ -126,10 +126,6 @@ function achbotAdminStoredRecipientAllowed(mysqli $db,$recipient,int $primary,bo
     return in_array(achbotAdminRecipientLevel($db,$recipient,$primary,$notificationRead,$complete),
         ['owner','manager','operator','support'],true);
 }
-/** New copies require both genuine current staff and an enabled preference. */
-function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary,?bool &$complete=null): bool {
-    return achbotAdminNotificationAllowed($db,$recipient,$primary,'manual_review',$complete);
-}
 /** Unsolicited delivery policy; it never grants the recipient action rights.
  * Snapshot mode is only for recording intended recipients, not sending. */
 function achbotAdminNotificationAllowed(mysqli $db,$recipient,int $primary,string $event='general',?bool &$complete=null,bool $snapshot=false): bool {

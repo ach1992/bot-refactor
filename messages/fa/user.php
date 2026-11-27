@@ -259,7 +259,6 @@ return [
         'entry_and_bulk.create_multiple_accounts.message.62d6e89b94' => '☑️ اکانت‌ها ثبت شدند؛ در صورت نقص ارسال، وضعیت را بررسی کنید.',
         // order_writes.ensure_account_creation_succeeded
         'order_writes.ensure_account_creation_succeeded.user_message.7eb9410072' => '❌ اتصال به سرور برقرار نیست. لطفا پشتیبانی را در جریان بگذارید.',
-        'order_writes.ensure_account_creation_succeeded.user_message.7a64d65208' => ['text' => '❌ ساخت اشتراک انجام نشد، لطفا پشتیبانی را در جریان بگذارید.', 'parameters' => []],
         'order_writes.ensure_account_creation_succeeded.user_message.b3fe04305c' => '❌ خطایی در ساخت/بروزرسانی اکانت رخ داد، لطفا پشتیبانی را در جریان بگذارید.',
         'order_writes.ensure_account_creation_succeeded.text.f07a81a062' => 'نامشخص',
         // select_plan.alert
@@ -330,7 +329,6 @@ return [
         'account_transfers.alert.2c082acb46' => '⛔️ سفارش یا سرور فعلی معتبر نیست.',
         'account_transfers.alert.33278b6a77' => '⚠️ در حال حاضر گزینه مقصد سازگار دیگری برای این اشتراک وجود ندارد.',
         // account_transfers.text
-        'account_transfers.text.b233883d0d' => '↪️ بازگشت',
         // account_transfers.message
         'account_transfers.message.3f6bd6c3c8' => '📍 سرور مقصد را انتخاب کنید. انتقال فقط بین سرورهای یک گروه مشترک متعلق به همان پنل واقعی مجاز است. پس از انتقال پلن قبلی همه کاربران این اشتراک خالی می‌شود؛ سپس پلن جدید مقصد را انتخاب کنید.' . "\n" . '⚠️ فاکتورهای ناتمام همین اشتراک پس از انتقال دیگر برای دریافت خدمات معتبر نیستند؛ وجه احتمالی دریافت‌شده جداگانه بررسی می‌شود.',
         // account_transfers.alert
@@ -346,7 +344,6 @@ return [
         'config_refresh.message.1d7cb7b50c' => '🔎 کانفیگی برای نمایش انتخاب نشده است؛ لینک اشتراک را در اطلاعات اشتراک بررسی کنید.',
         // customer_routes.cancel_search_keyboard
         'customer_routes.search_ambiguous' => '⚠️ چند اشتراک با این نام پیدا شد. لطفاً نام کاربری دقیق اشتراک را وارد کنید یا اشتراک را از فهرست انتخاب کنید.',
-        'customer_routes.cancel_search_keyboard.button.cc357a4c9f' => '❌ لغو عملیات',
         'customer_routes.cancel_search_keyboard.button.0b8da1e098' => '◀',
         'customer_routes.cancel_search_keyboard.button.0d56714222' => '➡',
         'customer_routes.cancel_search_keyboard.alert.724ff90245' => '⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.',
@@ -465,7 +462,6 @@ return [
         'extensions.alert.e6c27b8039' => '⚠️ در حال حاضر هیچ پلن حجمی وجود ندارد.',
         // extensions.button
         'extensions.button.249377f2b7' => ['text' => '{title} گیگ ← {price}', 'parameters' => ['title', 'price']],
-        'extensions.button.8405a4154f' => '↪️ بازگشت',
         // extensions.message
         'extensions.message.ab954c63e6' => 'لطفا یکی از پلن های حجمی را انتخاب کنید:',
         // extensions.alert
@@ -759,7 +755,6 @@ return [
         'markup.receipt_and_cancel.text.75b57f3066' => '📤 ارسال رسید TRX',
         'markup.receipt_and_cancel.text.3630d712b2' => '📤 ارسال رسید تتر',
         'markup.receipt_and_cancel.button.ae15b282fd' => '📤 ارسال رسید بانکی',
-        'markup.receipt_and_cancel.button.cc357a4c9f' => '❌ لغو عملیات',
         // update_bindings.text
         'update_bindings.text.32f665d21c' => ' ندارد ',
     ],

@@ -39,7 +39,6 @@ if (preg_match('/\AfreeTrial([1-9][0-9]*)_normal\z/D',(string)$data,$match)) {
 
     $price      = 0;
     $server_id  = (int)$plan['server_id'];
-    $inbound_id = (int)$plan['inbound_id'];
 
     ensureServerCapacity($connection, $server_id);
     $uniqid = generateUID();
@@ -55,13 +54,13 @@ if (preg_match('/\AfreeTrial([1-9][0-9]*)_normal\z/D',(string)$data,$match)) {
         [$response, $remark, , $effectId] = achbotCreateNonPaymentAccount(
             $connection,'free_trial',$trialSource,(int)$from_id,1,1,[
                 'user_id'=>(int)$from_id,'server_type'=>$serverType,
-                'server_id'=>$server_id,'inbound_id'=>$inbound_id,
+                'server_id'=>$server_id,
                 'plan_id'=>$planId,'remark'=>$remark,'naming_mode'=>(string)($botState['remark']??''),'volume'=>$volume,
                 'days'=>$days
             ]);
 
     // چک موفقیت ساخت اکانت
-    ensureAccountCreationSucceeded($response, $serverInfo, $inbound_id, $admin);
+    ensureAccountCreationSucceeded($response, $serverInfo, $admin);
     $expire_date=(int)$response->expire;
 
     alert(\achbotMessage('legacy_messages.sending_config_to_user'));
@@ -74,7 +73,7 @@ if (preg_match('/\AfreeTrial([1-9][0-9]*)_normal\z/D',(string)$data,$match)) {
         throw new RuntimeException('trial_order_begin');
     try {
         $orderId=insertOrder(
-            $connection,$from_id,'',$planId,$server_id,$inbound_id,
+            $connection,$from_id,'',$planId,$server_id,
             $remark,$uniqid,$expire_date,$delivery['link'],
             $price,$date,0,true);
         achbotLinkNonPaymentAccountEffect($connection,$effectId,$orderId);

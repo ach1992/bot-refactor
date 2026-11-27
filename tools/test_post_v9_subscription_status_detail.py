@@ -47,7 +47,7 @@ def main() -> None:
         sql((ROOT / "migrations/post-v9/013_remove_obsolete_order_columns.sql").read_text())
         original = sql("SELECT * FROM orders_list WHERE id=91")
         expected = {"active": "🟢 فعال", "disabled": "🔴 غیرفعال"}
-        for provider in ("marzban", "pasarguard"):
+        for provider in ("pasarguard",):
             sql("UPDATE server_config SET type='" + provider + "' WHERE id=2")
             for status, label in expected.items():
                 remote = {

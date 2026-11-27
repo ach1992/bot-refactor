@@ -60,7 +60,7 @@ if($data == 'message2All' && ($from_id == $admin || $userInfo['isAdmin'] == true
             'inline_keyboard' => [
                 [['text'=>\achbotMessage('broadcast.routes.message2_all.button.7dba3a00f7'), 'callback_data'=>"broadcastStart"]],
                 [['text'=>\achbotMessage('broadcast.routes.message2_all.button.0bb9320093'), 'callback_data'=>"broadcastHistory_0"]],
-				[['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"mainMenu"]],
+				[['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"mainMenu"]],
             ]
         ]), 'HTML');
     }
@@ -287,7 +287,7 @@ if(preg_match('/^broadcastHistory_(\d+)$/', $data, $m) && ($from_id == $admin ||
         $kb[] = [['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.4210cf7432'), 'callback_data'=>"broadcastHistory_".($page-1)]];
     }
     $kb[] = [['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.876ba507e6'), 'callback_data'=>"broadcastHistory_".($page+1)]];
-    $kb[] = [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'), 'callback_data'=>"message2All"]];
+    $kb[] = [['text'=>\achbotMessage('legacy_buttons.back_button'), 'callback_data'=>"message2All"]];
 
     sendMessage(htmlspecialchars($out,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'), json_encode(['inline_keyboard'=>$kb]), 'HTML');
 }
@@ -338,7 +338,7 @@ if(preg_match('/^pinManageAllPage_(\d+)$/', $data, $m) && ($from_id == $admin ||
         sendMessage(\achbotMessage('broadcast.routes.broadcast_start.text.dd189f637d'), json_encode([
             'inline_keyboard'=>[ 
                 [['text'=>\achbotMessage('broadcast.routes.pin_manage_all.button.adbdd32809'),'callback_data'=>"jobsStatus_0"]],
-                [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"mainMenu"]]
+                [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"mainMenu"]]
             ] 
         ]), 'HTML');
         return; 
@@ -390,7 +390,7 @@ if(preg_match('/^pinManageAllPage_(\d+)$/', $data, $m) && ($from_id == $admin ||
     } 
  
     $kb[] = [['text'=>\achbotMessage('broadcast.routes.pin_manage_all.button.adbdd32809'),'callback_data'=>"jobsStatus_0"]];
-    $kb[] = [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'), 'callback_data'=>"mainMenu"]];
+    $kb[] = [['text'=>\achbotMessage('legacy_buttons.back_button'), 'callback_data'=>"mainMenu"]];
  
     $text = \achbotMessage('broadcast.routes.pin_manage_all.text.4fd6482802')
           . \achbotMessage('broadcast.routes.pin_manage_all.text.3586bc29c6').($page+1).\achbotMessage('broadcast.routes.pin_manage_all.text.a624a1e41f').($maxPage+1)."\n"
@@ -421,7 +421,7 @@ if(preg_match('/^pinManageSelect_(\d+)$/', $data, $m) && ($from_id == $admin || 
  
     if(!$r || $r->num_rows==0){ 
         sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.dd6f985b6d'), json_encode(['inline_keyboard'=>[
-            [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageAll"]]
+            [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageAll"]]
         ]]), 'HTML');
         return; 
     } 
@@ -482,7 +482,7 @@ if(preg_match('/^pinManageSelect_(\d+)$/', $data, $m) && ($from_id == $admin || 
 
     $kb[] = [['text'=>\achbotMessage('broadcast.routes.pm_noop.button.4c694cc9a7'), 'callback_data'=>"jobCreate_delete_$bid"]];
     $kb[] = [['text'=>\achbotMessage('broadcast.routes.pin_manage_all.button.adbdd32809'), 'callback_data'=>"jobsStatusBid_{$bid}_0"]];
-    $kb[] = [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'), 'callback_data'=>"pinManageAll"]];
+    $kb[] = [['text'=>\achbotMessage('legacy_buttons.back_button'), 'callback_data'=>"pinManageAll"]];
 
     sendMessage(htmlspecialchars($out,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'), json_encode(['inline_keyboard'=>$kb]), 'HTML');
 }
@@ -520,7 +520,7 @@ if(preg_match('/^jobsStatusBid_(\d+)_(\d+)$/', $data, $m) && ($from_id == $admin
     if(!$res || $res->num_rows == 0){ 
         sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.e3e2d204c0'), json_encode([
             'inline_keyboard'=>[ 
-                [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageSelect_$bid"]],
+                [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageSelect_$bid"]],
             ] 
         ]), 'HTML');
         return; 
@@ -558,7 +558,7 @@ if(preg_match('/^jobsStatusBid_(\d+)_(\d+)$/', $data, $m) && ($from_id == $admin
     if($page < $maxPage) $nav[] = ['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.876ba507e6'), 'callback_data'=>"jobsStatusBid_{$bid}_".($page+1)];
     if(!empty($nav)) $kb[] = $nav; 
  
-    $kb[] = [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageSelect_$bid"]];
+    $kb[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageSelect_$bid"]];
  
     sendMessage(htmlspecialchars(trim($txt),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'), json_encode(['inline_keyboard'=>$kb]), 'HTML');
 }
@@ -581,7 +581,7 @@ if(preg_match('/^editBroadcastAsk_(\d+)$/', $data, $m) && ($from_id == $admin ||
     if(($row['type'] ?? '') === 'forwardall'){
         editText($message_id, \achbotMessage('broadcast.routes.pm_noop.message.48a8e21213'), json_encode([
             'inline_keyboard'=>[
-                [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageSelect_$bid"]],
+                [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageSelect_$bid"]],
             ]
         ]));
         return;
@@ -607,7 +607,7 @@ if(preg_match('/^jobCreate_(pin|unpin|delete)_(\d+)$/', $data, $m) && ($from_id 
     if(!$sr || $sr->num_rows == 0){ 
         editText($message_id, \achbotMessage('broadcast.routes.pm_noop.message.d433f90c40'), json_encode([
             'inline_keyboard'=>[ 
-                [['text'=>\achbotMessage('broadcast.routes.pm_noop.button.b35a2352f5'),'callback_data'=>"pinManageAll"]],
+                [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageAll"]],
             ] 
         ])); 
         return; 
@@ -632,7 +632,7 @@ if(preg_match('/^jobCreate_(pin|unpin|delete)_(\d+)$/', $data, $m) && ($from_id 
         if($totalCnt > 0 && $deletedCnt >= $totalCnt){
             editText($message_id, \achbotMessage('broadcast.routes.pm_noop.message.eeefb6dde3'), json_encode([
                 'inline_keyboard'=>[
-                    [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageSelect_$bid"]],
+                    [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageSelect_$bid"]],
                 ]
             ]));
             return;
@@ -653,7 +653,7 @@ if(preg_match('/^jobCreate_(pin|unpin|delete)_(\d+)$/', $data, $m) && ($from_id 
         editText($message_id, \achbotMessage('broadcast.routes.pm_noop.message.30bfbbe059'), json_encode([
             'inline_keyboard'=>[ 
                 [['text'=>\achbotMessage('broadcast.routes.pin_manage_all.button.adbdd32809'),'callback_data'=>"jobsStatusBid_{$bid}_0"]],
-                [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageSelect_$bid"]],
+                [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageSelect_$bid"]],
             ] 
         ])); 
         return; 
@@ -671,7 +671,7 @@ if(preg_match('/^jobCreate_(pin|unpin|delete)_(\d+)$/', $data, $m) && ($from_id 
     if(!$ok || $jobId <= 0){ 
         editText($message_id, \achbotMessage('broadcast.routes.pm_noop.message.55c6d689fd'), json_encode([
             'inline_keyboard'=>[ 
-                [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageSelect_$bid"]],
+                [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageSelect_$bid"]],
             ] 
         ])); 
         return; 
@@ -682,7 +682,7 @@ if(preg_match('/^jobCreate_(pin|unpin|delete)_(\d+)$/', $data, $m) && ($from_id 
     editText($message_id, \achbotMessage('broadcast.routes.pm_noop.message.97dfcd54fa', ['jobId' => $jobId, 'actFa' => $actFa, 'bid' => $bid]), json_encode([
         'inline_keyboard'=>[ 
             [['text'=>\achbotMessage('broadcast.routes.pin_manage_all.button.adbdd32809'),'callback_data'=>"jobsStatusBid_{$bid}_0"]],
-            [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageSelect_$bid"]],
+            [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageSelect_$bid"]],
         ] 
     ])); 
 }
@@ -783,7 +783,7 @@ if(isset($update->message) && !isset($update->callback_query) && preg_match('/^b
         json_encode([
             'inline_keyboard'=>[
                 [['text'=>\achbotMessage('broadcast.routes.pin_manage_all.button.adbdd32809'),'callback_data'=>"jobsStatusBid_{$bid}_0"]],
-                [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageSelect_$bid"]],
+                [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageSelect_$bid"]],
             ]
         ]),
         null
@@ -822,7 +822,7 @@ if(preg_match('/^jobsStatus_(\d+)$/', $data, $m) && ($from_id == $admin || $user
     if(!$res || $res->num_rows == 0){
         sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.9bdefaee4b'), json_encode([
             'inline_keyboard'=>[
-                [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageAll"]],
+                [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageAll"]],
             ]
         ]), 'HTML');
         return;
@@ -861,7 +861,7 @@ if(preg_match('/^jobsStatus_(\d+)$/', $data, $m) && ($from_id == $admin || $user
     if($page < $maxPage) $nav[] = ['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.876ba507e6'), 'callback_data'=>"jobsStatus_".($page+1)];
     if(!empty($nav)) $kb[] = $nav;
 
-    $kb[] = [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageAll"]];
+    $kb[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageAll"]];
 
     sendMessage(htmlspecialchars(trim($txt),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'), json_encode(['inline_keyboard'=>$kb]), 'HTML');
 }
@@ -884,14 +884,14 @@ if(preg_match('/^jobCancel_(\d+)$/', $data, $m) && ($from_id == $admin || $userI
         editText($message_id, \achbotMessage('broadcast.routes.pm_noop.message.85bd844d25', ['jid' => $jid]), json_encode([
             'inline_keyboard'=>[
                 [['text'=>\achbotMessage('broadcast.routes.pin_manage_all.button.adbdd32809'),'callback_data'=>"jobsStatus_0"]],
-                [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageAll"]],
+                [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageAll"]],
             ]
         ]));
     } else {
         editText($message_id, \achbotMessage('broadcast.routes.pm_noop.message.ad14040149'), json_encode([
             'inline_keyboard'=>[
                 [['text'=>\achbotMessage('broadcast.routes.pin_manage_all.button.adbdd32809'),'callback_data'=>"jobsStatus_0"]],
-                [['text'=>\achbotMessage('broadcast.routes.message2_all.button.b233883d0d'),'callback_data'=>"pinManageAll"]],
+                [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"pinManageAll"]],
             ]
         ]));
     }

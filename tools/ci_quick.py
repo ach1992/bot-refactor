@@ -30,6 +30,8 @@ NATIVE_TESTS = (
     ("wallet_first_funding", "test_wallet_first_funding.py"),
     ("wallet_first_retirement", "test_wallet_first_retirement.py"),
     ("wallet_first_fresh_schema", "test_wallet_first_fresh_schema.py"),
+    ("current_database_isolation", "test_current_database_isolation.py"),
+    ("current_storage_transfer", "test_current_storage_transfer.py"),
     ("current_payment_readiness", "test_post_v9_payment_readiness.py"),
     ("current_sales_discount", "test_current_sales_discount.py"),
     ("current_customer_routes", "test_current_customer_routes.py"),
@@ -98,6 +100,13 @@ OTHER_TESTS = (
 # Replaced execution families must be covered by affirmative named cases,
 # not merely removed from the roster. See docs/post-v9/CI-VALIDATION.md.
 REQUIRED_CURRENT_CASES = {
+    "current_storage_transfer": ("unmapped_nonzero_inbound_refused","group_collision_and_dangling_membership_refused",
+        "complete_source_dump_restores_original_evidence","all_table_common_values_and_generated_columns_preserved",
+        "strict:current_groups_and_original_sealed_identity","off:current_groups_and_original_sealed_identity"),
+    "current_database_isolation": tuple(mode+":"+case for mode in ("strict","off") for case in (
+        "bot_states_cross_db_same_db","payment_keys_cross_db_same_db","panel_groups_cross_db_same_db",
+        "server_display_cross_db_same_db","start_cross_db_same_db","writer_failure_release",
+        "physical_journal_independence","selected_database_required")),
     "current_subscription_actions": (
         "exact_owned","ambiguous_partial","literal_percent","literal_underscore",
         "my_scope","inactive","unauthorized_staff","staff_duplicate_exact",

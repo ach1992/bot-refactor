@@ -16,7 +16,7 @@ $botState['renewAutoState']=$spec['renew_auto_state']??'on';
 $data=$spec['data']??'';$text='';$message_id=1;$cancelKey='{}';$removeKeyboard='{}';$time=time();
 $GLOBALS['response_emitted']=false;register_shutdown_function(static function(){if(!$GLOBALS['response_emitted'])echo json_encode(['out'=>$GLOBALS['out']??$GLOBALS['events'],'reads'=>$GLOBALS['reads'],'presentations'=>$GLOBALS['presentations']],JSON_THROW_ON_ERROR);});
 $GLOBALS['reads']=0;$GLOBALS['presentations']=0;$GLOBALS['events']=[];
-function achbotSupportsAccount($type,$inbound){return in_array($type,['marzban','pasarguard'],true)&&(int)$inbound===0;}
+function achbotSupportsProviderType($type){return $type==='pasarguard';}
 // Stub ONLY the separate Native mutation-admission seam. The source-real
 // provider integration exercises actual PasarGuard mutating fences.
 function achbotSupportsOrder($db,$orderId,$planId=null,$userId=null,$lock=false){return $orderId===91;}
@@ -28,15 +28,15 @@ function achbotServerCommerceAvailable($db,$serverId,$newPurchase,$lock=false) {
  $q->bind_param('i',$serverId);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
  return $row && (int)$row['active']===1 && ($newPurchase?(int)$row['state']===1:in_array((int)$row['state'],[1,2],true));
 }
-function achbotSupportsPlan($db,$id,$inbound=0,$server=null,$lock=false,$allowInactive=false) {
- $q=$db->prepare('SELECT p.server_id,p.inbound_id,p.active,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=?');
+function achbotSupportsPlan($db,$id,$server=null,$lock=false,$allowInactive=false) {
+ $q=$db->prepare('SELECT p.server_id,p.active,c.type FROM server_plans p JOIN server_config c ON c.id=p.server_id WHERE p.id=?');
  $id=(int)$id;$q->bind_param('i',$id);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();
- return $row && ($allowInactive || (int)$row['active']===1) && achbotSupportsAccount($row['type'],$row['inbound_id']) &&
-  (int)$inbound===0 && ($server===null || (int)$server===(int)$row['server_id']);
+ return $row && ($allowInactive || (int)$row['active']===1) && achbotSupportsProviderType($row['type']) &&
+  ($server===null || (int)$server===(int)$row['server_id']);
 }
 function achbotSameProviderPanel($db,$first,$second){return (int)$first===(int)$second;}
 require __DIR__.'/actual-service-unit-helpers.php';
-function achbotProviderSqlTypes(){return "'marzban','pasarguard'";}
+function achbotProviderSqlTypes(){return "'pasarguard'";}
 function achbotProviderUser($server,$remark,$withLinks=true){++$GLOBALS['reads'];if($withLinks)throw new RuntimeException('unexpected_link_read');return json_decode(json_encode($GLOBALS['spec']['remote']??null));}
 function achbotProviderRelocationTargets($db,$server){return $GLOBALS['spec']['relocations']??[];}
 function achbotProviderRenderPacket($db,$server,$remark):object {
@@ -88,7 +88,7 @@ try {
     $out[]=['rendered'=>$rendered,'reads'=>$GLOBALS['reads']-$beforeRenderReads,'presentations'=>$GLOBALS['presentations']-$beforeRenderPresentations];
    }
   } else $out=match($spec['op']){
-   'traffic'=>\AchBot\Subscription\AccountDetails\getOrderTrafficInfo($spec['provider'],2,'fixture_user','fixture',0),
+   'traffic'=>\AchBot\Subscription\AccountDetails\getOrderTrafficInfo($spec['provider'],2,'fixture_user'),
    'admin'=>\AchBot\Subscription\AccountDetails\getUserOrderDetailKeys(91),
    default=>\AchBot\Subscription\AccountDetails\getOrderDetailKeys(1001,91)
   };

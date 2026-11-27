@@ -1,8 +1,9 @@
 <?php
 /** One physical subscription may have several independently owned local references. */
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
+require_once __DIR__.'/../Database/Lock.php';
 
-/** Stable process lock name shared by transfer and plan selection. */
+/** Stable journal resource key shared by transfer and plan selection. */
 function achbotPhysicalLockName(mysqli $db,array $order,bool $lock=false): string {
     $server=(int)$order['server_id'];
     $type=achbotProviderType($db,$server);
@@ -12,7 +13,7 @@ function achbotPhysicalLockName(mysqli $db,array $order,bool $lock=false): strin
         achbotPgLoad();
         $account=achbotProviderAccountByOrder($db,(int)$order['id'],$lock);
         if (!$account) throw new RuntimeException('physical_account_unverified');
-        return 'achbot-plan-'.substr(hash('sha256','pg:'.$account['id']),0,40);
+        return achbotPhysicalJournalKey((int)$account['id']);
     }
     throw new RuntimeException('physical_provider_unsupported');
 }
@@ -76,7 +77,7 @@ function achbotPhysicalImportLease(mysqli $db,int $serverId,object $remote): ?st
         if (!$rows) return null; // First registration: no linked plan could be in flight.
         $reference=(int)$rows[0]['provider_reference_id'];
         if ($reference<=0) throw new RuntimeException('physical_import_identity_unverified');
-        return 'achbot-plan-'.substr(hash('sha256','pg:'.$reference),0,40);
+        return achbotPhysicalJournalKey((int)$reference);
     }
     throw new RuntimeException('physical_import_provider_unavailable');
 }
@@ -137,6 +138,7 @@ function achbotPhysicalImportAlreadyAttached(mysqli $db,int $serverId,
     return false;
 }
 function achbotPhysicalAcquireLock(mysqli $db,string $name): void {
+    $name=achbotPhysicalSessionLockName($db,$name);
     $s=$db->prepare('SELECT GET_LOCK(?,3) AS acquired');
     $s->bind_param('s',$name);$s->execute();
     $r=$s->get_result()->fetch_assoc();$s->close();
@@ -144,7 +146,8 @@ function achbotPhysicalAcquireLock(mysqli $db,string $name): void {
         throw new RuntimeException('physical_operation_busy');
 }
 function achbotPhysicalReleaseLock(mysqli $db,string $name): void {
-    try {$s=$db->prepare('SELECT RELEASE_LOCK(?)');$s->bind_param('s',$name);
+    try {$name=achbotPhysicalSessionLockName($db,$name);
+        $s=$db->prepare('SELECT RELEASE_LOCK(?)');$s->bind_param('s',$name);
         $s->execute();$s->close();
     } catch (Throwable $ignored) {}
 }
@@ -152,9 +155,7 @@ function achbotPhysicalReleaseLock(mysqli $db,string $name): void {
  * Return ALL active rows referencing this exact panel subscription in stable
  * primary-key order. Callers own a transaction when $lock is true.
  *
- * Marzban: native account key = trusted admin-declared physical group (or
- * one logical server when ungrouped) + exact native username.
- * PasarGuard: the immutable linked service-effect ID/physical incarnation;
+ * Use the immutable linked service-effect ID and physical incarnation;
  * never infer an account from a username or URL.
  */
 function achbotPhysicalActiveOrders(mysqli $db,array $selected,bool $lock=false,
@@ -405,7 +406,7 @@ function achbotPhysicalBeforeNativeWrite(mysqli $db,array $intent,int $journalId
 function achbotPhysicalPlanFingerprint(array $plan): string {
     return hash('sha256',json_encode([
         (int)$plan['id'],(int)$plan['server_id'],
-        (int)$plan['inbound_id'],
+        0, // Fixed reserved slot in the original sealed plan fingerprint.
         $plan['provider_group_ids']??null
     ],JSON_THROW_ON_ERROR));
 }
@@ -454,9 +455,9 @@ function achbotPhysicalSelectPlan(mysqli $db,int $orderId,int $newPlanId,int $ac
         if (!in_array($provider,['pasarguard'],true) ||
             !achbotSupportsOrder($db,$orderId,null,(int)$order['userid'],true))
             throw new RuntimeException('physical_service_unavailable');
-        $s=$db->prepare('SELECT p.* FROM server_plans p WHERE p.id=? AND p.server_id=? AND p.active=1 AND p.inbound_id=0 FOR UPDATE');
+        $s=$db->prepare('SELECT p.* FROM server_plans p WHERE p.id=? AND p.server_id=? AND p.active=1 FOR UPDATE');
         $s->bind_param('ii',$newPlanId,$server);$s->execute();$plan=$s->get_result()->fetch_assoc();$s->close();
-        if (!$plan || !achbotSupportsPlan($db,$newPlanId,0,$server,true))
+        if (!$plan || !achbotSupportsPlan($db,$newPlanId,$server,true))
             throw new RuntimeException('physical_plan_unavailable');
         $snapshot=achbotPgPlanSnapshot($db,$server,$newPlanId,true);
         $groups=$snapshot['group_ids'];

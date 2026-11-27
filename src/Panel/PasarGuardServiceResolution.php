@@ -7,7 +7,7 @@ function achbotPgServiceResolutionLock(mysqli $db,array $op,array $quote,array $
     if ($plan['mutation']===null) return null;
     $e=achbotProviderRow($db,'SELECT provider_reference_id FROM service_effects WHERE id=?','i',[$plan['mutation']['effect_id']]);
     if (!$e || (int)$e['provider_reference_id']<=0) throw new RuntimeException('service_resolution_anchor_missing');
-    return 'achbot-plan-'.substr(hash('sha256','pg:'.$e['provider_reference_id']),0,40);
+    return achbotPhysicalJournalKey((int)$e['provider_reference_id']);
 }
 function achbotPgServiceResolutionCheck(mysqli $db,array $op,array $quote,array $plan,string $decision): array {
     // The operator confirmation is explicitly about actual external state.

@@ -120,6 +120,7 @@ function achbotServiceResolve(mysqli $db,int $id,int $actor,int $primary,string 
         if (isset($adapter['service_resolution_lock'])) {
             $lock=($adapter['service_resolution_lock'])($db,$op,$quote,$plan);
             if ($lock!==null) {
+                $lock=achbotPhysicalSessionLockName($db,$lock);
                 $r=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$lock]);
                 if ((int)($r['acquired']??0)!==1) return ['status'=>'busy'];
                 $physical=$lock;

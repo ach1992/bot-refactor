@@ -34,7 +34,7 @@ if (($argv[4]??'')==='settings_menu') {
     require_once $root.'/tools/source_scan.php';
     require_once $root.'/src/Admin/InstanceContent.php';
     require_once $root.'/src/Finance/PaymentKeyAdmin.php';
-    foreach (['getBotSettingKeys','getGateWaysKeys','achbotMutateBotStates','setSettings'] as $name)
+    foreach (['achbotBotToggleDefinitions','achbotBotToggleValue','getBotSettingKeys','getGateWaysKeys','achbotMutateBotStates','setSettings'] as $name)
         eval(str_replace('__DIR__',var_export($root,true),achbotExtractFunction($root.'/config.php',$name)));
     $before=(int)achbotProviderRow($db,'SELECT COUNT(*) AS n FROM setting')['n'];
     foreach ([false,true] as $configured) {
@@ -169,6 +169,17 @@ def main():
                 assert all(sql('fresh_chain','SHOW CREATE TABLE '+table)==definition for table,definition in defs.items())
                 sql('fresh_chain','DELETE FROM payment_followup_intents')
                 checks.append('construction_refuses_existing_report_evidence_without_mutation')
+            if migration.name=='056_current_storage_hygiene.sql':
+                sql('fresh_chain',"INSERT INTO setting(type,value) VALUES('ACHBOT_MARZBAN_PANEL_GROUP','historical physical group')")
+                before=sql('fresh_chain','SELECT * FROM setting')
+                defs={table:sql('fresh_chain','SHOW CREATE TABLE '+table) for table in
+                      ('orders_list','server_plans','increase_order','payment_attempts','server_config')}
+                rejected=subprocess.run(cli+['fresh_chain'],input=migration.read_text(),text=True,env=env,capture_output=True,timeout=30)
+                assert rejected.returncode!=0 and 'requires a controlled data transfer' in rejected.stderr,rejected.stderr
+                assert sql('fresh_chain','SELECT * FROM setting')==before
+                assert all(sql('fresh_chain','SHOW CREATE TABLE '+t)==d for t,d in defs.items())
+                sql('fresh_chain',"DELETE FROM setting WHERE type='ACHBOT_MARZBAN_PANEL_GROUP'")
+                checks.append('construction_refuses_populated_hygiene_source')
             try:
                 sql('fresh_chain',migration.read_text())
             except subprocess.CalledProcessError as error:

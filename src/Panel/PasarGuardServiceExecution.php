@@ -246,7 +246,7 @@ function achbotPasarGuardBuyFinalizeApplyLocked(mysqli $db,array $op,array $quot
         throw new RuntimeException('service_buy_finalize_identity_changed');
     $agent=$q['policy']['agent_bought']??false;
     if (!in_array($agent,[0,1,false,true],true)) throw new RuntimeException('service_buy_agent_policy_invalid');
-    $orderId=insertOrder($db,(int)$op['userid'],'',$q['plan_id'],$q['server_id'],0,
+    $orderId=insertOrder($db,(int)$op['userid'],'',$q['plan_id'],$q['server_id'],
         $current['remote_username'],achbotPasarGuardBuyLocalUuid($current['operation_id']),
         (int)$current['requested_expire'],$result['link'],
         achbotAllocateOrderAmount($q['price'],$q['quantity'],$ordinal),

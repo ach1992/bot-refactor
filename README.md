@@ -45,7 +45,7 @@ historical pending workflows or overwrite a live bot merely because a ZIP exists
 
 | Area | Start here |
 | --- | --- |
-| Product and architecture | [Product contract](docs/PROJECT-SPEC.md), [Wallet-first architecture](docs/post-v9/WALLET-FIRST-ARCHITECTURE.md) |
+| Product and architecture | [Product contract](docs/PROJECT-SPEC.md), [Wallet-first architecture](docs/post-v9/WALLET-FIRST-ARCHITECTURE.md), [Current storage and isolation](docs/post-v9/CURRENT-STORAGE-HYGIENE.md) |
 | Payments and staff operations | [Checkout and configuration](docs/post-v9/PAYMENT-UX-LIFECYCLE.md), [Gateway access](docs/post-v9/GATEWAY-ELIGIBILITY-RULES.md), [API evidence](docs/post-v9/API-PAYMENT-EVIDENCE.md), [Operations inbox](docs/post-v9/AUTOMATIC-GATEWAY-REVIEW.md), [Wallet adjustments and transfers](docs/post-v9/ADMIN-WALLET-ADJUSTMENTS.md) |
 | Native and services | [PasarGuard API](docs/post-v9/PASARGUARD-CONTRACT.md), [Account identity](docs/post-v9/SHARED-PROVIDER-STORAGE.md), [Service lifecycle](docs/post-v9/UNIFIED-SERVICE-MANAGEMENT.md), [Plan/transfer](docs/post-v9/SHARED-SERVICE-TRANSFER.md), [Scoped add-ons](docs/post-v9/ADDON-SCOPES.md), [Auto renewal](docs/post-v9/AUTOMATIC-RENEWAL-SAFETY.md), [Gifts](docs/post-v9/DIRECT-GIFT-RECOVERY.md) |
 | Telegram and support | [Subscription display](docs/post-v9/SUBSCRIPTION-PRESENTATION.md), [Message catalogs](messages/README.md), [Telegram presentation](docs/post-v9/TELEGRAM-PRESENTATION.md), [Telegram diagnostics](docs/post-v9/TELEGRAM-DIAGNOSTICS.md), [Support](docs/v3/README.md) |

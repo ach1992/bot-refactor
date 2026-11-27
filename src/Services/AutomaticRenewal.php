@@ -10,7 +10,7 @@ require_once __DIR__.'/../Purchase/AgentPricing.php';
  * renewal executor. The scheduler receives a durable service operation ID. */
 function achbotServiceAutoRenewOrderEligible(?array $o,int $owner): bool {
     return $o!==null && (int)$o['userid']===$owner && (int)$o['status']===1 &&
-        (int)$o['inbound_id']===0 && (int)$o['fileid']>0 &&
+        (int)$o['fileid']>0 &&
         (int)$o['notif']!==0 && $o['autoRenew']==='on' && $o['remark']!=='';
 }
 function achbotServiceAutoRenewAdmit(mysqli $db,int $orderId,int $userId,array $botState): array {
@@ -27,7 +27,7 @@ function achbotServiceAutoRenewAdmit(mysqli $db,int $orderId,int $userId,array $
         $adapter=achbotProviderDefinition(achbotProviderType($db,$sid));
         if (!isset($adapter['service_account_lock'],$adapter['service_auto_observe'],$adapter['service_auto_reserve']))
             return ['status'=>'ineligible'];
-        $name=($adapter['service_account_lock'])($db,$orderId);
+        $name=achbotPhysicalSessionLockName($db,($adapter['service_account_lock'])($db,$orderId));
         $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
         if ((int)($held['acquired']??0)!==1) return ['status'=>'account_busy'];
         $lock=$name;
@@ -70,7 +70,7 @@ function achbotServiceAutoRenewAdmit(mysqli $db,int $orderId,int $userId,array $
         $amount=achbotServiceNonnegative($p['price']??null);
         $days=achbotWholeServiceUnits($p['days']??null,achbotServiceDaysMax());
         $volume=achbotWholeServiceUnits($p['volume']??null,achbotServiceVolumeMax(),true);
-        if (!$p || (int)$p['inbound_id']!==0 || $amount===null || $amount<=0 || $amount>2147483647 ||
+        if (!$p || $amount===null || $amount<=0 || $amount>2147483647 ||
             $days===null || $volume===null) {
             $db->rollback();return ['status'=>'invalid_plan'];
         }

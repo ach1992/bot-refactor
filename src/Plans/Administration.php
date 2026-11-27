@@ -85,7 +85,7 @@ if(preg_match('/^editCustom(gbPrice|dayPrice)/',$data,$match) && achbotAdminCanF
     return;
 }
 if(preg_match('/plansList(\d+)/', $data,$match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
-    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type` IN (".achbotProviderSqlTypes().") WHERE p.`server_id`=? AND p.`inbound_id`=0 ORDER BY p.`id` ASC");
+    $stmt = $connection->prepare("SELECT p.* FROM `server_plans` p INNER JOIN `server_config` sc ON sc.`id`=p.`server_id` AND sc.`type` IN (".achbotProviderSqlTypes().") WHERE p.`server_id`=? ORDER BY p.`id` ASC");
     $stmt->bind_param("i", $match[1]);
     $stmt->execute();
     $res = $stmt->get_result();

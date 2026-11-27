@@ -162,7 +162,7 @@ function editText($msgId,$text,$keys=null,$mode=null,$uid=null) {
 
 function fixtureAlias(mysqli $db,int $order): int {
     $ctx=achbotPgOrderContext($db,$order,true);$o=$ctx['order'];$a=$ctx['account'];
-    $id=insertOrder($db,9002,'',0,2,0,$o['remark'],'alias-'.$o['uuid'],
+    $id=insertOrder($db,9002,'',0,2,$o['remark'],'alias-'.$o['uuid'],
         (int)$o['expire_date'],$o['link'],0,time(),0,true);
     achbotRecordImportedOrderOriginLocked($db,$id,9002,9002,'pasarguard',2,$o['remark'],
         str_repeat('a',64),['remote_user_id'=>$a['remote_user_id'],'remote_created_at'=>$a['remote_created_at'],
@@ -228,7 +228,7 @@ try {
             $other=new mysqli('localhost','root','',$argv[3],0,$argv[2]);
             if (!$other->set_charset('utf8mb4')) throw new RuntimeException('fixture_charset');
             $d=achbotProviderRow($db,'SELECT order_id FROM payment_delivery_intents WHERE id=?','i',[$x['id']]);
-            $name=achbotPgServiceAccountLock($other,(int)$d['order_id']);
+            $name=achbotPhysicalSessionLockName($other,achbotPgServiceAccountLock($other,(int)$d['order_id']));
             if ((int)achbotProviderRow($other,'SELECT GET_LOCK(?,0) AS acquired','s',[$name])['acquired']!==1)
                 throw new RuntimeException('fixture_delivery_block_account');
         }
@@ -723,17 +723,17 @@ def main():
                 INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (2,'Fixture PG','100','pgfixture','',1,1);
                 UPDATE server_config SET provider_connection_id=2,provider_instance_key=REPEAT('a',32),
                     provider_version='5.5.1',provider_enabled=1 WHERE id=2;
-                INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)
-                VALUES (7,1,2,0,'Fixture PG',30,2,100,'description',1,'fixture','[1,2]');""")
+                INSERT INTO server_plans(id,catid,server_id,title,days,volume,price,descr,active,date,provider_group_ids)
+                VALUES (7,1,2,'Fixture PG',30,2,100,'description',1,'fixture','[1,2]');""")
             sql(f"""INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled)
                 VALUES (3,'{base}','pasarguard','fixture','fixture',2,REPEAT('a',32),'5.5.1',1);
                 INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES (3,'Fixture alias','200','pgalias','',1,1);
-                INSERT INTO setting(type,value) VALUES ('ACHBOT_MARZBAN_PANEL_GROUP','fixture group');
+                INSERT INTO setting(type,value) VALUES ('ACHBOT_PANEL_GROUP','fixture group');
                 UPDATE server_info SET panel_group_id=LAST_INSERT_ID() WHERE id IN (2,3);
-                INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)
-                VALUES (8,1,2,0,'Fixture PG next',30,2,100,'description',1,'fixture','[1,2]'),
-                       (9,1,3,0,'Fixture PG alias',30,2,100,'description',1,'fixture','[1,2]'),
-                       (10,1,2,0,'Fixture PG group change',30,2,100,'description',1,'fixture','[1]');""")
+                INSERT INTO server_plans(id,catid,server_id,title,days,volume,price,descr,active,date,provider_group_ids)
+                VALUES (8,1,2,'Fixture PG next',30,2,100,'description',1,'fixture','[1,2]'),
+                       (9,1,3,'Fixture PG alias',30,2,100,'description',1,'fixture','[1,2]'),
+                       (10,1,2,'Fixture PG group change',30,2,100,'description',1,'fixture','[1]');""")
             sql('UPDATE users SET wallet=50000 WHERE userid=9002')
             driver=work/'execution.php';driver.write_text(PHP)
             last_diagnostics=[]
@@ -1043,8 +1043,8 @@ def main():
                 sql(f"""INSERT INTO server_config(id,panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled)
                     SELECT {sid},panel_url,type,username,password,provider_connection_id,provider_instance_key,provider_version,provider_enabled FROM server_config WHERE id=2;
                     INSERT INTO server_info(id,title,ucount,remark,flag,active,state) VALUES ({sid},'Fixture removed','10','removed','',1,1);
-                    INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)
-                    VALUES ({sid},1,{sid},0,'Fixture removed',30,2,100,'description',1,'fixture','[1,2]');""")
+                    INSERT INTO server_plans(id,catid,server_id,title,days,volume,price,descr,active,date,provider_group_ids)
+                    VALUES ({sid},1,{sid},'Fixture removed',30,2,100,'description',1,'fixture','[1,2]');""")
                 op=issue(mode,'resolution-removed-server',server=sid,plan=sid);fund(mode,op)
                 sql(f"START TRANSACTION; DELETE FROM server_config WHERE id={sid}; DELETE FROM server_info WHERE id={sid}; COMMIT")
                 before=finance();bal=int(sql('SELECT wallet FROM users WHERE userid=1001'));wire=len(requests)

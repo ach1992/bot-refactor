@@ -31,7 +31,7 @@ try {
         [$result,$remark,,$id]=achbotCreateNonPaymentAccount($db,'admin_bulk',
             'bulk:9001:'.$x['ref'],9001,1,1,[
             'server_type'=>'fixture_native','server_id'=>3,'plan_id'=>8,
-            'inbound_id'=>0,'remark'=>$x['remark'],'naming_mode'=>'digits',
+            'remark'=>$x['remark'],'naming_mode'=>'digits',
             'volume'=>2,'days'=>30]);
         if (($result->success??false)!==true) throw new RuntimeException('fixture_nonpaid_result');
         echo json_encode(['ok'=>true,'id'=>$id,'remark'=>$remark],JSON_THROW_ON_ERROR);
@@ -81,12 +81,12 @@ def main():
                 (2,'Fixture PG','100','pgfixture','',1,1),(3,'Retired M','100','fixture','',1,1);
             UPDATE server_config SET provider_connection_id=2,provider_instance_key=REPEAT('a',32),
                 provider_version='5.5.1',provider_enabled=1 WHERE id=2;
-            INSERT INTO server_plans(id,catid,server_id,inbound_id,title,days,volume,price,descr,active,date,provider_group_ids)
-            VALUES (7,1,2,0,'Fixture PG',30,2,100,'description',1,'fixture','[1,2]'),
-                   (8,1,3,0,'Retired M',30,2,100,'description',1,'fixture',NULL);
-            INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date,
+            INSERT INTO server_plans(id,catid,server_id,title,days,volume,price,descr,active,date,provider_group_ids)
+            VALUES (7,1,2,'Fixture PG',30,2,100,'description',1,'fixture','[1,2]'),
+                   (8,1,3,'Retired M',30,2,100,'description',1,'fixture',NULL);
+            INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,remark,uuid,expire_date,link,amount,status,date,
                 provider_effect_id,provider_remote_user_id,provider_remote_created_at)
-            VALUES (91,1001,REPEAT('a',30),'fixture',7,2,0,'fixture-user','fixture-uuid',1800000100,'["vless://fixture"]',100,1,'fixture',
+            VALUES (91,1001,REPEAT('a',30),'fixture',7,2,'fixture-user','fixture-uuid',1800000100,'["vless://fixture"]',100,1,'fixture',
                 91,17,'2026-10-26T05:00:00Z');
             INSERT INTO service_effects(id,source_kind,source_ref,actor_userid,ordinal,reserved_count,operation_id,effect_kind,
                 target_server_id,target_key,endpoint_sha256,plan_id,remote_username,requested_expire,requested_bytes,request_sha256,

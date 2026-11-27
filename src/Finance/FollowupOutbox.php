@@ -360,13 +360,12 @@ function achbotFollowupRevisionRank(array $r): int {
     };
 }
 function achbotFollowupLeaseName(mysqli $db,array $r): string {
-    $dbName=achbotProviderRow($db,'SELECT DATABASE() AS db')['db'];
     $receiptEdit=$r['kind']==='edit' &&
         in_array($r['role'],['receipt_primary','receipt_mirror'],true);
     $key=$receiptEdit?'receipt:'.$r['recipient'].':'.$r['message_id']:
         (achbotFollowupRevisionRank($r)>0
         ?'service:'.$r['service_operation_id'].':'.$r['recipient']:'intent:'.$r['id']);
-    return 'achbot-followup-'.substr(hash('sha256',$dbName.':'.$key),0,40);
+    return achbotDatabaseLockName($db,'followup:'.$key);
 }
 /** Read under the source row lock, then serialize only this destination
  * across Telegram I/O. No financial or Native session lease is held. */

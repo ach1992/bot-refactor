@@ -245,6 +245,9 @@ def check() -> dict:
         (work/'address-driver.php').write_text(PHP_ADDRESS)
         extractor=('require $argv[1]; echo "<?php\\n",'
                    'achbotExtractFunction($argv[2],"achbotMutateBotStates"),"\\n",'
+                   'achbotExtractFunction($argv[2],"achbotBotToggleDefinitions"),"\\n",'
+                   'achbotExtractFunction($argv[2],"achbotBotToggleValue"),"\\n",'
+                   'achbotExtractFunction($argv[2],"achbotGatewayToggleFields"),"\\n",'
                    'achbotExtractFunction($argv[2],"achbotAdminGatewayChange"),"\\n",'
                    'achbotExtractFunction($argv[2],"achbotPaymentPolicyFields"),"\\n",'
                    'achbotExtractFunction($argv[2],"setSettings"),"\\n",'

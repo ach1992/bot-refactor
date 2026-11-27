@@ -38,10 +38,6 @@ function achbotApiPaymentCanResume(mysqli $db,array $pay): bool {
 function achbotApiPaymentReady(mysqli $db): bool {
     return function_exists('achbotPaymentEvidenceSchemaReady') && achbotPaymentEvidenceSchemaReady($db);
 }
-/** Presence is independent of decryptability: a broken pin never becomes legacy. */
-function achbotApiPaymentPinned(mysqli $db,int $id): bool {
-    try {$q=$db->prepare('SELECT evidence_profile FROM payment_attempts WHERE pay_row_id=?');$q->bind_param('i',$id);$q->execute();$a=$q->get_result()->fetch_assoc();$q->close();return is_array($a)&&is_string($a['evidence_profile'])&&$a['evidence_profile']!=='';}catch(Throwable $e){return false;}
-}
 function achbotApiPaymentRow(mysqli $db,int $id,bool $locked=false): ?array {
     $q=$db->prepare('SELECT * FROM pays WHERE id=?'.($locked?' FOR UPDATE':''));
     $q->bind_param('i',$id);$q->execute();$row=$q->get_result()->fetch_assoc();$q->close();

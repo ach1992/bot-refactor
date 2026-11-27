@@ -243,8 +243,8 @@ ensure(achbotGiftReportActor($connection,$receipt)===9002 &&
     achbotGiftReportActor($connection,array_replace($receipt,['gift_id'=>106]))===0 &&
     achbotGiftReportActor($connection,array_replace($receipt,['days'=>2]))===0,
     'scheduled_gift_actor_from_original_enqueue_not_worker');
-query("INSERT INTO orders_list (id,userid,token,transid,fileid,server_id,inbound_id,remark,uuid,expire_date,link,amount,status,date)
-    VALUES (101,1001,REPEAT('a',30),'fixture',7,2,0,'fixture-gift','fixture-uuid',1800000100,'[]',0,1,'fixture')");
+query("INSERT INTO orders_list (id,userid,token,transid,fileid,server_id,remark,uuid,expire_date,link,amount,status,date)
+    VALUES (101,1001,REPEAT('a',30),'fixture',7,2,'fixture-gift','fixture-uuid',1800000100,'[]',0,1,'fixture')");
 $order=achbotGiftOrder($connection,101);
 $connection->begin_transaction();
 achbotGiftStageReportLocked($connection,'batch:105:0','fixture-gift',1,1024,

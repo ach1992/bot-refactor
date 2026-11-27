@@ -137,7 +137,7 @@ if(($spec['mode']??'flow')==='dispatch') {
   catch(LogicException $e) {$GLOBALS['events'][]=['kind'=>'denied','reason'=>$e->getMessage()];}
 } elseif(($spec['mode']??'flow')==='helper') {
   $registration=achbotRegisterStartUser($connection,$update,$actor,
-      (int)($spec['inviter']??0),(int)($spec['reward']??0),$dbName);
+      (int)($spec['inviter']??0),(int)($spec['reward']??0));
 } else {
   $callbackId=$update->callback_query->id??null;
   eval(file_get_contents(__DIR__.'/membership-source.php'));
