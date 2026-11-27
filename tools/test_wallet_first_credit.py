@@ -29,8 +29,9 @@ PHP = evidence.DRIVER.replace(
     "case 'save':\n $result=achbotPaymentEvidenceSaveGiftCode($db,$id,1001,$spec['code']);break;", r"""
 case 'save':
  require_once dirname($argv[1]).'/ApiPayments.php';
- $token=achbotManualBeginEvidence($db,$pay,'gift_card',1001,$spec['code']);
- $result=['status'=>$token && achbotManualFinishEvidence($db,$pay['hash_id'],$spec['code'],$token,222,9001)?'saved':'invalid'];
+ require_once dirname($argv[1]).'/ReceiptNotices.php';
+ $GLOBALS['admin']=9001;
+ $result=['status'=>achbotManualAdmitReceipt($db,$pay,'gift_card',1001,$spec['code'],'fixture gift',inlineKeyboard([]),'fixture_bot')?'saved':'invalid'];
  break;
 """
 ).replace(

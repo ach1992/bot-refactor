@@ -59,7 +59,10 @@ $botState=json_decode($db->query("SELECT value FROM setting WHERE type='BOT_STAT
 $botState['rewardChannel']='@fixture_report';
 if (isset($c['stale_state'])) $botState=array_replace($botState,$c['stale_state']);
 if (isset($c['stale_keys'])) $paymentKeys=array_replace($paymentKeys,$c['stale_keys']);
-function sendMessage(...$args){return (object)['ok'=>true,'result'=>(object)['message_id'=>572]];}
+function sendMessage(...$args){
+    if (isset($GLOBALS['achbotTelegramDiagnosticContext']['followup_id'])) return fixtureMessageAck($args[3]);
+    return (object)['ok'=>true,'result'=>(object)['message_id'=>572]];
+}
 if ($c['op']==='browser_issue') {
     // The actual public script calls exit; capture its final status without
     // following redirects to real providers. Only merchant endpoints in the
@@ -110,6 +113,9 @@ try {
 }
 '''
 
+
+from operational_report_fixture import with_message_ack
+PHP=with_message_ack(PHP)
 
 def main():
     parser=argparse.ArgumentParser(description=__doc__)

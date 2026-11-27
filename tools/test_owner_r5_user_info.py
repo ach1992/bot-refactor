@@ -138,14 +138,14 @@ def main():
         yes('1,600' in rows[9][0]['text'],'incoming_total_no_topup_wallet_spend_doublecount')
         yes(['1,100' in rows[10][0]['text'],'1,300' in rows[11][0]['text'],
              '1,300' in rows[12][0]['text'],'1,600' in rows[13][0]['text']]==[True]*4,'incoming_date_windows_current_fields')
-        agent_index=next(i for i,r in enumerate(rows)if any(b.get('callback_data')=='toggleAgent_1001'for b in r))
+        agent_index=next(i for i,r in enumerate(rows)if any(b.get('callback_data')=='toggleUserAgent_1001'for b in r))
         yes(rows[agent_index+1][0]['callback_data']=='editAgentDiscountNormal1001_userinfo','percent_row_immediately_after_agent_status')
         for actor in [9002,9004]:
             r=call(w,e,app,{'action':'info','target':1001,'actor':actor})['details']['inline_keyboard']
             yes(any(b.get('callback_data')=='editAgentDiscountNormal1001_userinfo'for row in r for b in row),'percent_visible_to_'+str(actor))
         support=call(w,e,app,{'action':'info','target':1001,'actor':9003})['details']
         allcb=[b.get('callback_data','')for row in support['inline_keyboard']for b in row]
-        yes(not any(cb.startswith(('editAgentDiscount','toggleAgent_'))for cb in allcb),'support_cannot_change_agent_from_info')
+        yes(not any(cb.startswith(('editAgentDiscount','toggleUserAgent_'))for cb in allcb),'support_cannot_change_agent_from_info')
         yes(call(w,e,app,{'action':'info','target':1001,'actor':1001})['details']is None,'customer_cannot_invoke_admin_info_helper')
         sql(w,e,"UPDATE users SET username='' WHERE userid=1001")
         fallback=call(w,e,app,{'action':'info','target':1001,'chat_failure':True})['details']

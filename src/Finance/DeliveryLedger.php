@@ -12,9 +12,10 @@ require_once __DIR__.'/../Admin/Access.php';
  * provider state and never resends UNKNOWN parts. Abandoned service claims
  * are reconciled, not replayed.
  *
- * A quiet two-minute window lets the original callback finish first.  A
- * deferred preflight merely rotates updated_at to avoid starving later valid
- * packets; it is NOT a Telegram attempt or permission to rebuild the packet.
+ * Newly committed parts are immediately eligible. The existing delivery
+ * lease prevents callback/Cron duplicate sends and establishes when an
+ * abandoned claim can be reconciled. A deferred preflight yields to peers,
+ * without counting a Telegram attempt or rebuilding the packet.
  * This worker has a bounded batch and soft wall-time budget (one delivery
  * intent may contain multiple transport calls).
  */
@@ -37,8 +38,7 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
             WHERE d.state IN ('pending','dispatching')
                 AND (o.stage='completed' OR (d.service_operation_id IS NULL AND e.source_kind IN ('free_trial','admin_bulk')
                     AND e.state='local_recorded'))
-                AND ((d.next_attempt_at IS NULL
-                    AND d.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE)) OR d.next_attempt_at<=NOW(6))
+                AND (d.next_attempt_at IS NULL OR d.next_attempt_at<=NOW(6))
             ORDER BY COALESCE(d.next_attempt_at,d.updated_at),d.id LIMIT {$limit}");
         if (!$q) throw new RuntimeException('delivery_maintenance_scan_failed');
         $rows=$q->fetch_all(MYSQLI_ASSOC);
@@ -72,14 +72,13 @@ function achbotDeliveryMaintainPending(mysqli $db,int $limit=4,float $budgetSeco
         } else {
             $stats['deferred']++;
             try {
-                // No packet/state/attempt/actor changes.  A failed readiness
-                // check is retried no sooner than another two-minute window
-                // and cannot monopolize the head of the bounded queue.
+                // No packet/state/attempt/actor changes. A failed readiness
+                // check yields to other work without delaying new packets.
                 // Also defer abandoned service claim reconciliation on a
                 // transient SQL/ownership error, without changing its token.
                 $q=$db->prepare("UPDATE payment_delivery_intents
-                    SET updated_at=NOW(),next_attempt_at=CASE WHEN next_attempt_at<=NOW(6)
-                        THEN DATE_ADD(NOW(6),INTERVAL 2 MINUTE) ELSE next_attempt_at END
+                    SET updated_at=NOW(),next_attempt_at=CASE WHEN next_attempt_at IS NULL OR next_attempt_at<=NOW(6)
+                        THEN DATE_ADD(NOW(6),INTERVAL 5 SECOND) ELSE next_attempt_at END
                     WHERE id=? AND state IN ('pending','dispatching')");
                 $q->bind_param('i',$id);
                 $q->execute();$q->close();

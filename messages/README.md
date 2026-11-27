@@ -15,6 +15,9 @@ File placement does not authorize a recipient. Existing actor/owner checks and e
 
 - Use ASCII digits (`0`–`9`) in bot-owned visible numbers and examples. Keep dates, amounts, IDs and units meaningful; never rewrite customer-supplied names/messages or protocol payloads merely for appearance.
 - A complete message or control may start with one relevant emoji. Reuse the same cue for the same task: `💰` wallet, `💳` payment, `📋` subscriptions/plans, `📦` volume, `📅` time, `💬` support, `🔎` search, `🔙` back, `♻️` renewal, `🔄` refresh, `✅` confirmed success, `⚠️` uncertainty or a problem, `❌` cancel and `⛔️` access denial.
+- Use 🎫 شناسه عددی for numeric Telegram identities (not invoice IDs or
+  subscription identifiers). Report presentation uses Asia/Tehran while
+  retaining original technical timestamps and log evidence.
 - Do not stack emoji, decorate both ends of a heading, or add emoji to date words, units, continuation fragments, URLs or data labels indiscriminately. A flag or joined emoji is one glyph and must remain intact.
 - Telegram text and captions use HTML, escaping dynamic values once. Buttons and callback alerts remain plain text. Use `<b>` for headings/important amounts and `<code>` for copyable IDs/addresses only in HTML messages. Many entries are fragments; check the complete message before changing tags. See [Telegram presentation](../docs/post-v9/TELEGRAM-PRESENTATION.md) for shared rendering.
 - Keep existing wording unless clarity/privacy requires a reviewed correction. A payment or delivery with an unknown result remains under review; never imply confirmed success, rollback or refund without evidence.
@@ -42,7 +45,7 @@ The unified-management amendment pins the additional admin/customer templates ag
 ## Current Stable source ownership audit
 
 `python3 tools/test_post_v9_current_copy_ownership.py` checks the current
-137-file runtime membership from `tools/package_current.py`, validates
+runtime membership from `tools/package_current.py`, validates
 source-literal catalog references, duplicate declared keys, both legacy
 array bindings and dynamic-key prefixes, and rejects uncatalogued Persian
 PHP literals in the bot and finance runtime (except two explicitly classified
@@ -60,9 +63,10 @@ request outcomes against the accepted current-Stable source, including
 exact HTML bytes, JSON response bytes and interpreted JavaScript strings.
 `tools/test_post_v9_current_copy_ownership.py` also asserts no noncatalog
 Persian text remains in the root web-login PHP/HTML/JS source.
-The current-only relocation proof now pins **413** retired no-consumer
-keys and 50 new exact-value, source-owned entries (46 browser labels and four
-finance/admin display labels); all **2,525** retained values remain byte-exact.
+The relocation proof and its exact correction manifest pin retained,
+changed, added and retired keys. The current #236 checkpoint removes 22
+unused keys and changes or adds 15 approved keys relative to v0.11.0;
+use the current test output rather than a historical fixed catalog count.
 Two more dead keys are retired: the unused subscription-status fallback `legacy_messages.config_doesnt_exist` and the unreachable QR-link button fallback `subscription.buy_helpers.build_links_and_send_qr.start.e4bb9f1ece`. The active subscription status/Start labels remain unchanged.
 
 The global "$mainValues" and "$buttonValues" mutable runtime bindings are

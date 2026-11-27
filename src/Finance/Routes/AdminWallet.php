@@ -460,9 +460,10 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$data]) &&
     if (!achbotWalletAdjustmentsReady($connection)) {
         sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.7f5443f0df'), null, 'HTML');
     } else {
-        delMessage();
+        if (!setUser($data)) return;
+        try {delMessage();} catch(Throwable $ignored){}
         sendMessage(\achbotMessage('legacy_messages.send_user_id'), $cancelKey, 'HTML');
-        setUser($data);
+        return;
     }
 }
 
@@ -480,15 +481,16 @@ if ($achbotWalletCanAdmin && isset($achbotWalletModes[$achbotWalletStep]) &&
         $matches = $stmt->get_result()->num_rows;
         $stmt->close();
         if ($matches !== 1) {
-            setUser();
+            if (!setUser()) return;
             sendMessage($matches > 1 ?
                 \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.840dca2362') :
                 \achbotMessage('legacy_messages.user_not_found'), $removeKeyboard, 'HTML');
             sendMessage(\achbotCurrentMessage('reached_main_menu'), getMainKeys(), 'HTML');
         } else {
             [$kind, $prefix, $prompt] = $achbotWalletModes[$achbotWalletStep];
-            setUser($prefix . $achbotWalletTarget);
+            if (!setUser($prefix . $achbotWalletTarget)) return;
             sendMessage(\achbotMessage('legacy_messages.'.$prompt), null, 'HTML');
+            return;
         }
     }
 }
@@ -506,10 +508,11 @@ if ($achbotWalletCanAdmin && $achbotWalletFreshText !== null &&
         $amount = (int)$achbotWalletInput;
         // Bind the final message to the actual amount-submission update.
         // Older/out-of-order private messages cannot provide its reason.
-        setUser('achbotWalletReason:' . $kind . ':' . $target . ':' . $amount
-            . ':' . $update->message->message_id . ':' . $update->update_id);
+        if (!setUser('achbotWalletReason:' . $kind . ':' . $target . ':' . $amount
+            . ':' . $update->message->message_id . ':' . $update->update_id)) return;
         sendMessage(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.b890d4f5e3')
             . \achbotMessage('wallet.admin_wallet.admin_wallet_report_result.message.e8ac1326af'), null, 'HTML');
+        return;
     }
 }
 

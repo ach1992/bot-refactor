@@ -8,8 +8,9 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
 require_once __DIR__ . '/../Finance/PaymentLifecycle.php';
+require_once __DIR__.'/../Telegram/Conversation.php';
 
-$typedPlanInput=isset($update->message->text) && !isset($update->callback_query);
+$typedPlanInput=isset($update->message->text) && \AchBot\Telegram\Conversation\source($update,(int)$from_id,false)!==null;
 $planSelectionCallback=preg_match('/\AselectPlan([1-9][0-9]*)_([1-9][0-9]*)_(?<buyType>none|one|much)\z/D',(string)$data,$match)===1;
 if(($planSelectionCallback ||
     ($typedPlanInput && preg_match('/\A(?:selectPlan|enterAccountName)([1-9][0-9]*)_([1-9][0-9]*)_(?<buyType>none|one|much)\z/D',$userInfo['step'],$match))) &&
@@ -26,11 +27,14 @@ if(($planSelectionCallback ||
     if (!$respd) {
         alert(\achbotMessage('purchase.select_plan.alert.789af84a82'),true);return;
     }
-    if($planSelectionCallback) delMessage();
+    if ($planSelectionCallback && !\AchBot\Telegram\Conversation\source($update,(int)$from_id,true)) return;
 
     if(($botState['remark']??'') ==  "manual" && preg_match('/^selectPlan/',$data) && $match['buyType'] != "much"){
-        sendMessage(\achbotMessage('legacy_messages.customer_custome_plan_name'), $cancelKey, 'HTML');
-        setUser('enterAccountName' . $match[1] . "_" . $match[2] . "_" . $match['buyType']); 
+        if (!\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,
+            'enterAccountName'.$match[1].'_'.$match[2].'_'.$match['buyType'],update:$update)) return;
+        $prompt=sendMessage(\achbotMessage('legacy_messages.customer_custome_plan_name'), $cancelKey, 'HTML');
+        if (\AchBot\Telegram\Conversation\acknowledgedMessage($prompt,(int)$from_id)!==null)
+            try {delMessage();}catch(Throwable $ignored) {}
         exit(); 
     } 
  
@@ -44,14 +48,12 @@ if(($planSelectionCallback ||
                 sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML'); exit();
             }
             $accountCount=(int)$text;
-            setUser();
         }         
     } 
     elseif(!$planSelectionCallback && str_starts_with($userInfo['step'],'enterAccountName')){
         require_once __DIR__.'/../Panel/AccountNaming.php';
         if(is_string($text) && achbotEffectValidUsername($text,'pasarguard') && preg_match('/^[a-z]+[0-9]+$/D',$text)){
-            $remark = $text; 
-            setUser(); 
+            $remark = $text;
         } else{ 
             sendMessage(\achbotMessage('legacy_messages.incorrect_config_name'), null, 'HTML');
             exit(); 
@@ -59,8 +61,10 @@ if(($planSelectionCallback ||
     } 
     else{ 
         if($match['buyType'] == "much"){ 
-            setUser($data); 
-            sendMessage(\achbotMessage('legacy_messages.enter_account_amount'), $cancelKey, 'HTML');
+            if (!\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,$data,update:$update)) return;
+            $prompt=sendMessage(\achbotMessage('legacy_messages.enter_account_amount'), $cancelKey, 'HTML');
+            if (\AchBot\Telegram\Conversation\acknowledgedMessage($prompt,(int)$from_id)!==null)
+                try {delMessage();}catch(Throwable $ignored) {}
             exit(); 
         } 
     } 
@@ -93,13 +97,17 @@ if(($planSelectionCallback ||
             VALUES (?,?,?,'BUY_SUB',?,?,'0','0',?,?,'pending',?)");
         $stmt->bind_param("ssiiiiii",$hash_id,$remark,$from_id,$id,$sid,$price,$time,$agentBought);
     }
-    $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,achbotAgencyQuotePolicy($userInfo,$botState,(int)$id,$sid),false,$respd,$botState);
+    $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,achbotAgencyQuotePolicy($userInfo,$botState,(int)$id,$sid),false,$respd,$botState,$planSelectionCallback?null:$userInfo);
     $stmt->close();
     if ($rowId<=0) {
         alert(achbotMessage('purchase.catalogue.alert.201380d8bf'),true);return;
     }
     require_once __DIR__.'/CheckoutPresentation.php';
+    if (!$planSelectionCallback)
+        \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.saved_successfuly'));
     if (!achbotRenderNewCheckoutDraft($connection,$rowId,(int)$from_id,$botState,$botUrl))
-        alert(achbotMessage('purchase.catalogue.alert.201380d8bf'),true);
+        sendMessage(achbotMessage('purchase.catalogue.alert.201380d8bf'),null,'HTML');
+    elseif ($planSelectionCallback)
+        try {delMessage();}catch(Throwable $ignored) {}
     return;
 }

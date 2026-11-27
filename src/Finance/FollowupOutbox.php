@@ -1,12 +1,12 @@
 <?php
 /**
- * AChBot #117: payment-bound one-shot administrative/customer follow-ups.
- * The *intent* is committed with the business decision; only PENDING rows
- * may make their first external Telegram request. UNKNOWN is never retried.
+ * Durable administrative/customer reports committed with the business decision.
+ * Known nonapplication and exact edits can retry; unknown sends are retained.
  * No merchant, wallet or native-provider effect belongs to this module.
  */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/PaymentEvidence.php';
+require_once __DIR__.'/../Panel/ProviderStorage.php';
 require_once __DIR__.'/../Admin/Access.php';
 
 function achbotFollowupSchemaReady(mysqli $db): bool {
@@ -30,8 +30,8 @@ function achbotFollowupStorageReady(mysqli $db): bool {
                     'uq_followup_wallet_key'=>['wallet_entry_id','intent_key'],
                     'uq_followup_operational_key'=>['operational_ref','intent_key']]],
             'payment_followup_attempts'=>[
-                'columns'=>'id,intent_id,attempt_no,dispatch_token,actor_userid,claim_state,result,'.
-                    'telegram_error_code,retry_after_seconds,started_at,finished_at',
+                'columns'=>'id,intent_id,attempt_no,dispatch_token,actor_userid,claim_state,wire_action,wire_recipient,wire_message_id,result,'.
+                    'telegram_error_code,retry_after_seconds,failure_reason,ack_chat_id,ack_message_id,started_at,finished_at',
                 'unique'=>['uq_followup_attempt_no'=>['intent_id','attempt_no'],
                     'uq_followup_attempt_token'=>['dispatch_token']]]
         ];
@@ -59,13 +59,26 @@ function achbotFollowupStorageReady(mysqli $db): bool {
                 if (array_values($indexes[$key])!==$columns) return false;
             }
         }
+        // The same read-only schema proof as the delivery journal: a
+        // SELECT-only preflight can inspect SHOW CREATE TABLE.
+        $ddl=achbotProviderRow($db,'SHOW CREATE TABLE payment_followup_attempts');
+        foreach (['ck_followup_attempt_ack_identity','ck_followup_attempt_wire'] as $constraint)
+            if (preg_match('/\bCONSTRAINT `'.preg_quote($constraint,'/').'` CHECK\s*\(/i',
+                (string)($ddl['Create Table']??''))!==1) return false;
         return true;
     } catch(Throwable $error) {return false;}
+}
+function achbotFollowupReceiptStaffRole(string $role): bool {
+    return $role==='receipt_notice' || preg_match('/\Aview_[1-9][0-9]{0,18}\z/D',$role)===1;
+}
+function achbotFollowupPhotoAllowed(string $stage,string $role,string $kind): bool {
+    return $kind==='send' && (($stage==='receipt_admitted' && achbotFollowupReceiptStaffRole($role)) ||
+        ($stage==='ticket_notice' && in_array($role,['service_admin','customer'],true)));
 }
 function achbotFollowupJournaled(array $r): bool {
     return (is_string($r['operational_ref']??null) &&
         achbotFollowupOperationalStage((string)($r['stage']??''))) || (int)($r['wallet_entry_id']??0)>0 || (int)($r['service_operation_id']??0)>0 ||
-        (in_array($r['stage']??null,['wallet_credit','manual_reject'],true) && (int)($r['pay_row_id']??0)>0);
+        (in_array($r['stage']??null,['wallet_credit','manual_reject','receipt_admitted'],true) && (int)($r['pay_row_id']??0)>0);
 }
 function achbotFollowupPurpose(int $payId,string $stage,string $key): string {
     return 'payment-followup:v1:'.$payId.':'.$stage.':'.$key;
@@ -73,6 +86,10 @@ function achbotFollowupPurpose(int $payId,string $stage,string $key): string {
 function achbotFollowupIntentKey(string $stage,string $role,string $kind,
                                 string $recipient,?int $messageId): string {
     return hash('sha256',$stage.'|'.$role.'|'.$kind.'|'.$recipient.'|'.($messageId??0));
+}
+function achbotFollowupReceiptTargetValid(mysqli $db,array $pay,string $role,string $recipient,?int $messageId): bool {
+    require_once __DIR__.'/ReceiptNotices.php';
+    return achbotReceiptTargetAllowed($db,$pay,['role'=>$role,'recipient'=>$recipient,'message_id'=>$messageId]);
 }
 /** Pure SQL-local staging, before the payment's terminal COMMIT. */
 function achbotFollowupInsertLocked(mysqli $db,array $pay,string $stage,string $role,
@@ -98,9 +115,8 @@ function achbotFollowupInsertLocked(mysqli $db,array $pay,string $stage,string $
     $payId=(int)($pay['id']??0);
     if ($payId<=0 || (int)($pay['user_id']??0)<=0 ||
         ($role==='customer' && $recipient!==(string)(int)$pay['user_id']) ||
-        ($role==='receipt_primary' &&
-            ($recipient!==(string)(int)$pay['chat_id'] ||
-             $messageId!==(int)$pay['message_id'])))
+        (in_array($role,['receipt_primary','receipt_mirror'],true) &&
+            !achbotFollowupReceiptTargetValid($db,$pay,$role,$recipient,$messageId)))
         throw new RuntimeException('followup_pay_target_invalid');
     achbotFollowupStoreLocked($db,$payId,$serviceId,$stage,$role,$kind,$recipient,$messageId,
         achbotPaymentEvidencePayFingerprint($pay),$content);
@@ -129,7 +145,9 @@ function achbotFollowupStoreLocked(mysqli $db,?int $payId,?int $serviceId,string
         !preg_match('/^[a-f0-9]{64}$/D',$fingerprint) ||
         !is_string($content['text']??null) || $content['text']==='' ||
         !in_array($content['mode']??null,['HTML','plain',null],true) ||
-        (!is_null($content['keys']??null) && !is_string($content['keys']??null)))
+        (!is_null($content['keys']??null) && !is_string($content['keys']??null)) ||
+        (array_key_exists('photo',$content) && (!achbotFollowupPhotoAllowed($stage,$role,$kind) ||
+            !is_string($content['photo']) || $content['photo']==='')))
         throw new RuntimeException('followup_source_packet_invalid');
     $key=achbotFollowupIntentKey($stage,$role,$kind,$recipient,$messageId);
     $body=['v'=>$event!==null?6:($walletId!==null?5:($stage==='wallet_credit'?4:($payId===null?3:($serviceId===null?1:2)))),'pay_id'=>$payId,'stage'=>$stage,'role'=>$role,
@@ -144,16 +162,14 @@ function achbotFollowupStoreLocked(mysqli $db,?int $payId,?int $serviceId,string
         achbotFollowupPurpose($payId,$stage,$key)));
     $sealed=achbotPaymentEvidenceProtect($purpose,$body);
     $sha=hash('sha256',$sealed);
-    // One insertion path for all original source types. Preserve the
-    // existing immediate wallet/operational retry schedule.
-    $immediate=$walletId!==null || $event!==null?1:0;
+    // A newly queued original is immediately eligible for its first attempt.
     $q=$db->prepare("INSERT INTO payment_followup_intents
         (pay_row_id,service_operation_id,wallet_entry_id,operational_ref,intent_key,stage,kind,role,
          recipient,message_id,pay_fingerprint,sealed_payload,payload_sha256,state,next_attempt_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',IF(?=1,NOW(6),NULL))");
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'pending',NOW(6))");
     if (!$q) throw new RuntimeException('followup_insert_prepare');
-    $q->bind_param('iiissssssisssi',$payId,$serviceId,$walletId,$ref,$key,$stage,$kind,$role,
-        $recipient,$messageId,$fingerprint,$sealed,$sha,$immediate);
+    $q->bind_param('iiissssssisss',$payId,$serviceId,$walletId,$ref,$key,$stage,$kind,$role,
+        $recipient,$messageId,$fingerprint,$sealed,$sha);
     if (!$q->execute() || $q->affected_rows!==1)
         throw new RuntimeException('followup_insert_unconfirmed');
     $q->close();
@@ -163,6 +179,18 @@ function achbotFollowupServicePurpose(int $id,string $stage,string $key): string
 }
 function achbotFollowupOperationalEventValid(array $event): bool {
     $keys=array_keys($event);
+    if (isset($event['user_row_id'])) {
+        require_once __DIR__.'/../Telegram/UserEvents.php';
+        return achbotUserEventValid($event);
+    }
+    if ($keys===['reference','actor','capability','user','ticket_id','ticket_sha256']) {
+        return is_int($event['ticket_id']) && $event['ticket_id']>0 &&
+            is_string($event['reference']) &&
+            preg_match('/^ticket:'.preg_quote((string)$event['ticket_id'],'/').':(?:message:[1-9][0-9]*|close|rate:[1-9][0-9]*)$/D',$event['reference'])===1 &&
+            is_int($event['actor']) && $event['actor']>0 && is_int($event['user']) && $event['user']>0 &&
+            $event['capability']==='operations' && is_string($event['ticket_sha256']) &&
+            preg_match('/^[a-f0-9]{64}$/D',$event['ticket_sha256'])===1;
+    }
     $customer=$keys===['reference','actor','capability','user','order_id','order_sha256'];
     if (!$customer && $keys!==['reference','actor','capability','user']) return false;
     if (!is_string($event['reference']) || strlen($event['reference'])>128 ||
@@ -176,6 +204,15 @@ function achbotFollowupOperationalEventValid(array $event): bool {
         preg_match('/^(?:direct:[1-9][0-9]*|batch:[1-9][0-9]*:[0-9]+)$/D',$event['reference'])===1);
 }
 function achbotFollowupOperationalStage(string $stage,?array $event=null): bool {
+    if (preg_match('/^user_notice(?:_p[1-9][0-9]*)?$/D',$stage))
+        return $event===null || (isset($event['user_row_id']) &&
+            in_array($event['event'],['welcome','agency_approved','agency_declined'],true));
+    if (isset($event['user_row_id']))
+        return in_array($event['event'],['welcome','agency_request'],true) &&
+            preg_match('/^operational_report(?:_p[1-9][0-9]*)?$/D',$stage)===1;
+    if (preg_match('/^ticket_notice(?:_p[1-9][0-9]*)?$/D',$stage))
+        return $event===null || isset($event['ticket_id']);
+    if (isset($event['ticket_id'])) return false;
     if ($stage==='operational_customer_notice')
         return $event===null || isset($event['order_id']);
     return ($event===null || !isset($event['order_id'])) &&
@@ -224,16 +261,9 @@ function achbotFollowupRecipientAllowed(mysqli $db,array $pay,array $r): bool {
     if ($r['stage']==='manual_reject' && in_array($role,['service_admin','service_channel','report_actor'],true))
         return achbotFollowupAdminReportAllowed($db,$r,(int)$pay['approved_by']);
     if ($role==='customer') return $recipient===(string)(int)$pay['user_id'];
-    if ($role==='receipt_primary')
-        return $who===(int)$pay['chat_id'] && (int)$r['message_id']===(int)$pay['message_id'] && achbotFollowupStaffAllowed($db,$who,$owner);
-    if ($role==='receipt_mirror') {
-        $copies=json_decode((string)($pay['admins_messages']??''),true);
-        if (!is_array($copies))
-            return false;
-        foreach ($copies as $copy)
-            if ((int)($copy['chat_id']??0)===$who &&
-                (int)($copy['message_id']??0)===(int)$r['message_id']) return achbotFollowupStaffAllowed($db,$who,$owner);
-        return false;
+    if (in_array($role,['receipt_primary','receipt_mirror'],true)) {
+        require_once __DIR__.'/ReceiptNotices.php';
+        return achbotReceiptTargetAllowed($db,$pay,$r) && achbotFollowupStaffAllowed($db,$who,$owner);
     }
     return false;
 }
@@ -281,11 +311,17 @@ function achbotFollowupDecodePacket(?array $pay,array $r,?string $sourceFingerpr
     return is_array($packet) && is_string($packet['text']??null) &&
         ($packet['text']??'')!=='' &&
         in_array($packet['mode']??null,['HTML','plain',null],true) &&
-        (is_null($packet['keys']??null) || is_string($packet['keys']))
+        (is_null($packet['keys']??null) || is_string($packet['keys'])) &&
+        (!array_key_exists('photo',$packet) || (achbotFollowupPhotoAllowed($r['stage'],$r['role'],$r['kind']) &&
+            is_string($packet['photo']) && $packet['photo']!==''))
         ?$packet:null;
 }
 
 function achbotFollowupValidateLocked(mysqli $db,array $pay,array $r): ?array {
+    if ($r['stage']==='receipt_admitted') {
+        require_once __DIR__.'/ReceiptNotices.php';
+        return achbotReceiptNoticeValidateLocked($db,$pay,$r);
+    }
     if ($r['stage']==='wallet_credit') {
         require_once __DIR__.'/ReceiptReports.php';
         return achbotReceiptReportValidateLocked($db,$pay,$r);
@@ -313,11 +349,122 @@ function achbotFollowupValidateLocked(mysqli $db,array $pay,array $r): ?array {
     return achbotFollowupDecodePacket($pay,$r);
 
 }
-/**
- * One logical message per current intent, with explicit attempt evidence;
- * only proven non-application is eligible for automatic redelivery.
- * Per-recipient attempts do not block independent pending recipients.
- */
+/** A service summary is one logical report, with sealed source revisions.
+ * Receipt markup, customer notices, referral awards and continuation pages
+ * are independent messages, even when they share a service operation. */
+function achbotFollowupRevisionRank(array $r): int {
+    if ($r['pay_row_id']!==null || $r['service_operation_id']===null ||
+        $r['kind']!=='send' || !in_array($r['role'],['service_admin','report_actor','service_channel'],true)) return 0;
+    return match($r['stage']) {
+        'service_funded'=>1,'service_completed'=>2,'service_delivered'=>3,'service_resolution'=>4,default=>0
+    };
+}
+function achbotFollowupLeaseName(mysqli $db,array $r): string {
+    $dbName=achbotProviderRow($db,'SELECT DATABASE() AS db')['db'];
+    $receiptEdit=$r['kind']==='edit' &&
+        in_array($r['role'],['receipt_primary','receipt_mirror'],true);
+    $key=$receiptEdit?'receipt:'.$r['recipient'].':'.$r['message_id']:
+        (achbotFollowupRevisionRank($r)>0
+        ?'service:'.$r['service_operation_id'].':'.$r['recipient']:'intent:'.$r['id']);
+    return 'achbot-followup-'.substr(hash('sha256',$dbName.':'.$key),0,40);
+}
+/** Read under the source row lock, then serialize only this destination
+ * across Telegram I/O. No financial or Native session lease is held. */
+function achbotFollowupRevisionRowsLocked(mysqli $db,array $r): array {
+    if (achbotFollowupRevisionRank($r)===0) return [];
+    $s=achbotProviderStatement($db,"SELECT * FROM payment_followup_intents
+        WHERE service_operation_id=? AND recipient=? AND pay_row_id IS NULL
+        AND kind='send' AND role IN ('service_admin','report_actor','service_channel')
+        AND stage IN ('service_funded','service_completed','service_delivered','service_resolution')
+        ORDER BY id FOR UPDATE",'is',[(int)$r['service_operation_id'],$r['recipient']]);
+    $rows=[];
+    foreach ($s->get_result()->fetch_all(MYSQLI_ASSOC) as $row) {
+        $rank=achbotFollowupRevisionRank($row);
+        if (isset($rows[$rank]) || !achbotFollowupDecodePacket(null,$row,$row['pay_fingerprint']))
+            throw new RuntimeException('followup_revision_identity_invalid');
+        $rows[$rank]=$row;
+    }
+    $s->close();ksort($rows);
+    return $rows;
+}
+function achbotFollowupRevisionEligibleLocked(mysqli $db,array $op,int $rank): bool {
+    if ($rank===1) return true;
+    if ($rank===4) return $op['resolution_kind']!==null;
+    if ($op['stage']!=='completed' || $op['resolution_kind']!==null) return false;
+    if ($rank===2) return true;
+    // A cheap eligibility filter; the selected delivered revision still
+    // undergoes full original packet/ACK verification before any claim.
+    $s=achbotProviderRow($db,"SELECT COUNT(*) AS total,
+        SUM(state='acknowledged') AS acknowledged FROM payment_delivery_intents WHERE service_operation_id=?",
+        'i',[(int)$op['id']]);
+    return (int)$s['total']>0 && (int)$s['total']===(int)$s['acknowledged'];
+}
+function achbotFollowupSelectRevisionLocked(mysqli $db,array $op,array $r,array $rows,int $actor): ?array {
+    $rank=achbotFollowupRevisionRank($r);
+    if ($rank===0) return $r;
+    $selected=$r;
+    foreach ($rows as $otherRank=>$other) {
+        if ($otherRank<=$rank) continue;
+        if ($actor>0) {
+            // An older explicit retry must never overwrite a newer ACK.
+            if ((int)$other['attempt_count']>0) return null;
+        } elseif (achbotFollowupRevisionEligibleLocked($db,$op,$otherRank)) {
+            $selected=$other;
+        }
+    }
+    if ($actor>0) return $r;
+    if (!achbotFollowupRevisionEligibleLocked($db,$op,achbotFollowupRevisionRank($selected))) return null;
+    // A possibly-applied exact edit must be settled before a newer edit.
+    // A possibly-applied send must not generate a second message blindly.
+    foreach ($rows as $otherRank=>$other) {
+        if ($otherRank>=achbotFollowupRevisionRank($selected)) break;
+        $last=achbotFollowupLastAttemptLocked($db,$other);
+        if ($other['state']==='dispatching' ||
+            ($other['state']==='pending' && ($last['result']??null)==='unknown')) return $other;
+        if (($last['result']??null)==='unknown') return null;
+    }
+    return $selected;
+}
+/** Coalesce only proven untouched/rejected older revisions; never erase
+ * their journal. A rate limit follows the logical report to its newer body. */
+function achbotFollowupRevisionWireLocked(mysqli $db,array $r,array $rows): array {
+    $wire=achbotFollowupDefaultWire($r);$rank=achbotFollowupRevisionRank($r);
+    $wait=null;$retire=[];
+    foreach ($rows as $otherRank=>$older) {
+        if ($otherRank>=$rank) break;
+        $last=achbotFollowupLastAttemptLocked($db,$older);
+        if (($last['result']??null)==='acknowledged') {
+            if ($older['state']!=='acknowledged' || (int)$last['ack_chat_id']===0 || (int)$last['ack_message_id']<=0 ||
+                (!str_starts_with($last['wire_recipient'],'@') && (string)$last['ack_chat_id']!==$last['wire_recipient']) ||
+                ($last['wire_action']!=='send' && (int)$last['wire_message_id']!==(int)$last['ack_message_id']))
+                throw new RuntimeException('followup_revision_ack_unproven');
+            $wire=['action'=>'edit_text','recipient'=>(string)$last['ack_chat_id'],'message'=>(int)$last['ack_message_id']];
+        } elseif ($last!==null && $last['result']==='rejected') {
+            if ($last['wire_action']==='edit_text' && achbotFollowupEditUnavailable($last['failure_reason']))
+                $wire=['action'=>'send','recipient'=>$last['wire_recipient'],'message'=>null];
+            elseif ($last['wire_action']==='send') $wire=achbotFollowupRecordedWire($last);
+        } elseif ($last!==null) throw new RuntimeException('followup_revision_predecessor_unresolved');
+        // This can be a deadline inherited by an as-yet unattempted revision.
+        if ($older['state']==='pending' && $older['next_attempt_at']!==null &&
+            ($wait===null || $older['next_attempt_at']>$wait)) $wait=$older['next_attempt_at'];
+        if (in_array($older['state'],['pending','rejected'],true)) $retire[]=$older;
+    }
+    foreach ($retire as $older) {
+        $s=achbotProviderStatement($db,"UPDATE payment_followup_intents SET state='superseded',last_result='superseded',next_attempt_at=NULL
+            WHERE id=? AND state=? AND attempt_count=? AND dispatch_token IS NULL",'isi',
+            [(int)$older['id'],$older['state'],(int)$older['attempt_count']]);
+        $n=$s->affected_rows;$s->close();
+        if ($n!==1) throw new RuntimeException('followup_revision_supersession_conflict');
+    }
+    if ($wait!==null && $r['state']==='pending') {
+        $s=achbotProviderStatement($db,"UPDATE payment_followup_intents SET next_attempt_at=GREATEST(COALESCE(next_attempt_at,NOW(6)),?)
+            WHERE id=?",'si',[$wait,(int)$r['id']]);$s->close();
+    }
+    $last=achbotFollowupLastAttemptLocked($db,$r);
+    return $last===null?$wire:achbotFollowupRetryWire($last);
+}
+/** Independent delivery attempts: SQL claims precede network I/O and
+ * each recipient/revision has its own durable recovery policy. */
 function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $confirmation=null): string {
     if (!achbotFollowupSchemaReady($db) || $id<=0 || $actor<0 ||
         ($actor===0 && $confirmation!==null)) return 'unavailable';
@@ -327,6 +474,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         $q=$db->prepare('SELECT * FROM payment_followup_intents WHERE id=?');
         $q->bind_param('i',$id);$q->execute();
         $owner=$q->get_result()->fetch_assoc();$q->close();
+        if (!$owner) return 'unavailable';
         $payId=(int)($owner['pay_row_id']??0);
         $serviceId=isset($owner['service_operation_id'])?(int)$owner['service_operation_id']:null;
         $walletId=isset($owner['wallet_entry_id'])?(int)$owner['wallet_entry_id']:null;
@@ -339,30 +487,15 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         error_log('achbot_followup_owner_unavailable id='.$id.' class='.get_class($error));
         return 'unavailable';
     }
-    require_once __DIR__.'/GatewayClient.php';
-    $serviceLock=null;$lease='unavailable';
-    if ($payId>0) {
-        $lease=achbotOriginalDispatchLeaseBegin($db,$payId);
-        if ($lease!=='owned' && $lease!=='borrowed') return $lease;
-        if ($actor>0 && $lease!=='owned') return 'busy';
-    } else {
-        require_once __DIR__.'/ServiceReports.php';
-        require_once __DIR__.'/OperationalReports.php';
-        require_once __DIR__.'/../Services/Execution.php';
-        try {
-            if ($ref!==null) {
-                $name=achbotOperationalReportLock($db,$ref);
-            } elseif ($walletId!==null) {
-                $dbName=achbotProviderRow($db,'SELECT DATABASE() AS db')['db'];
-                $name='achbot-wallet-report-'.substr(hash('sha256',$dbName.':'.$walletId),0,40);
-            } else $name=achbotServiceExecutionLock($db,$serviceId);
-            $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
-            if ((int)($held['acquired']??0)!==1) return 'busy';
-            $serviceLock=$name;
-        } catch (Throwable $error) {
-            error_log('achbot_followup_service_lease_unavailable id='.$id.' class='.get_class($error));
-            return 'unavailable';
-        }
+    if ($serviceId!==null) require_once __DIR__.'/ServiceReports.php';
+    if ($ref!==null) require_once __DIR__.'/OperationalReports.php';
+    try {
+        $name=achbotFollowupLeaseName($db,$owner);
+        $held=achbotProviderRow($db,'SELECT GET_LOCK(?,0) AS acquired','s',[$name]);
+        if ((int)($held['acquired']??0)!==1) return 'busy';
+    } catch (Throwable $error) {
+        error_log('achbot_followup_lease_unavailable id='.$id.' class='.get_class($error));
+        return 'unavailable';
     }
     try {
     $token='';$r=null;$packet=null;$opened=false;
@@ -372,7 +505,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
         if ($payId>0) {
             // New credit reports must follow the common owner-first order,
             // never lock a receipt and then wait on its financial owner.
-            if (in_array($owner['stage'],['wallet_credit','manual_reject'],true)) {
+            if (in_array($owner['stage'],['wallet_credit','manual_reject','receipt_admitted'],true)) {
                 require_once __DIR__.'/PaymentCredit.php';
                 $loc=achbotProviderRow($db,'SELECT user_id FROM pays WHERE id=?','i',[$payId]);
                 if (!$loc) throw new RuntimeException('followup_missing');
@@ -381,7 +514,7 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
             $q=$db->prepare('SELECT * FROM pays WHERE id=? FOR UPDATE');
             $q->bind_param('i',$payId);$q->execute();$pay=$q->get_result()->fetch_assoc();$q->close();
             if (!$pay) throw new RuntimeException('followup_missing');
-            if (in_array($owner['stage'],['wallet_credit','manual_reject'],true) && (int)$pay['user_id']!==(int)$loc['user_id'])
+            if (in_array($owner['stage'],['wallet_credit','manual_reject','receipt_admitted'],true) && (int)$pay['user_id']!==(int)$loc['user_id'])
                 throw new RuntimeException('followup_owner_changed');
         } elseif ($walletId!==null) {
             require_once __DIR__.'/WalletReports.php';
@@ -398,6 +531,24 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
             (isset($r['wallet_entry_id'])?(int)$r['wallet_entry_id']:null)!==$walletId ||
             ($r['operational_ref']??null)!==$ref)
             throw new RuntimeException('followup_owner_changed');
+        if ($r['intent_key']!==$owner['intent_key'] || $r['recipient']!==$owner['recipient'] ||
+            $r['kind']!==$owner['kind']) throw new RuntimeException('followup_owner_changed');
+        $revisions=[];
+        if ($r['state']==='pending' || ($actor>0 && in_array($r['state'],['unknown','rejected'],true))) {
+            $revisions=achbotFollowupRevisionRowsLocked($db,$r);
+            if ($revisions) {
+                $selected=achbotFollowupSelectRevisionLocked($db,$op,$r,$revisions,$actor);
+                if (!$selected) {$db->rollback();$opened=false;return $actor>0?'stale':'not_ready';}
+                $r=$selected;$id=(int)$r['id'];
+                if ($actor===0 && in_array($r['state'],['acknowledged','skipped','rejected','unknown'],true)) {
+                    // A newer decision has already been attempted. Any safe
+                    // earlier pending rows must not publish stale progress.
+                    achbotFollowupRevisionWireLocked($db,$r,$revisions);
+                    if (!$db->commit()) throw new RuntimeException('followup_revision_commit_unknown');
+                    $opened=false;return $r['state'];
+                }
+            }
+        }
         if ($r['state']==='dispatching') {
             $state=achbotFollowupAttemptFinishLocked($db,$id,(string)$r['dispatch_token'],
                 ['result'=>'unknown','code'=>null,'retry_after'=>null]);
@@ -442,9 +593,35 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
             return 'skipped';
         }
         if (!$packet) throw new RuntimeException('followup_identity_invalid');
-        $claim=achbotFollowupAttemptClaimLocked($db,$r,$actor,$confirmation);
+        if ($r['stage']==='receipt_admitted' && $r['role']==='customer' &&
+            in_array($pay['state'],['paid','declined'],true)) {
+            if ($actor>0) {$db->rollback();$opened=false;return 'stale';}
+            $s=achbotProviderStatement($db,"UPDATE payment_followup_intents
+                SET state='superseded',last_result='superseded',next_attempt_at=NULL
+                WHERE id=? AND state='pending' AND dispatch_token IS NULL",'i',[$id]);
+            $changed=$s->affected_rows;$s->close();
+            if ($changed!==1 || !$db->commit()) throw new RuntimeException('followup_receipt_supersession_failed');
+            $opened=false;return 'superseded';
+        }
+
+        // Validate explicit actor authority before changing any older row.
+        if ($actor>0) {
+            $primary=(int)($GLOBALS['admin']??0);
+            if ($primary<=0 || !achbotAdminCanLocked($db,$actor,$primary,'payments')) {
+                $db->rollback();$opened=false;return 'denied';
+            }
+            if (!is_string($confirmation) || !hash_equals(achbotFollowupRedriveToken($r,$actor),$confirmation)) {
+                $db->rollback();$opened=false;return 'stale';
+            }
+        }
+        $wire=achbotFollowupRevisionWireLocked($db,$r,$revisions);
+        $r=achbotProviderRow($db,'SELECT * FROM payment_followup_intents WHERE id=? FOR UPDATE','i',[$id]);
+        $claim=achbotFollowupAttemptClaimLocked($db,$r,$actor,$confirmation,$wire);
         if ($claim['status']!=='claimed') {
-            $db->rollback();$opened=false;return $claim['status'];
+            if ($claim['status']==='not_due') {
+                if (!$db->commit()) throw new RuntimeException('followup_revision_commit_unknown');
+            } else $db->rollback();
+            $opened=false;return $claim['status'];
         }
         $token=$claim['token'];
         if (!$db->commit()) throw new RuntimeException('followup_claim_unknown');
@@ -469,24 +646,18 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
             'service_operation_id'=>$serviceId,'wallet_entry_id'=>$walletId,'operational_ref'=>$ref,'delivery_attempt'=>(int)$r['attempt_count']+1,
             'delivery_actor'=>$actor];
     try {
-        if ($serviceLock!==null) {
-            if (!achbotServiceExecutionOwnsLock($db,$serviceLock))
-                throw new RuntimeException('followup_service_ownership_lost');
-        } else {
-            $name=achbotHostedWorkerLockName($db,$payId);
-            $lock=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$name]);
-            if ((int)($lock['owned']??0)!==1)
-                throw new RuntimeException('followup_service_ownership_lost');
-        }
-        $target=preg_match('/^-?[0-9]+$/D',(string)$r['recipient'])===1
-            ?(int)$r['recipient']:(string)$r['recipient'];
-        if ($r['kind']==='edit') {
-            $result=editKeys((string)$packet['text'],(int)$r['message_id'],$target);
-        } else {
-            $mode=($packet['mode']??null)==='plain'?null:$packet['mode'];
-            $result=sendMessage((string)$packet['text'],$packet['keys']??null,$mode,$target);
-        }
-        $outcome=\AchBot\Telegram\Response\deliveryOutcome($result);
+        $lock=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$name]);
+        if ((int)($lock['owned']??0)!==1) throw new RuntimeException('followup_ownership_lost');
+        $target=str_starts_with($wire['recipient'],'@')?$wire['recipient']:(int)$wire['recipient'];
+        $mode=($packet['mode']??null)==='plain'?null:$packet['mode'];
+        $result=match($wire['action']) {
+            'edit_keys'=>editKeys((string)$packet['text'],$wire['message'],$target),
+            'edit_text'=>editText($wire['message'],(string)$packet['text'],$packet['keys']??null,$mode,$target),
+            'send'=>isset($packet['photo'])
+                ?sendPhoto($packet['photo'],(string)$packet['text'],$packet['keys']??null,$mode,$target)
+                :sendMessage((string)$packet['text'],$packet['keys']??null,$mode,$target)
+        };
+        $outcome=\AchBot\Telegram\Response\messageDeliveryOutcome($result,$wire['recipient'],$wire['message']);
     } catch(Throwable $error) {
         error_log('achbot_followup_telegram_uncertain id='.$id.' class='.get_class($error));
     } finally {
@@ -495,16 +666,23 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
     }
     try {
         if (!$db->begin_transaction()) throw new RuntimeException('followup_finish_begin');
-        $name=$serviceLock??achbotHostedWorkerLockName($db,$payId);
         $lock=achbotProviderRow($db,'SELECT IS_USED_LOCK(?)=CONNECTION_ID() AS owned','s',[$name]);
         if ((int)($lock['owned']??0)!==1) throw new RuntimeException('followup_service_ownership_lost');
+        $receiptPay=null;
+        if ($r['stage']==='receipt_admitted' && $outcome['result']==='acknowledged') {
+            require_once __DIR__.'/ReceiptNotices.php';
+            [$receiptPay]=achbotCreditInvoiceLocked($db,$payId,(int)$pay['user_id']);
+        }
         $status=achbotFollowupAttemptFinishLocked($db,$id,$token,$outcome);
+        if ($receiptPay!==null) achbotReceiptNoticeFinishLocked($db,$receiptPay,$r,$outcome,$packet);
         if (!$db->commit()) throw new RuntimeException('followup_ack_commit_unknown');
         achbotDiagnosticEvent('achbot.delivery.followup_result',[
             'followup_id'=>$id,'pay_id'=>$payId,'service_operation_id'=>$serviceId,'wallet_entry_id'=>$walletId,'operational_ref'=>$ref,'actor_id'=>$actor,
             'request_attempt'=>(int)$r['attempt_count']+1,'state'=>$status,
             'telegram_error_code'=>$outcome['code'],'retry_after'=>$outcome['retry_after'],
-            'result'=>$outcome['result']],$status==='acknowledged'?'info':'warning');
+            'result'=>$outcome['result'],'curl_errno'=>$outcome['curl_errno']??null]+
+            (isset($outcome['reason'])?['reason'=>$outcome['reason']]:[]),
+            $status==='acknowledged'?'info':'warning');
     } catch(Throwable $error) {
         try {$db->rollback();}catch(Throwable $ignored){}
         error_log('achbot_followup_ack_unknown id='.$id);
@@ -512,25 +690,24 @@ function achbotFollowupDispatchOne(mysqli $db,int $id,int $actor=0,?string $conf
     }
     return $status;
     } finally {
-        if ($serviceLock!==null) {
-            try {$q=achbotProviderStatement($db,'SELECT RELEASE_LOCK(?)','s',[$serviceLock]);$q->close();}
-            catch (Throwable $ignored) {}
-        } else achbotOriginalDispatchLeaseEnd($db,$payId,$lease);
+        try {$q=achbotProviderStatement($db,'SELECT RELEASE_LOCK(?)','s',[$name]);$q->close();}
+        catch (Throwable $ignored) {}
     }
 }
 /** All pending rows only, including previous-crash rows. UNKNOWN untouched. */
-function achbotFollowupDispatchPending(mysqli $db,int $payId,string $stage): array {
+function achbotFollowupDispatchPending(mysqli $db,int $payId,string $stage,?float $budgetSeconds=null): array {
     if (!achbotFollowupSchemaReady($db) || $payId<=0 ||
-        !in_array($stage,['manual_reject','referral_reward','wallet_credit'],true)) return [];
-    $cursor=0;$out=[];
-    while (true) {
+        !in_array($stage,['manual_reject','referral_reward','wallet_credit','receipt_admitted'],true)) return [];
+    $cursor=0;$out=[];$deadline=$budgetSeconds===null?INF:hrtime(true)/1000000000+$budgetSeconds;
+    while (hrtime(true)/1000000000<$deadline) {
         $q=$db->prepare("SELECT id FROM payment_followup_intents
             WHERE pay_row_id=? AND stage=? AND state='pending' AND id>?
-            ORDER BY id LIMIT 30");
+            AND (next_attempt_at IS NULL OR next_attempt_at<=NOW(6)) ORDER BY id LIMIT 30");
         $q->bind_param('isi',$payId,$stage,$cursor);$q->execute();
         $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
         if (!$rows) break;
         foreach ($rows as $row) {
+            if (hrtime(true)/1000000000>=$deadline) break;
             $cursor=(int)$row['id'];
             $out[$cursor]=achbotFollowupDispatchOne($db,$cursor);
         }
@@ -545,13 +722,27 @@ function achbotFollowupMaintainOriginalPending(mysqli $db,int $limit,float $budg
     achbotServiceOperationsPresent($db);
     $deadline=hrtime(true)/1000000000+$budgetSeconds;
     $s=achbotProviderStatement($db,"SELECT f.id FROM payment_followup_intents f
-        WHERE (f.service_operation_id IS NOT NULL OR f.wallet_entry_id IS NOT NULL OR f.operational_ref IS NOT NULL OR f.stage IN ('wallet_credit','manual_reject'))
+        WHERE (f.service_operation_id IS NOT NULL OR f.wallet_entry_id IS NOT NULL OR f.operational_ref IS NOT NULL OR f.stage IN ('wallet_credit','manual_reject','receipt_admitted'))
           AND f.state IN ('pending','dispatching')
-          AND ((f.next_attempt_at IS NULL AND f.updated_at<=DATE_SUB(NOW(),INTERVAL 2 MINUTE))
-               OR f.next_attempt_at<=NOW(6))
+          AND (f.next_attempt_at IS NULL OR f.next_attempt_at<=NOW(6))
           AND (f.state='dispatching' OR f.stage<>'service_delivered' OR NOT EXISTS (
               SELECT 1 FROM payment_delivery_intents d WHERE d.service_operation_id=f.service_operation_id
               AND d.state<>'acknowledged'))
+          AND (f.state='dispatching' OR f.service_operation_id IS NULL OR f.kind<>'send'
+              OR f.role NOT IN ('service_admin','report_actor','service_channel')
+              OR FIELD(f.stage,'service_funded','service_completed','service_delivered','service_resolution')<2
+              OR NOT EXISTS (
+                SELECT 1 FROM payment_followup_intents predecessor
+                JOIN payment_followup_attempts last_attempt ON last_attempt.intent_id=predecessor.id
+                    AND last_attempt.attempt_no=predecessor.attempt_count
+                WHERE predecessor.service_operation_id=f.service_operation_id
+                  AND predecessor.recipient=f.recipient AND predecessor.kind='send'
+                  AND predecessor.role IN ('service_admin','report_actor','service_channel')
+                  AND FIELD(predecessor.stage,'service_funded','service_completed','service_delivered','service_resolution')
+                    BETWEEN 1 AND FIELD(f.stage,'service_funded','service_completed','service_delivered','service_resolution')-1
+                  AND ((last_attempt.result='unknown' AND predecessor.state IN ('unknown','skipped'))
+                    OR (last_attempt.result='unknown' AND predecessor.state='pending' AND predecessor.next_attempt_at>NOW(6))
+                    OR (predecessor.state='dispatching' AND predecessor.next_attempt_at>NOW(6)))))
         ORDER BY COALESCE(f.next_attempt_at,f.updated_at),f.id LIMIT ?",'i',[$limit]);
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();$out=[];
     foreach ($rows as $r) {
@@ -559,13 +750,13 @@ function achbotFollowupMaintainOriginalPending(mysqli $db,int $limit,float $budg
         $id=(int)$r['id'];
         $state=achbotFollowupDispatchOne($db,$id);
         $out[$id]=$state;
-        if (!in_array($state,['unavailable','busy','not_ready'],true)) continue;
+        if (!in_array($state,['unavailable','busy','not_ready','not_due'],true)) continue;
         try {
             // Defer an unavailable already-due retry behind healthy peers;
             // do not shorten or rewrite a newly committed Telegram wait.
             $s=achbotProviderStatement($db,"UPDATE payment_followup_intents SET updated_at=NOW(),
-                next_attempt_at=CASE WHEN next_attempt_at<=NOW(6)
-                    THEN DATE_ADD(NOW(6),INTERVAL 2 MINUTE) ELSE next_attempt_at END
+                next_attempt_at=CASE WHEN next_attempt_at IS NULL OR next_attempt_at<=NOW(6)
+                    THEN DATE_ADD(NOW(6),INTERVAL 5 SECOND) ELSE next_attempt_at END
                 WHERE id=? AND state IN ('pending','dispatching')",'i',[$id]);$s->close();
         } catch (Throwable $e) {
             error_log('achbot_followup_maintenance_deferred id='.$id.' class='.get_class($e));
@@ -597,21 +788,22 @@ function achbotFollowupReportChannel(string $raw,string $stage='',?int $payId=nu
  * A caller explicitly supplies the existing channel policy (empty = none). */
 function achbotFollowupStageAdminReportLocked(mysqli $db,?int $payId,?int $serviceId,
     string $stage,string $fingerprint,int $owner,string $channel,array $content,int $actor=0,?int $walletId=null,
-    ?string $actorKeys=null,array $pages=[],?array $event=null,?string $staffKeys=null): void {
+    ?string $actorKeys=null,array $pages=[],?array $event=null,?string $staffKeys=null,array $additionalActors=[]): void {
     if ($owner<=0) throw new RuntimeException('followup_report_owner_missing');
-    $complete=false;$staff=achbotAdminRecipientCandidates($db,$owner,$complete);
+    $complete=false;$staff=achbotAdminRecipientCandidates($db,$owner,$complete,true);
     if (!$complete) error_log('achbot_report_optional_staff_deferred stage='.$stage);
     $targets=[(string)$owner=>true];
     foreach ($staff as $uid) {
         $complete=true;
-        if (achbotAdminNotificationAllowed($db,$uid,$owner,'general',$complete))
+        if (achbotAdminNotificationAllowed($db,$uid,$owner,'general',$complete,true))
             $targets[(string)(int)$uid]=true;
         if (!$complete) error_log('achbot_report_optional_permission_deferred stage='.$stage);
     }
     // The authenticated business actor receives their own result even if
     // their unsolicited general-report preference is off. Do not duplicate
     // a manager or the primary owner who is also the original actor.
-    if ($actor>0 && $actor!==$owner) $targets[(string)$actor]='report_actor';
+    foreach ([$actor,...$additionalActors] as $who)
+        if ($who>0 && $who!==$owner) $targets[(string)$who]='report_actor';
     $channel=achbotFollowupReportChannel($channel,$stage,$payId,$serviceId,$walletId);
     if ($channel!=='' && !isset($targets[$channel])) $targets[$channel]='service_channel';
     if ($pages!==[] && $event===null && ($serviceId===null || $payId!==null || $walletId!==null ||
@@ -630,12 +822,13 @@ function achbotFollowupStageAdminReportLocked(mysqli $db,?int $payId,?int $servi
         }
     }
 }
-function achbotFollowupAdminReportAllowed(mysqli $db,array $r,int $actor=0,string $capability='payments'): bool {
+function achbotFollowupAdminReportAllowed(mysqli $db,array $r,int $actor=0,string $capability='payments',array $additionalActors=[]): bool {
     $owner=(int)($GLOBALS['admin']??0);$recipient=(string)$r['recipient'];
     if ($r['kind']!=='send' || $r['message_id']!==null) return false;
     if ($r['role']==='report_actor')
-        return $actor>0 && $owner>0 && $recipient===(string)$actor &&
-            achbotFollowupStaffAllowed($db,$actor,$owner,$capability);
+        return $owner>0 && (int)$recipient>0 && (string)(int)$recipient===$recipient &&
+            in_array((int)$recipient,[$actor,...$additionalActors],true) &&
+            achbotFollowupStaffAllowed($db,(int)$recipient,$owner,$capability);
     if ($r['role']==='service_admin')
         return achbotFollowupGeneralRecipientAllowed($db,(int)$recipient,$owner);
     if ($r['role']==='service_channel') {

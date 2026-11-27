@@ -86,7 +86,11 @@ fake compatibility adapters or generalized plugin framework.
   order, local finality and delivery. Admit only operations supported by the
   selected implemented adapter and actual configuration. Unknown/partial
   adapters must fail before funding or a remote effect. Pin the selected
-  provider and target; do not silently switch on retry. The current registry is the extension point. Nonpayment reservation resolves
+  provider and target; do not silently switch on retry. The current registry is the extension point.
+  Every create/link adapter must implement the original-delivery credential guard:
+  verify that persisted delivery credentials are still safe to send, with
+  provider-specific rotation/identity semantics. Reject an incomplete adapter
+  at registration, not after funding or delivery. Nonpayment reservation resolves
   and locks the
   physical connection through the registered target adapter before effect-range
   reads. Its normalized `key` and `connection_id` feed the shared allocator;
@@ -341,14 +345,38 @@ API proof may succeed while panel is down; receipt still credits exactly once.
 No time-only payment proof. Every receipt requires authenticated evidence
 or authorized staff confirmation.
 
-Receipt submission and service validity are separate. A receipt already
-reserved as receiving may finish or recover its original evidence and
-Telegram reference even if the service is superseded concurrently. Its
-superseded financial state is retained: verified funds credit Wallet once
-and never revive the invalidated service. A superseded invoice without
-an original receiving claim cannot start new evidence submission. Typed
-gift-code storage and receiving reservation are one locked transaction;
-failure rolls back both.
+Receipt submission and service validity are separate. Original photo or
+sealed typed-code evidence, its admitted state, the customer receipt notice,
+and the intended staff notice packets commit together under the original
+invoice lock. Neither Telegram success nor a staff message ID authorizes
+admission or credit. API verification and authorized staff decisions use the
+same admitted original evidence. A superseded invoice can retain valid
+original proof and credit Wallet once without reviving the invalidated
+service; existing expiry and submission eligibility still apply.
+Each destination dispatches independently through the existing followup
+journal. Definite rate-limit rejection retries when due; ambiguous new
+sends are not repeated automatically. An authenticated private staff view
+uses the original evidence and a stable Telegram update identity. No
+opt-out or role change permits unauthorized delivery.
+Receipt edits use exact acknowledged targets and the shared target lease.
+Approval/rejection owns financial terminal markup, not Native completion.
+A staff acknowledgement arriving after the financial decision stages an
+exact terminal edit; a later send projects the already committed outcome.
+Older pending customer admission notices are superseded by a terminal
+outcome, without pretending an earlier unknown send was never delivered.
+
+**Installed transfer gate:** No new columns or parallel receipt queue are
+needed. Before activating this version, stop previous workers and inspect
+all payment attempts with legacy receiving state, pending/unknown receipt
+delivery evidence, and actionable old keyboards. Preserve the existing
+receipt payloads, claim fields and exact known chat/message references.
+Reconcile any legacy receiving attempt under an explicitly authorized
+installed-data plan; do not infer admission or Telegram success from an
+expired lease or blindly resend a previous unknown send. Previously sealed
+service-completion receipt edits remain valid only for their original source
+and proven target; new terminal receipt edits belong to the financial
+decision. Do not transfer until unresolved legacy receiving rows have a
+recorded disposition.
 
 Configured receipt cooldowns are evaluated on current admitted manual
 receipts and actual manual credit basis. They do not turn historical
@@ -382,13 +410,39 @@ completed purchase/credit exactly once with existing eligibility policy.
 
 ## Reporting and sales projections
 
-All original positive Wallet movements stage primary owner, configured report
-channel and actual human actor notices, deduplicated with optional authorized
-staff recipients. Automatic confirmation has no fabricated human actor. A
-report identifies the original receipt/operation and ledger entry, method,
-amount, before/after and disposition. A credit used immediately for a service
-does not become a misleading top-up notification. The sealed service-completion
-report remains independent of customer delivery.
+Original Wallet movements and actual service operations stage reports for
+the primary owner, configured report channel and actual authorized human actors.
+A receipt funding a service belongs to the logical service report; retained
+credit or a standalone Wallet movement remains a separate report. Each
+service/destination summary has immutable funded, completed, delivered or
+resolved revisions. Before first dispatch, the latest eligible revision
+supersedes untouched or proven-rejected older summaries without deleting
+their evidence. When a summary was acknowledged, update that exact numeric
+chat/message; only a definite missing/uneditable target permits replacement
+in the pinned chat. Customer delivery acknowledgement is independent of local
+completion. Never claim delivery from an aggregate projection alone. Original
+receipt markup is a separate retained record; a missing receipt is skipped,
+not recreated. Bulk continuation pages retain all original account names and
+order IDs without dropping the summary's financial facts. All money amounts,
+ledger IDs, receipt basis, original actors and local Tehran presentation dates
+derive from frozen source evidence.
+
+The durable report audience is recorded from committed membership and
+notification preferences, without acquiring locks on unrelated staff rows.
+A contended role or preference writer must not silently remove an intended
+recipient. Before transport, use the existing current authorization check;
+a transient unreadable role defers only its recipient, while a committed
+revocation or opt-out skips the original intent. The snapshot is a staging
+input, never permission to disclose a report.
+
+Each logical summary/destination has its own transport lease, rather than
+holding a payment or Native service lease across Telegram I/O. Ordinary
+operational report destinations use independent intent leases; batch compaction
+is protected by its source lease and locks/validates every affected SQL row.
+SQL claim/finish transactions are separate from the external call. A failing
+projection, service step, customer delivery or report in the request fast path
+does not abort another independent stage; the durable worker continues work
+outside the fast-path budget.
 
 Verified trial, administrator bulk, import, direct/scheduled gift, plan change,
 transfer and deletion use the same operational followup source, not fake
@@ -397,7 +451,24 @@ actual operation/effect and original order. Gift notices are bound to the
 actual subscription attachment. A changed/removed attachment is terminally
 skipped; transient failures defer. Current multipart delivery and followup
 attempts preserve original source and recipient, known rejection versus unknown
-ACK, rate-limit recovery, and explicit original-packet redrive. Large bulk and
+ACK, rate-limit recovery, and explicit original-packet redrive. Customer delivery and followup
+attempts persist the actual acknowledged numeric chat and message id;
+a configured channel username must match the returned chat username before
+pinning its numeric identity. A success without matching message identity is
+unknown, not an automatic resend. An explicit identical-edit rejection can
+acknowledge only an exact numeric chat/message target. The sealed intent
+target and previous attempt evidence remain unchanged. During installed-data
+transfer, preserve old intents, attempts and original ACK evidence in an
+explicit, separately authorized transfer/reconciliation. Map proven fixed
+wire actions/targets from original intents; never guess missing message IDs
+or replay historical delivery. Prior customer ACKs without proven message
+identity remain historical ACK evidence; new customer ACKs require exact
+recipient and positive returned message id, including QR parts. Superseded legacy funded-credit/separate
+delivery-notice presentations are not active runtime alternatives. A verified
+prior logical summary ACK may anchor a current revision only after exact source,
+recipient and message reconciliation; otherwise retain audit evidence without
+inventing a target. The fresh construction script 053 refuses any existing
+followup evidence before DDL. Large bulk and
 partial-retained reports use bounded sealed continuation pages; compaction can
 only replace untouched packets, never an attempted message. Interrupted
 compaction leaves the individual verified creation reports deliverable.
@@ -407,8 +478,17 @@ The configured rewardChannel is resolved to the actual chat; no redirect of
 sealed packets after settings/permission changes. A definitively ineligible
 recipient is terminally skipped, without invented acknowledgement or later
 automatic reactivation. An incomplete authorization read defers; other
-recipients continue. Unknown/rejected deliveries retain attempt evidence;
-explicit redrive revalidates the original recipient. No report exposes private
+recipients continue. A known pre-request cURL failure with actual zero request/upload bytes
+is safe to retry. Both report and customer delivery workers honor explicit
+429 hints, use bounded exponential backoff if absent, and retry definite
+401/403/404/409 rejections (permission/configuration can recover). Exact
+idempotent report edits retry on unknown outcomes; an unknown first send
+remains isolated, with explicit authorized recovery when needed. There is
+no retry-count cutoff. Other malformed/permanent request rejections retain
+diagnostics; a valid newer report can supersede a rejected body. Attempts
+record actual wire action, recipient, edit target, failure reason and verified
+ACK identity. Customer delivery parts retain their existing independent
+journal, so only the failed due part is retried. No report exposes private
 receipt images, credentials or subscription links in public summaries.
 
 `src/Finance/ServiceHistory.php` owns completed commercial sales and buyer
@@ -427,6 +507,13 @@ and no completed original purchase.
 
 ## Source boundaries and validation
 
+Wallet funding (`pw_`) and staff approval (`pa_`) each use one original-invoice callback.
+The locked persisted invoice determines its subject; authorization and idempotency
+are enforced at the business boundary. Customer Wallet actions never reset an
+unrelated conversation before admission. Old subject-specific callbacks are not
+accepted. Existing actionable receipt buttons must be reprojected or reopened
+through the current operator inbox during installed reconciliation.
+
 No legacy compatibility executor or old callback replay. Only current
 fresh-schema journals and registered adapters authorize effects. The
 consolidated schema and numbered SQL are described in [fresh installation](FRESH-INSTALL.md).
@@ -443,3 +530,29 @@ UX](PAYMENT-UX-LIFECYCLE.md), [Native API](PASARGUARD-CONTRACT.md) and
 delivery, not a second implementation roadmap. The approved implementation
 and historical design trail are available in [PR #234](https://github.com/ach1992/bot-refactor/pull/234)
 and its Git history.
+
+### Subscription credentials and user event boundary
+
+The current subscription view reads verified Native data under the existing
+physical account lease. The original purchase's stored links and sealed
+delivery packet are historical evidence, not a mutable current-link cache.
+A verified rotation records the canonical proxy-state digest in its
+existing provider mutation journal. Re-entering the exact verified
+rotation can recover a current read-only view only while the original
+identity and resulting proxy state still match; an uncertain write never
+authorizes a second rotation. The adapter-owned original delivery guard
+prevents a superseded credential packet from being delivered after a
+verified rotation. Actual current detail rendering uses the proven packet.
+Presentation failure is not a provider failure and does not repeat a write.
+
+Welcome and agency notices are source-specific original user events in
+the existing sealed operational followup journal, bound to the actual
+user row and, for an application, the original request generation.
+They share classified independent-recipient dispatch/recovery, not the
+payment/service mutation state machine. No new schema beyond the existing
+055 construction is required by these changes. Transfer planning must
+inventory unresolved agency applications and preserve their actual state;
+old decision buttons are not current executable commands. Any pending
+historical application without a current original event needs an explicit
+authorized current re-entry or separately approved reconciliation before
+activation. Previously sent historical welcome/report states are not replayed.

@@ -50,14 +50,13 @@ function sendDocument(callable $fileRequest, $from_id, $filePath, $caption = "",
     return is_array($response) && isset($response['ok']) && $response['ok'] === true;
 }
 
-function answerCallbackQuery(callable $readUrl, $botUrl, $callbackId, $text = "", $show_alert = false) {
-    $url = $botUrl . "answerCallbackQuery";
-    $post = [
-        'callback_query_id' => $callbackId,
-        'text' => $text,
-        'show_alert' => $show_alert
-    ];
-    $readUrl($url . "?" . http_build_query($post));
+function answerCallbackQuery(callable $request, $callbackId, $text = "", $show_alert = false) {
+    if (!is_string($callbackId) || $callbackId==='') return null;
+    return $request('answerCallbackQuery',[
+        'callback_query_id'=>$callbackId,
+        'text'=>$text,
+        'show_alert'=>$show_alert
+    ]);
 }
 
 function editKeys(callable $request, $from_id, $message_id, $keys = null, $msgId = null, $ci = null){
@@ -177,10 +176,5 @@ function getFileUrl(callable $request, $botToken, $fileid){
 }
 
 function alert(callable $request, $callbackId, $txt, $type = false, $callid = null){
-    $callid = $callid??$callbackId;
-    return $request('answercallbackquery', [
-        'callback_query_id' => $callid,
-        'text' => $txt,
-        'show_alert' => $type
-    ]);
+    return answerCallbackQuery($request,$callid??$callbackId,$txt,$type);
 }

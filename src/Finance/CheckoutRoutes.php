@@ -10,44 +10,62 @@ function achbotCheckoutPresentation(): array {
         'bot_username'=>(string)($GLOBALS['botUsername']??'')];
 }
 
+/** Isolate every fast-path stage and its diagnostics. A presentation
+ * exception cannot abort an already committed financial command. */
+function achbotCheckoutAdvanceStage(?int $operation,?int $payId,string $stage,callable $work): void {
+    try {$work();}
+    catch (Throwable $e) {
+        achbotDiagnosticEvent('achbot.finance.checkout_progress_deferred',[
+            'service_operation_id'=>(int)$operation,'pay_id'=>(int)$payId,'stage'=>$stage
+        ]+achbotDiagnosticLocalFailure($e),'warning');
+    }
+}
+
 /** Fast-path only. The durable worker owns progress after this request ends.
  * Never interpret an exhausted budget or failed Telegram call as a refund. */
 function achbotCheckoutAdvance(mysqli $db,?int $operation,?int $payId=null,bool $force=false): void {
     require_once __DIR__.'/../Services/Execution.php';
     require_once __DIR__.'/ServiceDelivery.php';
     require_once __DIR__.'/FollowupOutbox.php';
+    if ($payId!==null)
+        achbotCheckoutAdvanceStage($operation,$payId,'projection',fn()=>achbotPayUxSyncMessages($db,$payId));
     $deadline=hrtime(true)/1000000000+8.0;
-    try {
-        if ($operation!==null) {
+    if ($operation!==null) {
+        achbotCheckoutAdvanceStage($operation,$payId,'service',function() use ($db,$operation,$deadline,$force) {
             for ($i=0;$i<16 && hrtime(true)/1000000000<$deadline;$i++) {
                 $r=achbotServiceExecuteStep($db,$operation,achbotCheckoutPresentation(),$force && $i===0);
                 if (!in_array($r['status'],['progressed','applied'],true)) break;
             }
+        });
+        achbotCheckoutAdvanceStage($operation,$payId,'delivery',function() use ($db,$operation,$payId,$deadline) {
             $s=achbotProviderStatement($db,"SELECT id FROM payment_delivery_intents
-                WHERE service_operation_id=? AND state IN ('pending','dispatching') ORDER BY ordinal LIMIT 8",'i',[$operation]);
+                WHERE service_operation_id=? AND state IN ('pending','dispatching')
+                  AND (next_attempt_at IS NULL OR next_attempt_at<=NOW(6))
+                ORDER BY COALESCE(next_attempt_at,updated_at),ordinal LIMIT 8",'i',[$operation]);
             $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
             foreach ($rows as $row) {
                 if (hrtime(true)/1000000000>=$deadline) break;
-                achbotServiceDeliveryDispatch($db,(int)$row['id']);
+                achbotCheckoutAdvanceStage($operation,$payId,'delivery',fn()=>achbotServiceDeliveryDispatch($db,(int)$row['id']));
             }
-        }
-        if ($operation!==null || $payId!==null) {
+        });
+    }
+    if ($operation!==null || $payId!==null) {
+        achbotCheckoutAdvanceStage($operation,$payId,'report',function() use ($db,$operation,$payId,$deadline) {
             $s=achbotProviderStatement($db,"SELECT id FROM payment_followup_intents
                 WHERE ((service_operation_id IS NOT NULL AND service_operation_id=?) OR
-                    (pay_row_id IS NOT NULL AND pay_row_id=? AND stage='wallet_credit'))
-                AND state IN ('pending','dispatching') ORDER BY id LIMIT 8",
+                    (pay_row_id IS NOT NULL AND pay_row_id=? AND stage IN ('wallet_credit','receipt_admitted')))
+                AND state IN ('pending','dispatching')
+                AND (next_attempt_at IS NULL OR next_attempt_at<=NOW(6)) ORDER BY id",
                 'ii',[$operation,$payId]);
             $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
             foreach ($rows as $row) {
                 if (hrtime(true)/1000000000>=$deadline) break;
-                achbotFollowupDispatchOne($db,(int)$row['id']);
+                achbotCheckoutAdvanceStage($operation,$payId,'report',fn()=>achbotFollowupDispatchOne($db,(int)$row['id']));
             }
-        }
-    } catch (Throwable $e) {
-        achbotDiagnosticEvent('achbot.finance.checkout_progress_deferred',[
-            'service_operation_id'=>(int)$operation,'pay_id'=>(int)$payId
-        ]+achbotDiagnosticLocalFailure($e),'warning');
+        });
     }
+    if ($payId!==null)
+        achbotCheckoutAdvanceStage($operation,$payId,'projection',fn()=>achbotPayUxSyncMessages($db,$payId));
 }
 
 /** One outcome projection for every verified receipt. It never infers
@@ -72,17 +90,7 @@ function achbotCheckoutReceiptOutcome(mysqli $db,int $payId): string {
             if ((int)$e['pay']['price']!==(int)$op['price_toman'] || (int)$op['price_toman']<=0 ||
                 ($op['command_kind']==='checkout' && (int)$e['pay']['checkout_operation_id']!==$id))
                 throw new RuntimeException('payment_outcome_funding_conflict');
-            if ($op['resolution_kind']!==null) $status='resolved';
-            elseif (in_array($op['stage'],['funded','prepared','dispatching','applied'],true)) $status='service_pending';
-            elseif ($op['stage']==='completed') {
-                require_once __DIR__.'/ServiceReports.php';
-                // Use the same immutable source and part-level acknowledgement
-                // proof as completion reports, not a parent status projection.
-                $source=achbotServiceCompletionReportSourceLocked($db,$op,$quote,true);
-                if ($source['receipt']===null || (int)$source['receipt']['pay']['id']!==$payId)
-                    throw new RuntimeException('payment_outcome_original_receipt_conflict');
-                $status=$source['delivered']?'completed':'delivery_unconfirmed';
-            } else throw new RuntimeException('payment_outcome_service_conflict');
+            $status=achbotCheckoutServiceOutcomeLocked($db,$op,$quote,$payId);
         }
         if (!$db->commit()) throw new RuntimeException('payment_outcome_commit');
         return $status;
@@ -94,6 +102,47 @@ function achbotCheckoutReceiptOutcome(mysqli $db,int $payId): string {
         return 'unknown';
     }
 }
+/**
+ * Read-only progress/finality proof. Receipt and Wallet orders share the
+ * same command, local result and exact delivery evidence.
+ */
+function achbotCheckoutServiceOutcomeLocked(mysqli $db,array $op,array $quote,?int $receiptId): string {
+    if ($op['resolution_kind']!==null) return 'resolved';
+    if (in_array($op['stage'],['funded','prepared','dispatching','applied'],true)) return 'service_pending';
+    if ($op['stage']!=='completed') throw new RuntimeException('payment_outcome_service_conflict');
+    require_once __DIR__.'/ServiceReports.php';
+    $source=achbotServiceCompletionReportSourceLocked($db,$op,$quote,true);
+    if (($receiptId===null && $source['receipt']!==null) ||
+        ($receiptId!==null && ($source['receipt']===null || (int)$source['receipt']['pay']['id']!==$receiptId)))
+        throw new RuntimeException('payment_outcome_original_receipt_conflict');
+    return $source['delivered']?'completed':'delivery_unconfirmed';
+}
+
+function achbotCheckoutWalletOutcome(mysqli $db,array $locator): string {
+    $id=(int)$locator['id'];$uid=(int)$locator['user_id'];$begun=false;
+    try {
+        achbotPaymentEvidenceRequireAutocommit($db);
+        if (!$db->begin_transaction()) throw new RuntimeException('payment_wallet_outcome_begin');
+        $begun=true;
+        achbotWalletLockOwnerLocked($db,$uid);
+        $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=? AND user_id=? FOR UPDATE','ii',[$id,$uid]);
+        if (!$pay || $pay['state']!=='paid_with_wallet' ||
+            achbotProviderRow($db,'SELECT id FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$id]))
+            throw new RuntimeException('payment_wallet_outcome_conflict');
+        [$op,$quote,$owner]=achbotCheckoutOriginalCommandLocked($db,$pay);
+        achbotServiceVerifyFundingLocked($db,$op,$owner);
+        if (achbotServiceFundingReceiptLocked($db,$op)!==null)
+            throw new RuntimeException('payment_wallet_outcome_receipt_conflict');
+        $status=achbotCheckoutServiceOutcomeLocked($db,$op,$quote,null);
+        if (!$db->commit()) throw new RuntimeException('payment_wallet_outcome_commit');
+        return $status;
+    } catch (Throwable $e) {
+        if ($begun) try {$db->rollback();} catch (Throwable $ignored) {}
+        achbotDiagnosticEvent('achbot.finance.wallet_outcome',['pay_id'=>$id]+achbotDiagnosticLocalFailure($e),'warning');
+        return 'unknown';
+    }
+}
+
 function achbotCheckoutReceiptOutcomeText(string $status): string {
     return achbotMessage(match($status) {
         'wallet_credited'=>'manual_receipt_final.status_wallet_credited',
@@ -106,14 +155,27 @@ function achbotCheckoutReceiptOutcomeText(string $status): string {
 }
 
 /** Consume the original Wallet callback when the command schema is present.
- * Keep its original callback family, existing alerts and receipt reference. */
-function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,string $mode,array $states): void {
+ * Keep the existing alerts and exact receipt reference. */
+function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,array $states): void {
     try {
         achbotCheckoutRequireSchema($db);
-        $r=achbotCheckoutWallet($db,$hash,$actor,$mode,$states);
+        $original=achbotPayUxOwnedReference($db,$hash,$actor);
+        $frame=\AchBot\Telegram\Conversation\source($GLOBALS['update']??null,$actor,true);
+        if (!$original || !$frame || $frame->message_id!==(int)($GLOBALS['message_id']??0)) return;
+        $payId=(int)$original['id'];$message=$frame->message_id;
+        $r=achbotPayUxWithLease($db,$payId,static function() use ($db,$payId,$actor,$message,$hash,$states): ?array {
+            $ref=achbotPayUxRef($db,$payId,$actor,$message);
+            if ($ref && $ref['purpose']==='status' && $ref['retired_reason']===null) {
+                // Only an already-funded original may replay a stale wallet click.
+                $pay=achbotProviderRow($db,'SELECT state FROM pays WHERE id=?','i',[$payId]);
+                if (($pay['state']??null)!=='paid_with_wallet') return null;
+            } elseif (!achbotPayUxSelectorRef($db,$payId,$actor,$message,$GLOBALS['update']??null)) return null;
+            return achbotCheckoutWallet($db,$hash,$actor,$states);
+        });
+        if ($r===null) {alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);return;}
         if ($r['status']==='insufficient_funds') {
             $wallet=$r['wallet'];$need=$r['price']-$wallet;
-            if (in_array($mode,['standard','custom'],true))
+            if (in_array($r['mode'],['standard','custom'],true))
                 alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.ae55877021').
                     achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.4092b19ef1').number_format($wallet).
                     achbotMessage('wallet.admin_wallet.admin_wallet_report_result.text.81a62ff6c6').
@@ -125,14 +187,14 @@ function achbotCheckoutWalletCallback(mysqli $db,string $hash,int $actor,string 
         } elseif ($r['status']==='capacity_unavailable') {
             alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.0b74ab3f2e'),true);
         } elseif (in_array($r['status'],['funded','already_funded'],true)) {
-            // Do not announce success while the durable service is pending.
-            if (($r['stage']??null)!=='completed')
-                alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
-            achbotCheckoutAdvance($db,(int)$r['operation']);
+            // Funding is durable; acknowledge the accepted request without
+            // implying that Native execution or Telegram delivery succeeded.
+            alert(achbotMessage('payment.payment_lifecycle.request_accepted'),false);
+            achbotCheckoutAdvance($db,(int)$r['operation'],$payId);
         } else alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
     } catch (Throwable $e) {
         achbotDiagnosticEvent('achbot.finance.checkout_wallet_deferred',[
-            'actor_id'=>$actor,'mode'=>$mode]+achbotDiagnosticLocalFailure($e),'warning');
+            'actor_id'=>$actor]+achbotDiagnosticLocalFailure($e),'warning');
         alert(achbotMessage('wallet.wallet_settlement.process_wallet_payment.alert.978c658074'),true);
     }
 }
@@ -197,9 +259,9 @@ function achbotCheckoutRejectUnfundedLocked(mysqli $db,array $pay,array $attempt
     return $pay;
 }
 
-/** Human approval must use the exact persisted receipt and matching old
- * approval callback, not a price or order carried in Telegram data. */
-function achbotCheckoutApproveReceipt(mysqli $db,string $hash,int $actor,int $primary,string $mode): array {
+/** Human approval must use the exact persisted receipt, not a subject,
+ * price or order carried in Telegram data. */
+function achbotCheckoutApproveReceipt(mysqli $db,string $hash,int $actor,int $primary): array {
     if (!preg_match('/\A[A-Za-z0-9_-]{1,50}\z/D',$hash) ||
         !achbotAdminCanFor($db,$actor,$primary,'payments')) throw new DomainException('manual_receipt_actor_invalid');
     $s=achbotProviderStatement($db,'SELECT id,user_id FROM pays WHERE hash_id=? LIMIT 2','s',[$hash]);
@@ -215,7 +277,7 @@ function achbotCheckoutApproveReceipt(mysqli $db,string $hash,int $actor,int $pr
             [$pay,$a]=achbotCreditInvoiceLocked($db,$id,$uid);
             if (!achbotAdminCanLocked($db,$actor,$primary,'payments'))
                 throw new DomainException('manual_receipt_actor_invalid');
-            $valid=achbotCheckoutModeMatchesRequest($pay,$mode);
+            $valid=achbotCheckoutMode($pay)!==null;
             if (!$valid || $pay['hash_id']!==$hash || !in_array($pay['state'],['have_sent','service_superseded','paid'],true) ||
                 !achbotPayUxManualProvider($a['provider']) ||
                 !is_string($a['wallet_invoice_sha256']??null) || $a['wallet_invoice_sha256']==='')
@@ -227,14 +289,14 @@ function achbotCheckoutApproveReceipt(mysqli $db,string $hash,int $actor,int $pr
     } finally {achbotOriginalDispatchLeaseEnd($db,$id,$lease);}
 }
 
-function achbotCheckoutApprovalCallback(mysqli $db,string $hash,int $actor,int $primary,string $mode): void {
+function achbotCheckoutApprovalCallback(mysqli $db,string $hash,int $actor,int $primary): void {
     try {
         achbotCheckoutRequireSchema($db);
-        $r=achbotCheckoutApproveReceipt($db,$hash,$actor,$primary,$mode);
+        $r=achbotCheckoutApproveReceipt($db,$hash,$actor,$primary);
         achbotCheckoutAdvance($db,$r['operation'],(int)$r['pay_id']);
     } catch (Throwable $e) {
         achbotDiagnosticEvent('achbot.finance.checkout_approval_deferred',[
-            'actor_id'=>$actor,'mode'=>$mode]+achbotDiagnosticLocalFailure($e),'warning');
+            'actor_id'=>$actor]+achbotDiagnosticLocalFailure($e),'warning');
         alert(achbotMessage('manual_payment.manual_receipts.alert.2d252fd96f'),true);
     }
 }

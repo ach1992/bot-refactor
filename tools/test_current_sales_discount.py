@@ -64,7 +64,7 @@ if ($x['op']==='report') {
     $connection->commit();$r=true;
 } elseif ($x['op']==='discount') {
     $from_id=$x['owner'];
-    $r=applyDiscountToPay($connection,$x['pay'],$x['code'],$from_id,'fixture','Fixture',9001,$botState);
+    $r=achbotDiscountRedeem($connection,$x['pay'],$x['code'],$from_id,$botState,$x['editor']??null);
 } elseif ($x['op']==='history') {
     $r=achbotCustomerHistoryCount($connection,$x['owner'],'buy',0,'older',false,time());
 } else throw new RuntimeException('unknown fixture operation');
@@ -256,6 +256,65 @@ def main():
             assert first.returncode==0,(out,err)
             if second and second.poll() is None:second.terminate();second.wait(timeout=5)
         cases.append('actual_discount_revalidates_buyer_history_under_owner_lock')
+        # The same shared code can be consumed by two eligible owners.
+        # Hold one owner before redemption while the other uses the code.
+        a=pay(2010,'shared-discount-a',100,'pending',context={'version':1})
+        b=pay(2011,'shared-discount-b',100,'pending',context={'version':1})
+        sql("INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('shared-code','percent',20,0,2,1)")
+        locker.write_text(LOCKER.replace('WHERE userid=2009 FOR UPDATE','FORCE INDEX (idx_users_userid_v1) WHERE userid=2010 FOR UPDATE').replace('$db->query("UPDATE service_operations SET stage=\'completed\' WHERE userid=2009 AND command_kind=\'checkout\'");',''))
+        ready.unlink();release.unlink()
+        first=subprocess.Popen(['php',str(locker),str(w/'mysql.sock'),DB,str(ready),str(release)],env=e,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+        second=None
+        try:
+            deadline=time.monotonic()+8
+            while not ready.exists() and time.monotonic()<deadline:time.sleep(.03)
+            assert ready.exists()
+            second=subprocess.Popen(command(dict(op='discount',owner=2010,pay=a,code='shared-code')),env=e,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE)
+            deadline=time.monotonic()+8
+            while time.monotonic()<deadline:
+                if any('idx_users_userid_v1' in line and 'FOR UPDATE' in line for line in sql("SHOW FULL PROCESSLIST").splitlines()):break
+                if second.poll() is not None:raise AssertionError(second.communicate())
+                time.sleep(.04)
+            else:raise AssertionError('first redemption never reached owner lock')
+            assert invoke('discount',owner=2011,pay=b,code='shared-code')['success']
+            release.touch()
+            out,err=second.communicate(timeout=15)
+            assert second.returncode==0 and not err and json.loads(out)['result']['success'],(out,err)
+            assert sql(f"SELECT SUM(price) FROM pays WHERE id IN ({a},{b})")=='160'
+            assert sql("SELECT expire_count FROM discounts WHERE hash_id='shared-code'")=='0'
+            assert set(map(int,json.loads(sql("SELECT used_by FROM discounts WHERE hash_id='shared-code'"))))=={2010,2011}
+        finally:
+            release.touch()
+            out,err=first.communicate(timeout=10)
+            assert first.returncode==0,(out,err)
+            if second and second.poll() is None:second.terminate();second.wait(timeout=5)
+        cases.append('actual_shared_discount_concurrent_owners_both_eligible')
+        # A superseded editor cannot mutate the draft; failure closing the
+        # current editor must roll back its counter and price as well.
+        pid=pay(2010,'editor-atomic-draft',100,'pending',context={'version':1})
+        sql("INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('editor-code','percent',20,0,2,1)")
+        editor=dict(id=int(sql("SELECT id FROM users WHERE userid=2010")),userid=2010,step=f'discountCheckout_{pid}',temp=None)
+        sql("UPDATE users SET step='searchAgentConfig_81',temp=NULL WHERE userid=2010")
+        r=invoke('discount',owner=2010,pay=pid,code='editor-code',editor=editor)
+        assert r['reason']=='stale_editor',r
+        assert sql("SELECT step FROM users WHERE userid=2010")=='searchAgentConfig_81'
+        assert sql(f"SELECT price FROM pays WHERE id={pid}")=='100'
+        assert sql("SELECT expire_count FROM discounts WHERE hash_id='editor-code'")=='2'
+        sql(f"UPDATE users SET step='discountCheckout_{pid}',temp=NULL WHERE userid=2010")
+        sql("CREATE TRIGGER reject_editor_close BEFORE UPDATE ON users FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture editor close failure'")
+        try:
+            p=subprocess.run(command(dict(op='discount',owner=2010,pay=pid,code='editor-code',editor=editor)),env=e,text=True,capture_output=True,timeout=25)
+            assert p.returncode==0 and json.loads(p.stdout)['result']['reason']=='unconfirmed',(p.stdout,p.stderr)
+            assert sql(f"SELECT price FROM pays WHERE id={pid}")=='100'
+            assert sql("SELECT expire_count FROM discounts WHERE hash_id='editor-code'")=='2'
+            assert sql("SELECT step FROM users WHERE userid=2010")==editor['step']
+        finally:sql("DROP TRIGGER reject_editor_close")
+        assert invoke('discount',owner=2010,pay=pid,code='editor-code',editor=editor)['success']
+        assert sql(f"SELECT price FROM pays WHERE id={pid}")=='80'
+        assert sql("SELECT expire_count FROM discounts WHERE hash_id='editor-code'")=='1'
+        assert sql("SELECT step FROM users WHERE userid=2010")=='none'
+        cases.append('actual_discount_editor_stale_and_atomic_rollback')
+
     report={'status':'PASS','complete':True,'cases':len(cases),'scenarios':cases,
         'external_requests':0,'production_mutations':0}
     if args.report:args.report.write_text(json.dumps(report,indent=2)+'\n')

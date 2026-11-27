@@ -298,30 +298,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
              'data':{'state_changed':True,'transition_committed':True}})
         self.send(200,response)
 def validate_gift_route_boundaries():
-    # These are the six original subject handlers. The common screen must
-    # run before the exact full-message length validation, durable lease or
-    # private admin send; a rejected code cannot consume the input step.
-    paths={
-        'src/Finance/Routes/Checkout.php':2,
-        'src/Finance/Routes/Extensions.php':2,
-        'src/Finance/Routes/RenewalCheckout.php':1,
-        'src/Finance/Routes/WalletRecharge.php':1,
-    }
-    for name,expected in paths.items():
-        source=(ROOT/name).read_text()
-        boundary='$giftScreen=achbotManualGiftSubmissionPreflight($connection,$receiptPay,$method,$fileid);'
-        reserve='$deliveryToken = achbotManualBeginEvidence($connection, $receiptPay, $method, (int)$from_id, $fileid);'
-        assert source.count(boundary)==source.count(reserve)==expected,(name,'gift_screen_route_count')
-        assert source.count('$deliveryToken,$giftScreen))')==expected,(name,'receipt_review_projection_count')
-        for section in source.split(boundary)[1:]:
-            # Fail-safe customer message exits immediately, with the original
-            # cancellation action. No payment state or admin delivery occurs.
-            assert section.index('achbotManualGiftRetryMessage(')<section.index(reserve),(name,'retry_before_claim')
-            assert section.index('exit;')<section.index(reserve),(name,'reject_before_claim')
-            assert section.index('achbotManualGiftReviewFits($msg,$fileid,$giftScreen)')<section.index(reserve),(name,'full_metadata_length_before_claim')
-            assert section.index(reserve)<section.index('sendReceiptToAdminsAndUpdatePay('),(name,'claim_before_staff')
-            assert 'setUser(' not in section[:section.index(reserve)],(name,'reject_discarded_input_step')
-    return 6
+    # All six subjects use one source-real submission path. Preflight and
+    # full-message validation must precede the durable lease and staff send.
+    source=(ROOT/'src/Finance/ManualCheckoutPresentation.php').read_text()
+    section=source[source.index('function achbotReceiptSubmit('):]
+    boundary='achbotManualGiftSubmissionPreflight($db,$pay,$method,$evidence)'
+    reserve='achbotManualBeginEvidence($db,$pay,$method,$actor,$evidence,$mode,$expected)'
+    assert section.count(boundary)==section.count(reserve)==1
+    rejected=section[section.index(boundary):section.index(reserve)]
+    assert 'achbotManualGiftRetryMessage(' in rejected and 'return;' in rejected
+    assert 'achbotManualGiftReviewFits($caption,$evidence,$screen)' in rejected
+    assert section.index(reserve)<section.index('sendReceiptToAdminsAndUpdatePay(')
+    assert 'setUser(' not in rejected
+    return 1
 
 def validate_legacy_delivery_boundaries():
     source=(ROOT/'src/Finance/ReceiptHelpers.php').read_text()
@@ -339,7 +328,7 @@ def validate_legacy_delivery_boundaries():
     return True
 
 def run(module):
-    assert validate_gift_route_boundaries()==6
+    assert validate_gift_route_boundaries()==1
     assert validate_legacy_delivery_boundaries()
     with owned.owned_database() as (work,env):
         driver=work/'evidence.php';driver.write_text(DRIVER)

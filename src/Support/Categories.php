@@ -1,119 +1,77 @@
 <?php
-/**
- * AchBot Support: Administrator ticket menu and category create/list/delete operations.
- * Scoped compatibility handler, included at its original bot.php route position.
- * Keep caller variables, fall-through, exit behavior and SQL/message ordering.
- * No direct HTTP/CLI entrypoint. See docs/v3/README.md for the scope contract.
- */
-if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
-    http_response_code(404);
-    exit;
+declare(strict_types=1);
+if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
+require_once __DIR__.'/Tickets.php';
+
+function achbotTicketCategories(mysqli $db): array {
+    $s=achbotProviderStatement($db,"SELECT id,value FROM setting WHERE BINARY type=BINARY 'TICKETS_CATEGORY' ORDER BY id");
+    $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
+    return $rows;
 }
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
-require_once __DIR__.'/../Admin/Access.php';
-if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
-
-
-if($data=="ticketsList" and ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $ticketSection = json_encode(['inline_keyboard'=>[
-        [
-            ['text'=>\achbotMessage('support.categories.tickets_list.button.33d6fa9470'),'callback_data'=>"openTickets"],
-            ['text'=>\achbotMessage('support.categories.tickets_list.button.732c0fd101'),'callback_data'=>"newTickets"]
-            ],
-        [
-            ['text'=>\achbotMessage('support.categories.tickets_list.button.c77cd22d1c'),'callback_data'=>"allTickets"],
-            ['text'=>\achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),'callback_data'=>"ticketsCategory"]
-            ],
-        [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "managePanel"]]
-        ]]);
-    editText($message_id, \achbotMessage('support.categories.tickets_list.message.41905ef3f3'),$ticketSection);
+function achbotTicketCategoryKeys(mysqli $db): string {
+    $rows=[[['text'=>achbotMessage('support.categories.tickets_category.button.59ca629220'),'callback_data'=>'wizwizch'],
+        ['text'=>achbotMessage('support.categories.tickets_category.button.0fc3aac224'),'callback_data'=>'wizwizch']]];
+    $categories=achbotTicketCategories($db);
+    foreach ($categories as $category) $rows[]=[
+        ['text'=>achbotMessage('support.categories.tickets_category.button.2b2966a54e'),'callback_data'=>'delTicketCat_'.$category['id']],
+        ['text'=>$category['value'],'callback_data'=>'wizwizch']];
+    if (!$categories) $rows[]=[['text'=>achbotMessage('support.categories.tickets_category.button.7f9f2e3157'),'callback_data'=>'wizwizch']];
+    $rows[]=[['text'=>achbotMessage('support.categories.tickets_category.button.ee4edcb19e'),'callback_data'=>'addTicketCategory']];
+    $rows[]=[['text'=>achbotMessage('legacy_buttons.back_button'),'callback_data'=>'ticketsList']];
+    return achbotTicketKeys($rows);
 }
-if($data=='ticketsCategory' and ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE BINARY `type` = BINARY 'TICKETS_CATEGORY'");
-    $stmt->execute();
-    $ticketCategory = $stmt->get_result();
-    $stmt->close();
-    $keys = array();
-    $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('support.categories.tickets_category.button.0fc3aac224'),'callback_data'=>"wizwizch"]];
-    
-    if($ticketCategory->num_rows>0){
-        while($row = $ticketCategory->fetch_assoc()){
-            $rowId = $row['id'];
-            $ticketName = $row['value'];
-            $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.2b2966a54e'),'callback_data'=>"delTicketCat_$rowId"],['text'=>$ticketName,'callback_data'=>"wizwizch"]];
+function achbotTicketCategoryRoute(mysqli $db,int $actor,object $source,array $cached,?string $data,string $cancelKey,string $removeKeyboard,$update): bool {
+    $step=(string)($cached['step']??'');
+    if (!achbotAdminCanFor($db,$actor,(int)$GLOBALS['admin'],'operations')) {achbotAdminDeny();return true;}
+    $cid=$source->message_id;
+    if ($data==='ticketsList' || $data==='ticketsCategory') {
+        if (achbotTicketEditor($step)) {
+            if (!achbotTicketLeaveStep($db,$actor,$cached)) return true;
+            sendMessage(achbotMessage('legacy_messages.operation_canceled'),$removeKeyboard,'HTML',$actor);
         }
-    }else{
-        $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.7f9f2e3157'),'callback_data'=>"wizwizch"]];
-    }
-    $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.ee4edcb19e'),'callback_data'=>"addTicketCategory"]];
-    $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"ticketsList"]];
-    
-    $keys =  json_encode(['inline_keyboard'=>$keys]);
-    editText($message_id,\achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),$keys);
-}
-if($data=="addTicketCategory" and ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    setUser('addTicketCategory');
-    editText($message_id,\achbotMessage('support.categories.add_ticket_category.message.f17638132c'));
-}
-if ($userInfo['step']=="addTicketCategory" and ($from_id == $admin || $userInfo['isAdmin'] == true)){
-	$stmt = $connection->prepare("INSERT INTO `setting` (`type`, `value`) VALUES ('TICKETS_CATEGORY', ?)");	
-	$stmt->bind_param("s", $text);
-	$stmt->execute();
-	$stmt->close();
-    setUser();
-    sendMessage(\achbotMessage('legacy_messages.saved_successfuly'), null, 'HTML');
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE BINARY `type` = BINARY 'TICKETS_CATEGORY'");
-    $stmt->execute();
-    $ticketCategory = $stmt->get_result();
-    $stmt->close();
-    
-    $keys = array();
-    $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('support.categories.tickets_category.button.0fc3aac224'),'callback_data'=>"wizwizch"]];
-    
-    if($ticketCategory->num_rows>0){
-        while ($row = $ticketCategory->fetch_assoc()){
-            
-            $rowId = $row['id'];
-            $ticketName = $row['value'];
-            $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.2b2966a54e'),'callback_data'=>"delTicketCat_$rowId"],['text'=>$ticketName,'callback_data'=>"wizwizch"]];
+        if ($data==='ticketsList') {
+            $keys=achbotTicketKeys([
+                [['text'=>achbotMessage('support.categories.tickets_list.button.33d6fa9470'),'callback_data'=>'openTickets'],
+                 ['text'=>achbotMessage('support.categories.tickets_list.button.732c0fd101'),'callback_data'=>'newTickets']],
+                [['text'=>achbotMessage('support.categories.tickets_list.button.c77cd22d1c'),'callback_data'=>'allTickets'],
+                 ['text'=>achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),'callback_data'=>'ticketsCategory']],
+                [['text'=>achbotMessage('legacy_buttons.back_button'),'callback_data'=>'managePanel']]]);
+            \AchBot\Telegram\Conversation\replaceTransient($actor,$cid,achbotMessage('support.categories.tickets_list.message.41905ef3f3'),$keys);
+        } else {
+            \AchBot\Telegram\Conversation\replaceTransient($actor,$cid,achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),achbotTicketCategoryKeys($db));
         }
-    }else{
-        $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.7f9f2e3157'),'callback_data'=>"wizwizch"]];
+        return true;
     }
-    $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.ee4edcb19e'),'callback_data'=>"addTicketCategory"]];
-    $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"ticketsList"]];
-    
-    $keys =  json_encode(['inline_keyboard'=>$keys]);
-    sendMessage(\achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),$keys, 'HTML');
-}
-if(preg_match("/\AdelTicketCat_([1-9][0-9]*)\z/D",$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    if (!achbotDeleteContentSetting($connection,(int)$from_id,(int)$admin,(int)$match[1],'ticket')) return;
-
-    alert(\achbotMessage('support.categories.add_ticket_category.alert.e1e7245408'));
-        
-
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE BINARY `type` = BINARY 'TICKETS_CATEGORY'");
-    $stmt->execute();
-    $ticketCategory = $stmt->get_result();
-    $stmt->close();
-    
-    $keys = array();
-    $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.59ca629220'),'callback_data'=>"wizwizch"],['text'=>\achbotMessage('support.categories.tickets_category.button.0fc3aac224'),'callback_data'=>"wizwizch"]];
-    
-    if($ticketCategory->num_rows>0){
-        while ($row = $ticketCategory->fetch_assoc()){
-            
-            $rowId = $row['id'];
-            $ticketName = $row['value'];
-            $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.2b2966a54e'),'callback_data'=>"delTicketCat_$rowId"],['text'=>$ticketName,'callback_data'=>"wizwizch"]];
+    if ($data!==null && preg_match('/^delTicketCat_([1-9][0-9]*)$/D',$data,$m)) {
+        if (!achbotDeleteContentSetting($db,$actor,(int)$GLOBALS['admin'],(int)$m[1],'ticket')) return true;
+        alert(achbotMessage('support.categories.add_ticket_category.alert.e1e7245408'));
+        \AchBot\Telegram\Conversation\replaceTransient($actor,$cid,achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),achbotTicketCategoryKeys($db));
+        return true;
+    }
+    if ($data==='addTicketCategory') {
+        if (achbotTicketBeginStep($db,$actor,$cached,'addTicketCategory',0,$cid,$update)) {
+            sendMessage(achbotMessage('support.categories.add_ticket_category.message.f17638132c'),$cancelKey,'HTML',$actor);
+            try {delMessage($cid,$actor);} catch(Throwable $ignored){}
         }
-    }else{
-        $keys[] = [['text'=>\achbotMessage('support.categories.add_ticket_category.button.fba2c6927b'),'callback_data'=>"wizwizch"]];
+        return true;
     }
-    $keys[] = [['text'=>\achbotMessage('support.categories.tickets_category.button.ee4edcb19e'),'callback_data'=>"addTicketCategory"]];
-    $keys[] = [['text'=>\achbotMessage('legacy_buttons.back_button'),'callback_data'=>"ticketsList"]];
-    
-    $keys =  json_encode(['inline_keyboard'=>$keys]);
-    editText($message_id, \achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),$keys);
+    if ($data!==null || !preg_match('/^addTicketCategory_([1-9][0-9]*)$/D',$step,$m) || $cid<=(int)$m[1]) return true;
+    $title=$source->text??null;
+    if (!is_string($title) || trim($title)==='' || mb_strlen($title,'UTF-8')>1000) {
+        sendMessage(achbotMessage('support.create_ticket.message.19602d80df'),null,'HTML',$actor);return true;
+    }
+    try {
+        if (!$db->begin_transaction()) throw new RuntimeException('ticket_category_begin');
+        $row=\AchBot\Telegram\Conversation\lockEditor($db,$actor,$cached);
+        if (!achbotAdminCanLocked($db,$actor,(int)$GLOBALS['admin'],'operations')) throw new DomainException('ticket_category_denied');
+        $s=achbotProviderStatement($db,"INSERT INTO setting(type,value) VALUES('TICKETS_CATEGORY',?)",'s',[$title]);$s->close();
+        \AchBot\Telegram\Conversation\writeEditorLocked($db,$row,'none',null);
+        if (!$db->commit()) throw new RuntimeException('ticket_category_commit');
+    } catch(Throwable $e) {
+        try {$db->rollback();}catch(Throwable $ignored){}
+        sendMessage(achbotMessage('support.action_unconfirmed'),null,'HTML',$actor);return true;
+    }
+    sendMessage(achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard,'HTML',$actor);
+    sendMessage(achbotMessage('support.categories.tickets_list.button.0e6cb76a8c'),achbotTicketCategoryKeys($db),'HTML',$actor);
+    return true;
 }

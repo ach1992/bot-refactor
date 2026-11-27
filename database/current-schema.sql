@@ -69,7 +69,9 @@ CREATE TABLE `chats` (
   `category` varchar(1000) NOT NULL,
   `state` int(11) NOT NULL,
   `rate` int(11) NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  KEY `idx_ticket_owner_queue` (`user_id`,`state`,`create_date`,`id`),
+  KEY `idx_ticket_staff_queue` (`state`,`create_date`,`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -80,7 +82,13 @@ CREATE TABLE `chats_info` (
   `sent_date` int(11) NOT NULL,
   `msg_type` varchar(50) DEFAULT NULL,
   `text` text NOT NULL,
-  PRIMARY KEY (`id`)
+  `source_chat_id` bigint(20) DEFAULT NULL,
+  `source_message_id` bigint(20) unsigned DEFAULT NULL,
+  `content_kind` varchar(8) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_ticket_message_source` (`source_chat_id`,`source_message_id`),
+  KEY `idx_ticket_history` (`chat_id`,`sent_date`,`id`),
+  CONSTRAINT `ck_ticket_message_source` CHECK (`source_chat_id` is null and `source_message_id` is null and `content_kind` is null or `source_chat_id` is not null and `source_chat_id` > 0 and `source_message_id` is not null and `source_message_id` > 0 and `content_kind` is not null and `content_kind` in ('text','photo'))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -225,9 +233,6 @@ CREATE TABLE `payment_attempts` (
   `evidence_claim_token` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `evidence_claimed_at` datetime DEFAULT NULL,
   `evidence_next_check_at` datetime DEFAULT NULL,
-  `evidence_invoice_chat_id` bigint(20) DEFAULT NULL,
-  `evidence_invoice_message_id` int(11) DEFAULT NULL,
-  `evidence_invoice_digest` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `evidence_code` longtext CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `evidence_code_sha256` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `evidence_review_sent_at` datetime DEFAULT NULL,
@@ -279,12 +284,15 @@ CREATE TABLE `payment_delivery_attempts` (
   `claim_state` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `telegram_error_code` smallint(5) unsigned DEFAULT NULL,
   `retry_after_seconds` int(10) unsigned DEFAULT NULL,
+  `ack_chat_id` bigint(20) DEFAULT NULL,
+  `ack_message_id` bigint(20) unsigned DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_delivery_attempt_no` (`intent_id`,`attempt_no`),
   UNIQUE KEY `uq_delivery_dispatch_token` (`dispatch_token`),
   KEY `idx_delivery_part_attempt` (`intent_id`,`part_no`,`attempt_no`),
   CONSTRAINT `fk_delivery_attempt_intent` FOREIGN KEY (`intent_id`) REFERENCES `payment_delivery_intents` (`id`),
-  CONSTRAINT `fk_delivery_attempt_part` FOREIGN KEY (`intent_id`, `part_no`) REFERENCES `payment_delivery_parts` (`intent_id`, `part_no`)
+  CONSTRAINT `fk_delivery_attempt_part` FOREIGN KEY (`intent_id`, `part_no`) REFERENCES `payment_delivery_parts` (`intent_id`, `part_no`),
+  CONSTRAINT `ck_delivery_attempt_ack_identity` CHECK ((`ack_chat_id` is null and `ack_message_id` is null or `result` = 'acknowledged' and `ack_chat_id` is not null and `ack_chat_id` <> 0 and `ack_message_id` is not null and `ack_message_id` > 0))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -345,15 +353,23 @@ CREATE TABLE `payment_followup_attempts` (
   `dispatch_token` char(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
   `actor_userid` bigint(20) NOT NULL DEFAULT 0,
   `claim_state` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
+  `wire_action` varchar(12) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `wire_recipient` varchar(128) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
+  `wire_message_id` bigint(20) unsigned DEFAULT NULL,
   `result` varchar(24) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'dispatching',
   `telegram_error_code` smallint(5) unsigned DEFAULT NULL,
   `retry_after_seconds` int(10) unsigned DEFAULT NULL,
+  `failure_reason` varchar(48) CHARACTER SET ascii COLLATE ascii_bin DEFAULT NULL,
+  `ack_chat_id` bigint(20) DEFAULT NULL,
+  `ack_message_id` bigint(20) unsigned DEFAULT NULL,
   `started_at` datetime(6) NOT NULL DEFAULT current_timestamp(6),
   `finished_at` datetime(6) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_followup_attempt_no` (`intent_id`,`attempt_no`),
   UNIQUE KEY `uq_followup_attempt_token` (`dispatch_token`),
-  CONSTRAINT `fk_followup_attempt_intent` FOREIGN KEY (`intent_id`) REFERENCES `payment_followup_intents` (`id`)
+  CONSTRAINT `fk_followup_attempt_intent` FOREIGN KEY (`intent_id`) REFERENCES `payment_followup_intents` (`id`),
+  CONSTRAINT `ck_followup_attempt_ack_identity` CHECK ((`ack_chat_id` is null and `ack_message_id` is null or `result` = 'acknowledged' and `ack_chat_id` is not null and `ack_chat_id` <> 0 and `ack_message_id` is not null and `ack_message_id` > 0)),
+  CONSTRAINT `ck_followup_attempt_wire` CHECK ((`wire_action` = 'send' and `wire_message_id` is null or `wire_action` in ('edit_text','edit_keys') and `wire_message_id` is not null and `wire_message_id` > 0))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
@@ -403,12 +419,16 @@ CREATE TABLE `payment_message_refs` (
   `chat_id` bigint(20) NOT NULL,
   `message_id` int(11) NOT NULL,
   `kind` varchar(8) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'text',
+  `purpose` varchar(12) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL DEFAULT 'status',
+  `last_status_update_id` bigint(20) unsigned DEFAULT NULL,
+  `last_status_requested_at` datetime(6) DEFAULT NULL,
+  `retired_reason` varchar(32) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `synced_digest` char(64) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin DEFAULT NULL,
   `created_at` datetime NOT NULL DEFAULT current_timestamp(),
   `updated_at` datetime(6) NOT NULL DEFAULT current_timestamp(6) ON UPDATE current_timestamp(6),
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_payment_message_chat` (`chat_id`,`message_id`),
-  KEY `idx_payment_message_order` (`pay_row_id`,`updated_at`),
+  KEY `idx_payment_message_order` (`pay_row_id`,`retired_reason`,`updated_at`),
   CONSTRAINT `fk_payment_message_pay` FOREIGN KEY (`pay_row_id`) REFERENCES `pays` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;

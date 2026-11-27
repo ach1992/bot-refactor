@@ -76,18 +76,14 @@ function achbotGatewayAttentionReceiptScope(): string {
             (p.state IN ('pending','send','expired','service_superseded') AND a.stage='review' AND a.provider IN ($hosted)
                 AND a.provider_status IN ('partially_paid','confirming','confirmed','sending','finished','refunded','amount_mismatch','multiple_payments','verification_unavailable'))
             OR (a.provider IN ($manual) AND (
-                (p.state IN ('have_sent','service_superseded') AND a.stage='review'
-                    AND p.message_id>0 AND p.chat_id>0)
-                OR (p.state IN ('pending','service_superseded') AND a.stage='receiving'
-                    AND (a.review_notice_claim_token IS NULL OR a.review_notice_claimed_at IS NULL
-                        OR a.review_notice_claimed_at<NOW()-INTERVAL 2 MINUTE))
+                (p.state IN ('have_sent','service_superseded') AND a.stage='review')
             ))
         ))";
 }
 function achbotGatewayAttentionScope(?mysqli $db=null): string {
     return "(".achbotGatewayAttentionReceiptScope()."
         OR EXISTS (SELECT 1 FROM payment_followup_intents f WHERE
-            f.pay_row_id=p.id AND f.service_operation_id IS NULL AND f.stage IN ('wallet_credit','manual_reject')
+            f.pay_row_id=p.id AND f.service_operation_id IS NULL AND f.stage IN ('wallet_credit','manual_reject','receipt_admitted')
             AND f.state IN ('unknown','rejected')))";
 }
 

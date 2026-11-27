@@ -8,27 +8,14 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 require_once __DIR__.'/../../messages/loader.php';
 
 /** Count only confirmed local orders linked to their original 007 effects. */
-function achbotBulkRecordedAccounts(mysqli $db,int $expected,int $owner,
-    ?int $payId=null,?string $source=null): array {
-    if ($expected<=0 || $owner<=0 || (($payId!==null)===($source!==null)))
+function achbotBulkRecordedAccounts(mysqli $db,int $expected,int $owner,string $source): array {
+    if ($expected<=0 || $owner<=0 || $source==='' || strlen($source)>200)
         throw new InvalidArgumentException('bulk_report_identity_invalid');
-    if ($payId!==null) {
-        $q=$db->prepare("SELECT e.ordinal,e.state,e.remote_username,e.order_id,
-            o.id AS linked_id,o.remark,o.userid
-            FROM service_effects e LEFT JOIN orders_list o ON o.id=e.order_id
-            WHERE e.pay_row_id=? AND e.effect_kind='create' ORDER BY e.ordinal");
-        $q->bind_param('i',$payId);
-    } else {
-        if ($source==='' || strlen($source)>200)
-            throw new InvalidArgumentException('bulk_report_source_invalid');
-        $kind='admin_bulk';
-        $q=$db->prepare("SELECT e.ordinal,e.state,e.remote_username,e.order_id,
-            e.order_id AS linked_id,e.remote_username AS remark,e.actor_userid AS userid
-            FROM service_effects e
-            WHERE e.source_kind=? AND e.source_ref=? AND e.effect_kind='create'
-            ORDER BY e.ordinal");
-        $q->bind_param('ss',$kind,$source);
-    }
+    $kind='admin_bulk';
+    $q=$db->prepare("SELECT e.ordinal,e.state,e.remote_username,e.order_id,e.actor_userid AS userid
+        FROM service_effects e
+        WHERE e.source_kind=? AND e.source_ref=? AND e.effect_kind='create' ORDER BY e.ordinal");
+    $q->bind_param('ss',$kind,$source);
     if (!$q->execute()) throw new RuntimeException('bulk_report_query_unavailable');
     $rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     $accounts=[];$seen=[];$invalid=false;
@@ -41,9 +28,7 @@ function achbotBulkRecordedAccounts(mysqli $db,int $expected,int $owner,
         $name=(string)$row['remote_username'];
         if ($name==='' || strlen($name)>256 ||
             (int)$row['order_id']<=0 ||
-            (int)$row['order_id']!==(int)$row['linked_id'] ||
-            (int)$row['userid']!==$owner ||
-            (string)$row['remark']!==$name) {
+            (int)$row['userid']!==$owner) {
             $invalid=true;continue;
         }
         $accounts[]=['ordinal'=>$ordinal,'name'=>$name,
@@ -53,12 +38,12 @@ function achbotBulkRecordedAccounts(mysqli $db,int $expected,int $owner,
     return ['requested'=>$expected,'confirmed'=>count($accounts),
         'complete'=>!$invalid && count($rows)===$expected &&
             count($accounts)===$expected,'accounts'=>$accounts,
-        'reference'=>$payId!==null?'#'.$payId:(string)$source];
+        'reference'=>$source];
 }
 
 /** Keep the existing bounded summary; partition every remaining confirmed
  * account into independently searchable, complete Telegram messages. */
-function achbotBulkReportBuild(string $base,array $proof,bool $html=false): array {
+function achbotBulkReportBuild(string $base,array $proof,bool $html=false,int $reservedBytes=0): array {
     $expected=(int)($proof['requested']??0);
     $known=(int)($proof['confirmed']??0);
     if ($expected<=0 || $known<0 || $known>$expected ||
@@ -70,7 +55,8 @@ function achbotBulkReportBuild(string $base,array $proof,bool $html=false): arra
         ['confirmed'=>$known,'requested'=>$expected]);
     if ($known>0)$head.="\n".achbotMessage('bulk_reporting.names');
     // strlen is a conservative bound for UTF-16 Telegram characters.
-    $limit=4000;
+    $limit=4000-$reservedBytes;
+    if ($limit<=0) throw new InvalidArgumentException('bulk_report_reserved_bytes');
     $body=$base.$head;$shown=0;
     $lines=[];
     foreach ($proof['accounts'] as $account) {
@@ -82,20 +68,15 @@ function achbotBulkReportBuild(string $base,array $proof,bool $html=false): arra
     }
     foreach ($lines as $line) {
         $remaining=count($lines)-$shown-1;
-        $reserve=$remaining>0?'\n'.achbotMessage('bulk_reporting.more',['count'=>$remaining]):'';
+        $reserve=$remaining>0?"\n".achbotMessage('bulk_reporting.more',['count'=>$remaining]):'';
         if (strlen($body.$line.$reserve)>$limit)break;
         $body.=$line;++$shown;
     }
     if ($known>$shown)$body.="\n".achbotMessage('bulk_reporting.more',
         ['count'=>$known-$shown]);
-    // If a legacy verbose template exhausted space, preserve the facts in
-    // the short standalone report instead of ever claiming one account.
-    if (strlen($body)>$limit || $shown===0 && $known>0) {
-        $short=achbotMessage('bulk_reporting.short_reference').' '.
-            ($html?htmlspecialchars((string)($proof['reference']??''),ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8'):
-                (string)($proof['reference']??''));
-        if ($short!==$base)return achbotBulkReportBuild($short,$proof,$html);
-    }
+    // The summary always keeps the financial facts, even if every account
+    // must be listed on continuation pages. Never silently discard them.
+    if (strlen($body)>$limit) throw new RuntimeException('bulk_report_summary_too_long');
     $pages=[];$page='';
     foreach (array_slice($lines,$shown) as $line) {
         if ($page==='' || strlen($page.$line)>$limit) {
@@ -109,7 +90,4 @@ function achbotBulkReportBuild(string $base,array $proof,bool $html=false): arra
     }
     if ($page!=='') $pages[]=$page;
     return ['summary'=>$body,'pages'=>$pages];
-}
-function achbotBulkReportAppend(string $base,array $proof,bool $html=false): string {
-    return achbotBulkReportBuild($base,$proof,$html)['summary'];
 }

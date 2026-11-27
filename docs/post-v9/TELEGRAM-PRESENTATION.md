@@ -74,6 +74,48 @@ HTTP 429, 5xx) is **never retried by this layer**: a previous send may have
 been accepted, and the existing financial delivery journal remains authoritative.
 Fallback does not mutate saved content, nor retroactively edit messages.
 
+## Message ownership
+
+The transport renderer is not authority to delete history. Preserve all
+human-authored input and retained evidence, including issued invoices,
+receipts, subscription information, support conversations and reports.
+Transient bot-owned navigation must be retired only by verified identity;
+a successful send, a successful edit, a definite missing target, and an
+unknown delivery are distinct outcomes. First-start welcome and normal
+menu share one message when within the Telegram text limit; an oversized
+configured welcome is preserved separately, without a duplicate menu.
+The approved shared refresh/link-change advice retains both auxiliary-link
+and QR instructions unconditionally.
+
+## Support conversations
+
+The support router owns category selection, private typed title/body/reply,
+staff categories, scoped queues, history/attachment access, closure and rating.
+A ticket and its first message commit together. Subsequent messages serialize
+with closure on the ticket row; a customer reply marks it awaiting staff, a
+staff reply marks it answered, and closure cannot be undone by a late reply.
+Each current inbound text/photo retains its original private chat/message ID;
+legacy history remains readable with unknown identity left NULL. Literal text
+that resembles photo JSON is not classified as media.
+
+The existing sealed operational followup journal records the private original
+audience in the same transaction as each accepted message, closure or rating.
+No public report channel receives conversation content. Current recipient
+authority and preference are checked independently at dispatch; known
+non-application may retry, unknown sends are not repeated automatically.
+Acknowledgement means accepted by Telegram, not read by the recipient.
+Long text/captions are split without discarding content; history and queue
+views share scoped rendering and deterministic bounded pages. Pagination
+reflects current queue state, not a frozen historical snapshot.
+
+Only disposable prompts may be removed best effort. Typed input must belong
+to the actor's current editor, not a callback's message text. Support
+cancel/menu navigation consumes only its matching editor and clears its draft,
+without deleting the original conversation or erasing a newer unrelated
+editor. The reply-keyboard removal and inline menu are separate Telegram
+payloads where required. A successful registration notice describes durable
+registration, never unconfirmed delivery.
+
 ## Canonical HTML ownership
 
 Use HTML templates and escape untrusted dynamic text exactly once with
@@ -155,3 +197,98 @@ transport identity, formatting, keyboard and known-rejection fallback
 without a real Telegram request. Current catalog and wire/HTML parity
 fixtures are part of [CI validation](CI-VALIDATION.md). HTML conversion and acceptance are tracked in [#209](https://github.com/ach1992/bot-refactor/issues/209).
 Any visible change or real transport activation needs separate approval.
+
+### Local conversation ownership and original user events
+
+Use `AchBot\\Telegram\\Conversation` for current private input identity, the
+actor-owned editor transition and transient screen replacement. A callback's
+message text is not new human input. Home/Cancel and migrated editors compare
+the current actor row, step and temp before consuming a draft; protected
+specialized flows retain their own mutation boundaries. A verified edit ACK
+must identify the target, or prove an identical numeric-message no-op.
+A definitely missing/uneditable transient target may be replaced once;
+old disposable prompt cleanup is best effort. Do not remove evidence or
+introduce a global history registry. Telegram reply-keyboard removal and
+inline markup are mutually exclusive; keep the necessary removal separate
+where used. Callback acknowledgements use the normal Bot API transport.
+
+For ordinary typed editors, successful completion consumes the current
+actor's editor and removes its reply keyboard in the result message.
+Validation failures keep the real pending editor and its Cancel keyboard.
+When no editor is active, Cancel clears the obsolete keyboard and returns
+Home without claiming an operation was canceled. Local settings/plan
+writes and checkout draft admission consume the editor inside the owned
+database transaction. Best-effort Telegram cleanup does not roll back
+committed work. The generic step setter also compares current ownership;
+dedicated money, evidence and Native boundaries remain authoritative.
+User-role and order agency buttons have distinct callback namespaces;
+order flags express a desired value instead of a replayable blind toggle.
+Former ambiguous toggle callbacks are not current actions.
+
+Current catalogue, trial, subscription-list and support navigation uses
+`navHome` only on disposable screens. The shared callback verifier checks
+the actual bot, private actor/chat, message ID and button before replacement;
+an unproven source receives a new Home without touching the source.
+Retained `mainMenu`, `evidenceHome` and payment navigation never overwrite
+the original record. A fresh typed exemption cancel consumes its own
+nonce and source marker without changing membership policy. A fresh typed
+Home can abandon an unsubmitted direct gift through the existing gift
+cancellation owner. No claimed financial/Native operation is canceled by
+navigation. Manual rejection commits its reason editor with the decision;
+reply keyboard cleanup is independent of the durable financial reports.
+Discount creation and typed edits use the same local editor transaction
+and one detail presenter. Concurrent creation of the same valid code is
+serialized by code; no new schema or durable queue is required.
+
+Closing a ticket or deciding an agency application consumes only the
+actor's matching current editor in the same transaction as the decision.
+If another actor already completed the target, the next matching typed
+input retires the obsolete editor without repeating the effect. A failed
+or unavailable lookup is not evidence of closure. Unrelated or newer
+editors and retained conversation/report records are not cleared.
+ReplyKeyboardRemove is sent separately from inline presentation and
+is best effort after commit.
+
+Purchase referral amount and invitation banner administration share the
+source-bound editor transaction and the existing singleton setting
+writer-lock pattern. The financial reader and editor use the same canonical
+integer amount domain, including zero to disable rewards; no new cap is
+introduced. The current actor and editor generation, exact setting row and
+write result are checked before commit. The authenticated input must also
+follow the editor-opening update, even when a delayed webhook reads a newly
+opened editor for the same source message. Telegram's documented idle update-ID
+reset does not expire a still-valid editor. The same opening-generation
+decision is enforced on the locked current actor row when Cancel, Home,
+admin-panel navigation or another editor actually abandons or replaces
+the referral editor. Fresh navigation does not depend on deleting the old
+prompt or holding settings-write permission; malformed state can be
+abandoned but cannot authorize a setting save. An editor start or advance
+must confirm its state transition before emitting the corresponding input
+prompt; retirement of an obsolete disposable message is best effort.
+Admin-panel navigation removes the persistent reply keyboard only on an
+actual confirmed editor exit, independently of the inline panel edit.
+Independent retained business effects keep their own ownership boundaries
+and do not reset an unrelated editor. Concurrent creation is serialized
+within the same database and setting type; ambiguous existing rows are not
+silently overwritten or deduplicated.
+
+
+Subscription search prefers a unique exact name and otherwise permits a
+unique literal substring within the current authorized active order scope.
+Ambiguous matches ask for refinement, not an arbitrary first result.
+A refresh is a verified Native observation, never a new purchase or
+rotation. Same-source rotation recovery must match both the verified
+Native proxy identity and subscription URL digest. Render the proven result before claiming the exact approved
+refresh/rotation success and retain both approved advice lines.
+
+First-start admission and original customer/staff/channel packets commit
+together in the existing followup journal. Ordinary Home is still available
+if staging is unavailable or another request has already claimed onboarding.
+The first-start flag means admission, not Telegram acceptance. Combined
+welcome and menu stay together unless the actual platform text limit
+requires multiple pages. Agency application controls are bound to the
+original application generation; decisions revalidate that generation and
+current authority and persist the original result notice in the same
+transaction. The existing report audience and worker are reused. Current
+recipient eligibility, classified retry and unknown-delivery handling are
+the same as for other original events. No new table or timer is needed.

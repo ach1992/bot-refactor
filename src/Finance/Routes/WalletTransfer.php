@@ -28,7 +28,7 @@ if ($data === 'transferMyWallet') {
     if ($start===null) { achbotWalletTransferRestart(); return; }
     $status=achbotWalletTransferAdvance($connection,$start,'start');
     if ($status==='ready') {
-        delMessage();
+        try {delMessage();} catch(Throwable $ignored){}
         sendMessage(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.message.60862c92c3'),$cancelKey, 'HTML');
     } elseif ($status==='insufficient') {
         alert(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.alert.e05ab0cee3'));

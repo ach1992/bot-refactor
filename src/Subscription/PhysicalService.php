@@ -248,7 +248,7 @@ function achbotPhysicalHideRetiredReceiptActions(mysqli $db,array $rows): void {
         if (!$ids) return;
         $list=implode(',',$ids);
         $userIds=implode(',',array_unique(array_values($owners)));
-        $q=$db->prepare("SELECT id,type,order_id,user_id,chat_id,message_id,
+        $q=$db->prepare("SELECT id,type,state,approved_by,order_id,user_id,chat_id,message_id,
             admins_messages FROM pays WHERE state='service_superseded'
             AND checkout_draft_context IS NOT NULL AND user_id IN ($userIds)
             AND order_id IN ($list) ORDER BY id");
@@ -260,9 +260,8 @@ function achbotPhysicalHideRetiredReceiptActions(mysqli $db,array $rows): void {
             elseif (preg_match('/^INCREASE_(?:DAY|VOLUME)_([1-9][0-9]*)_[1-9][0-9]*$/D',$type,$m))
                 $oid=(int)$m[1];
             if (!isset($owners[$oid]) || (int)$pay['user_id']!==$owners[$oid]) continue;
-            $refs=[['chat_id'=>$pay['chat_id'],'message_id'=>$pay['message_id']]];
-            $copies=json_decode((string)($pay['admins_messages']??''),true);
-            if (is_array($copies))foreach ($copies as $copy)if (is_array($copy))$refs[]=$copy;
+            require_once __DIR__.'/../Finance/ReceiptNotices.php';
+            $refs=achbotReceiptMessageTargets($db,$pay);
             foreach ($refs as $ref) {
                 $chat=(int)($ref['chat_id']??0);$message=(int)($ref['message_id']??0);
                 if ($chat<=0 || $message<=0 || $ownerAdmin<=0) continue;
@@ -280,8 +279,11 @@ function achbotPhysicalHideRetiredReceiptActions(mysqli $db,array $rows): void {
                             ['text'=>achbotMessage('automatic_gateway_review.open_case'),
                              'callback_data'=>'attentionCase_'.(int)$pay['id']]
                         ]]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
-                    $response=bot('editMessageReplyMarkup',$args);
-                    if (!is_object($response) || ($response->ok??false)!==true)
+                    $confirmed=achbotReceiptStatusEdit($db,$pay,$chat,$message,static function() use ($args): ?bool {
+                        $response=bot('editMessageReplyMarkup',$args);
+                        return \AchBot\Telegram\Response\messageDeliveryOutcome($response,(string)$args['chat_id'],(int)$args['message_id'])['result']==='acknowledged'?true:null;
+                    });
+                    if ($confirmed===null)
                         error_log('achbot_retired_receipt_keyboard_unconfirmed pay_id='.
                             (int)$pay['id'].' chat_id='.$chat.' message_id='.$message);
                 } catch(Throwable $error) {

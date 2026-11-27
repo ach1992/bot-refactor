@@ -4,6 +4,7 @@ namespace AchBot\Subscription\AccountDetails;
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/../Purchase/OrderWrites.php';
 require_once __DIR__.'/Presentation.php';
+require_once __DIR__.'/../Telegram/Response.php';
 
 
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
@@ -134,7 +135,7 @@ function orderPlanActions(\mysqli $db,array $order): array {
     }
 }
 
-function getUserOrderDetailKeys($id, $offset = 0){
+function getUserOrderDetailKeys($id, $offset = 0, ?object $provenRemote=null){
     global $botState, $botUrl;
     if (!canReadAdminOrderDetails()) return null;
     $order = findOrder($id);
@@ -148,7 +149,6 @@ function getUserOrderDetailKeys($id, $offset = 0){
 
     $remark      = $order['remark'];
     $uuid        = $order['uuid'] ?? "0";
-    $acc_link    = json_decode($order['link'], true);
     $token       = $order['token'];
     $server_id   = $order['server_id'];
     $inbound_id  = $order['inbound_id'];
@@ -169,8 +169,9 @@ function getUserOrderDetailKeys($id, $offset = 0){
     $panelUrl    = $server['panel_url'] ?? '';
     $subLinksRaw = $server['sub_links'] ?? '';
 
-    $renderRemote=achbotSupportsAccount($serverType,$inbound_id)?
-        achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null;
+    if ($provenRemote!==null && !achbotProviderRenderProofValid($provenRemote,$order,$serverType)) return null;
+    $renderRemote=$provenRemote??(achbotSupportsAccount($serverType,$inbound_id)?
+        achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null);
     $traffic     = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id,$renderRemote);
 
     $leftgb      = $traffic['leftgb'] ?? \achbotMessage('subscription.account_details.get_order_traffic_info.text.f07ac0638d');
@@ -281,7 +282,7 @@ function getUserOrderDetailKeys($id, $offset = 0){
 }
 
 
-function getOrderDetailKeys($from_id, $id, $offset = 0){
+function getOrderDetailKeys($from_id, $id, $offset = 0, ?object $provenRemote=null){
     global $botState, $botUrl, $userInfo;
     $actor=currentOrderDetailActor();
     if ($actor===null || ((int)$actor['userid']!==(int)$from_id && !canReadAdminOrderDetails())) return null;
@@ -294,7 +295,6 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
 
     $remark      = $order['remark'];
     $uuid        = $order['uuid'] ?? "0";
-    $acc_link    = json_decode($order['link'], true);
     $token       = $order['token'];
     $server_id   = $order['server_id'];
     $inbound_id  = $order['inbound_id'];
@@ -316,8 +316,9 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
     $panelUrl    = $server['panel_url'] ?? '';
     $subLinksRaw = $server['sub_links'] ?? '';
 
-    $renderRemote=achbotSupportsAccount($serverType,$inbound_id)?
-        achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null;
+    if ($provenRemote!==null && !achbotProviderRenderProofValid($provenRemote,$order,$serverType)) return null;
+    $renderRemote=$provenRemote??(achbotSupportsAccount($serverType,$inbound_id)?
+        achbotProviderRenderPacket($GLOBALS['connection'],(int)$server_id,(string)$remark):null);
     $traffic = getOrderTrafficInfo($serverType, $server_id, $remark, $uuid, $inbound_id,$renderRemote);
 
     $found      = $traffic['found'] ?? false;
@@ -481,15 +482,36 @@ function getOrderDetailKeys($from_id, $id, $offset = 0){
 }
 
 
-/** The complete order message may contain protected links longer than one part. */
+/** A requested detail view is not a new financial or Native operation.
+ * Replace a definitively unavailable edit target once; preserve the old
+ * record, and never repeat an ambiguous send or edit as a new send. */
 function showMessage(array $payload, ?int $messageId = null): bool {
     $parts=\AchBot\Subscription\Presentation\messageParts($payload['msg']);
+    $recipient=(int)($GLOBALS['from_id']??0);
+    if ($recipient<=0) return false;
     $confirmed=true;
     foreach ($parts as $index=>$part) {
         $keys=$index===count($parts)-1?$payload['keyboard']:json_encode(['inline_keyboard'=>[]]);
-        $response=$index===0 && $messageId!==null
-            ? \editText($messageId,$part,$keys,'HTML') : \sendMessage($part,$keys,'HTML');
-        if (!is_object($response) || ($response->ok??false)!==true) $confirmed=false;
+        $target=$index===0?$messageId:null;
+        try {
+            $response=$target!==null
+                ? \editText($target,$part,$keys,'HTML',$recipient)
+                : \sendMessage($part,$keys,'HTML',$recipient);
+            if ($target!==null && \AchBot\Telegram\Response\editTargetFailure($response)!==null) {
+                $target=null;
+                $response=\sendMessage($part,$keys,'HTML',$recipient);
+            }
+            $result=\AchBot\Telegram\Response\messageDeliveryOutcome($response,(string)$recipient,$target);
+            if ($result['result']!=='acknowledged') {
+                $confirmed=false;
+                error_log('achbot_subscription_view_unconfirmed part='.($index+1).
+                    ' result='.$result['result']);
+            }
+        } catch (\Throwable $error) {
+            $confirmed=false;
+            error_log('achbot_subscription_view_unconfirmed part='.($index+1).
+                ' class='.get_class($error));
+        }
     }
     return $confirmed;
 }

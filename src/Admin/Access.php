@@ -57,17 +57,15 @@ function achbotAdminCan(string $capability,?int $actor=null): bool {
 function achbotAdminCanLocked(mysqli $db,int $actor,int $primary,string $capability): bool {
     return achbotAdminLevelCan(achbotAdminLevel($actor,$db,$primary,true),$capability);
 }
-/** Same persisted membership as the administrator list, using a current read.
- * A conflicting older RR snapshot fails closed and may defer copies until the
- * next ordinary delivery. Shared current reads do not conflict with another
- * notifier. NOWAIT prevents writers from stalling financial error handling.
- * Callers can observe deferred discovery;
- * no caller transaction, financial lock or isolation mode is changed. */
-function achbotAdminRecipientCandidates(mysqli $db,int $primary,?bool &$complete=null): array {
+/** Immediate delivery uses a nonblocking current read. Durable intent
+ * staging uses the committed snapshot: an unrelated writer cannot make an
+ * intended recipient disappear. Dispatch always checks current authority. */
+function achbotAdminRecipientCandidates(mysqli $db,int $primary,?bool &$complete=null,bool $snapshot=false): array {
     $complete=false;
     if ($primary<=0) return [];
     try {
-        $q=$db->prepare('SELECT userid FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id LOCK IN SHARE MODE NOWAIT');
+        $lock=$snapshot?'':' LOCK IN SHARE MODE NOWAIT';
+        $q=$db->prepare('SELECT userid FROM users WHERE isAdmin=1 AND userid<>? ORDER BY id'.$lock);
         $q->bind_param('i',$primary);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
         $complete=true;
         return array_values(array_unique(array_column($rows,'userid'),SORT_STRING));
@@ -111,30 +109,39 @@ function achbotAdminSetNotify(mysqli $db,int $owner,int $primary,int $target,boo
         return false;
     }
 }
-/** Previously delivered receipt keyboards stay current for genuine staff;
- * the notification preference only filters new copies. */
-function achbotAdminStoredRecipientAllowed(mysqli $db,$recipient,int $primary,bool $notificationRead=false,?bool &$complete=null): bool {
+/** Normalize a recipient once and read the same role policy for stored
+ * receipts, immediate delivery, and the durable audience snapshot. */
+function achbotAdminRecipientLevel(mysqli $db,$recipient,int $primary,bool $notificationRead=false,?bool &$complete=null,bool $snapshot=false): string {
     $complete=true;
     if (is_int($recipient)) $actor=$recipient;
     elseif (is_string($recipient) && preg_match('/^[1-9][0-9]*$/D',$recipient))
         $actor=filter_var($recipient,FILTER_VALIDATE_INT,['options'=>['min_range'=>1]]);
-    else return false;
-    return is_int($actor) && $actor>0 &&
-        in_array(achbotAdminLevel($actor,$db,$primary,true,$notificationRead,$complete),['owner','manager','operator','support'],true);
+    else return 'none';
+    return is_int($actor) && $actor>0
+        ?achbotAdminLevel($actor,$db,$primary,!$snapshot,$notificationRead,$complete):'none';
 }
-/** New copies require both genuine current staff and an enabled preference.
- * An unreadable current record is deferred, unlike a definitive exclusion. */
+/** Previously delivered receipt keyboards stay current for genuine staff;
+ * the notification preference only filters new copies. */
+function achbotAdminStoredRecipientAllowed(mysqli $db,$recipient,int $primary,bool $notificationRead=false,?bool &$complete=null): bool {
+    return in_array(achbotAdminRecipientLevel($db,$recipient,$primary,$notificationRead,$complete),
+        ['owner','manager','operator','support'],true);
+}
+/** New copies require both genuine current staff and an enabled preference. */
 function achbotAdminRecipientAllowed(mysqli $db,$recipient,int $primary,?bool &$complete=null): bool {
-    return achbotAdminStoredRecipientAllowed($db,$recipient,$primary,true,$complete) &&
-        achbotAdminNotifyEnabled($db,(int)$recipient,$primary,true,true,$complete);
+    return achbotAdminNotificationAllowed($db,$recipient,$primary,'manual_review',$complete);
 }
-/** Unsolicited delivery policy; it never grants the recipient action rights. */
-function achbotAdminNotificationAllowed(mysqli $db,$recipient,int $primary,string $event='general',?bool &$complete=null): bool {
+/** Unsolicited delivery policy; it never grants the recipient action rights.
+ * Snapshot mode is only for recording intended recipients, not sending. */
+function achbotAdminNotificationAllowed(mysqli $db,$recipient,int $primary,string $event='general',?bool &$complete=null,bool $snapshot=false): bool {
     $complete=true;
-    if (!in_array($event,['general','manual_review'],true) ||
-        !achbotAdminRecipientAllowed($db,$recipient,$primary,$complete)) return false;
-    return $event==='manual_review' ||
-        in_array(achbotAdminLevel((int)$recipient,$db,$primary,true,true,$complete),['owner','manager'],true);
+    $levels=match($event) {
+        'general'=>['owner','manager'],
+        'manual_review'=>['owner','manager','operator','support'],
+        default=>[],
+    };
+    if (!$levels || !in_array(achbotAdminRecipientLevel($db,$recipient,$primary,true,$complete,$snapshot),$levels,true))
+        return false;
+    return achbotAdminNotifyEnabled($db,(int)$recipient,$primary,!$snapshot,true,$complete);
 }
 function achbotAdminButtonCapability(string $key): string {
     return match($key) {
@@ -149,7 +156,7 @@ function achbotAdminButtonCapability(string $key): string {
 /** Existing callback/state families, grouped by the same visible admin tasks.
  * A null result is a customer action and keeps its own current authorization. */
 function achbotAdminRequestCapability(string $value): ?string {
-    if ($value==='' || in_array($value,['none','mainMenu','evidenceHome','wizwizch'],true)) return null;
+    if ($value==='' || in_array($value,['none','mainMenu','navHome','evidenceHome','wizwizch'],true)) return null;
     $groups=[
         'admin'=>'~^managePanel$~D',
         'admins'=>'~^(?:adminsList|addNewAdmin|delAdmin|adminRole\\||adminAssign\\||adminNotify\\|)~D',
@@ -158,13 +165,13 @@ function achbotAdminRequestCapability(string $value): ?string {
         'gateways'=>'~^(?:gateWays_Channels|changeGateWays|changePaymentKeys|achbotPaymentKey\\||cycleGatewayAudience_|paymentPolicy|editPaymentPolicy_)~D',
         'bot_settings'=>'~^(?:botSettings|changeBot|changeConfigRemarkType|editSupportID|editRewardChannel|editLockChannel|inviteSetting|inviteBanner|editInvite|editRewaredTime|addExemptUser|removeExempt|achbotExempt:|ic\\||achbotInstance:)~D',
         'stats'=>'~^(?:botReports|show_stats_menu|stats_|top_50_|agent_users_list|plan_sales|server_sales|custom_sales_date|awaitingDateRange)~D',
-        'servers'=>'~^(?:serversSetting|nextServerPage|showServerSettings|toggleServerState|setServerState|addManagedServer|managePanelGroups|addPanelGroup|newPanelGroup|deletePanelGroup_|editPanelGroup|setServerPanelGroup_|changesServer|editServer|wizwizdeleteserver|yesDeleteServer|cancelDeleteServer|editSubLinks|subLinksInput|serverDisplay|achbotDisplay\\||achbotManage\\||achbotField\\||am\\||addServer|pg:|pgRotate|pgServerGroups)~D',
+        'servers'=>'~^(?:serversSetting|nextServerPage|showServerSettings|toggleServerState|setServerState|addManagedServer|managePanelGroups|addPanelGroup|newPanelGroup|deletePanelGroup_|editPanelGroup|setServerPanelGroup_|changesServer|editServer|wizwizdeleteserver|yesDeleteServer|cancelDeleteServer|editSubLinks|subLinksInput|serverDisplay|achbotDisplay\\||achbotManage\\||achbotField\\||am\\||addServer|pg:|pgRotateServerKey)~D',
         'plans'=>'~^(?:backplan|planDetails|plansList|togglePlanState|setPlanSale|confirmDeletePlan|cancelDeletePlan|newPlanForServer|addManagedPlan|planDays|planVolume|pgPlanGroups|categoriesSetting|nextCategoryPage|addNewCategory|wizwizcategory|wizwizplan|editCustom|volumePlanSettings|dayPlanSettings|addNewDayPlan|addNewVolumePlan|deleteDayPlan|deleteVolumePlan|changeDayPlan|changeVolumePlan|addon)~D',
-        'agents'=>'~^(?:agentsList|nextAgentList|agentDetails|removeAgent|toggleAgent_|agentPercentDetails|editAgentDiscount|nextAgentDiscount|addDiscountServerAgent|addDiscountPlanAgent|removePercentOfAgent|agencyApprove|agencyDecline|rejectedAgentList|releaseRejectedAgent)~D',
+        'agents'=>'~^(?:agentsList|nextAgentList|agentDetails|removeAgent|toggleUserAgent_|toggleOrderAgent_|agentPercentDetails|editAgentDiscount|nextAgentDiscount|addDiscountServerAgent|addDiscountPlanAgent|removePercentOfAgent|agencyApprove|agencyDecline|rejectedAgentList|releaseRejectedAgent)~D',
         'customers'=>'~^(?:userReports|userInfoDetails|quickUserDetails)~D',
         'moderation'=>'~^(?:banUser|unbanUser|toggleBan_)~D',
         'orders'=>'~^(?:switchLocation|switchServer|manageorderdatabase|showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|quickUserOrderDetails_|userOrderDetails|searchUsersConfig|adminToggleAutoRenew|awaitingOrderRemarkOnly|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)~D',
-        'payments'=>'~^(?:attentionReceipt_|attentionDelivery|attentionService|attentionReport|accept[A-Za-z0-9_-]|accCustom|approveRenewAcc|approveIncreaseDay|approveIncreaseVolume|approvePayment|declineAction|apiReview_|apiEvidenceResume_|gatewayReview_[ARV]_)~D',
+        'payments'=>'~^(?:attentionReceipt_|attentionDelivery|attentionService|attentionReport|pa_|declineAction|apiEvidenceResume_|gatewayReview_[ARV]_)~D',
         'operations'=>'~^(?:managePanel|messageToSpeceficUser|sendMessageToUser|increaseUserWallet|decreaseUserWallet|achbotWalletAdmin|increaseWalletUser|decreaseWalletUser|achbotWalletReason:|achbotWalletDebt:|walletDebt|addSubscriptionToCustomer|createMultipleAccounts|createAcc|awaiting_userid_input|giftVolumeAndDay|giftTo|giftServer|achbotDirectGift|mainMenuButtons|delMainButton|addNewMainButton|setMainButtonAnswer|discount_codes|addDiscount|editDiscount|delDiscount|editD|setDiscount|removeDiscountUser|toggleDiscount|copyHash|message2All|broadcast|editBroadcastAsk_|chooseSendGroup_|cancelBroadcast|noDontSend2all|yesSend2All|pinManageAll|pinManageSelect_|jobCancel_|jobCreate_|jobsStatus|s2a_|bc_edit_|ticketsList|ticketsCategory|addTicketCategory|delTicketCat_|allTickets|newTickets|openTickets|reply_|answer_|pgResetAccount)~D',
     ];
     foreach ($groups as $capability=>$pattern) if (preg_match($pattern,$value)) return $capability;
@@ -173,9 +180,12 @@ function achbotAdminRequestCapability(string $value): ?string {
 function achbotAdminRequestAllowed(?string $callback,?string $text,string $step): bool {
     // Home/cancel always allows leaving a stale staff editor after demotion.
     // Callback message text is not fresh typed input and cannot provide escape.
-    if (in_array($callback,['mainMenu','evidenceHome'],true) ||
+    if (in_array($callback,['mainMenu','navHome','evidenceHome'],true) ||
+        preg_match('/^ph_[A-Za-z0-9_-]{1,50}$/D',(string)$callback) ||
         (($callback??'')==='' && $text!==null &&
-         (preg_match('~^/[Ss]tart(?:\\s|$)~D',$text) ||
+         (preg_match('~^/[Ss]tart(?:@[A-Za-z0-9_]{1,32})?(?:\\s|$)~D',$text) ||
+          in_array($text,['/buy','/mysubs'],true) ||
+          $text===achbotMessage('legacy_buttons.back_to_main') ||
           $text===achbotMessage('legacy_buttons.cancel')))) return true;
     foreach (array_unique([(string)$callback,$step]) as $value) {
         $capability=achbotAdminRequestCapability($value);

@@ -60,6 +60,14 @@ function achbotOperationalReportValidateLocked(mysqli $db,array $r): ?array {
     $event=null;
     $packet=achbotFollowupDecodePacket(null,$r,(string)$r['pay_fingerprint'],$event);
     if ($packet===null || $event===null) return null;
+    if (isset($event['user_row_id'])) {
+        require_once __DIR__.'/../Telegram/UserEvents.php';
+        return achbotUserEventValidateLocked($db,$r,$event,$packet);
+    }
+    if (isset($event['ticket_id'])) {
+        require_once __DIR__.'/../Support/Notices.php';
+        return achbotTicketNoticeValidate($db,$r,$event,$packet);
+    }
     $allowed=$r['stage']==='operational_customer_notice'
         ?achbotOperationalGiftCustomerAllowedLocked($db,$r,$event)
         :achbotFollowupAdminReportAllowed($db,$r,$event['actor'],$event['capability']);
@@ -72,15 +80,16 @@ function achbotOperationalReportLock(mysqli $db,string $reference): string {
 /** A successful effect does not depend on immediate Telegram delivery.
  * Pending/rejected/unknown have exactly the same worker and attempt rules
  * as money reports. Never retry a service operation from here. */
-function achbotOperationalReportDispatch(mysqli $db,string $reference): bool {
+function achbotOperationalReportDispatch(mysqli $db,string $reference,?float $budgetSeconds=null): bool {
     try {
         achbotPaymentEvidenceRequireAutocommit($db);
         $s=achbotProviderStatement($db,"SELECT id,state FROM payment_followup_intents
             WHERE operational_ref=? ORDER BY id",'s',[$reference]);
         $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
         if (!$rows) return false;
-        $complete=true;
+        $complete=true;$deadline=$budgetSeconds===null?INF:hrtime(true)/1000000000+$budgetSeconds;
         foreach ($rows as $r) {
+            if (hrtime(true)/1000000000>=$deadline) return false;
             $status=$r['state']==='pending'?achbotFollowupDispatchOne($db,(int)$r['id']):$r['state'];
             if (!in_array($status,['acknowledged','skipped'],true)) $complete=false;
         }

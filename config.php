@@ -69,7 +69,7 @@ function sendDocument($filePath, $caption = "", $ci = null){
 
 function answerCallbackQuery($callbackId, $text = "", $show_alert = false) {
     require_once __DIR__ . '/src/Telegram/Messages.php';
-    return \AchBot\Telegram\Messages\answerCallbackQuery('file_get_contents', $GLOBALS['botUrl'], $callbackId, $text, $show_alert);
+    return \AchBot\Telegram\Messages\answerCallbackQuery('bot', $callbackId, $text, $show_alert);
 }
 
 function editKeys($keys = null, $msgId = null, $ci = null){
@@ -84,14 +84,13 @@ function editText($msgId, $txt, $key = null, $parse = 'HTML', $ci = null) {
 }
 
 function delMessage($msg = null, $chat_id = null){
-    global $from_id, $message_id, $update, $admin, $userInfo;
-    // AChBot keeps administrator-authored input in the conversation. A callback
-    // refers to a bot message; its normal menu cleanup is a different target.
+    global $from_id, $message_id, $update;
+    // Preserve human-authored input, including customer messages and receipts.
+    // An explicitly identified bot message is a different target.
     $incoming=$update->message??null;
     if (is_object($incoming) && empty($incoming->from->is_bot) &&
         isset($incoming->from->id,$incoming->chat->id,$incoming->message_id) &&
         (string)$incoming->from->id===(string)$from_id &&
-        (($admin!==null && $from_id==$admin) || !empty($userInfo['isAdmin'])) &&
         (string)($chat_id??$from_id)===(string)$incoming->chat->id &&
         (string)($msg??$message_id)===(string)$incoming->message_id) return null;
     require_once __DIR__ . '/src/Telegram/Messages.php';
@@ -433,7 +432,7 @@ function achbotMutateBotStates(callable $mutate, ?callable $beforeStateLock = nu
         }
     }
 }
-function setSettings($field, $value): bool {
+function setSettings($field, $value, ?array $editor=null): bool {
     // The persistence boundary is explicit, not a denylist of retired methods.
     // A future accidental writer cannot resurrect unsupported BOT_STATES flags.
     static $editable = [
@@ -461,6 +460,12 @@ function setSettings($field, $value): bool {
     return achbotMutateBotStates(static function(array $state) use($field,$value): array {
         $state[$field]=$value;
         return $state;
+    },$editor===null?null:static function(mysqli $db) use($editor): void {
+        $actor=(int)$editor['userid'];
+        $row=\AchBot\Telegram\Conversation\lockEditor($db,$actor,$editor);
+        if (!achbotAdminCanLocked($db,$actor,(int)$GLOBALS['admin'],achbotAdminRequestCapability($row['step'])??'bot_settings'))
+            throw new RuntimeException('settings_editor_role_revoked');
+        \AchBot\Telegram\Conversation\writeEditorLocked($db,$row,'none',null);
     });
 }
 /**
@@ -521,12 +526,12 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
             return (int)$rows[0]['id'];
         };
         $pk=$findActor($connection,$actor);
-        $currentStep=null;
+        $currentStep=null;$currentEditor=null;
         $authorize=static function(mysqli $db) use(
-            $actor,$primary,$pk,$findActor,$key,&$currentStep
+            $actor,$primary,$pk,$findActor,$key,&$currentStep,&$currentEditor
         ): void {
             // FIRST read in the transaction: lock CURRENT actor privileges.
-            $stmt=$db->prepare('SELECT id,userid,isAdmin,step FROM users WHERE id=? FOR UPDATE');
+            $stmt=$db->prepare('SELECT id,userid,isAdmin,step,temp FROM users WHERE id=? FOR UPDATE');
             if (!$stmt) throw new RuntimeException('gateway_actor_lock_prepare');
             $stmt->bind_param('i',$pk);
             $ok=$stmt->execute();
@@ -541,10 +546,10 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
             if (!achbotAdminCanLocked($db,$actor,$primary,
                 str_starts_with($key,'gr|')?'gateway_rules':'gateways'))
                 throw new RuntimeException('gateway_actor_no_longer_authorized');
-            $currentStep=(string)$current['step'];
+            $currentStep=(string)$current['step'];$currentEditor=$current;
         };
         $apply=static function(array $state) use(
-            $connection,$kind,$key,$sourceId,$actor,$message,$value,$pk,&$currentStep
+            $connection,$kind,$key,$sourceId,$actor,$message,$value,$pk,&$currentStep,&$currentEditor
         ): array {
             // GET_LOCK in achbotMutateBotStates serializes all in-app writers.
             // setting.type is historically nonunique: refuse ambiguous rows.
@@ -598,6 +603,8 @@ function achbotAdminGatewayChange($update,int $actor,int $chat,int $message,
                     $currentStep??'',$sourceId,$newStep);
             }
             if ($newStep!==null) {
+                if (!\AchBot\Telegram\Conversation\editorAcceptsSequence($currentEditor,$sourceId,time()))
+                    throw new RuntimeException('gateway_rule_step_stale');
                 $stepStmt=$connection->prepare('UPDATE users SET step=? WHERE id=? AND step=?');
                 if (!$stepStmt) throw new RuntimeException('gateway_rule_step_prepare');
                 $stepStmt->bind_param('sis',$newStep,$pk,$currentStep);
@@ -1762,12 +1769,12 @@ if (!function_exists('parseStatsDateRange')) {
 }
 
 
-function calculateSalesBetweenDates($startDate, $endDate) {
+function calculateSalesBetweenDates($startDate, $endDate,?array $editor=null): bool {
     global $connection, $cancelKey, $removeKeyboard;
 
     if (empty($startDate) || empty($endDate)) {
         sendMessage(\achbotMessage('admin_settings.config.calculate_sales_between_dates.message.91315a4cbe'), $cancelKey, "HTML");
-        return;
+        return false;
     }
 
     $startTimestamp = strtotime($startDate . ' 00:00:00');
@@ -1775,7 +1782,7 @@ function calculateSalesBetweenDates($startDate, $endDate) {
 
     if ($startTimestamp === false || $endTimestamp === false) {
         sendMessage(\achbotMessage('admin_settings.config.calculate_sales_between_dates.message.1e138ee7c6'), $cancelKey, "HTML");
-        return;
+        return false;
     }
 
     require_once __DIR__.'/src/Finance/ServiceHistory.php';
@@ -1788,22 +1795,19 @@ function calculateSalesBetweenDates($startDate, $endDate) {
     } catch (Throwable $e) {
         sendMessage(\achbotMessage('admin_settings.config.calculate_sales_between_dates.message.85858f5676'), $cancelKey, "HTML");
         error_log('achbot_sales_range_deferred class='.get_class($e));
-        return;
+        return false;
     }
 
+    if ($editor!==null && !\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$editor['userid'],$editor)) return false;
     sendMessage(
         \achbotMessage('admin_settings.config.calculate_sales_between_dates.message.020a3bcea9') . date("Y-m-d", $startTimestamp) . \achbotMessage('admin_settings.config.calculate_sales_between_dates.message.bd8ed16d1e') . date("Y-m-d", $endTimestamp) . \achbotMessage('admin_settings.config.calculate_sales_between_dates.message.28ec14e2c0') . number_format($totalSales) . \achbotMessage('admin_settings.config.calculate_sales_between_dates.text.9944ee4dd6') .
         \achbotMessage('admin_settings.config.calculate_sales_between_dates.text.dd92eb2ae0') . number_format($totalPayments) . "</b>",
         $removeKeyboard,
         "HTML"
     );
+    return true;
 }
 
-// در صورتی که دکمه لغو (Cancel) فشرده شد
-if ($data == 'cancel_operation') {
-    setUser("none", "step");
-    sendMessage(\achbotMessage('admin_settings.config.calculate_sales_between_dates.message.0108e71350'), $removeKeyboard, "HTML");
-}
 // انتهای بخش آمار ربات
 
 function achbotAdminRoleKeys(int $target): string {
@@ -2040,7 +2044,7 @@ function getUserInfoKeys($userId) {
                     ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.88bf6cf5c6'), 'callback_data' => "wizwizch"]
                 ],
                 [
-                    ['text' => $agentStatus, 'callback_data' => $canManageAgents ? "toggleAgent_{$userId}" : "wizwizch"],
+                    ['text' => $agentStatus, 'callback_data' => $canManageAgents ? "toggleUserAgent_{$userId}" : "wizwizch"],
                     ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.agent_label'), 'callback_data' => "wizwizch"]
                 ],
                 ...($canManageAgents ? [[
@@ -2104,12 +2108,14 @@ function getOrderCountInRange($connection, $userId, $fromDate) {
  * nonunique users.userid and setting.type (no schema migration).
  */
 function achbotHandleChannelExemption($data, $text, $cached): bool {
-    global $connection, $admin, $from_id, $chat_id, $message_id, $update, $removeKeyboard;
+    global $connection, $admin, $from_id, $chat_id, $message_id, $update, $removeKeyboard, $cancelKey;
     $start=($data==='addExemptUser');
     $step=is_array($cached)?(string)($cached['step']??''):'';
     $continuing=str_starts_with($step,'achbotExempt:');
     if (!$start && !$continuing) return false;
     $begun=false;
+    $cancel=$continuing && !$start && ($text===achbotMessage('legacy_buttons.cancel') ||
+        (!isset($update->callback_query) && \AchBot\Telegram\Conversation\homeRequested($update,(int)$from_id)));
     try {
         if (!function_exists('achbotWebhookIngressAuthenticated') ||
             !achbotWebhookIngressAuthenticated() ||
@@ -2126,10 +2132,10 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
                 'addExemptUser','callback');
             $targetId=null;
         } else {
-            if (!is_string($text) ||
-                preg_match('/\A[1-9][0-9]{0,18}\z/D',$text)!==1)
+            if (!$cancel && (!is_string($text) ||
+                preg_match('/\A[1-9][0-9]{0,18}\z/D',$text)!==1))
                 throw new RuntimeException('exempt_target_invalid');
-            $targetId=filter_var($text,FILTER_VALIDATE_INT,
+            $targetId=$cancel?null:filter_var($text,FILTER_VALIDATE_INT,
                 ['options'=>['min_range'=>1,'max_range'=>PHP_INT_MAX]]);
             if ($targetId===false)
                 throw new RuntimeException('exempt_target_overflow');
@@ -2177,14 +2183,14 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
         if (!$ok || !$owner || (int)$owner['userid']!==(int)$admin)
             throw new RuntimeException('exempt_owner_lock_failed');
 
-        $stmt=$connection->prepare('SELECT id,userid,isAdmin,step FROM users WHERE id=? FOR UPDATE');
+        $stmt=$connection->prepare('SELECT id,userid,isAdmin,step,temp FROM users WHERE id=? FOR UPDATE');
         if (!$stmt) throw new RuntimeException('exempt_actor_lock_prepare');
         $stmt->bind_param('i',$actorPk);
         $ok=$stmt->execute();
         $current=$ok?$stmt->get_result()->fetch_assoc():null;
         $stmt->close();
         if (!$ok || !$current || (int)$current['userid']!==$actor ||
-            ($actor!==(int)$admin && (int)$current['isAdmin']!==1))
+            (!$cancel && ($actor!==(int)$admin && (int)$current['isAdmin']!==1)))
             throw new RuntimeException('exempt_admin_revoked');
         // Reject duplicated userids even when they were introduced between
         // pretransaction discovery and acquisition of the owner PK lock.
@@ -2202,6 +2208,8 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
             throw new RuntimeException('exempt_state_protected');
         if (!$start && $nowStep!==$step)
             throw new RuntimeException('exempt_cached_step_stale');
+        if ($start && !\AchBot\Telegram\Conversation\editorAcceptsSequence($current,$source['update_id'],time()))
+            throw new RuntimeException('exempt_old_callback');
         if ($start && str_starts_with($nowStep,'achbotExempt:')) {
             if (preg_match('/\AachbotExempt:([1-9][0-9]*):/D',$nowStep,$m)!==1 ||
                 $source['update_id']<=(int)$m[1])
@@ -2233,7 +2241,7 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
         $newStep=$start?
             'achbotExempt:'.$source['update_id'].':'.$source['message_id'].':'.bin2hex(random_bytes(16)):
             'none';
-        if (!$start) {
+        if (!$start && !$cancel) {
             // Load the nonunique global policy only AFTER the owner PK lock.
             // All current exemption writers must take this same lock first.
             $type='EXEMPTED_USERS';
@@ -2278,7 +2286,7 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
             }
         }
 
-        $stmt=$connection->prepare('UPDATE users SET step=? WHERE id=? AND userid=? AND step=?');
+        $stmt=$connection->prepare('UPDATE users SET step=?,temp=NULL WHERE id=? AND userid=? AND step=?');
         if (!$stmt) throw new RuntimeException('exempt_step_cas_prepare');
         $stmt->bind_param('siis',$newStep,$actorPk,$actor,$nowStep);
         $ok=$stmt->execute();$affected=$stmt->affected_rows;$stmt->close();
@@ -2315,7 +2323,10 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
         return true;
     }
     if ($start) {
-        sendMessage(\achbotMessage('admin_settings.config.handle_channel_exemption.message.f4395ba7cb'),$removeKeyboard, 'HTML');
+        sendMessage(\achbotMessage('admin_settings.config.handle_channel_exemption.message.f4395ba7cb'),$cancelKey, 'HTML');
+    } elseif ($cancel) {
+        \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.operation_canceled'),(int)$from_id);
+        sendMessage(achbotCurrentMessage('start_message'),getMainKeys(),'HTML');
     } elseif ($already) {
         sendMessage(\achbotMessage('admin_settings.config.handle_channel_exemption.message.cca4b2908c'),$removeKeyboard,"HTML");
     } else {
@@ -2327,13 +2338,13 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
 function handleToggleCallbacks($data, $chat_id, $message_id): bool {
     global $connection, $admin, $from_id, $update, $callbackId;
     if (!is_string($data) ||
-        !preg_match('/\Atoggle(?:Ban|Agent)_/D',$data))
+        !preg_match('/\Atoggle(?:Ban|UserAgent)_/D',$data))
         return false;
 
     $inTransaction=false;
     try {
         if (strlen($data)>55 ||
-            preg_match('/\Atoggle(Ban|Agent)_([1-9][0-9]*)\z/D',$data,$m)!==1 ||
+            preg_match('/\Atoggle(Ban|UserAgent)_([1-9][0-9]*)\z/D',$data,$m)!==1 ||
             !function_exists('achbotWebhookIngressAuthenticated') ||
             !achbotWebhookIngressAuthenticated())
             throw new RuntimeException('moderation_source_invalid');
@@ -2449,6 +2460,8 @@ function handleToggleCallbacks($data, $chat_id, $message_id): bool {
                 throw new RuntimeException('moderation_stale_source_or_corrupt_journal');
         }
 
+        if (!achbotAdminCanLocked($connection,$actorId,(int)$admin,$m[1]==='Ban'?'moderation':'agents'))
+            throw new RuntimeException('moderation_role_revoked');
         if ($m[1]==='Ban') {
             $before=(string)$targetRow['step'];
             $next=$before==='banned'?'none':'banned';
@@ -2678,7 +2691,7 @@ function achbotLegacyModerationTransition(
         if (!$db->begin_transaction())
             throw new RuntimeException('legacy_moderation_begin_failed');
         $started=true;
-        $stmt=$db->prepare('SELECT id,userid,isAdmin,step FROM users
+        $stmt=$db->prepare('SELECT id,userid,isAdmin,step,temp FROM users
             WHERE id IN (?,?) ORDER BY id FOR UPDATE');
         if (!$stmt) throw new RuntimeException('legacy_moderation_lock_prepare');
         $stmt->bind_param('ii',$actorPk,$targetPk);
@@ -2704,6 +2717,8 @@ function achbotLegacyModerationTransition(
         }
         $actorStep=(string)$actorRow['step'];
         if ($start) {
+            if (!\AchBot\Telegram\Conversation\editorAcceptsSequence($actorRow,$updateId,time()))
+                throw new RuntimeException('legacy_moderation_start_stale');
             if ($actorStep==='banned' ||
                 str_starts_with($actorStep,'achbotDirectGift') ||
                 str_starts_with($actorStep,'achbotExempt:'))
@@ -2994,9 +3009,13 @@ function generateUID(){
     return sprintf('%08s-%04s-%04x-%04x-%012s', $time_low, $time_mid, $time_hi_and_version, $clock_seq_hi_and_reserved, $node);
 }
 function setUser($value = 'none', $field = 'step'){
-    global $connection, $from_id, $username, $first_name;
+    global $connection, $from_id, $username, $first_name, $userInfo, $update;
 
     if ($field === 'wallet') throw new LogicException('wallet_requires_monetary_command');
+    if ($field === 'step') {
+        require_once __DIR__.'/src/Telegram/Conversation.php';
+        return \AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo??[],(string)$value,update:$update??null)!==null;
+    }
 
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
     $stmt->bind_param("i", $from_id);
@@ -3021,7 +3040,6 @@ function setUser($value = 'none', $field = 'step'){
     // ownership of an active direct-gift generation. Only the dedicated
     // authorized unban endpoints may consume 'banned'.
     // Other legacy routes use cached userInfo and must not overwrite it.
-    elseif($field == "step") $stmt = $connection->prepare("UPDATE `users` SET `step` = ? WHERE `userid` = ? AND `step` <> 'banned' AND `step` NOT LIKE 'achbotDirectGift%' AND `step` NOT LIKE 'achbotExempt:%'");
     elseif($field == "freetrial") $stmt = $connection->prepare("UPDATE `users` SET `freetrial` = ? WHERE `userid` = ?");
     elseif($field == "isAdmin") $stmt = $connection->prepare("UPDATE `users` SET `isAdmin` = ? WHERE `userid` = ?");
     elseif($field == "first_start") $stmt = $connection->prepare("UPDATE `users` SET `first_start` = ? WHERE `userid` = ?");
@@ -3134,62 +3152,5 @@ function achbotNotifyAdmins($method, array $data, array $options = []): array {
     }
     return $results;
 }
-
-function sendToAllAdmins($method, $data, $pay_hash_id = null, $options = []){
-    global $admin, $connection;
-
-    $adminMessages = [];
-    $event=$options['event']??'general';
-    if (!in_array($event,['general','manual_review'],true)) return;
-
-    foreach (achbotAdminRecipientCandidates($connection,(int)$admin) as $adminId) {
-        if ($adminId != $admin &&
-            achbotAdminNotificationAllowed($connection,$adminId,(int)$admin,$event)) {
-            $data['chat_id'] = $adminId;
-
-            // اگر بخوایم پیام ریپلای باشه (اختیاری)
-            if (isset($options['reply_to_message_id'])) {
-                $data['reply_to_message_id'] = $options['reply_to_message_id'];
-            }
-
-            // سایر گزینه های اضافی (مثل disable_notification و...)
-            if (!empty($options['extra'])) {
-                foreach ($options['extra'] as $key => $value) {
-                    $data[$key] = $value;
-                }
-            }
-
-            // Options never redirect privileged content outside the checked recipient.
-            $data['chat_id'] = (int)$adminId;
-            $res = bot($method, $data);
-
-            // ذخیره پیام اگر نیاز باشه
-            if ($pay_hash_id && $res && isset($res->result->message_id)) {
-                $adminMessages[] = [
-                    'chat_id' => $data['chat_id'],
-                    'message_id' => $res->result->message_id
-                ];
-            }
-        }
-    }
-
-    // ذخیره در دیتابیس اگر hash_id داده شده
-    if ($pay_hash_id && !empty($adminMessages)) {
-        $json = json_encode($adminMessages, JSON_UNESCAPED_UNICODE);
-        // Keep prior delivery evidence, including refs to subsequently demoted staff.
-        // The existing UPDATE appends atomically; no transaction spans Telegram.
-        $stmt = $connection->prepare("UPDATE `pays` SET `admins_messages` = CASE
-            WHEN admins_messages IS NULL OR admins_messages='' THEN ?
-            WHEN JSON_VALID(admins_messages) THEN CASE
-                WHEN JSON_TYPE(admins_messages)='ARRAY'
-                THEN JSON_MERGE_PRESERVE(admins_messages,?)
-                ELSE admins_messages END
-            ELSE admins_messages END WHERE `hash_id` = ?");
-        $stmt->bind_param("sss", $json, $json, $pay_hash_id);
-        $stmt->execute();
-        $stmt->close();
-    }
-}
-
 
 ?>

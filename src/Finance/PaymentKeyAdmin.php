@@ -8,6 +8,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 require_once __DIR__.'/PaymentApiAdmin.php';
+require_once __DIR__.'/../Telegram/Conversation.php';
 
 
 function achbotPaymentKeyAdminFields(): array {
@@ -177,7 +178,7 @@ function achbotAdminPaymentKeyChange($update,int $actor,int $chat,int $message,
         if (!$connection->begin_transaction()) throw new RuntimeException('payment_key_begin_failed');
         $begun=true;
         // Lock current administrator PK first, before any setting row.
-        $stmt=$connection->prepare('SELECT id,userid,isAdmin,step FROM users WHERE id=? FOR UPDATE');
+        $stmt=$connection->prepare('SELECT id,userid,isAdmin,step,temp FROM users WHERE id=? FOR UPDATE');
         if (!$stmt) throw new RuntimeException('payment_key_actor_lock_prepare');
         $stmt->bind_param('i',$pk);
         $ok=$stmt->execute();
@@ -189,6 +190,8 @@ function achbotAdminPaymentKeyChange($update,int $actor,int $chat,int $message,
             !achbotAdminCanLocked($connection,$actor,$primary,'gateways') ||
             (string)$user['step']==='banned' || $findActor()!==$pk)
             throw new RuntimeException('payment_key_actor_revoked');
+        if ($kind==='start' && !\AchBot\Telegram\Conversation\editorAcceptsSequence($user,$sourceId,time()))
+            throw new RuntimeException('payment_key_editor_update_stale');
         $previousStep=(string)$user['step'];
         $startStep=achbotPaymentKeyAdminStep($previousStep);
         if ($kind!=='start' && (!$startStep ||

@@ -212,7 +212,7 @@ if(preg_match('/^deleteDayPlan([1-9][0-9]*)_[a-f0-9]{20}$/D',$data,$match) and (
 }
 if(preg_match('/^changeDayPlanPrice([1-9][0-9]*)_[a-f0-9]{20}$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotIntervalWrite($connection,'','',[],true,(string)$data)) {achbotIntervalWriteNotice();return;}
-    delMessage();
+    try {delMessage();} catch(Throwable $ignored){}
     sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.b9989bb7c2'), $cancelKey, 'HTML');
     exit;
 }
@@ -225,7 +225,7 @@ if($achbotIntervalMessage && preg_match('/^changeDayPlanPrice([1-9][0-9]*)_[a-f0
 }
 if(preg_match('/^changeDayPlanDay([1-9][0-9]*)_[a-f0-9]{20}$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotIntervalWrite($connection,'','',[],true,(string)$data)) {achbotIntervalWriteNotice();return;}
-    delMessage();
+    try {delMessage();} catch(Throwable $ignored){}
     sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.395f467a7d'), $cancelKey, 'HTML');
     exit;
 }
@@ -244,7 +244,7 @@ if(preg_match('/^deleteVolumePlan([1-9][0-9]*)_[a-f0-9]{20}$/D',$data,$match) an
 }
 if(preg_match('/^changeVolumePlanPrice([1-9][0-9]*)_[a-f0-9]{20}$/D',$data,$match) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotIntervalWrite($connection,'','',[],true,(string)$data)) {achbotIntervalWriteNotice();return;}
-    delMessage();
+    try {delMessage();} catch(Throwable $ignored){}
     sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.b9989bb7c2'), $cancelKey, 'HTML');
     exit;
 }
@@ -257,7 +257,7 @@ if($achbotIntervalMessage && preg_match('/^changeVolumePlanPrice([1-9][0-9]*)_[a
 }
 if(preg_match('/^changeVolumePlanVolume([1-9][0-9]*)_[a-f0-9]{20}$/D',$data) and ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotIntervalWrite($connection,'','',[],true,(string)$data)) {achbotIntervalWriteNotice();return;}
-    delMessage();
+    try {delMessage();} catch(Throwable $ignored){}
     sendMessage(\achbotMessage('plans.intervals.add_new_volume_plan.message.149e31d927'),$cancelKey, 'HTML');
     exit;
 }

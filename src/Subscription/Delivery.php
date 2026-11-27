@@ -99,6 +99,15 @@ function achbotSubscriptionDeliveryParts(array $packet): array {
     return $parts;
 }
 
+/** Verify a real sent Message, using the same identity contract as reports.
+ * Local pre-request failure remains distinct from remote rejection. */
+function achbotSubscriptionDeliveryOutcome($response,int $uid): array {
+    require_once __DIR__.'/../Telegram/Response.php';
+    if ($response instanceof \AchBot\Telegram\Response\PreSendFailure)
+        return \AchBot\Telegram\Response\deliveryOutcome($response);
+    return \AchBot\Telegram\Response\messageDeliveryOutcome($response,(string)$uid);
+}
+
 /** One message effect. Only preparation errors before calling Telegram
  * may be reported as local_failed. Transport exceptions are uncertain. */
 function achbotSubscriptionSendQrPart(array $part,int $uid,?string $qrFsDir=null): array {
@@ -125,7 +134,7 @@ function achbotSubscriptionSendQrPart(array $part,int $uid,?string $qrFsDir=null
         }
         $photoCaption=$part['caption'];
         $resPhoto=sendPhoto($photo, $photoCaption, null, $photoCaption === null ? null : 'HTML', $uid);
-        return \AchBot\Telegram\Response\deliveryOutcome($resPhoto);
+        return achbotSubscriptionDeliveryOutcome($resPhoto,$uid);
     } finally {
         if (is_string($fsPath)) @unlink($fsPath);
     }
@@ -137,7 +146,7 @@ function achbotSubscriptionSendPart(array $part,int $uid,?string $qrFsDir=null):
     require_once __DIR__.'/../Telegram/Response.php';
     $text=$part['text'];$keys=$part['keys'];$mode=$part['mode'];
     $res=sendMessage($text,$keys,$mode,$uid);
-    return \AchBot\Telegram\Response\deliveryOutcome($res);
+    return achbotSubscriptionDeliveryOutcome($res,$uid);
 }
 
 if (!function_exists('sendQrFromLink')) {

@@ -12,16 +12,21 @@ return [
     'operational_reports' => [
         'resolution_subject' => ['text'=>'اشتراک: {remark} | شناسه: {order}','parameters'=>['remark','order']],
         'import_report' => ['text'=>"📥 ثبت اشتراک موجود\nکاربر: {user}\nاشتراک: {remark}\nشناسهٔ اشتراک: {order}\nسرور: {server}\nثبت‌کننده: {actor}",'parameters'=>['user','remark','order','server','actor']],
-        'credit_title' => '💰 افزایش موجودی کیف پول',
-        'funded_title' => '💳 ثبت پرداخت و تأمین مالی سرویس',
-        'debit_title' => '💸 کاهش موجودی کیف پول',
+        'credit_title' => '<b>💰 افزایش موجودی کیف پول</b>',
+        'funded_title' => '<b>💳 ثبت پرداخت و تأمین مالی سرویس</b>',
+        'receipt_credit' => '<b>💳 اعتبار پرداخت ثبت‌شده</b>',
+        'service_zero_title' => '<b>🧾 ثبت درخواست سرویس</b>',
+        'service_zero_pending' => '⏳ درخواست بدون هزینه ثبت شد؛ نتیجه اجرای سرویس جداگانه بررسی می‌شود.',
+        'service_funding_pending' => '⏳ تأمین مالی انجام شد؛ نتیجه اجرای سرویس جداگانه بررسی می‌شود.',
+        'service_delivery_pending' => '📨 تأیید کامل ارسال پیام‌های اشتراک به کاربر هنوز ثبت نشده است.',
+        'service_delivery_confirmed' => '✅ ارسال همه پیام‌های اشتراک به کاربر توسط Telegram تأیید شد.',
+        'debit_title' => '<b>💸 کاهش موجودی کیف پول</b>',
         'payment_context' => ['text' => "روش پرداخت: {method}\nنوع تأیید: {basis}\nشناسهٔ پرداخت: <code>{payment}</code>\nعملیات سرویس: <code>{service}</code>\nشناسهٔ اشتراک: <code>{order}</code>\nنتیجه: {result}", 'parameters' => ['method','basis','payment','service','order','result']],
-        'wallet_facts' => ['text' => "👤 شناسهٔ کاربر: <code>{user}</code>\n💵 مبلغ: {amount} تومان\nموجودی پیش از تراکنش: {before} تومان\nموجودی پس از تراکنش: {after} تومان\nشناسهٔ تراکنش کیف پول: <code>W{entry}</code>\nتاریخ ثبت (UTC): {date}", 'parameters' => ['user','amount','before','after','entry','date']],
-        'actor' => ['text' => '👮 شناسهٔ ادمین: <code>{actor}</code>', 'parameters' => ['actor']],
+        'wallet_facts' => ['text' => "🎫 شناسه عددی کاربر: <code>{user}</code>\n💵 مبلغ: {amount} تومان\nموجودی پیش از تراکنش: {before} تومان\nموجودی پس از تراکنش: {after} تومان\nشناسهٔ تراکنش کیف پول: <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}", 'parameters' => ['user','amount','before','after','entry','date']],
+        'actor' => ['text' => '🎫 شناسه عددی ادمین: <code>{actor}</code>', 'parameters' => ['actor']],
         'basis_manual' => 'تأیید دستی ادمین',
         'basis_api' => 'تأیید خودکار API',
         'basis_hosted' => 'تأیید خودکار درگاه',
-        'funded' => 'مبلغ برای عملیات اصلی از کیف پول کسر شد؛ اجرای سرویس جداگانه پیگیری می‌شود.',
         'wallet_only' => 'وجه در کیف پول کاربر ثبت شد.',
         'already_funded' => 'عملیات قبلاً تأمین مالی شده بود؛ مبلغ جدید در کیف پول باقی ماند.',
         'request_invalidated' => 'درخواست قبلی معتبر نیست؛ مبلغ در کیف پول باقی ماند.',
@@ -32,13 +37,13 @@ return [
         'service_renew' => '♻️ تمدید اشتراک تکمیل شد',
         'service_days' => '📅 افزایش زمان اشتراک تکمیل شد',
         'service_volume' => '📦 افزایش حجم اشتراک تکمیل شد',
-        'service_context' => ['text' => "👤 شناسهٔ کاربر: <code>{user}</code>\n💳 روش پرداخت: {method}\n💵 مبلغ: {amount} تومان\n🎈 اشتراک: <code>{remark}</code>\n🚦 سرور: <code>{server}</code> | پلن: <code>{plan}</code>\nشناسهٔ پرداخت/درخواست: <code>{reference}</code>\nشناسهٔ عملیات: <code>svc_{service}</code>", 'parameters' => ['user','method','amount','remark','server','plan','reference','service']],
+        'service_context' => ['text' => "🎫 شناسه عددی کاربر: <code>{user}</code>\n💳 روش پرداخت: {method}\n💵 مبلغ: {amount} تومان\n🎈 اشتراک: <code>{remark}</code>\n🚦 سرور: <code>{server}</code> | پلن: <code>{plan}</code>\nشناسهٔ پرداخت/درخواست: <code>{reference}</code>\nشناسهٔ عملیات: <code>svc_{service}</code>", 'parameters' => ['user','method','amount','remark','server','plan','reference','service']],
         'service_units' => ['text' => "📦 حجم: {volume}\n📅 مدت: {days} روز", 'parameters' => ['volume','days']],
         'unlimited_volume' => 'نامحدود',
         'finite_volume' => ['text' => '{volume} گیگابایت', 'parameters' => ['volume']],
         'service_added_days' => ['text' => '📅 زمان اضافه‌شده: {days} روز', 'parameters' => ['days']],
         'service_added_volume' => ['text' => '📦 حجم اضافه‌شده: {volume} گیگابایت', 'parameters' => ['volume']],
-        'service_wallet' => ['text' => "شناسهٔ کسر از کیف پول: <code>W{entry}</code>\nموجودی پیش از کسر: {before} تومان\nموجودی پس از کسر: {after} تومان", 'parameters' => ['entry','before','after']],
+        'service_wallet' => ['text' => "شناسهٔ کسر از کیف پول: <code>W{entry}</code>\nموجودی پیش از کسر: {before} تومان\nموجودی پس از کسر: {after} تومان\n📅 تاریخ ثبت کسر (ایران): {date}", 'parameters' => ['entry','before','after','date']],
         'service_order' => ['text' => 'شناسهٔ اشتراک: <code>{order}</code>', 'parameters' => ['order']],
         'source_adjustment' => 'تغییر موجودی توسط ادمین',
         'source_transfer' => 'انتقال موجودی کیف پول',
@@ -168,7 +173,6 @@ return [
         'needs_review' => ['text' => '⚠️ ساخت گروهی نیازمند بررسی است. ثبت محلی تأییدشده: {confirmed} از {requested}. عملیات نامشخص را تکرار نکنید.', 'parameters' => ['confirmed', 'requested']],
         'names' => '🧩 اکانت‌های ثبت و تأییدشده:',
         'more' => ['text' => '… اطلاعات {count} اکانت دیگر در سوابق اصلی ثبت شده است.', 'parameters' => ['count']],
-        'short_reference' => '📋 گزارش ساخت یا خرید گروهی',
         'continuation' => ['text'=>'📄 ادامهٔ فهرست اشتراک‌ها، بخش {page}' . "\n" . 'شناسهٔ مرجع: {reference}','parameters'=>['page','reference']],
         'bulk_subject' => 'خرید گروهی اشتراک',
         'admin_created' => ['text' => "📦 ساخت گروهی اکانت\n👤 مدیر: {actor}\n🔗 شناسه عملیات: {source}\n🗂 سرور: {server}\n🧭 پلن: {plan}\n⏳ مدت: {days} روز\n📊 حجم: {volume} گیگابایت", 'parameters' => ['actor', 'source', 'server', 'plan', 'days', 'volume']],
@@ -197,7 +201,6 @@ return [
         'agents_list' => '🔍 لیست همکاران:' . "\n" . '' . "\n" . 'جهت مشاهده آمار فروش همکاران روی اسم همکار کلیک کنید، همچنین می توانید برای همکار درصد تعیین کنید یا آن را از لیست همکاران خارج کنید.',
         'agent_deleted_successfuly' => '✅ همکاری با موفقیت حذف شد.',
         'agent_details' => '🙎 اطلاعات همکار AGENT-NAME' . "\n" . '' . "\n" . 'سمت راست درآمد و سمت چپ تعداد خرید همکار می باشد.',
-        'sent_config_to_user' => '✅ اشتراک برای کاربر ارسال شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: USERID' . "\n" . '🔄 نام کاربری اشتراک: REMARK' . "\n" . '📦 حجم اشتراک: VOLUME گیگ' . "\n" . '📅 مدت زمان اشتراک: DAYS روز' . "\n" . '💰 هزینه پرداختی: PRICE تومان' . "\n" . '🔖 شناسه پرداخت: HASHID' . "\n" . '',
         'sending_config_to_user' => '🚀 در حال ارسال اشتراک به مشتری ...',
         'agent_discount_settings' => '⚙️ مدیریت تخفیف های همکار AGENT-NAME',
     ],
@@ -240,7 +243,6 @@ return [
         'bot.webhook_ingress_authenticated.message.4e0fd88f4b' => '📅 لطفاً تاریخ شروع و پایان فروش را وارد کنید:' . "\n" . '' . "\n" . '',
         'bot.webhook_ingress_authenticated.message.9c3afd43bd' => 'فرمت نمونه:' . "\n" . '<code>2026-05-21 to 2026-05-22</code>' . "\n" . '',
         'bot.webhook_ingress_authenticated.message.312da09ba8' => 'یا' . "\n" . '<code>2026/05/21 تا 2026/05/22</code>',
-        'bot.webhook_ingress_authenticated.message.0108e71350' => '❌ عملیات لغو شد.',
         'bot.webhook_ingress_authenticated.message.f438b1a27b' => '❌ فرمت تاریخ درست نیست. لطفاً دقیقاً مثل نمونه وارد کنید:' . "\n" . '<code>2026-05-21 to 2026-05-22</code>',
         'bot.webhook_ingress_authenticated.message.4684e19e66' => '❌ تاریخ شروع نباید بعد از تاریخ پایان باشد.',
         'bot.webhook_ingress_authenticated.text.d4b423ba4f' => '👤 آمار کاربران',
@@ -528,7 +530,6 @@ return [
         'order_management.awaiting_order_remark_only.message.f8c9916b9c' => '⚠️ تعداد نتایج زیاد است. لطفاً ریمارک دقیق‌تری وارد کنید.',
         'order_management.awaiting_order_remark_only.message.45a8b2af73' => '❌ خطا: داده‌های callback خیلی طولانی هستند.',
         'order_management.awaiting_order_remark_only.message.e02c72df1d' => '👤 چند سفارش با این remark یافت شد. لطفاً یکی از userID‌ها را انتخاب کنید:',
-        'order_management.awaiting_order_remark_only.message.b345c0eb1e' => '❌ خطایی در ارسال پیام رخ داد. لطفاً دوباره تلاش کنید.',
         'order_management.awaiting_order_remark_only.message.7ebcf50a27' => '❌ خطا: ریمارک موقت نامعتبر است.',
         'order_management.awaiting_order_remark_only.message.d11ef21837' => '❌ سفارشی با این مشخصات پیدا نشد.',
         // order_management.show_order_management_panel
@@ -782,7 +783,6 @@ return [
     'manual_payment' => [
         'api_payment.currency_rial' => 'ریال',
         'api_payment.currency_toman' => 'تومان',
-        'api_payment.report' => ['text' => "📋 گزارش بررسی پرداخت\n📎 شناسه پیگیری: <code>{reference}</code>\n🎫 شناسه عددی: <code>{userId}</code>\n💰 مبلغ: {amount} {unit}\n💳 روش پرداخت: {method}\n🔎 مرجع بررسی: <code>{evidence}</code>\n🧾 موضوع: {subject}\n📋 نتیجه: {status}", 'parameters' => ["reference", "userId", "amount", "unit", "method", "evidence", "subject", "status"]],
         'api_payment.code_used' => 'کد گیفت‌کارت طبق API قبلاً مصرف شده است.',
         'api_payment.code_revoked' => 'کد گیفت‌کارت طبق API باطل شده است.',
         'api_payment.code_expired' => 'کد گیفت‌کارت طبق API منقضی شده است.',
@@ -793,12 +793,10 @@ return [
         'api_payment.gift_details' => ['text' => "💰 مبلغ بازخرید: {amount}\n🧾 شماره سفارش: {order}\n📅 تاریخ ایجاد: {created}", 'parameters' => ['amount', 'order', 'created']],
         'api_payment.gift_not_verified' => 'نیازمند بررسی دستی',
         'api_payment.gift_not_provided' => 'در پاسخ API ارائه نشده',
-        'api_payment.status_confirmed' => "پرداخت و عملیات مربوط تأیید شد",
         'api_payment.status_settled' => "پرداخت قبلاً نهایی شده است.",
         'api_payment.status_review' => "نیازمند بررسی مدیر",
         'api_payment.status_uncertain' => "نتیجهٔ عملیات بیرونی نامشخص است.",
         'api_payment.status_evidence_only' => "پیامک دیررس ثبت شد؛ پرداخت قبلاً نهایی بود و عملیات مالی تکرار نشد",
-        'api_payment.view_code' => "مشاهده کد گیفت‌کارت",
         // Existing API-assisted payments.
         'receipt_helpers.manual_caption.header.cc6f426145' => '💎 مقدار رمزارز: <code>',
         'receipt_helpers.manual_caption.text.1c777cb98d' => '</code> | شبکه: <b>',
@@ -867,7 +865,6 @@ return [
         'admin_reply.message.8da2c2756b' => '💬 لطفا پیام خود را ارسال کنید.',
         // admin_reply.button
         // admin_reply.message
-        'admin_reply.message.5cd91cfb0b' => '✅ پیام شما با موفقیت ارسال شد.',
         // categories.tickets_list
         'categories.tickets_list.button.33d6fa9470' => '💬 تیکت های باز',
         'categories.tickets_list.button.732c0fd101' => '💬 تیکت های جدید',
@@ -883,7 +880,6 @@ return [
         // categories.add_ticket_category
         'categories.add_ticket_category.message.f17638132c' => 'لطفا اسم دسته بندی را وارد کنید',
         'categories.add_ticket_category.alert.e1e7245408' => '✅ با موفقیت حذف شد.',
-        'categories.add_ticket_category.button.fba2c6927b' => '⚠️ دسته بندی یافت نشد.',
         // create_ticket.button
         'create_ticket.button.3b90dccc67' => '💬 پاسخ',
         // create_ticket.txt
@@ -1324,7 +1320,6 @@ return [
         'config.calculate_sales_between_dates.message.28ec14e2c0' => '</code> برابر با <b>',
         'config.calculate_sales_between_dates.text.9944ee4dd6' => '</b> تومان است.' . "\n" . '' . "\n" . '',
         'config.calculate_sales_between_dates.text.dd92eb2ae0' => '🧾 تعداد پرداخت‌های موفق در این بازه: <b>',
-        'config.calculate_sales_between_dates.message.0108e71350' => '❌ عملیات لغو شد.',
         // config.get_admins_keys
         'config.get_admins_keys.button.bc56086ddd' => '➕ افزودن ادمین',
         // config.get_user_info_keys
@@ -1432,7 +1427,6 @@ return [
         // provider_admin.pg_server_admin_keys
         'provider_admin.handle_provider_admin.alert.057ec5448c' => '⛔️ دسترسی لازم وجود ندارد.',
         'provider_admin.handle_provider_admin.message.b3a3ec95dd' => '✅ مصرف اشتراک پس از بررسی صفر شد.',
-        'provider_admin.handle_provider_admin.message.bf4b28ea45' => '🔑 کلید API جدید را بفرستید.',
         'provider_admin.handle_provider_admin.message.254f747510' => 'شناسه گروه‌های دسترسی را با کاما بفرستید. برای ارث‌بری پلن از سرور /inherit را بفرستید.' . "\n" . '',
         'provider_admin.handle_provider_admin.message.7a19204ab5' => '✅ کلید API تأیید و تعویض شد.',
         'provider_admin.handle_provider_admin.message.2fb5824b4d' => '✅ گروه‌های دسترسی خریدهای آینده ذخیره شد. حساب‌های موجود تغییر نکردند.',

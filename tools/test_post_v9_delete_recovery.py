@@ -73,7 +73,7 @@ function sendMessage(...$args){
         $GLOBALS['events'][]=['type'=>'staff_notice','data'=>['text'=>$args[0],'parse_mode'=>$args[2]],
             'options'=>['report_ref'=>$event['reference'],'report_actor'=>$event['actor']]];
     } else $GLOBALS['events'][]=['type'=>'message'];
-    return (object)['ok'=>true];
+    return isset($ctx['followup_id'])?fixtureMessageAck($args[3]):(object)['ok'=>true];
 }
 register_shutdown_function(static function() {
  echo json_encode(['events'=>$GLOBALS['events']],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
@@ -112,6 +112,9 @@ try {
 } catch(Throwable $error) { $GLOBALS['events'][]=['type'=>'error','code'=>$error->getMessage()]; }
 '''
 
+
+from operational_report_fixture import with_message_ack
+PHP=with_message_ack(PHP)
 
 def setup(sql, provider_url: str, epoch: int):
     sql("UPDATE service_effects SET source_kind='admin_bulk',effect_kind='create',"

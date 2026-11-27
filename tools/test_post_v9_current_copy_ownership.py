@@ -19,15 +19,22 @@ import package_current
 ROOT = Path(__file__).resolve().parents[1]
 AUDIENCES = ("messages/fa/user.php", "messages/fa/admin.php")
 DYNAMIC_PREFIXES = {
-    "manual_payment.api_payment.code_",
-    "manual_payment.api_payment.status_",
     "payment_settings.api.",
     "payment_settings.api.field.",
     "payment_settings.api.hint.",
     "legacy_messages.",
     "legacy_buttons.",
 }
+RETIRED_PAYMENT_ACTIONS = (
+    "payBuyWithWallet", "payCustomWithWallet", "payRenewWithWallet",
+    "payIncreaseDayWithWallet", "payIncreaseWithWallet", "accCustom",
+    "approveRenewAcc", "approveIncreaseDay", "approveIncreaseVolume", "approvePayment",
+    "achbotCheckoutCallbackPrefix", "achbotManualApprovalPrefix", "Routes/ManualApproval.php",
+)
 RETIRED = (
+    "renewPay_", "achbotPayUxReceiptPrefixes", "achbotManualCryptoVerifiedDispatch",
+    "achbotManualCryptoChoice", "apiGiftCode_", "payBuyWithCartToCart", "payBuyWithManualUsdt",
+    "payIncreaseWalletWithGiftCard", "sendIncreaseVolumeUsdtReceipt", "handleCancelFlow",
     "editServerNames", "editDestName", "editSpiderX", "editFlow", "editPFlow",
     "wizwizplanslimit", "wizwizplansinobundid",
     "cantEditTrojan", "changesServerIp", "editsServer", "changesServerLoginInfo", "cantEditGrpc", "changeCustomPort", "changeCustomSni", "changeCustomPath",
@@ -107,6 +114,15 @@ def classify_unowned_copy(tokens: list[dict]) -> tuple[list[str], int]:
 
 
 def assert_retired_absent(sources: dict[str, str]) -> None:
+    for path,content in sources.items():
+        for marker in RETIRED_PAYMENT_ACTIONS:
+            check(marker not in content, "retired_payment_action:" + path + ":" + marker)
+        for marker in ('achbotApiPaymentTrackInvoice','achbotApiPaymentSyncInvoice',
+                       'achbotApiPaymentInvoiceText','evidence_invoice_chat_id',
+                       'evidence_invoice_message_id','evidence_invoice_digest',
+                       'achbotPayUxTrackClicked','buildCartToCartInfoMessage',
+                       'achbotManualInvoiceKeyboard'):
+            check(marker not in content, "retired_projection_reintroduced:" + path + ":" + marker)
     for path in ("src/Plans/Administration.php", "src/Admin/Access.php", "bot.php", "src/Admin/ManagementFlow.php", "src/Subscription/CustomerRoutes.php", "config.php", "src/Finance/Routes/AdminWallet.php"):
         content = sources[path]
         for marker in RETIRED:
@@ -132,26 +148,8 @@ def php_literals(source: str) -> set[str]:
 
 def finite_dynamic_keys(sources: dict[str, str]) -> set[str]:
     """Follow source-proven finite producer domains, never prefix wildcards."""
-    api = php_function(sources["src/Finance/ApiPayments.php"],
-                       "achbotApiPaymentNotice")
-    invalid = re.search(
-        r"\$invalidCode\s*=\s*in_array\(\$status,\s*\[([^\]]+)\],\s*true\)", api)
-    accepted = re.search(
-        r"\$status\s*=\s*in_array\(\$status,\s*\[([^\]]+)\],\s*true\)"
-        r"\s*\?\s*\$status\s*:\s*'review'", api)
-    check(invalid is not None and accepted is not None,
-          "manual_status_normalization_changed")
-    check("achbotMessage('manual_payment.api_payment.code_'.$status)" in api and
-          "achbotMessage('manual_payment.api_payment.status_'.$status)" in api,
-          "manual_status_catalog_dispatch_changed")
-    invalid_values = php_literals(invalid.group(1))
-    accepted_values = php_literals(accepted.group(1))
-    check(invalid_values < accepted_values and "review" in accepted_values,
-          "manual_status_domain_invalid")
-    keys = {"manual_payment.api_payment.code_" + value
-            for value in invalid_values}
-    keys |= {"manual_payment.api_payment.status_" + value
-             for value in accepted_values - invalid_values}
+    # API receipt labels are now literal catalog references.
+    keys: set[str] = set()
 
     admin = sources["src/Finance/PaymentApiAdmin.php"]
     rows = php_function(admin, "achbotPaymentApiAdminRows")
@@ -238,7 +236,7 @@ def indirect_legacy_keys(sources: dict[str, str],
     check(receipt_prompts, "manual_receipt_prompt_set_empty")
 
     # Both manual payment quote branches are finite and source-typed.
-    quote = php_function(receipts, "buildCartToCartInfoMessage")
+    quote = php_function(receipts, "achbotManualInvoiceText")
     templates = re.findall(
         r"""\?\s*'([^']+)'\s*:\s*'([^']+)'\s*\)\s*\)""",
         quote)
@@ -477,8 +475,9 @@ def main() -> None:
           "buttonValues_unknown_source")
     finite_proof = finite_dynamic_keys(sources)
     check({"manual_payment.api_payment.status_review",
-           "manual_payment.api_payment.code_used",
-           "payment_settings.api.sms_verify",
+           "manual_payment.api_payment.code_used"} <= set(scans["src/Finance/ApiPayments.php"]["literal"]),
+          "manual_status_literal_provenance_lost")
+    check({"payment_settings.api.sms_verify",
            "payment_settings.api.gift_guidance",
            "payment_settings.api.field.smsApiUrl",
            "payment_settings.api.hint.giftApiSecret"} <= finite_proof,

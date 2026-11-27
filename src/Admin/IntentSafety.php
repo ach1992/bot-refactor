@@ -15,7 +15,7 @@ function achbotAdminIntentFrame($update,int $actor,string $data): array {
     return ['source'=>$update->update_id,'message'=>$m->message_id];
 }
 function achbotAdminIntentActor(mysqli $db,int $actor,int $primary,string $capability): array {
-    $q=$db->prepare('SELECT id,userid,isAdmin,step FROM users WHERE userid=? LIMIT 2 FOR UPDATE');
+    $q=$db->prepare('SELECT id,userid,isAdmin,step,temp FROM users WHERE userid=? LIMIT 2 FOR UPDATE');
     $q->bind_param('i',$actor);$q->execute();$rows=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
     if (count($rows)!==1 || (int)$rows[0]['id']<=0 || (int)$rows[0]['userid']!==$actor ||
         ($actor!==$primary && (int)$rows[0]['isAdmin']!==1) ||

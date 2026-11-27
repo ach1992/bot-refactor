@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__.'/../../Admin/Access.php';
-/** AChBot V8: source-pinned financial compatibility module. */
+require_once __DIR__.'/../../Telegram/Conversation.php';
+/** Current manual receipt rejection and recovery routes. */
 if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404);
     exit;
@@ -92,12 +93,6 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',
     return;
 }
 
-if (preg_match('/^approvePayment(.*)/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
-    require_once __DIR__.'/../CheckoutRoutes.php';
-    achbotCheckoutApprovalCallback($connection,(string)$match[1],(int)$from_id,(int)$admin,'topup');
-    return;
-}
-
 // Decline Cart To Cart by ACh
 
 if (preg_match('/^noop_(.+)$/', $data, $m)) {
@@ -106,7 +101,8 @@ if (preg_match('/^noop_(.+)$/', $data, $m)) {
 	exit;
 }
 
-if (preg_match('/^declineAction_(.+)$/', $data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+if (preg_match('/^declineAction_([A-Za-z0-9_-]{1,50})$/D', (string)$data, $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
+    if (!\AchBot\Telegram\Conversation\source($update,(int)$from_id,true)) return;
     $hash_id = $match[1];
 
     // بررسی وجود و وضعیت پرداخت
@@ -137,7 +133,7 @@ if (preg_match('/^declineAction_(.+)$/', $data, $match) && achbotAdminCanFor($co
     // workflow. This callback never settles or rejects the original payment.
     // Keep the original pay and staff identity; the typed reply is rechecked
     // against the current financial row by the guarded transaction below.
-    setUser('declineActionReason_' . $hash_id . '_' . $message_id);
+    if (!setUser('declineActionReason_' . $hash_id . '_' . $message_id)) return;
     sendMessage(\achbotMessage('manual_payment.manual_receipts.message.a757d0e2a6'),$cancelKey, 'HTML');
     return;
 }
@@ -146,7 +142,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
     (string)($data??'')==='' &&
     $text != \achbotMessage('legacy_buttons.cancel') &&
     achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'payments')) {
-    if ((int)($chat_id??0)!==(int)$from_id) return;
+    if (!\AchBot\Telegram\Conversation\source($update,(int)$from_id,false)) return;
     // Only a freshly typed administrator message can supply the reason;
     // a callback's previously rendered message must not finalize rejection.
     if (!is_string($text) || trim($text)==='') {
@@ -156,7 +152,6 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
     // This webhook's cached step may already have been canceled or replaced.
     // Consume it only when the same financial transaction verifies it still
     // belongs to this exact administrator decision.
-    $expectedEditor=(string)$userInfo['step'];
     $hash_id = $match[1];
     $message_id = $match[2];
 
@@ -167,19 +162,17 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
     $payInfo = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-	if (!$payInfo || ($payInfo['state'] === 'expired_have_sent')) {
-		alert(!$payInfo ? \achbotMessage('manual_payment.manual_receipts.alert.9e5ae0bfa1') : \achbotMessage('manual_payment.manual_receipts.alert.caa1f4e27c'));
-		return;
-	}
-
-    if ($payInfo['state']==='declined' && (int)$payInfo['approved_by']>0) {
-        require_once __DIR__.'/../FollowupOutbox.php';
-        if (achbotFollowupSchemaReady($connection))
-            achbotFollowupDispatchPending($connection,(int)$payInfo['id'],'manual_reject');
-        return;
-    }
-    if (!in_array($payInfo['state'],['have_sent','service_superseded'],true)) {
-        alert(\achbotMessage('manual_payment.manual_receipts.alert.af4cc41dc0'));
+    if (!$payInfo || !in_array($payInfo['state'],['have_sent','service_superseded'],true)) {
+        // The pending reason is obsolete, not a new financial rejection.
+        // A stale retry must not clear a newer editor or replay a notice.
+        if (\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo) !== null)
+            \AchBot\Telegram\Conversation\removeReplyKeyboard(
+                achbotMessage('manual_receipt_final.status_unavailable'),(int)$from_id);
+        if ($payInfo && $payInfo['state']==='declined' && (int)$payInfo['approved_by']>0) {
+            require_once __DIR__.'/../FollowupOutbox.php';
+            if (achbotFollowupSchemaReady($connection))
+                achbotFollowupDispatchPending($connection,(int)$payInfo['id'],'manual_reject');
+        }
         return;
     }
 
@@ -210,12 +203,6 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         alert(\achbotMessage('manual_payment.manual_receipts.alert.872f260882'));
         return;
     }
-    $keys=json_encode(['inline_keyboard'=>[
-        [['text'=>\achbotMessage('manual_payment.manual_receipts.button.51fdc91d69',
-            ['from_id'=>$from_id]),'callback_data'=>'wizwizch']],
-        [['text'=>\achbotMessage('manual_payment.manual_approval.manual_standard_report_delivery.hash_id.2899228604',
-            ['hash_id'=>$hash_id]),'callback_data'=>'noop_'.$hash_id]],
-    ]],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
     $retryButton=json_encode(['inline_keyboard'=>[[['text'=>
         \achbotMessage('manual_payment.manual_receipts.button.e3517e568b'),
         'url'=>"https://t.me/$botUsername?start=restart_$hash_id"]]]],
@@ -296,38 +283,13 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         $opened=true;
         $actor=(int)$from_id;
         $locked=achbotCheckoutRejectReceiptLocked($connection,$payId,(int)$uid,$actor,(int)$admin,(string)$hash_id);
-        if ((int)$locked['chat_id']!==(int)$payInfo['chat_id'] ||
-            (int)$locked['message_id']!==(int)$payInfo['message_id'])
-            throw new RuntimeException('manual_reject_stale');
         // Consume only the current private reason editor; rollback also
         // restores the payment/command if another editor replaced it.
-        $q=$connection->prepare("UPDATE users SET step='none' WHERE userid=? AND BINARY step=BINARY ?");
-        $q->bind_param('is',$actor,$expectedEditor);
-        $editorClaimed=$q->execute() && $q->affected_rows===1;$q->close();
-        if (!$editorClaimed) throw new RuntimeException('manual_reject_editor_stale');
-        achbotFollowupInsertLocked($connection,$locked,'manual_reject',
-            'receipt_primary','edit',(string)(int)$locked['chat_id'],
-            (int)$locked['message_id'],['text'=>$keys,'keys'=>null,'mode'=>null]);
-        $adminMessages=json_decode((string)($locked['admins_messages']??''),true);
-        $seenMirrors=[];
-        if (is_array($adminMessages)) foreach ($adminMessages as $msgInfo) {
-            if (!is_array($msgInfo) ||
-                !isset($msgInfo['chat_id'],$msgInfo['message_id'])) continue;
-            $chat=(int)$msgInfo['chat_id'];$msg=(int)$msgInfo['message_id'];
-            // Distinct messages in the primary Owner chat are real copies;
-            // only the exact primary chat/message pair is redundant.
-            if (($chat===(int)$locked['chat_id'] &&
-                    $msg===(int)$locked['message_id']) ||
-                $chat<=0 || $msg<=0 ||
-                !achbotAdminStoredRecipientAllowed($connection,$msgInfo['chat_id'],
-                    (int)$admin)) continue;
-            $ref=$chat.':'.$msg;
-            if (isset($seenMirrors[$ref])) continue;
-            achbotFollowupInsertLocked($connection,$locked,'manual_reject',
-                'receipt_mirror','edit',(string)$chat,$msg,
-                ['text'=>$keys,'keys'=>null,'mode'=>null]);
-            $seenMirrors[$ref]=true;
-        }
+        $editor=\AchBot\Telegram\Conversation\lockEditor($connection,$actor,$userInfo);
+        \AchBot\Telegram\Conversation\writeEditorLocked($connection,$editor,'none',null);
+        require_once __DIR__.'/../ReceiptReports.php';
+        $receiptAttempt=achbotProviderRow($connection,'SELECT * FROM payment_attempts WHERE pay_row_id=? FOR UPDATE','i',[$payId]);
+        achbotReceiptStageTerminalEditsLocked($connection,$locked,$receiptAttempt);
         achbotFollowupInsertLocked($connection,$locked,'manual_reject',
             'customer','send',(string)(int)$uid,null,
             ['text'=>$message,'keys'=>$retryButton,'mode'=>'HTML']);
@@ -349,6 +311,8 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         alert(\achbotMessage('manual_payment.manual_receipts.alert.872f260882'));
         return;
     } finally {achbotOriginalDispatchLeaseEnd($connection,$payId,$lease);}
+    \AchBot\Telegram\Conversation\removeReplyKeyboard(
+        achbotMessage('legacy_messages.saved_successfuly'),(int)$from_id);
     // An edit exception never suppresses independent customer/staff notices.
     // Missing ACK is UNKNOWN, not permission for a duplicate message.
     achbotFollowupDispatchPending($connection,$payId,'manual_reject');

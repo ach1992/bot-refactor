@@ -15,7 +15,7 @@ return [
         'customer_custome_plan_day' => '📅 لطفا  تعداد روز اشتراک را وارد کنید.' . "\n" . '💰 هزینه هر روز: DAY-PRICE',
         'customer_custome_plan_volume' => '📦 لطفا مقدار گیگابایت سرویس رو وارد کنید.' . "\n" . '💰 هزینه هر گیگ: VOLUME-PRICE',
         'customer_custome_plan_name' => '🔢 اسم اشتراک رو وارد کنید (حروف انگیلیسی و عدد باهم وارد کنید)',
-        'brw_cart_to_cart_detail' => '✳️ لطفا مبلغ را به شماره کارت زیر واریز کنید.' . "\n" . '⚠️ <b>مبلغ دقیق و غیر رند زیر را کپی و واریز کنید در غیر این صورت رسید تایید نمی شود.</b>' . "\n\n" . '💵 مبلغ به تومان ← <code>PRICE-TOMAN</code>' . "\n" . '💵 مبلغ به ریال ← <code>PRICE-RIAL</code>' . "\n\n" . '💳 شماره کارت:' . "\n" . '<code>ACCOUNT-NUMBER</code>' . "\n\n" . '🔑 HOLDER-NAME' . "\n\n" . '⏰ <b>بعد پرداخت فقط تا 30 دقیقه فرصت دارید رسید را بفرستید.</b>' . "\n" . '🔴 <b>به هیچ وجه رسیدی که قبلا ارسال شده را دوباره ارسال نکنید اکانت شما مسدود می شود.</b>' . "\n" . '<b>📤 ارسال رسید</b> را بزنید و بعد رسید را بفرستید.',
+        'brw_cart_to_cart_detail' => '✳️ لطفا مبلغ را به شماره کارت زیر واریز کنید.' . "\n" . '⚠️ <b>مبلغ دقیق و غیر رند زیر را کپی و واریز کنید در غیر این صورت رسید تایید نمی شود.</b>' . "\n\n" . '💵 مبلغ به تومان ← <code>PRICE-TOMAN</code>' . "\n" . '💵 مبلغ به ریال ← <code>PRICE-RIAL</code>' . "\n\n" . '💳 شماره کارت:' . "\n" . '<code>ACCOUNT-NUMBER</code>' . "\n\n" . '🔑 HOLDER-NAME' . "\n\n" . 'PAYMENT-DEADLINE' . "\n" . '🔴 <b>به هیچ وجه رسیدی که قبلا ارسال شده را دوباره ارسال نکنید اکانت شما مسدود می شود.</b>' . "\n" . '<b>📤 ارسال رسید</b> را بزنید و بعد رسید را بفرستید.',
         'brw_cart_to_cart_gift' => '➕ روی دکمه <b>خرید گیفت کارت</b> بزنید و یک عدد گیفت کارت به مبلغ <code>PRICE-TOMAN-ROUND</code> تومان از سایت واسط خریداری کنید.' . "\n\n" . '⭐ در صورتی که <b>مشتری قدیمی یا معرفی شده</b> هستید برای دریافت شماره کارت به پشتیبانی پیام دهید.' . "\n\n" . '✅ <b>بعد از خرید از گیفت کارت اسکرین شات بگیرید</b> و با زدن دکمه <b>ارسال گیفت کارت</b> تصویر آن را ارسال کنید.' . "\n\n" . '📤 <b>ارسال گیفت کارت</b> را بزنید و بعد تصویر را بفرستید.',
         'brw_cart_to_cart_usdt' => '💰 مبلغ سفارش: <code>PRICE-TOMAN-ROUND</code> تومان' . "\n" . '💎 مقدار تتر: <code>PRICE-USDT USDT</code>' . "\n" . '🌐 شبکه: <b>USDT-NETWORK</b>' . "\n\n" . '📋 آدرس کیف پول مقصد:' . "\n" . '<code>USDT-WALLET</code>' . "\n\n" . '⚠️ فقط توکن USDT را روی شبکهٔ اعلام‌شده ارسال کنید. شبکه یا آدرس اشتباه ممکن است باعث از دست رفتن وجه شود.' . "\n" . '✅ پس از انتقال، از تأییدیهٔ انتقال همراه با هش تراکنش عکس بگیرید و دکمهٔ «ارسال رسید تتر» را بزنید.',
         'brw_cart_to_cart_trx' => '💰 مبلغ سفارش: <code>PRICE-TOMAN-ROUND</code> تومان' . "\n" . '🔴 مقدار ترون: <code>PRICE-TRX TRX</code>' . "\n" . '🌐 شبکه: <b>TRON</b>' . "\n\n" . '📋 آدرس کیف پول مقصد:' . "\n" . '<code>TRX-WALLET</code>' . "\n\n" . '⚠️ فقط ارز اصلی TRX را روی شبکهٔ TRON منتقل کنید؛ تتر TRC20 یا ارز دیگری به این آدرس واریز نکنید.' . "\n" . '✅ پس از انتقال، از تأییدیهٔ انتقال همراه با هش تراکنش عکس بگیرید و دکمهٔ «ارسال رسید TRX» را بزنید.',
@@ -27,7 +27,6 @@ return [
         'invite_second_text' => '🔰 پیام یا لینک بالا رو برای دوستتون بفرستید، هر کسی با استفاده از اون ربات را <b>استارت</b> یا <b>شروع</b> کند، به عنوان <b>زیرمجموعه شما</b> ثبت می‌شود.' . "\n" . '' . "\n" . '💎 همین که دوست شما ربات رو استارت کنه شما <b>{INVITE_REWARD}</b> تومان هدیه دعوت دریافت می کنید.' . "\n" . '⚠️ ربات به صورت دوره ای افراد دعوت شده را بررسی می کند در صورتی که فیک تشخیص داده شوند مبلغ هدیه از کیف پول شما کسر می شود یا اکانت خریدای شده غیرفعال می شود.' . "\n" . '' . "\n" . '💵 همچنین <b>به ازای هر خرید</b> دوست شما مبلغ <b>{INVITE_AMOUNT}</b> کیف پول شما شارژ می شود.' . "\n" . '' . "\n" . '💡 هرچی <b>تعداد زیرمجموعه های شما بیشتر</b> باشه، <b>سود شما هم بیشتره!</b> ' . "\n" . '' . "\n" . '♾️ <b>هیچ محدودیتی</b> در <b>تعداد خرید</b> یا <b>زیرمجموعه گیری</b> وجود ندارد و با هر دعوت و خرید دوستتان این <b>مبالغ برای شما شارژ می شود</b>.',
         'please_send_only_image' => '⚠️ لطفاً فقط تصویر (عکس) را داخل ربات بفرستید متن یا فایل مورد تایید نیست.',
         'out_of_server_capacity' => '⚠️ ظرفیت این سرور پر شده است.',
-        'waiting_message' => '⏳ در حال انتظار ...',
         'join_channel_message' => '⭕️ لطفا اول در کانال زیر عضو شوید و بعد روی دکمه عضو شدم بزنید.' . "\n" . '⚠️ برای عضویت روی دکمه <b>عضویت در کانال</b> بزنید.' . "\n" . '' . "\n" . '💬 پشتیبانی: SUPPORTID' . "\n" . '',
         'bot_is_updating' => '⏳ ربات در حال بروزرسانی می باشد ...',
         'select_one_to_show_detail' => '🔅 یکی از اشتراک های زیر را انتخاب کنید.' . "\n" . '💡 پیشنهاد می کنیم همیشه کیف پول خودتون رو قبل از پایان اشتراک یا تمام شدن حجم شارژ کنید تا هر زمان که خواستید بدون نیاز به تایید ادمین بتوانید اشتراک خود را تمدید کنید.',
@@ -52,17 +51,17 @@ return [
         'valid_discount_code' => '✅ کد تخفیف با موفقیت استفاده شد.' . "\n" . '🎁 مقدار تخفیف AMOUNT',
         'send_config_uuid' => '🔰 از این بخش می توانید اشتراکی که خارج از ربات خریداری کرده اید را به ربات اضافه کنید، تمدید کنید یا مشخصات آن را ببینید.' . "\n" . '❗️ لینک اشتراک را بفرستید، نام کاربری قبول نیست. بعد از ارسال کمی صبر کنید تا اطلاعات برایتان ارسال شود.' . "\n" . '' . "\n" . '⚠️ لطفا قبل از ادامه مراحل اول بزنید روی آی دی زیر تا آموزش برایتان ارسال شود.' . "\n" . '' . "\n" . '💬 پشتیبانی: SUPPORTID',
         'receving_information' => '♻️ در حال دریافت جزییات ... ',
-        'agency_request_sent' => '✅ درخواست شما با موفقیت ارسال شد، لطفا به پشتیبانی پیام دهید!',
-        'agency_request_already_sent' => '⏳ درخواست شما قبلاً ارسال شده، لطفا منتظر باشید!',
+        'agency_request_sent' => '✅ درخواست شما با موفقیت ثبت شد، لطفا به پشتیبانی پیام دهید!',
+        'agency_request_already_sent' => '⏳ درخواست شما قبلاً ثبت شده، لطفا منتظر باشید!',
         'agency_request_declined' => '❌ درخواست شما برای همکاری رد گردید.' . "\n" . '' . "\n" . '⭕️ لطفا برای دریافت شرایط همکاری از راه ارتباطی زیر پیام دهید.' . "\n" . '' . "\n" . '💬 پشتیبانی: SUPPORTID',
         'agency_request_approved' => '✅ درخواست شما برای همکاری تایید شد. تخفیف همکاری به طور خودکار برای شما هنگام خرید اعمال می شود.' . "\n" . '💳 توصیه می کنیم همیشه قبل از خرید یا تمدید اکانت کیف پول خود را در ساعات کاری شارژ کنید تا برای تایید رسیدها منتظر نمایند.' . "\n" . '⚠️  ربات را دوباره /start کنید.',
         'agent_setting_message' => '🧚🏻 همکار محترم:' . "\n" . '' . "\n" . '💡از این بخش میتوانید تعداد خریدهای همکاری خود را ببینید و همچنین تاریخ عضویت خودتان را مشاهده کنید.' . "\n" . '🎁 تخفیف شما در هر خرید به صورت خودکار محاسبه می شود.' . "\n" . '💳 توصیه می کنیم همیشه قبل از خرید یا تمدید اکانت کیف پول خود را در ساعات کاری شارژ کنید تا برای تایید رسیدها منتظر نمایند.',
         'selling_is_off' => '⛔️ فعلا فروش نداریم',
         'no_server_available' => '⚠️ در حال حاضر هیچ سرور فعالی نداریم لطفا بعدا مجدد تست کنید.',
-        'buy_sub_select_location' => '🧭 مرحلهٔ اول' . "\n" . '' . "\n" . '➕ لطفا یک مورد را انتخاب کنید.' . "\n" . '💡 شما می توانید کیف پول خودتون رو قبل از پایان اکانت یا اتمام حجم شارژ کنید تا هر زمان که خواستید بدون نیاز به تایید ادمین بتوانید اکانت جدید خریداری کنید یا تمدید کنید.',
+        'buy_sub_select_location' => '<b>🧭 مرحلهٔ اول</b>' . "\n\n" . '💡 لطفا نوع سرویس مورد نظر خودتان را انتخاب کنید.',
         'category_not_avilable' => '⚠️ هیچ دسته بندی برای این سرور وجود ندارد.',
         'receive_categories' => '♻️ دریافت دسته بندی ...',
-        'buy_sub_select_category' => '📂 مرحلهٔ دوم' . "\n" . '' . "\n" . '📅 لطفا یک مورد را انتخاب کنید:',
+        'buy_sub_select_category' => '<b>📂 مرحلهٔ دوم</b>' . "\n\n" . '📅 لطفا دوره یا همان مدت زمان سرویس خود را انتخاب کنید:',
         'no_plan_available' => '💡 پلنی در این سرویس وجود ندارد.',
         'receive_plans' => '📍 در حال دریافت لیست پلن ها',
         'buy_sub_select_plan' => '📋 مرحلهٔ سوم' . "\n" . '' . "\n" . '🔰 یکی از پلن هارو انتخاب کنید:',
@@ -138,7 +137,6 @@ return [
     'bot' => [
         // bot.webhook_ingress_authenticated
         'bot.webhook_ingress_authenticated.message.5e45680470' => ['text' => '⛔️ اکانت شما به دلیل اسپم مسدود شده است.' . "\n" . 'زمان آزادسازی اکانت شما: ' . "\n" . '{time}', 'parameters' => ['time']],
-        'bot.webhook_ingress_authenticated.alert.d4b0660226' => 'این دکمهٔ پرداخت معتبر نیست؛ لطفاً از فاکتور جدید استفاده کنید.',
         'bot.webhook_ingress_authenticated.inviter_msg.0a64da8ef5' => '🎉 تبریک! کاربر جدیدی با لینک دعوت شما عضو شد.' . "\n" . '' . "\n" . '',
         'bot.webhook_ingress_authenticated.text.750b1aaad1' => '💰 مبلغ هدیه شما: ',
         'bot.webhook_ingress_authenticated.text.81a62ff6c6' => ' تومان' . "\n" . '',
@@ -189,14 +187,6 @@ return [
         'wallet_recharge.wallet_topup_amount_problem.message.983d706c66' => '⚠️ وضعیت درخواست شارژ نیازمند بررسی است؛ قبل از تلاش مجدد، وضعیت را بررسی کنید.',
         'wallet_recharge.wallet_topup_amount_problem.message.d0531e17b9' => '⚠️ این درخواست قبلاً پردازش یا جایگزین شده است. شارژ کیف پول را دوباره از منو آغاز کنید.',
         'wallet_recharge.wallet_topup_amount_problem.message.ae69d93a89' => '💰 لطفاً مبلغ شارژ را وارد کنید.' . "\n\n" . '✅ حداقل مبلغ قابل شارژ <b>100,000 تومان</b> می باشد.' . "\n" . '✅ حداکثر مبلغ قابل شارژ <b>10,000,000 تومان</b> می باشد.' . "\n" . '✅ مبلغ باید فقط مضربی از <b>50,000 تومان</b> باشد.' . "\n\n" . '🔢 لطفاً فقط اعداد انگلیسی وارد کنید.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.1a885aaca4' => '⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.07ee06b4bc' => '⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.7a9c30e938' => '⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.d06bc731eb' => '⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.560f05f822' => '⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.882596d0f1' => '⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.',
-        'wallet_recharge.wallet_topup_amount_problem.alert.795c4bddb8' => '⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.',
-        'wallet_recharge.wallet_topup_amount_problem.message.c346a0d62e' => '📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.',
         // wallet_transfer.wallet_transfer_restart
         'wallet_transfer.wallet_transfer_restart.message.1286cd29ed' => '⚠️ آماده‌سازی درخواست انتقال با مشکل روبه‌رو شد؛ لطفاً انتقال را دوباره شروع کنید.',
         'wallet_transfer.wallet_transfer_restart.message.03d3c27bc2' => '⛔️ این پیام برای مرحلهٔ فعلی انتقال معتبر نیست؛ لطفاً از منوی کیف پول انتقال تازه‌ای شروع کنید.',
@@ -223,7 +213,6 @@ return [
         'wallet_settlement.process_wallet_payment.alert.4092b19ef1' => '💰 موجودی فعلی: ',
         'wallet_settlement.process_wallet_payment.alert.f82b5605a9' => '🔺 مورد نیاز: ',
         'wallet_settlement.process_wallet_payment.alert.0b74ab3f2e' => '⛔️ ظرفیت این سفارش کافی نیست؛ مبلغی از کیف پول کسر نشد.',
-        'wallet_start.start_wallet_payment.button.e729457ba2' => '🧰 ارسال تتر یا ترون',
         'wallet_start.start_wallet_payment.message.1f46b2b87f' => '🧾 اطلاعات شارژ:' . "\n" . '💰 مبلغ: ',
         'wallet_start.start_wallet_payment.message.64ab796d01' => ' تومان' . "\n" . '' . "\n" . '💳 لطفاً روش پرداخت را انتخاب کنید:',
     ],
@@ -356,31 +345,19 @@ return [
         // config_refresh.message
         'config_refresh.message.1d7cb7b50c' => '🔎 کانفیگی برای نمایش انتخاب نشده است؛ لینک اشتراک را در اطلاعات اشتراک بررسی کنید.',
         // customer_routes.cancel_search_keyboard
+        'customer_routes.search_ambiguous' => '⚠️ چند اشتراک با این نام پیدا شد. لطفاً نام کاربری دقیق اشتراک را وارد کنید یا اشتراک را از فهرست انتخاب کنید.',
         'customer_routes.cancel_search_keyboard.button.cc357a4c9f' => '❌ لغو عملیات',
         'customer_routes.cancel_search_keyboard.button.0b8da1e098' => '◀',
         'customer_routes.cancel_search_keyboard.button.0d56714222' => '➡',
         'customer_routes.cancel_search_keyboard.alert.724ff90245' => '⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست.',
-        'customer_routes.cancel_search_keyboard.vraylink.cde59051f4' => 'خطا در دریافت لینک',
-        'customer_routes.cancel_search_keyboard.success_message.6d1ad0af39' => '<b>✅ بروزرسانی موفق بود!</b>' . "\n" . '' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.02845d07de' => '⭕️ دقت کنید باید لینک اشتراک را دوباره وارد برنامه کنید یا داخل برنامه نیز بروزرسانی بزنید.' . "\n" . '' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.672ff8ac41' => '🔄 <b>در صورتی که کانفیگ ها با لینک اشتراک اصلی یا کمکی برای شما لود نمی شوند، لطفاً مراحل زیر را انجام دهید:</b>' . "\n" . '' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.caaf926e2a' => 'ابتدا کانفیگ های قدیمی را از نرم‌افزار خود حذف کنید.' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.0aa0ee1c1f' => 'سپس کانفیگ های جدید را از قسمت بالا کپی کنید.' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.1ed8d0a6cf' => 'در پایان کانفیگ ها را به نرم‌افزار اضافه کنید.' . "\n" . '' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.47dcd18697' => '📱 <i>برای اتصال موفق، حتماً از آخرین نسخه نرم‌افزار استفاده نمایید.</i>' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.0bd7d3c032' => '⚠️ <b>بعد اتصال به کمک کانفیگ های تکی، برای اینکه همه کانفیگ ها را داشته باشید حتما دوباره با لینک اشتراک وارد کنید.</b>',
+        'customer_routes.link_view_unconfirmed' => '⚠️ نمایش اطلاعات جدید تأیید نشد. اطلاعات اشتراک را دوباره باز کنید؛ نیازی به تکرار تغییر لینک نیست.',
+        'customer_routes.link_update_advice' => "🔄 لینک <b>اشتراک قبلی</b> را از نرم افزار <b>حذف</b> کنید و <b>لینک جدید</b> را از بالا بردارید و <b>وارد</b> کنید.\n⚠️ اگر <b>لینک اصلی</b> کار نکرد از <b>لینک کمکی</b> استفاده کنید.\n⚠️ برای دریافت کانفیگ ها به صورت تک تک می توانید دکمه <b>کیوآرکد کانفیگ</b> را بزنید.",
+        'customer_routes.cancel_search_keyboard.success_message.6d1ad0af39' => '<b>✅ بروزرسانی موفق بود!</b>',
         'customer_routes.cancel_search_keyboard.error_message.496a7eede8' => '<b>❌ خطا در بروزرسانی</b>' . "\n" . '' . "\n" . '',
         'customer_routes.cancel_search_keyboard.text.fd5bccf56e' => 'متأسفانه عملیات بروزرسانی با مشکل مواجه شد.' . "\n" . '',
         'customer_routes.cancel_search_keyboard.text.0d78481f3e' => 'لطفاً مجدداً تلاش کنید یا با پشتیبانی تماس بگیرید.',
         'customer_routes.cancel_search_keyboard.alert.001c06ff23' => '⚠️ نتیجه تغییر لینک نیاز به بررسی دارد؛ درخواست را تکرار نکنید.',
-        'customer_routes.cancel_search_keyboard.success_message.eb1ae135ff' => '<b>✅ لینک اشتراک شما با موفقیت تغییر کرد!</b>' . "\n" . '' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.36244c21e0' => '♻️ لینک اشتراک و کانفیگ‌های شما مجدد ساخته شد.' . "\n" . '' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.f82d5bd5ad' => '🔄 <b>برای استفاده از لینک جدید این مراحل را انجام دهید:</b>' . "\n" . '' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.97f8afa554' => 'ابتدا لینک اشتراک قبلی و کانفیگ‌های قبلی را از نرم‌افزار کامل حذف کنید.' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.f3bed97abc' => 'سپس لینک اشتراک جدید را از پیام بالا که شامل اطلاعات اشتراک هست کپی کنید.' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.4267d2ca77' => 'در پایان لینک را وارد نرم افزار کنید تا کانفیگ ها لود شوند اگر لینک اصلی کار نکرد از لینک کمکی استفاده کنید.' . "\n" . '' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.30d20d2a47' => '📱 <i>پیشنهاد می کنیم از نرم‌افزار Karing استفاده کنید.</i>' . "\n" . '',
-        'customer_routes.cancel_search_keyboard.text.3c4d2c9dc6' => '⚠️ <b>اگر می‌خواهید همه کانفیگ‌ها را تک تک داشته باشید، بزنید روی دکمه کیوآر کانفیگ تا تک تک ارسال شود.</b>',
+        'customer_routes.cancel_search_keyboard.success_message.eb1ae135ff' => '<b>✅ لینک اشتراک شما با موفقیت تغییر کرد!</b>',
         'customer_routes.cancel_search_keyboard.alert.627f7fad2f' => '⛔️ اشتراک معتبر نیست.',
         'customer_routes.cancel_search_keyboard.message.b63b579845' => '⚠️ نتیجه تغییر وضعیت هنوز قطعی نیست؛ برای بررسی با پشتیبانی تماس بگیرید.',
         'customer_routes.cancel_search_keyboard.message.f0a1fc755c' => '⚠️ سفارش مورد نظر یافت نشد.',
@@ -462,21 +439,12 @@ return [
         'extensions.alert.584426a8a8' => '📅 پلن زمانی در دسترس نیست؛ دوباره از منوی اشتراک انتخاب کنید.',
         'extensions.alert.ae271a2d1d' => '⚠️ ثبت پیش‌نویس به‌طور قطعی تأیید نشد؛ از ایجاد پرداخت مجدد پرهیز کنید.',
         // extensions.button
-        'extensions.button.e729457ba2' => '🧰 ارسال تتر یا ترون',
         // extensions.message
-        'extensions.message.48930749a9' => '🧾 روش پرداخت سفارش را انتخاب کنید.',
+        'extensions.message.48930749a9' => ['text'=>"<b>🧾 روش پرداخت سفارش را انتخاب کنید.</b>\n💵 مبلغ: {amount} تومان",'parameters'=>['amount']],
         // extensions.alert
-        'extensions.alert.1a885aaca4' => '⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.',
-        'extensions.alert.07ee06b4bc' => '⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.',
-        'extensions.alert.7a9c30e938' => '⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.',
-        'extensions.alert.d06bc731eb' => '⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.',
-        'extensions.alert.560f05f822' => '⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',
-        'extensions.alert.882596d0f1' => '⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.',
-        'extensions.alert.795c4bddb8' => '⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.',
         // extensions.text
         'extensions.text.9699c34220' => 'زمان',
         // extensions.message
-        'extensions.message.c346a0d62e' => '📥 تصویر برای پیگیری ثبت شده اما تأیید ارسال به مدیر دریافت نشده است. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.',
         // extensions.alert
         // extensions.message
         'extensions.message.24dea9b122' => ['text' => '✅ مدت <b>{volume}</b> روز به مدت زمان اشتراک <code>{remark}</code> اضافه شد.', 'parameters' => ['volume', 'remark']],
@@ -505,7 +473,6 @@ return [
         'extensions.alert.f5aab191db' => '📆 اشتراک شما منقضی شده است. ابتدا آن را تمدید کنید.',
         // extensions.planprice
         // extensions.button
-        'extensions.button.5adbd64a32' => '💰پرداخت با موجودی',
         // extensions.text
         'extensions.text.4123904480' => 'حجم',
         // extensions.alert
@@ -525,17 +492,12 @@ return [
         // renewal_checkout.alert
         'renewal_checkout.alert.201380d8bf' => '⚠️ صدور پیش‌نویس به‌طور قطعی تأیید نشد؛ برای پیگیری از پشتیبانی کمک بگیرید.',
         // renewal_checkout.button
-        'renewal_checkout.button.5b3252c790' => ['text' => '💳 کارت به کارت مبلغ {price}', 'parameters' => ['price']],
-        'renewal_checkout.button.cf580700a3' => ['text' => '🎁 گیفت‌کارت مبلغ {price}', 'parameters' => ['price']],
-        'renewal_checkout.button.73f7c8deeb' => ['text' => '🧰 ارسال تتر یا ترون مبلغ {price}', 'parameters' => ['price']],
-        'renewal_checkout.button.0eed1dd8e8' => ['text' => '💰پرداخت با موجودی مبلغ {price}', 'parameters' => ['price']],
-        'renewal_checkout.button.05c3a1e3f4' => ' 🎟 افزودن کد تخفیف ',
         // renewal_checkout.message
         'free_confirmation.prompt' => '🧾 مبلغ نهایی این سفارش صفر تومان است. برای انجام عملیات، تأیید کنید.',
         'free_confirmation.renew' => '✅ تمدید رایگان',
         'free_confirmation.day' => '✅ افزایش زمان رایگان',
         'free_confirmation.volume' => '✅ افزایش حجم رایگان',
-        'renewal_checkout.message.24ae8c4399' => '🧾 روش پرداخت این تمدید را انتخاب کنید. فقط یک روش فعال را ادامه دهید.',
+        'renewal_checkout.message.24ae8c4399' => ['text'=>"<b>🧾 تمدید اشتراک</b>\n💵 مبلغ: {amount} تومان\n\nروش پرداخت این تمدید را انتخاب کنید. فقط یک روش فعال را ادامه دهید.",'parameters'=>['amount']],
         // renewal_checkout.alert
         'renewal_checkout.message.47b1149fb0' => ['text' => '✅ اشتراک <code>{remark}</code> با موفقیت تمدید شد.', 'parameters' => ['remark']],
         // renewal_checkout.alert
@@ -550,10 +512,6 @@ return [
         // Existing API-assisted payments.
         'api_payment.code' => "📤 ارسال کد گیفت کارت",
         'api_payment.code_prompt' => "کد کامل یک گیفت‌کارت که با مبلغ دقیق فاکتور برابر است را ارسال کنید. <b>فقط کد بفرستید</b> تصویر نفرستید.",
-        'api_payment.pending' => "بررسی پرداخت ادامه دارد. کد، رسید یا وجه را دوباره ارسال نکنید.",
-        'api_payment.confirmed' => "پرداخت تأیید شد. ثبت پرداخت به‌تنهایی به معنی تکمیل یا تحویل سفارش نیست؛ وضعیت سفارش را بررسی کنید.",
-        'api_payment.unavailable' => "بررسی پرداخت فعلاً کامل نشد و نتیجه هنوز مشخص نیست. اطلاعات دریافت‌شده برای بررسی نگه داشته شد؛ دوباره پرداخت نکنید.",
-        'api_payment.denied' => "این درخواست پرداخت در دسترس نیست.",
         'api_payment.code_acknowledgement' => "✅ کد گیفت‌کارت دریافت شد.\n⏳ درخواست در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.",
         'api_payment.code_too_long' => 'کد همراه اطلاعات سفارش در یک پیام جا نمی‌شود. کد را دقیق و بدون متن اضافی بفرستید؛ اگر فقط کد است، با پشتیبانی تماس بگیرید.',
         'api_payment.code_not_found_retry' => "کد گیفت‌کارت در سامانه پیدا نشد. لطفاً کد درست را دوباره بفرستید یا درخواست را لغو کنید.",
@@ -562,7 +520,6 @@ return [
         'api_payment.code_revoked_retry' => "این گیفت‌کارت باطل شده است. لطفاً کد گیفت‌کارت معتبر دیگری بفرستید یا درخواست را لغو کنید.",
         'api_payment.code_expired_retry' => "مهلت این گیفت‌کارت به پایان رسیده است. لطفاً کد گیفت‌کارت معتبر دیگری بفرستید یا درخواست را لغو کنید.",
         'api_payment.code_mismatch_retry' => "مشخصات این گیفت‌کارت با مبلغ یا نوع گیفت‌کارت سفارش یکسان نیست. کد مصرف نشد؛ لطفاً کد متناسب با سفارش را بفرستید یا درخواست را لغو کنید.",
-        'api_payment.code_received' => "کد دریافت شد. ثبت درخواست بررسی در حال انجام است؛ منتظر نتیجه بمانید.",
         'agent_discounts.get_agent_discounts.button.526e310df4' => 'عمومی',
         'agent_discounts.get_agent_discounts.button.2b2966a54e' => '❌',
         'agent_discounts.get_agent_discounts.button.d15a8dbd6d' => '🎁 افزودن تخفیف پلن',
@@ -570,13 +527,24 @@ return [
         // discounts.apply_discount_to_pay
         'discounts.no_monetary_method' => '⚠️ هیچ روش پرداختی برای این سفارش در دسترس نیست. در این شرایط فقط کد تخفیفی که مبلغ نهایی را صفر کند قابل استفاده است.',
         'discounts.apply_discount_to_pay.text.2cc98f7f7c' => ' تومان',
-        'discounts.apply_discount_to_pay.message.e3c216313a' => 'کد تخفیف با موفقیت اعمال شد. مبلغ تخفیف: ',
         'discounts.apply_discount_to_pay.button.16e81418a3' => '❤️',
         // payment_lifecycle.pay_ux_reference
         'payment_lifecycle.pay_ux_reference.label.edb6e627ea' => '🧾 شناسه سفارش: <code>',
         'payment_lifecycle.pay_ux_reference.text.d031212b3c' => '🎫 شناسه عددی: <code>',
         // payment_lifecycle.pay_ux_status_text
         'payment_lifecycle.pay_ux_status_text.text.df83eb82dd' => 'پرداخت سفارش',
+        'payment_lifecycle.request_accepted' => '✅ درخواست شما ثبت شد',
+        'payment_lifecycle.progress_pending' => '⏳ در حال انجام درخواست شما هستیم. نیازی به پرداخت مجدد نیست.',
+        'payment_lifecycle.progress_completed' => '✅ درخواست انجام شد و اطلاعات آن ارسال شده است.',
+        'payment_lifecycle.progress_delivery_unconfirmed' => 'درخواست انجام شده، اما ارسال اطلاعات هنوز تأیید نشده است. لطفاً وضعیت همین سفارش را پیگیری کنید.',
+        'payment_lifecycle.progress_wallet_credited' => '✅ مبلغ تأییدشده به کیف پول شما اضافه شد.',
+        'payment_lifecycle.progress_resolved' => 'رسیدگی به این درخواست پایان یافته است؛ برای جزئیات، وضعیت سفارش را از پشتیبانی پیگیری کنید.',
+        'payment_lifecycle.progress_unverified' => 'نتیجه نهایی هنوز قابل تأیید نیست. پرداخت را تکرار نکنید و وضعیت همین سفارش را پیگیری کنید.',
+        'payment_lifecycle.original_invoice_record' => ['text' => '<b>🧾 اطلاعات فاکتور اصلی (سوابق)</b>' . "\n" . '💳 روش: {method}' . "\n" . '💰 مبلغ فاکتور: <code>{amount}</code> {currency}', 'parameters' => ['method', 'amount', 'currency']],
+        'payment_lifecycle.original_bank_destination' => ['text' => '💳 شماره کارت: <code>{account}</code>' . "\n" . '👤 صاحب حساب: {holder}', 'parameters' => ['account', 'holder']],
+        'payment_lifecycle.original_crypto_destination' => ['text' => '🌐 شبکه: {network}' . "\n" . '📋 آدرس مقصد: <code>{wallet}</code>', 'parameters' => ['network', 'wallet']],
+        'payment_lifecycle.toman' => 'تومان',
+        'payment_lifecycle.draft_closed' => '<b>⌛️ مهلت انتخاب روش پرداخت پایان یافت.</b> لطفاً درخواست خود را دوباره ثبت کنید.',
         'payment_lifecycle.pay_ux_status_text.text.a1026d7b85' => '⌛️ مهلت این درخواست پرداخت پایان یافته است.',
         'payment_lifecycle.pay_ux_status_text.text.74adf2adfe' => '🧾 درخواست جدیدتری جایگزین این پیش‌نویس شده است.',
         'payment_lifecycle.pay_ux_status_text.service_superseded_title' => '🔄 درخواست قبلی بسته شده است.',
@@ -595,7 +563,7 @@ return [
         'payment_lifecycle.pay_ux_status_text.text.c0ee0533a8' => 'از فاکتور جدید استفاده کنید. لینک قبلی دیگر برای پرداخت قابل استفاده نیست؛ اگر وجهی فرستاده‌اید با پشتیبانی هماهنگ کنید.',
         'payment_lifecycle.pay_ux_status_text.text.b2948cf010' => '🔎 جزئیات بررسی را از پشتیبانی پیگیری کنید.',
         'payment_lifecycle.pay_ux_status_text.text.d5b12a8ef5' => '⏳ رسید در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.',
-        'payment_lifecycle.pay_ux_status_text.text.368ad58967' => '🔰 پرداخت شما ثبت شده است و اطلاعات سفارش شما باید در ادامه ارسال شده باشد.',
+        'payment_lifecycle.pay_ux_status_text.text.368ad58967' => '🔎 نتیجه انجام سفارش را از همین پیام پیگیری کنید.',
         'payment_lifecycle.pay_ux_status_text.text.f1092775b2' => '🛑 پرداخت این فاکتور هنوز تأیید نشده است؛ اگر پرداخت کرده‌اید، با شناسه سفارش از پشتیبانی پیگیری کنید و پرداخت را تکرار نکنید.',
         'payment_lifecycle.pay_ux_status_text.text.5e55076dd5' => '⚠️ در صورتی که پرداخت انجام شده ولی تایید نشده برای پشتیبانی پیام ارسال کنید.',
         'payment_lifecycle.pay_ux_status_text.text.d251ffde03' => '🧾 موضوع: ',
@@ -613,45 +581,29 @@ return [
         'checkout.alert.bfa5553444' => '⛔️ لینک اشتراک در حال حاضر در دسترس نیست.',
         'checkout.alert.baff5f2488' => '⛔️ کانفیگ قابل نمایش در دسترس نیست.',
         'checkout.alert.1a885aaca4' => '⚠️ پرداخت این سفارش با این روش مجاز نیست یا قبلاً به روش دیگری آغاز شده است.',
-        'checkout.alert.07ee06b4bc' => '⚠️ اطلاعات این پرداخت قابل بازیابی نیست؛ با پشتیبانی تماس بگیرید.',
-        'checkout.alert.7a9c30e938' => '⚠️ نمایش اطلاعات پرداخت تأیید نشد. از همان دکمه دوباره تلاش کنید و وجهی ارسال نکنید.',
         'checkout.alert.d06bc731eb' => '⚠️ این رسید با روش پرداخت انتخاب‌شده مطابقت ندارد یا سفارش در انتظار پرداخت نیست.',
         'checkout.alert.560f05f822' => '⌛️ مهلت شروع ارسال رسید پایان یافته یا فاکتور در حال بررسی است. اگر وجهی فرستاده‌اید با پشتیبانی تماس بگیرید.',
         'checkout.alert.882596d0f1' => '⚠️ این سفارش قابل ثبت رسید نیست؛ برای بررسی با پشتیبانی تماس بگیرید.',
         'checkout.alert.795c4bddb8' => '⚠️ ثبت یا ارسال رسید در جریان است. همان تصویر را دوباره ارسال کنید؛ در صورت تداوم مشکل با پشتیبانی تماس بگیرید.',
         // checkout.text
-        'checkout.text.04029e7ea7' => 'کارت به کارت',
         // checkout.message
-        'checkout.message.c346a0d62e' => '📥 تصویر برای پیگیری ثبت شده اما تأیید دریافت آن مشخص نیست. لطفاً همان تصویر را دوباره بفرستید یا با پشتیبانی تماس بگیرید. پرداخت مجدد انجام ندهید.',
         // checkout.alert
         'pre_payment.alert.8fbaa8aebc' => 'این سفارش برای شما قابل مشاهده نیست.',
         // pre_payment.text
-        'pre_payment.text.ea9faa7b63' => 'ترون دستی (TRX)',
-        'pre_payment.text.16b71e846a' => 'تتر دستی',
-        'pre_payment.text.ace4b5ad89' => 'کارت‌به‌کارت بانکی',
-        'pre_payment.text.46daee8b43' => 'پرداخت رمزارزی',
         // pre_payment.next_pay
-        'pre_payment.next_pay.68fdcf6af2' => 'درگاه نکست‌پی',
         // pre_payment.zarinpal
-        'pre_payment.zarinpal.4497ba648f' => 'درگاه زرین‌پال',
         // pre_payment.text
         'pre_payment.text.f07a81a062' => 'نامشخص',
         'pre_payment.text.c8886e46d5' => '' . "\n" . '💳 روش پرداخت: ',
         // pre_payment.body
-        'pre_payment.body.ff6ceb47bf' => '' . "\n" . '📅 تاریخ تأیید: <code>',
         // pre_payment.button
         // pre_payment.alert
         'pre_payment.alert.fdf0d1d6f9' => 'وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.',
         'pre_payment.alert.fa55f5201f' => '⛔️ انجام این درخواست برای اشتراک انتخاب‌شده امکان‌پذیر نیست. با پشتیبانی تماس بگیرید.',
         'pre_payment.button.f81a8cfcdd' => '💳 پرداخت فاکتور',
         // pre_payment.alert
-        'pre_payment.alert.093b359bab' => 'فاکتور آمادهٔ پرداخت است.',
         // pre_payment.text
-        'pre_payment.text.52bdfa0dce' => '⏳ پردازش رمزارزی ممکن است بیش از چند دقیقه طول بکشد.',
-        'pre_payment.text.64b1e46fd3' => '⚠️ بازگشت از درگاه، به‌تنهایی تأیید مالی نیست.',
         // pre_payment.message
-        'pre_payment.message.b3b3cf5aae' => '🧾 <b>فاکتور آماده است</b>' . "\n" . '',
-        'pre_payment.message.69b0efb715' => '' . "\n" . 'پس از پرداخت، وضعیت سفارش را در ربات بررسی کنید.',
     ],
 
     // ── رسیدهای پرداخت دستی ──
@@ -676,10 +628,6 @@ return [
         'receipt_helpers.send_with_start_button.button.dcb9c20928' => '🔄 بررسی وضعیت',
         // manual_crypto.alert
         'manual_crypto.alert.d0d07ef447' => 'این سفارش در انتظار پرداخت نیست یا متعلق به شما نیست.',
-        'manual_crypto.alert.4d788a75be' => 'این سفارش قبلاً با روشی دیگر ثبت یا وارد بررسی شده است.',
-        'manual_crypto.alert.5ce97176e4' => 'اطلاعات پرداخت قبلی نیازمند بررسی است.',
-        // manual_crypto.t_r_x
-        'manual_crypto.t_r_x.a23d6fad8d' => '🔴 ترون (TRX) — ',
         // manual_crypto.alert
         'manual_crypto.alert.26fc4467a8' => 'هیچ شبکه‌ای با آدرس و نرخ معتبر فعال نیست.',
         // manual_crypto.button
@@ -691,7 +639,6 @@ return [
         'manual_crypto.text.ee4ae4b0c7' => '🧾 پس از ارسال رسید، نتیجه بررسی به شما اعلام می‌شود.',
         // manual_crypto.alert
         'manual_crypto.alert.93decba032' => 'این شبکه برای سفارش در دسترس نیست.',
-        'manual_crypto.alert.fc9718b40b' => 'این نوع سفارش از این پرداخت پشتیبانی نمی‌کند.',
         'manual_crypto.alert.5216f25f85' => 'وضعیت سفارش قابل خواندن نیست؛ لطفاً بعداً تلاش کنید.',
         // manual_receipts.message
         'manual_receipts.message.f568baa065' => '✅ افزایش حساب شما با موفقیت تایید شد.' . "\n" . '💰 مبلغ <b>',
@@ -718,9 +665,6 @@ return [
         'gateway_initiation.mark_checkout_uncertain.message.32573bc25a' => 'این روش پرداخت برای حساب شما فعال نیست؛ اگر فاکتور قبلی صادر شده با پشتیبانی وضعیت آن را پیگیری کنید.',
         'gateway_initiation.mark_checkout_uncertain.message.2d6b333856' => 'مهلت استفاده از لینک این فاکتور پایان یافته است. وضعیت پرداخت در حال پیگیری است؛ وجه را دوباره ارسال نکنید.',
         'gateway_initiation.mark_checkout_uncertain.message.eaf7a98f3e' => 'وضعیت فاکتور آنلاین نیازمند بررسی است؛ پرداخت مجدد انجام ندهید.',
-        'gateway_initiation.mark_checkout_uncertain.button.f81a8cfcdd' => '💳 پرداخت فاکتور',
-        'gateway_initiation.mark_checkout_uncertain.button.f0137e1007' => '🧾 بررسی وضعیت سفارش',
-        'gateway_initiation.mark_checkout_uncertain.message.cd27d14216' => '🧾 فاکتور ثبت شد.' . "\n" . '',
         'gateway_initiation.mark_checkout_uncertain.message.0c4a9612f7' => '⚠️ پرداخت فقط پس از تأیید درگاه و ثبت نتیجه در ربات نهایی است؛ ',
         'gateway_initiation.mark_checkout_uncertain.message.0a2e0bc7bc' => 'پردازش ممکن است بیش از چند دقیقه طول بکشد.',
         'gateway_return.np_reconcile_batch.message.f48a802b77' => 'خطا!',
@@ -764,6 +708,8 @@ return [
 
     // ── پشتیبانی و تیکت ──
     'support' => [
+        'history_empty' => 'هنوز پیامی در این تیکت ثبت نشده است.',
+        'action_unconfirmed' => '⚠️ ثبت درخواست تأیید نشد. لطفاً وضعیت تیکت را بررسی کنید.',
         'admin_reply.button.f8a34e79d9' => '💬 پاسخ به تیکت',
         'admin_reply.button.173875ae6b' => '💬 بستن تیکت',
         'queue_and_history.all_tickets.text.61cf036058' => '📷 تصویر /dlPic',

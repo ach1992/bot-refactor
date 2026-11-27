@@ -113,6 +113,15 @@ function timings($ch): array {
     return $out;
 }
 
+/** Nonapplication is proven only with a known pre-request failure and
+ * actual zero wire-byte counters. False/missing counters are not zero. */
+function knownPreSendFailure(int $errno,int $http,mixed $requestBytes,mixed $uploadBytes): ?\AchBot\Telegram\Response\PreSendFailure {
+    if ($http!==0 || !in_array($errno,[5,6,7,35,60,77],true) ||
+        !(is_int($requestBytes)||is_float($requestBytes)) || $requestBytes!=0 ||
+        !(is_int($uploadBytes)||is_float($uploadBytes)) || $uploadBytes!=0) return null;
+    return new \AchBot\Telegram\Response\PreSendFailure($errno);
+}
+
 function requestOnce($botToken,$runtimeDir,$method,$datas=[]) {
     $url="https://api.telegram.org/bot".$botToken."/".$method;
     $ch=curl_init();
@@ -144,10 +153,14 @@ function requestOnce($botToken,$runtimeDir,$method,$datas=[]) {
     $errno=curl_errno($ch);
     $http=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);
     $timing=timings($ch);
+    $ctx=diagnosticContext();
+    $notSent=isset($ctx['followup_id']) || isset($ctx['delivery_part'])
+        ?knownPreSendFailure($errno,$http,curl_getinfo($ch,CURLINFO_REQUEST_SIZE),curl_getinfo($ch,CURLINFO_SIZE_UPLOAD)):null;
     unset($ch); // PHP 8.5: curl_close() is deprecated and has no effect.
     $decoded=is_string($res)&&$res!==''?json_decode($res):null;
     logResult($runtimeDir,$method,$timing,$http,$errno,$elapsed,$decoded,$hasFile);
-    // Preserve old calling contract. Never mask an unknown send as ACK.
+    // A proven pre-request failure can retry without a duplicate send.
+    if ($notSent!==null) return $notSent;
     if ($errno!==0) return null;
     $context=diagnosticContext();
     if (isset($context['delivery_part']) || isset($context['followup_id']) ||
@@ -185,9 +198,13 @@ function sendFileOnce($botToken,$runtimeDir,$method,$datas=[]) {
     $errno=curl_errno($ch);
     $http=(int)curl_getinfo($ch,CURLINFO_RESPONSE_CODE);
     $timing=timings($ch);
+    $ctx=diagnosticContext();
+    $notSent=isset($ctx['followup_id']) || isset($ctx['delivery_part'])
+        ?knownPreSendFailure($errno,$http,curl_getinfo($ch,CURLINFO_REQUEST_SIZE),curl_getinfo($ch,CURLINFO_SIZE_UPLOAD)):null;
     unset($ch); // PHP 8.5: curl_close() is deprecated and has no effect.
     $decoded=is_string($res)&&$res!==''?json_decode($res,true):null;
     logResult($runtimeDir,$method,$timing,$http,$errno,$elapsed,$decoded,true);
+    if ($notSent!==null) return $notSent;
     if ($errno!==0) return false;
     if (\AchBot\Telegram\Response\deliveryOutcome($decoded)['result'] !== 'unknown')
         return \AchBot\Telegram\Response\deliveryTransportResponse($decoded,$http,$errno) ?? false;

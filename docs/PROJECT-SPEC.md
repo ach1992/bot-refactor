@@ -73,7 +73,8 @@ authentic funds/evidence or treating a migrated PasarGuard account as retired.
   Without one, retain the exact original draft and usage counters and
   show the approved discount-only explanation. Shared current method
   eligibility and one payment keyboard govern checkout, add-ons, renewal,
-  manual crypto and recharge; Wallet cannot fund its own recharge.
+  manual crypto and recharge; Wallet cannot fund its own recharge. Show the
+  amount in the message, not in payment-method labels.
   First invoice issuance revalidates actual persisted configuration and
   local quote rules, without a merchant probe. Issued quotes retain their
   original terms. Eligibility is not a guarantee of funds or external
@@ -86,6 +87,14 @@ authentic funds/evidence or treating a migrated PasarGuard account as retired.
   including inactive plans, cannot be deleted.
 
 ## Payments and Wallet
+
+- One owned customer message registry projects manual/API and hosted
+  invoices and status. Promote a selector in place, retain receipt evidence,
+  retire obsolete navigation before editing, and never blindly resend on
+  an unknown transport outcome. Service progress and delivery use the
+  original durable evidence, not a payment state alone. See
+  [payment message lifecycle](post-v9/PAYMENT-UX-LIFECYCLE.md).
+
 
 - Receipt proof and Wallet credit are separate from funded service
   completion and message delivery. All methods enter the same original
@@ -122,10 +131,13 @@ authentic funds/evidence or treating a migrated PasarGuard account as retired.
   capabilities. Only primary Owner ID belongs in private configuration;
   manage other staff in the bot. Report receiving does not grant authority.
   All genuinely authorized staff retain approved manual receipt review.
-  Preserve incoming administrator-authored Telegram messages.
+  Preserve incoming human-authored Telegram messages, regardless of role,
+  and retain issued invoices, receipts, reports and valuable history.
 - Two [audience catalogs](../messages/README.md) own static Persian copy;
   per-instance branding, welcome, purchase text, channels and settings
-  remain persisted. Preserve literal/copyable subscription URLs, IDs
+  remain persisted. First-start welcome and menu are one message when they
+  fit Telegram's limit; otherwise retain both texts and only one menu.
+  Preserve literal/copyable subscription URLs, IDs
   and credentials. Per-server purchase and order display/QR policies are
   independent; see [subscription presentation](post-v9/SUBSCRIPTION-PRESENTATION.md).
 - Every actual Wallet movement and completed service report identifies
@@ -133,9 +145,15 @@ authentic funds/evidence or treating a migrated PasarGuard account as retired.
   and actual human actor receive the applicable auditable report without
   duplicate destinations; optional notification preferences do not suppress
   the acting operator. Automatic confirmation has no invented actor.
-  Delivery recovery reuses original packets and never repeats money or
-  Native changes. See the architecture for durable reporting and sales
-  metric ownership.
+  Each service/destination report uses the latest eligible immutable revision,
+  updating its proven prior message rather than sending separate funding,
+  completion and delivery notices. Standalone Wallet credit, original receipt
+  records and necessary continuation pages remain distinct. Delivery recovery
+  reuses original packets and never repeats money or Native changes. Known
+  nonapplication and exact idempotent edits recover automatically with
+  rate-aware backoff; uncertain first sends are isolated. Transport leases
+  do not hold financial or service-execution locks during report I/O.
+  See the architecture for durable reporting and sales metric ownership.
 - Broadcast/forward processing continues past individual recipient failures
   and resumes after interruption using the original durable cursor. Do not
   replay uncertain sends or treat processing completion as universal Telegram
@@ -162,3 +180,16 @@ The [contributor rules](../AGENTS.md), [security](SECURITY.md),
 [Issues](https://github.com/ach1992/bot-refactor/issues) and
 [Releases](https://github.com/ach1992/bot-refactor/releases) own engineering,
 unresolved work and publication respectively.
+
+## Support
+
+- Preserve actual ticket/message history and attachment content. Current
+  private text/photo submission is atomic with its original recipient intents;
+  duplicate incoming messages do not create duplicate ticket history.
+- Current ticket ownership and staff authority govern actions; a closed
+  ticket cannot be reopened by a delayed reply. General staff notification
+  preferences and the existing audience policy remain unchanged.
+- The existing followup worker independently delivers private support notices;
+  no financial or public reporting destination is added. Queue pages,
+  historical attachment retrieval and editor exit use the shared support
+  contract in [Telegram presentation](post-v9/TELEGRAM-PRESENTATION.md).

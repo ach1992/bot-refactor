@@ -43,13 +43,19 @@ function achbotDeliveryPartHistoryLocked(mysqli $db,array $d,array $p): ?array {
     if ($state==='pending') {
         $valid=$last===null ? $p['next_attempt_at']===null :
             ($p['next_attempt_at']!==null && (int)$last['retry_after_seconds']>0 &&
-                (($last['result']==='rejected' && (int)$last['telegram_error_code']===429) ||
+                (($last['result']==='rejected' && in_array((int)$last['telegram_error_code'],[401,403,404,409,429],true)) ||
                  ($last['result']==='local_failed' && $last['telegram_error_code']===null)));
     } else {
         $valid=$last!==null && $last['result']===$state && $p['next_attempt_at']===null;
         if ($state==='dispatching')
             $valid=$valid && $d['state']==='dispatching' && $d['dispatch_token']===$last['dispatch_token'];
     }
+    if ($last!==null && ($last['ack_chat_id']!==null || $last['ack_message_id']!==null))
+        $valid=$valid && $last['result']==='acknowledged' &&
+            $last['ack_chat_id']!==null && (int)$last['ack_chat_id']===(int)$d['user_id'] &&
+            (int)$last['ack_message_id']>0;
+    // Historical ACKs without a proven Telegram identity remain evidence.
+    // All new ACKs must prove that identity at the finish boundary below.
     if (!$valid) throw new RuntimeException('delivery_part_projection_conflict');
     return $last;
 }
@@ -137,18 +143,24 @@ function achbotDeliveryPartFinishLocked(mysqli $db,int $id,string $token,array $
         (int)$a['attempt_no']!==(int)$d['attempt_count'])
         throw new RuntimeException('delivery_part_finish_identity');
     $part=(int)$a['part_no'];$result=$outcome['result'];$delay=$outcome['retry_after'];$code=$outcome['code'];
+    $ack=$outcome['ack']??null;
     $valid=match($result) {
-        'acknowledged','unknown'=>$code===null && $delay===null,
+        'acknowledged'=>$code===null && $delay===null && is_array($ack) &&
+            ($ack['chat_id']??null)===(int)$d['user_id'] &&
+            is_int($ack['message_id']??null) && $ack['message_id']>0,
+        'unknown'=>$code===null && $delay===null,
         'rejected'=>in_array($code,[400,401,403,404,409,429],true) &&
             ($delay===null || ($code===429 && is_int($delay) && $delay>0 && $delay<=2147483647)),
         'local_failed'=>$code===null && is_int($delay) && $delay>0 && $delay<=2147483647,
         default=>false
     };
-    if (!$valid) throw new RuntimeException('delivery_part_outcome_invalid');
+    if (!$valid || ($result!=='acknowledged' && $ack!==null)) throw new RuntimeException('delivery_part_outcome_invalid');
+    if ($result==='rejected')
+        $delay=\AchBot\Telegram\Response\rejectedRetryDelay($code,$delay,(int)$a['attempt_no']);
     $state=$delay!==null?'pending':$result;
     $s=achbotProviderStatement($db,"UPDATE payment_delivery_attempts SET result=?,telegram_error_code=?,
-        retry_after_seconds=?,finished_at=NOW() WHERE id=? AND result='dispatching'",
-        'siii',[$result,$code,$delay,(int)$a['id']]);
+        retry_after_seconds=?,ack_chat_id=?,ack_message_id=?,finished_at=NOW() WHERE id=? AND result='dispatching'",
+        'siiiii',[$result,$code,$delay,$ack['chat_id']??null,$ack['message_id']??null,(int)$a['id']]);
     $n=$s->affected_rows;$s->close();
     if ($n!==1) throw new RuntimeException('delivery_part_attempt_finish_failed');
     $s=achbotProviderStatement($db,"UPDATE payment_delivery_parts SET state=?,

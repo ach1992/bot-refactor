@@ -9,14 +9,28 @@ checkout/message projection and the merchant configuration workflow.
 - All registered methods use the same original owned draft, current
   eligibility and immutable issued quote. Checkout, recharge and renewal
   do not depend on a second executor. The common keyboard preserves the
-  approved labels and order; recharge never offers Wallet self-payment.
+  approved labels and order without amount suffixes. Show the amount in
+  the checkout body, including time and volume add-ons; recharge never
+  offers Wallet self-payment.
   A legitimately zero-priced commercial command has its own free
   confirmation and needs no monetary method or external invoice.
-- Initial and status receipt actions share the original checkout family,
-  callback mapping and admitted receipt type. The pinned invoice evidence
+- One manual checkout route handles all six payment subjects. Method selection
+  uses pm_b_/pm_g_ and the shared crypto network selector; rs_ starts an
+  original receipt and rc_ cancels its current acknowledged prompt.
+  The subject/method come from the owned persisted invoice, not the callback.
+  The receipt step has a generation and exact bot prompt ID; validation
+  reuses the prompt and only a definite target-specific edit rejection
+  permits replacement. A concurrent changed step cannot authorize evidence.
+  Invoice Home (ph_) preserves the retained invoice. Draft cancellation
+  (dc_) retires a selector, not a financial claim. Hosted methods, including
+  renewal, use the same guarded URL directly.
+  Initial and status receipt actions share the admitted receipt type. The pinned invoice evidence
   profile, not later method settings, determines gift image versus API gift
   code input. Bank and crypto retain their own approved labels; closed
   invoices offer original-payment review without a new payment link.
+  Starting a manual receipt flow must not delete the original invoice.
+  A durable funding admission receives a non-modal acceptance notice,
+  without implying service or delivery completion.
 - Owned gateway initiation URLs re-check the original payment and
   authoritative current draft; public Return and authenticated merchant
   evidence are separate. Raw historical external links cannot be revoked
@@ -37,6 +51,70 @@ checkout/message projection and the merchant configuration workflow.
   for API evidence and original-receipt recovery. Keep user-facing changes
   within the approved product contract.
 
+## Message ownership and recovery
+
+`payment_message_refs` is the shared payment projection registry, with an explicit
+semantic purpose (`selector`, `invoice`, `status`, `receipt`, `staff`) and exact
+owned chat/message identity. The existing payment session lease serializes
+message promotion, navigation retirement and projection. No database
+transaction is held across a Telegram edit. Selector retirement checks
+positive absence of original financial evidence and commits under the same
+original pay row lock as browser admission. Navigation does not cancel
+an external invoice or change the payment state.
+
+Manual issuance promotes the existing selector to the invoice in place.
+A committed original whose selector was not promoted is recovered by the
+same projector. A stale method or crypto network click reconciles an
+already admitted original rather than reviving its selection keyboard.
+Other selectors are status views, not additional invoices.
+Receipt acknowledgements retain their original text; their keyboard alone
+may be updated. Closed manual invoices retain pinned amount and destination
+as historical facts, without new payment instructions. Hosted gateways
+project the original guarded payment URL; they do not send a second
+provider-specific invoice notice.
+
+A retired navigation reference is not a successful edit and cannot become a
+payment target again. Definite Telegram missing/non-editable responses retire
+that reference. Unknown outcomes do not authorize replacement sends; the
+existing due time and Telegram retry_after govern edits, including direct
+status clicks. A definite target rejection can permit one explicit
+replacement. Status requests from retained evidence use the active invoice
+or status view when available; a new explicit request has a durable
+update cursor before a new send. No repeated processing of the same update
+may blindly resend an unknown result.
+
+A staff projection reference is created only from an exact original
+receipt target and is never a customer selector or invoice. Each
+recipient/message has its own acknowledged digest, known-missing
+retirement and retry deadline; a failed or removed staff message does
+not force repeated edits of healthy recipients. Recheck current staff
+authorization and the original payment state under the existing target
+lease. Unknown and rate-limited results are not acknowledgements.
+Historical aggregate staff digests do not acknowledge a new per-target
+projection. No schema expansion, duplicate receipt report or new
+worker is needed.
+
+A recorded Wallet debit or receipt credit is not proof of delivery. Use the
+original command and service completion evidence to distinguish pending
+service, completed delivery, completed service with unconfirmed delivery,
+Wallet credit only, resolved and unverified outcomes.
+
+## Existing-instance transfer boundary
+
+The current consolidated schema is for empty installation. Construction
+script 051 refuses existing message references or former API invoice fields;
+it is not a live upgrade procedure. For a separately authorized existing
+instance transfer, preserve the source snapshot, original pay/attempt
+identity, financial evidence, staff receipt IDs and delivery history. Map a
+known API invoice chat/message pair to the same owned customer reference,
+deduplicate by exact chat/message, and classify a reference only with
+positive evidence of its purpose. Preserve ambiguous references as retired
+non-projectable identities or in the protected transfer audit, not as guessed
+active invoices. Preserve the original message data in the source backup.
+Verify ownership, counts, collisions and financial evidence before activation;
+an old digest is not acknowledgement of new presentation. The new runtime
+does not carry the retired API fields or a compatibility projector.
+
 ## Invoice deadlines and late payment
 
 The administrator's payment policy controls new invoices. The default
@@ -53,8 +131,16 @@ it never cancels an external payment or declares it unsuccessful. Issued
 hosted links use the original guarded checkout route and expose the pinned
 deadline. An expired or superseded link cannot initiate another merchant
 invoice; the original authenticated reconciliation and staff review remain
-available. The API invoice owns its own first registered projection; other
-tracked references use the common lifecycle status.
+available. A closed current draft positively proven never admitted into
+payment or service execution is different: show a closed selection notice
+and Home, not order review. Missing or inconsistent evidence cannot prove
+nonadmission. The shared absence predicate checks original payment/receipt
+fields, attempts, service commands and effects, Wallet credit, referral
+and follow-up journals. It also guards new admission and draft expiry;
+contradictory facts keep the recovery action and do not promise a credit
+without an identified invoice. Bank instructions use the persisted invoice deadline once,
+not a hardcoded duration. All customer invoice and status references use
+the same projection owner, including API-assisted invoices.
 
 Late evidence is admitted against the same immutable issued invoice.
 Verified funds for an expired or superseded service credit Wallet once;

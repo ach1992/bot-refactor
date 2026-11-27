@@ -76,7 +76,7 @@ function setUser($value='none',$field='step'){
     $stmt=$connection->prepare("UPDATE users SET `$field`=? WHERE userid=?");
     $stmt->bind_param('si',$value,$from_id);
     if (!$stmt->execute()) throw new RuntimeException('step_write_failed');
-    $stmt->close();
+    $stmt->close();return true;
 }
 function fixtureDeliveryTransport($to) {
     global $connection;
@@ -92,13 +92,13 @@ function fixtureDeliveryTransport($to) {
     if (($GLOBALS['spec']['notice']??'')==='interrupt') exit(0);
     if (($GLOBALS['spec']['notice']??'')==='throw') throw new RuntimeException('lost_qr_ack');
     if (($GLOBALS['spec']['notice']??'')==='false') return (object)['ok'=>false,'error_code'=>500,'description'=>'uncertain'];
-    return (object)['ok'=>true,'result'=>(object)['message_id'=>42]];
+    return fixtureMessageAck($to);
 }
 function sendMessage($body=null,$keys=null,$format=null,$to=null){
     $transport=fixtureDeliveryTransport($to);
     if ($transport!==null) return $transport;
     $GLOBALS['events'][]=['name'=>'MESSAGE','to'=>$to,'text'=>(string)$body,'format'=>$format];
-    return (object)['ok'=>true];
+    return isset($GLOBALS['achbotTelegramDiagnosticContext']['followup_id'])?fixtureMessageAck($to):(object)['ok'=>true];
 }
 function sendPhoto($photo,$caption,$keys,$format,$to) {
     if (!($photo instanceof CURLFile) || !is_file($photo->getFilename()))
@@ -166,7 +166,6 @@ if (($spec['route']??'trial')==='import_occupancy') {
         'pg_long_prefix'=>achbotAdminBulkAccountRemark(str_repeat('x',96).'-12345','bulk:9001:987811',1,2,'pasarguard','digits'),
         'batch_tokens'=>array_map(static fn($i)=>achbotAccountNumericToken('bulk:9001:987811',$i),range(1,500)),
         'plan_copy'=>achbotMessage('renewal.extensions.message.143c7f81f1'),
-        'purchase_report'=>achbotMessages('legacy_messages')['sent_config_to_user'],
         'pasarguard_base'=>$first];
 } elseif ($spec['route']==='attention') {
     require $root.'/src/Finance/Routes/AutomaticGatewayReview.php';
@@ -189,6 +188,9 @@ if (($spec['route']??'trial')==='import_occupancy') {
     require $root.'/src/Purchase/EntryAndBulk.php';
 }
 '''
+
+from operational_report_fixture import with_message_ack
+PHP=with_message_ack(PHP)
 
 def sql(work,env,cmd):
     return subprocess.run(['mariadb','--no-defaults','--protocol=SOCKET',
@@ -323,15 +325,6 @@ def check():
             '🎲 لطفاً یکی از پلن‌های زیر را انتخاب کنید.\n'
             '♻️ بعد از تغییر پلن می‌توانید اشتراک خودتان را مطابق پلن جدید تمدید کنید.\n'
             '⚠️ در صورت تغییر پلن پرداخت های در دست بررسی یا نیمه تمام شما برای این اشتراک نامعتبر می شوند.'
-        )
-        assert evidence['purchase_report']==(
-            '✅ اشتراک برای کاربر ارسال شد.\n\n'
-            '🎫 شناسه عددی: USERID\n'
-            '🔄 نام کاربری اشتراک: REMARK\n'
-            '📦 حجم اشتراک: VOLUME گیگ\n'
-            '📅 مدت زمان اشتراک: DAYS روز\n'
-            '💰 هزینه پرداختی: PRICE تومان\n'
-            '🔖 شناسه پرداخت: HASHID\n'
         )
         assert __import__('re').fullmatch(r'someserver-1001-[0-9]{5}',evidence['admin_default'])
         assert evidence['admin_manual'].startswith('batch_custom_') and (

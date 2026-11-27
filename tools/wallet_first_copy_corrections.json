@@ -15,6 +15,22 @@
     "after": "همکار",
     "before": null
   },
+  "admin_settings.config.payment_policy_fields.receipt_grace": {
+    "after": "فرصت ارسال رسید پس از اولین کلیک (دقیقه)",
+    "before": null
+  },
+  "admin_settings.config.payment_policy_fields.sms_review": {
+    "after": "پیگیری پیامک پس از انقضای فاکتور (ساعت)",
+    "before": null
+  },
+  "admin_settings.config.payment_policy_fields.text.7763855ebb": {
+    "after": "مهلت لینک پرداخت آنلاین (ساعت)",
+    "before": "مهلت لینک آنلاین پیش از بررسی (ساعت)"
+  },
+  "admin_settings.config.payment_policy_fields.text.9bd7de27ab": {
+    "after": "مهلت پرداخت فاکتور دستی (ساعت)",
+    "before": "فاکتور دستی بدون شروع رسید (ساعت)"
+  },
   "admin_settings.management.category_referenced": {
     "after": "⚠️ این دسته‌بندی دارای پلن است و حذف نمی‌شود. ابتدا پلن‌های وابسته را تعیین تکلیف کنید.",
     "before": null
@@ -287,9 +303,50 @@
       "text": "🎁 هدیهٔ اشتراک اعمال شد\n🔖 شناسه عملیات: <code>{reference}</code>\n👤 اشتراک: <code>{remark}</code>\n📅 زمان هدیه: {days} روز\n📦 حجم هدیه: {volume_mb} مگابایت\n👥 ثبت‌های مرتبط: {reference_count}\n✉️ کاربران مرتبط: {recipient_count}\n⚠️ پیام‌های بدون تأیید ارسال: {notice_unconfirmed_count}"
     }
   },
+  "jobs.broadcast_send.text.2c23963c7c": {
+    "after": "📣 پردازش فوروارد همگانی به پایان رسید.",
+    "before": "✅ عملیات فوروارد همگانی با موفقیت انجام شد."
+  },
+  "jobs.broadcast_send.text.2e434e30b2": {
+    "after": "\n\nارسال‌های بدون تأیید در این تعداد لحاظ نشده‌اند.",
+    "before": " نفر پردازش انجام شد."
+  },
+  "jobs.broadcast_send.text.684e7d6efc": {
+    "after": "📣 پردازش ارسال همگانی به پایان رسید.",
+    "before": "✅ عملیات ارسال پیام همگانی با موفقیت انجام شد."
+  },
+  "jobs.broadcast_send.text.f9f933d21b": {
+    "after": {
+      "parameters": [
+        "count"
+      ],
+      "text": "\n\n✅ تعداد گیرندگان با پاسخ موفق ثبت‌شده از تلگرام: {count} نفر"
+    },
+    "before": "\n❇️ تا اینجا روی حدود "
+  },
   "legacy_buttons.individual_existence": {
     "after": "📊 موجودی سرویس‌ها",
     "before": "❗️موجودی اختصاصی"
+  },
+  "legacy_messages.agency_request_already_sent": {
+    "after": "⏳ درخواست شما قبلاً ثبت شده، لطفا منتظر باشید!",
+    "before": "⏳ درخواست شما قبلاً ارسال شده، لطفا منتظر باشید!"
+  },
+  "legacy_messages.agency_request_sent": {
+    "after": "✅ درخواست شما با موفقیت ثبت شد، لطفا به پشتیبانی پیام دهید!",
+    "before": "✅ درخواست شما با موفقیت ارسال شد، لطفا به پشتیبانی پیام دهید!"
+  },
+  "legacy_messages.brw_cart_to_cart_detail": {
+    "after": "✳️ لطفا مبلغ را به شماره کارت زیر واریز کنید.\n⚠️ <b>مبلغ دقیق و غیر رند زیر را کپی و واریز کنید در غیر این صورت رسید تایید نمی شود.</b>\n\n💵 مبلغ به تومان ← <code>PRICE-TOMAN</code>\n💵 مبلغ به ریال ← <code>PRICE-RIAL</code>\n\n💳 شماره کارت:\n<code>ACCOUNT-NUMBER</code>\n\n🔑 HOLDER-NAME\n\nPAYMENT-DEADLINE\n🔴 <b>به هیچ وجه رسیدی که قبلا ارسال شده را دوباره ارسال نکنید اکانت شما مسدود می شود.</b>\n<b>📤 ارسال رسید</b> را بزنید و بعد رسید را بفرستید.",
+    "before": "✳️ لطفا مبلغ را به شماره کارت زیر واریز کنید.\n⚠️ <b>مبلغ دقیق و غیر رند زیر را کپی و واریز کنید در غیر این صورت رسید تایید نمی شود.</b>\n\n💵 مبلغ به تومان ← <code>PRICE-TOMAN</code>\n💵 مبلغ به ریال ← <code>PRICE-RIAL</code>\n\n💳 شماره کارت:\n<code>ACCOUNT-NUMBER</code>\n\n🔑 HOLDER-NAME\n\n⏰ <b>بعد پرداخت فقط تا 30 دقیقه فرصت دارید رسید را بفرستید.</b>\n🔴 <b>به هیچ وجه رسیدی که قبلا ارسال شده را دوباره ارسال نکنید اکانت شما مسدود می شود.</b>\n<b>📤 ارسال رسید</b> را بزنید و بعد رسید را بفرستید."
+  },
+  "legacy_messages.buy_sub_select_category": {
+    "after": "<b>📂 مرحلهٔ دوم</b>\n\n📅 لطفا دوره یا همان مدت زمان سرویس خود را انتخاب کنید:",
+    "before": "📂 مرحلهٔ دوم\n\n📅 لطفا یک مورد را انتخاب کنید:"
+  },
+  "legacy_messages.buy_sub_select_location": {
+    "after": "<b>🧭 مرحلهٔ اول</b>\n\n💡 لطفا نوع سرویس مورد نظر خودتان را انتخاب کنید.",
+    "before": "🧭 مرحلهٔ اول\n\n➕ لطفا یک مورد را انتخاب کنید.\n💡 شما می توانید کیف پول خودتون رو قبل از پایان اکانت یا اتمام حجم شارژ کنید تا هر زمان که خواستید بدون نیاز به تایید ادمین بتوانید اکانت جدید خریداری کنید یا تمدید کنید."
   },
   "manual_receipt_final.status_delivery_unconfirmed": {
     "after": "سرویس ثبت شد، اما تحویل همهٔ پیام‌های مشتری تأیید نشده است.",
@@ -308,7 +365,7 @@
       "parameters": [
         "actor"
       ],
-      "text": "👮 شناسهٔ ادمین: <code>{actor}</code>"
+      "text": "🎫 شناسه عددی ادمین: <code>{actor}</code>"
     },
     "before": null
   },
@@ -333,11 +390,11 @@
     "before": null
   },
   "operational_reports.credit_title": {
-    "after": "💰 افزایش موجودی کیف پول",
+    "after": "<b>💰 افزایش موجودی کیف پول</b>",
     "before": null
   },
   "operational_reports.debit_title": {
-    "after": "💸 کاهش موجودی کیف پول",
+    "after": "<b>💸 کاهش موجودی کیف پول</b>",
     "before": null
   },
   "operational_reports.finite_volume": {
@@ -349,12 +406,8 @@
     },
     "before": null
   },
-  "operational_reports.funded": {
-    "after": "مبلغ برای عملیات اصلی از کیف پول کسر شد؛ اجرای سرویس جداگانه پیگیری می‌شود.",
-    "before": null
-  },
   "operational_reports.funded_title": {
-    "after": "💳 ثبت پرداخت و تأمین مالی سرویس",
+    "after": "<b>💳 ثبت پرداخت و تأمین مالی سرویس</b>",
     "before": null
   },
   "operational_reports.import_report": {
@@ -395,6 +448,10 @@
       ],
       "text": "روش پرداخت: {method}\nنوع تأیید: {basis}\nشناسهٔ پرداخت: <code>{payment}</code>\nعملیات سرویس: <code>{service}</code>\nشناسهٔ اشتراک: <code>{order}</code>\nنتیجه: {result}"
     },
+    "before": null
+  },
+  "operational_reports.receipt_credit": {
+    "after": "<b>💳 اعتبار پرداخت ثبت‌شده</b>",
     "before": null
   },
   "operational_reports.request_invalidated": {
@@ -445,12 +502,24 @@
         "reference",
         "service"
       ],
-      "text": "👤 شناسهٔ کاربر: <code>{user}</code>\n💳 روش پرداخت: {method}\n💵 مبلغ: {amount} تومان\n🎈 اشتراک: <code>{remark}</code>\n🚦 سرور: <code>{server}</code> | پلن: <code>{plan}</code>\nشناسهٔ پرداخت/درخواست: <code>{reference}</code>\nشناسهٔ عملیات: <code>svc_{service}</code>"
+      "text": "🎫 شناسه عددی کاربر: <code>{user}</code>\n💳 روش پرداخت: {method}\n💵 مبلغ: {amount} تومان\n🎈 اشتراک: <code>{remark}</code>\n🚦 سرور: <code>{server}</code> | پلن: <code>{plan}</code>\nشناسهٔ پرداخت/درخواست: <code>{reference}</code>\nشناسهٔ عملیات: <code>svc_{service}</code>"
     },
     "before": null
   },
   "operational_reports.service_days": {
     "after": "📅 افزایش زمان اشتراک تکمیل شد",
+    "before": null
+  },
+  "operational_reports.service_delivery_confirmed": {
+    "after": "✅ ارسال همه پیام‌های اشتراک به کاربر توسط Telegram تأیید شد.",
+    "before": null
+  },
+  "operational_reports.service_delivery_pending": {
+    "after": "📨 تأیید کامل ارسال پیام‌های اشتراک به کاربر هنوز ثبت نشده است.",
+    "before": null
+  },
+  "operational_reports.service_funding_pending": {
+    "after": "⏳ تأمین مالی انجام شد؛ نتیجه اجرای سرویس جداگانه بررسی می‌شود.",
     "before": null
   },
   "operational_reports.service_order": {
@@ -489,10 +558,19 @@
       "parameters": [
         "entry",
         "before",
-        "after"
+        "after",
+        "date"
       ],
-      "text": "شناسهٔ کسر از کیف پول: <code>W{entry}</code>\nموجودی پیش از کسر: {before} تومان\nموجودی پس از کسر: {after} تومان"
+      "text": "شناسهٔ کسر از کیف پول: <code>W{entry}</code>\nموجودی پیش از کسر: {before} تومان\nموجودی پس از کسر: {after} تومان\n📅 تاریخ ثبت کسر (ایران): {date}"
     },
+    "before": null
+  },
+  "operational_reports.service_zero_pending": {
+    "after": "⏳ درخواست بدون هزینه ثبت شد؛ نتیجه اجرای سرویس جداگانه بررسی می‌شود.",
+    "before": null
+  },
+  "operational_reports.service_zero_title": {
+    "after": "<b>🧾 ثبت درخواست سرویس</b>",
     "before": null
   },
   "operational_reports.source_adjustment": {
@@ -541,7 +619,7 @@
         "entry",
         "date"
       ],
-      "text": "👤 شناسهٔ کاربر: <code>{user}</code>\n💵 مبلغ: {amount} تومان\nموجودی پیش از تراکنش: {before} تومان\nموجودی پس از تراکنش: {after} تومان\nشناسهٔ تراکنش کیف پول: <code>W{entry}</code>\nتاریخ ثبت (UTC): {date}"
+      "text": "🎫 شناسه عددی کاربر: <code>{user}</code>\n💵 مبلغ: {amount} تومان\nموجودی پیش از تراکنش: {before} تومان\nموجودی پس از تراکنش: {after} تومان\nشناسهٔ تراکنش کیف پول: <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}"
     },
     "before": null
   },
@@ -555,6 +633,106 @@
   },
   "payment.discounts.no_monetary_method": {
     "after": "⚠️ هیچ روش پرداختی برای این سفارش در دسترس نیست. در این شرایط فقط کد تخفیفی که مبلغ نهایی را صفر کند قابل استفاده است.",
+    "before": null
+  },
+  "payment.payment_lifecycle.draft_closed": {
+    "after": "<b>⌛️ مهلت انتخاب روش پرداخت پایان یافت.</b> لطفاً درخواست خود را دوباره ثبت کنید.",
+    "before": null
+  },
+  "payment.payment_lifecycle.invoice_deadline": {
+    "after": {
+      "parameters": [
+        "deadline"
+      ],
+      "text": "⏳ مهلت پرداخت: {deadline}"
+    },
+    "before": null
+  },
+  "payment.payment_lifecycle.original_bank_destination": {
+    "after": {
+      "parameters": [
+        "account",
+        "holder"
+      ],
+      "text": "💳 شماره کارت: <code>{account}</code>\n👤 صاحب حساب: {holder}"
+    },
+    "before": null
+  },
+  "payment.payment_lifecycle.original_crypto_destination": {
+    "after": {
+      "parameters": [
+        "network",
+        "wallet"
+      ],
+      "text": "🌐 شبکه: {network}\n📋 آدرس مقصد: <code>{wallet}</code>"
+    },
+    "before": null
+  },
+  "payment.payment_lifecycle.original_invoice_record": {
+    "after": {
+      "parameters": [
+        "method",
+        "amount",
+        "currency"
+      ],
+      "text": "<b>🧾 اطلاعات فاکتور اصلی (سوابق)</b>\n💳 روش: {method}\n💰 مبلغ فاکتور: <code>{amount}</code> {currency}"
+    },
+    "before": null
+  },
+  "payment.payment_lifecycle.pay_ux_status_text.service_superseded_next": {
+    "after": "درخواست قبلی دوباره فعال نمی‌شود. مبلغ پرداخت قبلی پس از تأیید به کیف پول شما اضافه می‌شود؛ دوباره پرداخت نکنید.",
+    "before": "پرداخت این فاکتور دیگر اشتراک را تغییر نمی‌دهد. اگر وجهی پرداخت کرده‌اید، با شناسه پیگیری برای بررسی مالی به پشتیبانی اطلاع دهید."
+  },
+  "payment.payment_lifecycle.pay_ux_status_text.service_superseded_title": {
+    "after": "🔄 درخواست قبلی بسته شده است.",
+    "before": "🔄 فاکتور قبلی به دلیل تغییر سرویس متوقف شده است."
+  },
+  "payment.payment_lifecycle.pay_ux_status_text.text.368ad58967": {
+    "after": "🔎 نتیجه انجام سفارش را از همین پیام پیگیری کنید.",
+    "before": "🔰 پرداخت شما ثبت شده است و اطلاعات سفارش شما باید در ادامه ارسال شده باشد."
+  },
+  "payment.payment_lifecycle.pay_ux_status_text.text.8b1195f62f": {
+    "after": "پرداخت جدید انجام ندهید. اگر قبلاً وجهی پرداخت کرده‌اید، همان پرداخت را برای بررسی ارسال کنید. پس از بسته‌شدن درخواست، مبلغ تأییدشده به کیف پول شما اضافه می‌شود.",
+    "before": "مهلت ارسال رسید از طریق این فاکتور پایان یافته است. اگر وجهی انتقال داده‌اید، شواهد را فقط از طریق پشتیبانی ارائه کنید؛ انقضا به معنی برگشت وجه نیست."
+  },
+  "payment.payment_lifecycle.pay_ux_status_text.text.90290d6783": {
+    "after": "مهلت پرداخت این درخواست پایان یافته است. اگر قبلاً پرداخت کرده‌اید، پرداخت را تکرار نکنید و وضعیت همان فاکتور را پیگیری کنید. مبلغ تأییدشده پس از بسته‌شدن درخواست به کیف پول شما اضافه می‌شود.",
+    "before": "مهلت این درخواست پایان یافته است. برای پرداخت جدید از منوی ربات اقدام کنید."
+  },
+  "payment.payment_lifecycle.previous_payment_review": {
+    "after": "🔎 بررسی پرداخت قبلی",
+    "before": null
+  },
+  "payment.payment_lifecycle.progress_completed": {
+    "after": "✅ درخواست انجام شد و اطلاعات آن ارسال شده است.",
+    "before": null
+  },
+  "payment.payment_lifecycle.progress_delivery_unconfirmed": {
+    "after": "درخواست انجام شده، اما ارسال اطلاعات هنوز تأیید نشده است. لطفاً وضعیت همین سفارش را پیگیری کنید.",
+    "before": null
+  },
+  "payment.payment_lifecycle.progress_pending": {
+    "after": "⏳ در حال انجام درخواست شما هستیم. نیازی به پرداخت مجدد نیست.",
+    "before": null
+  },
+  "payment.payment_lifecycle.progress_resolved": {
+    "after": "رسیدگی به این درخواست پایان یافته است؛ برای جزئیات، وضعیت سفارش را از پشتیبانی پیگیری کنید.",
+    "before": null
+  },
+  "payment.payment_lifecycle.progress_unverified": {
+    "after": "نتیجه نهایی هنوز قابل تأیید نیست. پرداخت را تکرار نکنید و وضعیت همین سفارش را پیگیری کنید.",
+    "before": null
+  },
+  "payment.payment_lifecycle.progress_wallet_credited": {
+    "after": "✅ مبلغ تأییدشده به کیف پول شما اضافه شد.",
+    "before": null
+  },
+  "payment.payment_lifecycle.request_accepted": {
+    "after": "✅ درخواست شما ثبت شد",
+    "before": null
+  },
+  "payment.payment_lifecycle.toman": {
+    "after": "تومان",
     "before": null
   },
   "purchase.catalogue.message.ef774be0a5": {
@@ -581,6 +759,15 @@
     "after": "⚠️ عددی بزرگ‌تر از صفر وارد کنید.",
     "before": "مقداری بزرگتر از 0 وارد کن"
   },
+  "renewal.extensions.message.48930749a9": {
+    "after": {
+      "parameters": [
+        "amount"
+      ],
+      "text": "<b>🧾 روش پرداخت سفارش را انتخاب کنید.</b>\n💵 مبلغ: {amount} تومان"
+    },
+    "before": "🧾 روش پرداخت سفارش را انتخاب کنید."
+  },
   "renewal.free_confirmation.day": {
     "after": "✅ افزایش زمان رایگان",
     "before": null
@@ -597,6 +784,35 @@
     "after": "✅ افزایش حجم رایگان",
     "before": null
   },
+  "renewal.renewal_checkout.message.24ae8c4399": {
+    "after": {
+      "parameters": [
+        "amount"
+      ],
+      "text": "<b>🧾 تمدید اشتراک</b>\n💵 مبلغ: {amount} تومان\n\nروش پرداخت این تمدید را انتخاب کنید. فقط یک روش فعال را ادامه دهید."
+    },
+    "before": "🧾 روش پرداخت این تمدید را انتخاب کنید. فقط یک روش فعال را ادامه دهید."
+  },
+  "subscription.customer_routes.cancel_search_keyboard.success_message.6d1ad0af39": {
+    "after": "<b>✅ بروزرسانی موفق بود!</b>",
+    "before": "<b>✅ بروزرسانی موفق بود!</b>\n\n"
+  },
+  "subscription.customer_routes.cancel_search_keyboard.success_message.eb1ae135ff": {
+    "after": "<b>✅ لینک اشتراک شما با موفقیت تغییر کرد!</b>",
+    "before": "<b>✅ لینک اشتراک شما با موفقیت تغییر کرد!</b>\n\n"
+  },
+  "subscription.customer_routes.link_update_advice": {
+    "after": "🔄 لینک <b>اشتراک قبلی</b> را از نرم افزار <b>حذف</b> کنید و <b>لینک جدید</b> را از بالا بردارید و <b>وارد</b> کنید.\n⚠️ اگر <b>لینک اصلی</b> کار نکرد از <b>لینک کمکی</b> استفاده کنید.\n⚠️ برای دریافت کانفیگ ها به صورت تک تک می توانید دکمه <b>کیوآرکد کانفیگ</b> را بزنید.",
+    "before": null
+  },
+  "subscription.customer_routes.link_view_unconfirmed": {
+    "after": "⚠️ نمایش اطلاعات جدید تأیید نشد. اطلاعات اشتراک را دوباره باز کنید؛ نیازی به تکرار تغییر لینک نیست.",
+    "before": null
+  },
+  "subscription.customer_routes.search_ambiguous": {
+    "after": "⚠️ چند اشتراک با این نام پیدا شد. لطفاً نام کاربری دقیق اشتراک را وارد کنید یا اشتراک را از فهرست انتخاب کنید.",
+    "before": null
+  },
   "subscription.order_management.show_order_management_panel.alert.3e801d365f": {
     "after": "⛔️ سفارش یا اتصال پاسارگارد معتبر نیست.",
     "before": "⛔️ سفارش مرزبان معتبر نیست."
@@ -605,70 +821,12 @@
     "after": "⚠️ هیچ سرور دیگری متصل به همین پنل پاسارگارد وجود ندارد.",
     "before": "⚠️ هیچ سرور دیگری با همان پنل مرزبان وجود ندارد."
   },
-  "admin_settings.config.payment_policy_fields.receipt_grace": {
-    "before": null,
-    "after": "فرصت ارسال رسید پس از اولین کلیک (دقیقه)"
+  "support.action_unconfirmed": {
+    "after": "⚠️ ثبت درخواست تأیید نشد. لطفاً وضعیت تیکت را بررسی کنید.",
+    "before": null
   },
-  "admin_settings.config.payment_policy_fields.sms_review": {
-    "before": null,
-    "after": "پیگیری پیامک پس از انقضای فاکتور (ساعت)"
-  },
-  "admin_settings.config.payment_policy_fields.text.7763855ebb": {
-    "before": "مهلت لینک آنلاین پیش از بررسی (ساعت)",
-    "after": "مهلت لینک پرداخت آنلاین (ساعت)"
-  },
-  "admin_settings.config.payment_policy_fields.text.9bd7de27ab": {
-    "before": "فاکتور دستی بدون شروع رسید (ساعت)",
-    "after": "مهلت پرداخت فاکتور دستی (ساعت)"
-  },
-  "payment.payment_lifecycle.invoice_deadline": {
-    "before": null,
-    "after": {
-      "text": "⏳ مهلت پرداخت: {deadline}",
-      "parameters": [
-        "deadline"
-      ]
-    }
-  },
-  "payment.payment_lifecycle.pay_ux_status_text.service_superseded_next": {
-    "before": "پرداخت این فاکتور دیگر اشتراک را تغییر نمی‌دهد. اگر وجهی پرداخت کرده‌اید، با شناسه پیگیری برای بررسی مالی به پشتیبانی اطلاع دهید.",
-    "after": "درخواست قبلی دوباره فعال نمی‌شود. مبلغ پرداخت قبلی پس از تأیید به کیف پول شما اضافه می‌شود؛ دوباره پرداخت نکنید."
-  },
-  "payment.payment_lifecycle.pay_ux_status_text.service_superseded_title": {
-    "before": "🔄 فاکتور قبلی به دلیل تغییر سرویس متوقف شده است.",
-    "after": "🔄 درخواست قبلی بسته شده است."
-  },
-  "payment.payment_lifecycle.pay_ux_status_text.text.8b1195f62f": {
-    "before": "مهلت ارسال رسید از طریق این فاکتور پایان یافته است. اگر وجهی انتقال داده‌اید، شواهد را فقط از طریق پشتیبانی ارائه کنید؛ انقضا به معنی برگشت وجه نیست.",
-    "after": "پرداخت جدید انجام ندهید. اگر قبلاً وجهی پرداخت کرده‌اید، همان پرداخت را برای بررسی ارسال کنید. پس از بسته‌شدن درخواست، مبلغ تأییدشده به کیف پول شما اضافه می‌شود."
-  },
-  "payment.payment_lifecycle.pay_ux_status_text.text.90290d6783": {
-    "before": "مهلت این درخواست پایان یافته است. برای پرداخت جدید از منوی ربات اقدام کنید.",
-    "after": "مهلت پرداخت این درخواست پایان یافته است. اگر قبلاً پرداخت کرده‌اید، پرداخت را تکرار نکنید و وضعیت همان فاکتور را پیگیری کنید. مبلغ تأییدشده پس از بسته‌شدن درخواست به کیف پول شما اضافه می‌شود."
-  },
-  "payment.payment_lifecycle.previous_payment_review": {
-    "before": null,
-    "after": "🔎 بررسی پرداخت قبلی"
-  },
-  "jobs.broadcast_send.text.2c23963c7c": {
-    "before": "✅ عملیات فوروارد همگانی با موفقیت انجام شد.",
-    "after": "📣 پردازش فوروارد همگانی به پایان رسید."
-  },
-  "jobs.broadcast_send.text.2e434e30b2": {
-    "before": " نفر پردازش انجام شد.",
-    "after": "\n\nارسال‌های بدون تأیید در این تعداد لحاظ نشده‌اند."
-  },
-  "jobs.broadcast_send.text.684e7d6efc": {
-    "before": "✅ عملیات ارسال پیام همگانی با موفقیت انجام شد.",
-    "after": "📣 پردازش ارسال همگانی به پایان رسید."
-  },
-  "jobs.broadcast_send.text.f9f933d21b": {
-    "before": "\n❇️ تا اینجا روی حدود ",
-    "after": {
-      "text": "\n\n✅ تعداد گیرندگان با پاسخ موفق ثبت‌شده از تلگرام: {count} نفر",
-      "parameters": [
-        "count"
-      ]
-    }
+  "support.history_empty": {
+    "after": "هنوز پیامی در این تیکت ثبت نشده است.",
+    "before": null
   }
 }

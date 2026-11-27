@@ -162,7 +162,9 @@ function achbotPayUxExpireDraft(mysqli $db, int $payId, ?int $clock = null): boo
         if (!$stmt->execute()) throw new RuntimeException('draft_attempt_unavailable');
         $attempt = $stmt->get_result()->fetch_assoc();
         $stmt->close();
-        if ($attempt) { $db->rollback(); return false; }
+        if ($attempt || !achbotPayUxDraftWithoutEvidence($db,$payId,(int)$pay['user_id'])) {
+            $db->rollback(); return false;
+        }
 
         $overdue = (int)($pay['draft_expires_at']??0)>0 && $now >= (int)$pay['draft_expires_at'];
 
@@ -222,12 +224,17 @@ function achbotPayUxLockDraftOwner(mysqli $db, int $userId): void {
 }
 
 /** Execute a NEW customer draft under the same lock held by all issuers. */
-function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, array $pricingPolicy, bool $scopedAddon = false, array $display = [], array $states = []): int {
+function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, array $pricingPolicy, bool $scopedAddon = false, array $display = [], array $states = [], ?array $editor = null): int {
     $started=false;
     try {
         if (!$db->begin_transaction()) throw new RuntimeException('draft_begin_failed');
         $started=true;
         achbotPayUxLockDraftOwner($db,$actor);
+        $editorRow=null;
+        if ($editor!==null) {
+            require_once __DIR__.'/../Telegram/Conversation.php';
+            $editorRow=\AchBot\Telegram\Conversation\lockEditor($db,$actor,$editor);
+        }
         if (!$insert->execute() || $insert->affected_rows!==1)
             throw new RuntimeException('draft_insert_failed');
         $draftId=(int)$insert->insert_id;
@@ -290,6 +297,8 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, arr
         require_once __DIR__.'/CheckoutAdmission.php';
         achbotCheckoutRequireSchema($db);
         achbotCheckoutSealDraftLocked($db,$draftId,$pay,$display,$states);
+        if ($editorRow!==null)
+            \AchBot\Telegram\Conversation\writeEditorLocked($db,$editorRow,'none',null);
         if ($draftId<=0 || !$db->commit())
             throw new RuntimeException('draft_commit_unknown');
         return $draftId;
@@ -641,67 +650,51 @@ function achbotPayUxAudienceAllowedInState(mysqli $db,string $method,int $userId
     }
 }
 
-/** Register only messages successfully sent by the bot to the actual pay owner. */
-function achbotPayUxTrackMessage(mysqli $db, int $payId, int $chatId,
-                                 $telegramResult, string $kind = 'text'): bool {
-    if ($payId <= 0 || $chatId <= 0 ||
-        !achbotPayUxTable($db, 'payment_message_refs')) return false;
-    $messageId = 0;
-    if (is_object($telegramResult) && ($telegramResult->ok ?? false) === true) {
-        $messageId = (int)($telegramResult->result->message_id ?? 0);
-    } elseif (is_array($telegramResult) && ($telegramResult['ok'] ?? false) === true) {
-        $messageId = (int)($telegramResult['result']['message_id'] ?? 0);
-    }
-    if ($messageId <= 0 || !in_array($kind,['text','media'],true)) return false;
-    try {
-        $stmt = $db->prepare(
-            "INSERT INTO payment_message_refs (pay_row_id,chat_id,message_id,kind)
-             SELECT id,?, ?,? FROM pays WHERE id=? AND user_id=?
-             ON DUPLICATE KEY UPDATE synced_digest=payment_message_refs.synced_digest"
-        );
-        $stmt->bind_param('iisii', $chatId, $messageId, $kind, $payId, $chatId);
-        $ok = $stmt->execute();
-        $affected = $stmt->affected_rows;
-        $stmt->close();
-        return $ok === true && $affected === 1;
-    } catch (Throwable $ignored) {
-        error_log('achbot_payment_message_registration_deferred pay_id='.$payId.
-            ' code='.(int)$ignored->getCode().' class='.get_class($ignored));
-        return false;
-    }
+require_once __DIR__.'/PaymentMessages.php';
+
+/** One positive absence predicate for an unissued draft. The owner row
+ * and original payment coordinate financial admission; presentation must
+ * not treat contradictory journal/receipt evidence as a disposable screen.
+ * The fixed alias p is the original pays row in the caller's SQL statement. */
+function achbotPayUxDraftWithoutEvidenceSql(): string {
+    return "p.state IN ('pending','send','expired')
+        AND p.checkout_operation_id IS NULL
+        AND (p.payid IS NULL OR p.payid='')
+        AND COALESCE(p.message_id,0)=0 AND COALESCE(p.chat_id,'')=''
+        AND COALESCE(p.admins_messages,'') IN ('','[]')
+        AND COALESCE(p.approved_by,0)=0
+        AND NOT EXISTS (SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id)
+        AND NOT EXISTS (SELECT 1 FROM service_effects e WHERE e.pay_row_id=p.id)
+        AND NOT EXISTS (SELECT 1 FROM service_operations o
+            WHERE o.command_kind='checkout' AND o.command_ref=CAST(p.id AS CHAR))
+        AND NOT EXISTS (SELECT 1 FROM wallet_entries w
+            WHERE w.source_kind='payment_credit' AND w.source_ref=CAST(p.id AS CHAR))
+        AND NOT EXISTS (SELECT 1 FROM referral_awards r WHERE r.pay_row_id=p.id)
+        AND NOT EXISTS (SELECT 1 FROM payment_followup_intents f WHERE f.pay_row_id=p.id)";
 }
 
-/** Map an already-confirmed order hash to its exact current pays row. */
-function achbotPayUxTrackByHash(mysqli $db, string $hash, int $chatId,
-                                $telegramResult = null, int $clickedMessageId = 0): void {
-    if ($chatId <= 0 || !preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)) return;
-    try {
-        $stmt=$db->prepare('SELECT id FROM pays WHERE hash_id=? AND user_id=? LIMIT 1');
-        $stmt->bind_param('si',$hash,$chatId);
-        $stmt->execute();$row=$stmt->get_result()->fetch_assoc();$stmt->close();
-        if (!$row) return;
-        if ($clickedMessageId>0) {
-            achbotPayUxTrackClicked($db,(int)$row['id'],$chatId,$clickedMessageId);
-        } else {
-            achbotPayUxTrackMessage($db,(int)$row['id'],$chatId,$telegramResult);
-        }
-    } catch (Throwable $ignored) {}
+/** An absent row is not proof. Read errors propagate to the caller's
+ * recovery boundary; never turn a failed query into a successful absence. */
+function achbotPayUxDraftWithoutEvidence(mysqli $db,int $id,int $actor): bool {
+    if ($id<=0 || $actor<=0) return false;
+    $row=achbotProviderRow($db,"SELECT p.id FROM pays p WHERE p.id=? AND p.user_id=? AND ".
+        achbotPayUxDraftWithoutEvidenceSql(),'ii',[$id,$actor]);
+    return $row!==null;
 }
 
-/** A clicked, owner-verified bot message is another safe recoverable reference. */
-function achbotPayUxTrackClicked(mysqli $db, int $payId, int $chatId, int $messageId): void {
-    if ($payId <= 0 || $chatId <= 0 || $messageId <= 0 ||
-        !achbotPayUxTable($db,'payment_message_refs')) return;
-    try {
-        $stmt = $db->prepare(
-            "INSERT INTO payment_message_refs (pay_row_id,chat_id,message_id,kind)
-             SELECT id,?,?,'text' FROM pays WHERE id=? AND user_id=?
-             ON DUPLICATE KEY UPDATE synced_digest=payment_message_refs.synced_digest"
-        );
-        $stmt->bind_param('iiii', $chatId, $messageId, $payId, $chatId);
-        $stmt->execute();
-        $stmt->close();
-    } catch (Throwable $ignored) {}
+/** Observe closure and admission evidence in one SQL statement. */
+function achbotPayUxUnadmittedClosed(mysqli $db,array $pay,?array $attempt): bool {
+    if ($attempt!==null || !achbotPayUxCurrentDraft($pay) ||
+        (int)($pay['id']??0)<=0 || (int)($pay['user_id']??0)<=0) return false;
+    $row=achbotProviderRow($db,"SELECT p.id FROM pays p WHERE p.id=? AND p.user_id=?
+        AND JSON_VALUE(p.checkout_draft_context,'$.version')='1'
+        AND (p.state='expired' OR (p.state='pending' AND (
+            (p.draft_expires_at IS NOT NULL AND p.draft_expires_at<=UNIX_TIMESTAMP())
+            OR EXISTS (SELECT 1 FROM pays newer WHERE newer.user_id=p.user_id
+                AND newer.id>p.id AND SUBSTRING_INDEX(newer.type,'_',2)=SUBSTRING_INDEX(p.type,'_',2)
+                AND COALESCE(newer.order_id,0)=COALESCE(p.order_id,0)))))
+        AND ".achbotPayUxDraftWithoutEvidenceSql(),'ii',[(int)$pay['id'],(int)$pay['user_id']]);
+    return $row!==null;
 }
 
 /**
@@ -709,8 +702,11 @@ function achbotPayUxTrackClicked(mysqli $db, int $payId, int $chatId, int $messa
  * NEVER proves that Marzban delivery or a top-up effect was completed.
  */
 function achbotPayUxState(array $pay, ?array $attempt): string {
+    if (!empty($pay['projection_unknown'])) return 'needs_review';
     $state = (string)($pay['state'] ?? '');
     $stage = (string)($attempt['stage'] ?? '');
+    if ($attempt===null && ($pay['unadmitted_closed']??false)===true) return 'draft_closed';
+    if ($attempt===null && ($pay['closure_unverified']??false)===true) return 'needs_review';
     // A service-change intent invalidates the old invoice's product claim
     // without asserting its external funds were unpaid or refunded.
     if ($state === 'declined') return 'declined';
@@ -775,7 +771,9 @@ function achbotPayUxOwnedReference(mysqli $db, string $hash, int $actor): ?array
 
 /** Public-facing messages cannot include a raw provider link or secret. */
 function achbotPayUxStatusText(array $pay, ?array $attempt): string {
+    require_once __DIR__.'/ReceiptMethods.php';
     $state = achbotPayUxState($pay,$attempt);
+    if ($state==='draft_closed') return achbotMessage('payment.payment_lifecycle.draft_closed');
     $subject = function_exists('payTypeToDescription')
         ? (string)payTypeToDescription((string)$pay['type'])
         : \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.df83eb82dd');
@@ -790,6 +788,11 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         'payment_recorded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.7873970550'),
         default => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.c7ccf032ac'),
     };
+    $outcome=$pay['projection_outcome']??null;
+    if ($state==='payment_recorded' && $outcome==='service_pending')
+        $title=achbotMessage('payment.payment_lifecycle.request_accepted');
+    elseif ($state==='payment_recorded' && $outcome==='unknown')
+        $title=achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.aa6e41205d');
     $safe = static fn($v) => htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     $amount = number_format((int)($pay['price'] ?? 0));
     $next = match ($state) {
@@ -805,24 +808,27 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         'needs_review' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.f1092775b2'),
         default => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.5e55076dd5'),
     };
-    if (in_array($state,['receipt_review','needs_review'],true) &&
+    if ($state==='payment_recorded' && $outcome!==null) {
+        $next=match ($outcome) {
+            'service_pending'=>achbotMessage('payment.payment_lifecycle.progress_pending'),
+            'completed'=>achbotMessage('payment.payment_lifecycle.progress_completed'),
+            'delivery_unconfirmed'=>achbotMessage('payment.payment_lifecycle.progress_delivery_unconfirmed'),
+            'wallet_credited'=>achbotMessage('payment.payment_lifecycle.progress_wallet_credited'),
+            'resolved'=>achbotMessage('payment.payment_lifecycle.progress_resolved'),
+            default=>achbotMessage('payment.payment_lifecycle.progress_unverified'),
+        };
+    }
+    if ($state==='awaiting_payment' && achbotPayUxHostedProvider((string)($attempt['provider']??'')))
+        $next=achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.0c4a9612f7').
+            achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.0a2e0bc7bc');
+    if ($attempt!==null && in_array($state,['receipt_review','needs_review'],true) &&
         in_array($pay['state']??null,['expired','service_superseded'],true))
         $next.="\n".achbotMessage('payment.payment_lifecycle.pay_ux_status_text.service_superseded_next');
     return "<b>".$safe($title)."</b>\n".achbotPayUxReference($pay)
-        .\achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.d251ffde03').$safe($subject).\achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.20714482be', ['amount' => $amount]).$safe($next).achbotPayUxDeadlineText($attempt??[]);
-}
-
-function achbotPayUxReceiptPrefixes(array $pay,string $method): array {
-    require_once __DIR__.'/CheckoutAdmission.php';
-    $family=match(achbotCheckoutMode($pay)) {
-        'standard'=>['Buy','Cart'],'custom'=>['Custom','Cart'],'renew'=>['Renew','Cart'],
-        'day'=>['IncreaseDay',''],'volume'=>['IncreaseVolume',''],'topup'=>['IncreaseWallet',''],
-        default=>null,
-    };
-    if (!$family || !achbotPayUxManualProvider($method)) return [];
-    [$name,$bank]=$family;
-    $suffix=match($method) {'gift_card'=>'Gift','manual_usdt','manual_trx'=>'Usdt',default=>$bank};
-    return ['send'.$name.$suffix.'Receipt','cancel'.$name.$bank.'Receipt'];
+        .\achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.d251ffde03').$safe($subject).\achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.20714482be', ['amount' => $amount]).$safe($next).
+        ($attempt!==null && achbotCreditMethodDefinition((string)($attempt['provider']??''))!==null
+            ?achbotMessage('payment.pre_payment.text.c8886e46d5').$safe(achbotCreditMethodLabel($attempt['provider'])):'').
+        achbotPayUxDeadlineText($attempt??[]);
 }
 
 /** Invoice deadline is an absolute time, never a new destination or quote. */
@@ -835,11 +841,12 @@ function achbotPayUxDeadlineText(array $attempt): string {
 
 function achbotPayUxStatusKeyboard(string $hash,?array $pay=null,?array $attempt=null): string {
     $rows = [];
-    if (preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)) {
+    $draftClosed=$pay!==null && achbotPayUxState($pay,$attempt)==='draft_closed';
+    if (!$draftClosed && preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)) {
         require_once __DIR__.'/ReceiptHelpers.php';
-        if ($pay && $attempt && (string)$pay['hash_id']===$hash &&
+        if ($pay && $attempt && empty($pay['projection_unknown']) && (string)$pay['hash_id']===$hash &&
             ($action=achbotManualReceiptAction($pay,$attempt))) $rows[]=[$action['button']];
-        $hosted=$pay && $attempt && achbotCurrentReceiptPin($attempt) &&
+        $hosted=$pay && $attempt && empty($pay['projection_unknown']) && achbotCurrentReceiptPin($attempt) &&
             achbotPayUxHostedProvider((string)($attempt['provider']??''));
         if ($hosted && achbotPayUxHostedLinkOpen($pay,$attempt)) {
             $url=achbotPayUxHostedLink((string)$attempt['provider'],$hash,(string)($GLOBALS['botUrl']??''));
@@ -849,188 +856,8 @@ function achbotPayUxStatusKeyboard(string $hash,?array $pay=null,?array $attempt
         $rows[] = [['text'=>achbotMessage($previous?'payment.payment_lifecycle.previous_payment_review':
             'payment.payment_lifecycle.pay_ux_status_keyboard.button.9e25b02e86'),'callback_data'=>'ps_'.$hash]];
     }
-    $rows[] = [['text'=>\achbotMessage('payment.payment_lifecycle.pay_ux_status_keyboard.button.1121ffbf88'),'callback_data'=>preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)?'ph_'.$hash:'mainMenu']];
+    $rows[] = [['text'=>\achbotMessage('payment.payment_lifecycle.pay_ux_status_keyboard.button.1121ffbf88'),'callback_data'=>!$draftClosed && preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)?'ph_'.$hash:'mainMenu']];
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
-}
-
-/**
- * A Telegram no-op response is an acknowledgement that the requested text
- * AND keyboard are already present. A markup-only no-op is not text proof.
- */
-function achbotPayUxEditAccepted($reply): bool {
-    return is_object($reply) && (($reply->ok ?? false) === true ||
-        \AchBot\Telegram\Response\isEditNoop($reply));
-}
-
-/** Stable, non-sensitive Telegram failure categories. Missing originals
- * remain retained and unsynced; a new message stays immediately eligible.
- */
-function achbotPayUxEditFailureCategory($reply): string {
-    if (!is_object($reply))return 'transport_unavailable';
-    $http=(int)($reply->error_code??0);
-    $description=strtolower(is_string($reply->description??null)?$reply->description:'');
-    if ($http===400 && str_contains($description,'message to edit not found'))return 'message_missing';
-    if ($http===400 && (str_contains($description,"message can't be edited") ||
-        str_contains($description,'message can not be edited')))return 'message_not_editable';
-    if ($http===403)return 'access_denied';
-    if ($http===429)return 'rate_limited';
-    if ($http>=500)return 'telegram_server_error';
-    return 'telegram_rejected';
-}
-
-/**
- * Best-effort Telegram clean-up: each registered payment message is rewritten
- * to its current status, or at minimum has its old clickable URL removed.
- * A failed edit never rewinds or changes a financial transition.
- */
-function achbotPayUxSyncMessages(mysqli $db, int $payId): int {
-    if ($payId <= 0 || !function_exists('bot') ||
-        !achbotPayUxTable($db,'payment_message_refs')) return 0;
-    try {
-        $stmt = $db->prepare('SELECT * FROM pays WHERE id=? LIMIT 1');
-        $stmt->bind_param('i',$payId);
-        $stmt->execute();
-        $pay=$stmt->get_result()->fetch_assoc();
-        $stmt->close();
-        if (!$pay) return 0;
-        $attempt=null;
-        if (achbotPayUxTable($db,'payment_attempts')) {
-            $stmt=$db->prepare('SELECT *
-                FROM payment_attempts WHERE pay_row_id=? LIMIT 1');
-            $stmt->bind_param('i',$payId);$stmt->execute();
-            $attempt=$stmt->get_result()->fetch_assoc()?:null;$stmt->close();
-        }
-        $apiMessage=0;
-        if (function_exists('achbotApiPaymentContext')) {
-            $api=achbotApiPaymentContext($db,(string)$pay['hash_id']);
-            if ($api) {
-                // The registered API invoice has exactly one projection owner.
-                // Other tracked references use the shared lifecycle projection.
-                achbotApiPaymentSyncInvoice($db,$api);
-                if ($pay['state']==='pending' && achbotPayUxInvoiceOpen($attempt??[])) return 0;
-                if ((int)($api['attempt']['evidence_invoice_chat_id']??0)===(int)$pay['user_id'])
-                    $apiMessage=(int)($api['attempt']['evidence_invoice_message_id']??0);
-            }
-        }
-        try { $pay['superseded']=achbotPayUxHasNewer($db,$pay); }
-        catch (Throwable $ignored) { $pay['superseded']=true; }
-        $state=achbotPayUxState($pay,$attempt);
-        // Still-live payment CTAs must not be needlessly removed.
-        if ($state==='awaiting_payment' &&
-            !($attempt && achbotPayUxHostedLinkOpen($pay,$attempt) &&
-              achbotPayUxHostedLink((string)$attempt['provider'],(string)$pay['hash_id'],(string)($GLOBALS['botUrl']??''))!==null)) return 0;
-        $text=achbotPayUxStatusText($pay,$attempt);
-        $keyboard=achbotPayUxStatusKeyboard((string)$pay['hash_id'],$pay,$attempt);
-        $digest=hash('sha256',$state."\n".$text."\n".$keyboard);
-        $stmt=$db->prepare('SELECT id,chat_id,message_id,kind,synced_digest
-                            FROM payment_message_refs WHERE pay_row_id=? AND message_id<>?
-                              AND updated_at<=NOW(6)
-                              AND (synced_digest IS NULL OR synced_digest<>?)
-                            ORDER BY updated_at ASC,id ASC LIMIT 10');
-        $stmt->bind_param('iis',$payId,$apiMessage,$digest);$stmt->execute();
-        $messages=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
-        $changed=0;
-        foreach ($messages as $item) {
-            if ((string)($item['synced_digest'] ?? '')===$digest) continue;
-            $chat=(int)$item['chat_id'];$message=(int)$item['message_id'];
-            if ($chat <= 0 || $chat !== (int)$pay['user_id'] || $message <= 0) {
-                // Never edit a foreign/bad reference; rotate it out so other
-                // messages remain eligible rather than starving indefinitely.
-                $rowId=(int)$item['id'];
-                // Keep corrupt/foreign references, but do not spin on them.
-                $stmt=$db->prepare('UPDATE payment_message_refs
-                                    SET updated_at=DATE_ADD(NOW(6),INTERVAL 3 MINUTE)
-                                    WHERE id=? AND pay_row_id=?');
-                $stmt->bind_param('ii',$rowId,$payId);
-                $stmt->execute();$stmt->close();
-                continue;
-            }
-            // Text first changes the instructions AND removes stale provider URL.
-            $ok=false;
-            $fullTextEdited=false;
-            $transportFailed=false;
-            $fullEditResponse=null;
-            if ($item['kind']==='text') {
-                try {
-                    $res=bot('editMessageText',[
-                        'chat_id'=>$chat,'message_id'=>$message,
-                        'text'=>$text,'parse_mode'=>'HTML',
-                        'reply_markup'=>$keyboard,
-                        'disable_web_page_preview'=>true
-                    ]);
-                    $fullEditResponse=$res;
-                    $ok=achbotPayUxEditAccepted($res);
-                    $fullTextEdited=$ok;
-                    $transportFailed=$res===null || $res===false;
-                } catch (Throwable $ignored) { $transportFailed=true; }
-            }
-            if (!$ok && $item['kind']==='media') {
-                try {
-                    $res=bot('editMessageCaption',[
-                        'chat_id'=>$chat,'message_id'=>$message,
-                        'caption'=>$text,'parse_mode'=>'HTML',
-                        'reply_markup'=>$keyboard
-                    ]);
-                    $fullEditResponse=$res;
-                    $ok=achbotPayUxEditAccepted($res);
-                    $fullTextEdited=$ok;
-                    $transportFailed=$res===null || $res===false;
-                } catch (Throwable $ignored) { $transportFailed=true; }
-            }
-            // A failed transport affects markup too; do not double-hit it.
-            if (!$ok && !$transportFailed) {
-                try {
-                    $res=bot('editMessageReplyMarkup',[
-                        'chat_id'=>$chat,'message_id'=>$message,
-                        'reply_markup'=>$keyboard,
-                    ]);
-                    $ok=is_object($res) && ($res->ok ?? false)===true;
-                } catch (Throwable $ignored) {}
-            }
-            $failureClass=achbotPayUxEditFailureCategory($fullEditResponse);
-            if (!$fullTextEdited) {
-                // A successful markup-only fallback does NOT prove the old
-                // text was updated. Keep that failure visible, with safe
-                // per-reference diagnostics instead of a generic warning.
-                $tgCode=is_object($fullEditResponse)
-                    ?max(0,min(599,(int)($fullEditResponse->error_code??0))):0;
-                $kind=$item['kind']==='media'?'media':'text';
-                error_log('achbot_payment_telegram_edit_deferred pay_id='.$payId.
-                    ' ref_id='.(int)$item['id'].' kind='.$kind.
-                    ' category='.$failureClass.' tg_code='.$tgCode.
-                    ' markup_only='.($ok?'1':'0'));
-                // Even a successful markup-only action is not a truthful text
-                // synchronization. Preserve the reference, but delay an
-                // unchanged failure for three minutes to avoid a Telegram
-                // request storm. A new reference is eligible immediately.
-                // This scheduler already owns updated_at ordering; a future
-                // value is a retry-not-before hint, not proof of delivery.
-                $rowId=(int)$item['id'];
-                $retrySeconds=in_array($failureClass,
-                    ['message_missing','message_not_editable','access_denied'],true)
-                    ?6*3600:3*60;
-                $stmt=$db->prepare('UPDATE payment_message_refs
-                                    SET updated_at=DATE_ADD(NOW(6),INTERVAL ? SECOND)
-                                    WHERE id=? AND pay_row_id=?');
-                $stmt->bind_param('iii',$retrySeconds,$rowId,$payId);
-                $stmt->execute();$stmt->close();
-                continue;
-            }
-            // Only stamp after an acknowledged full text update.
-            $rowId=(int)$item['id'];
-            $stmt=$db->prepare(
-                'UPDATE payment_message_refs SET synced_digest=?,updated_at=NOW(6)
-                 WHERE id=? AND pay_row_id=?'
-            );
-            $stmt->bind_param('sii',$digest,$rowId,$payId);
-            $stmt->execute();$stmt->close();
-            ++$changed;
-        }
-        return $changed;
-    } catch (Throwable $error) {
-        error_log('achbot_payment_message_sync_deferred pay_id='.$payId);
-        return 0;
-    }
 }
 
 /** Run under the existing one-minute warning job; never create a fifth Cron. */
@@ -1043,18 +870,15 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
             $cutoff=time();
             $stmt=$db->prepare(
                 "SELECT p.id FROM pays p WHERE p.state='pending'
-                   AND (p.payid IS NULL OR p.payid='')
-                   AND NOT EXISTS (
-                       SELECT 1 FROM payment_attempts a WHERE a.pay_row_id=p.id
-                   )
-                   AND p.draft_expires_at IS NOT NULL
+                   AND p.user_id>0 AND ".achbotPayUxDraftWithoutEvidenceSql()."
+                   AND p.draft_expires_at>0
                    AND (p.draft_expires_at<=? OR EXISTS (
                        SELECT 1 FROM pays n WHERE n.user_id=p.user_id
                          AND SUBSTRING_INDEX(n.type,'_',2)=SUBSTRING_INDEX(p.type,'_',2)
                          AND n.id>p.id
                          AND COALESCE(n.order_id,0)=COALESCE(p.order_id,0)
                    ))
-                 ORDER BY p.request_date ASC LIMIT {$maxRows}"
+                 ORDER BY p.request_date ASC,p.id LIMIT {$maxRows}"
             );
             $stmt->bind_param('i',$cutoff);$stmt->execute();
             $rows=$stmt->get_result()->fetch_all(MYSQLI_ASSOC);$stmt->close();
@@ -1103,7 +927,7 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
                 $stmt=$db->prepare(
                     "SELECT r.pay_row_id FROM payment_message_refs r
                      JOIN pays p ON p.id=r.pay_row_id
-                     WHERE r.updated_at<=NOW(6) AND r.synced_digest IS NULL
+                     WHERE r.purpose<>'staff' AND r.retired_reason IS NULL AND r.updated_at<=NOW(6) AND r.synced_digest IS NULL
                        AND p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet')
                      GROUP BY r.pay_row_id ORDER BY MAX(r.id) DESC LIMIT {$priorityLimit}"
                 );
@@ -1116,7 +940,7 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
             // under sustained unsynced traffic, without a cursor/migration.
             $stmt=$db->prepare(
                 "SELECT pay_row_id FROM payment_message_refs
-                 WHERE updated_at<=NOW(6) AND synced_digest IS NULL
+                 WHERE purpose<>'staff' AND retired_reason IS NULL AND updated_at<=NOW(6) AND synced_digest IS NULL
                  GROUP BY pay_row_id ORDER BY MIN(updated_at) ASC LIMIT {$messageBatch}"
             );
             $stmt->execute();
@@ -1139,7 +963,7 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
             if (count($selected)<$messageBatch) {
                 $stmt=$db->prepare(
                     "SELECT pay_row_id FROM payment_message_refs
-                     WHERE updated_at<=NOW(6)
+                     WHERE purpose<>'staff' AND retired_reason IS NULL AND updated_at<=NOW(6)
                      GROUP BY pay_row_id ORDER BY MIN(updated_at) ASC LIMIT {$messageBatch}"
                 );
                 $stmt->execute();
@@ -1155,7 +979,7 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
                 // Fair scanning; a failed Telegram edit remains eligible later.
                 $stmt=$db->prepare(
                     'UPDATE payment_message_refs SET updated_at=NOW(6)
-                     WHERE pay_row_id=? AND updated_at<=NOW(6)'
+                     WHERE pay_row_id=? AND purpose<>\'staff\' AND retired_reason IS NULL AND updated_at<=NOW(6)'
                 );
                 $stmt->bind_param('i',$id);$stmt->execute();$stmt->close();
             }

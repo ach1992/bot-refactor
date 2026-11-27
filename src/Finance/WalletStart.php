@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
 require_once __DIR__ . '/PaymentLifecycle.php';
+require_once __DIR__.'/../Telegram/Conversation.php';
 
 /** All transient stages fit the existing users.step column; no migration. */
 function achbotWalletTopupStage(string $kind, int $updateId, int $messageId = 0): string {
@@ -30,7 +31,7 @@ function achbotWalletTopupAdvance(mysqli $db, int $actorId, ?string $expected,
     try {
         if (!$db->begin_transaction()) throw new RuntimeException('topup_begin_failed');
         $started = true;
-        $stmt = $db->prepare('SELECT id,step FROM users WHERE userid=? FOR UPDATE');
+        $stmt = $db->prepare('SELECT id,step,temp FROM users WHERE userid=? FOR UPDATE');
         if (!$stmt) throw new RuntimeException('topup_user_lookup_unavailable');
         $stmt->bind_param('i', $actorId);
         if (!$stmt->execute()) throw new RuntimeException('topup_user_lookup_failed');
@@ -41,6 +42,9 @@ function achbotWalletTopupAdvance(mysqli $db, int $actorId, ?string $expected,
             return 'stale';
         }
         $row = $rows[0];
+        if ($expected===null && !\AchBot\Telegram\Conversation\editorAcceptsSequence($row,$eventUpdateId,time())) {
+            $db->rollback();return 'stale';
+        }
         $stored = (string)$row['step'];
         if ($expected !== null && $stored !== $expected) {
             $db->rollback();
@@ -158,13 +162,13 @@ function startWalletPayment(mysqli $connection, $botUrl,
     require_once __DIR__.'/../Purchase/CheckoutPresentation.php';
     $methods=array_keys(achbotCheckoutDraftPaymentOptions($connection,$draftId,$actor));
     $keyboard=achbotCheckoutPaymentKeyboard('topup',$hash_id,$amount,$methods,$botUrl);
-    $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cancel'), 'callback_data' => 'mainMenu']];
+    $keyboard[] = [['text' => \achbotMessage('legacy_buttons.cancel'), 'callback_data' => 'dc_'.$hash_id]];
     $keys = json_encode(['inline_keyboard' => $keyboard], JSON_UNESCAPED_UNICODE);
     try {
         $reply = sendMessage(\achbotMessage('wallet.wallet_start.start_wallet_payment.message.1f46b2b87f') . number_format($amount) .
             \achbotMessage('wallet.wallet_start.start_wallet_payment.message.64ab796d01'), $keys, 'HTML');
         require_once __DIR__ . '/PaymentLifecycle.php';
-        achbotPayUxTrackByHash($connection,$hash_id,$actor,$reply);
+        achbotPayUxTrackByHash($connection,$hash_id,$actor,$reply,'selector');
         if (!is_object($reply) || ($reply->ok ?? false) !== true) {
             error_log('achbot_wallet_topup_delivery_deferred update_id=' . $updateId);
         }

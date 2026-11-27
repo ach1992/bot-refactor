@@ -10,7 +10,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
 }
 require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
-require_once __DIR__.'/../Admin/Access.php';
+require_once __DIR__.'/State.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
@@ -20,12 +20,12 @@ if($data=="rejectedAgentList" && ($from_id == $admin || $userInfo['isAdmin'] == 
         editText($message_id,\achbotMessage('agent.rejected.rejected_agent_list.message.4bb2ce6b81'),$keys);
     }else alert(\achbotMessage('agent.rejected.rejected_agent_list.alert.d5290e0a13'));
 }
-if(preg_match('/^releaseRejectedAgent(\d+)/',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
-    $stmt = $connection->prepare("UPDATE `users` SET `is_agent` = 0 WHERE `userid` = ?");
-    $stmt->bind_param("i", $match[1]);
-    $stmt->execute();
-    $stmt->close();
-    
+if(preg_match('/^releaseRejectedAgent([1-9][0-9]*)$/D',(string)$data,$match) &&
+    \AchBot\Telegram\Conversation\source($update??null,(int)$from_id,true)){
+    $uid=achbotAgencyPositive($match[1]);
+    if (!$uid || !achbotAgencyReset($connection,(int)$from_id,$uid,-1)) {
+        alert(achbotMessage('legacy_messages.config_not_found'));return;
+    }
     alert(\achbotMessage('legacy_messages.saved_successfuly'));
     $keys = getRejectedAgentList();
     if($keys != null){

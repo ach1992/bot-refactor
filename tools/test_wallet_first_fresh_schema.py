@@ -133,7 +133,46 @@ def main():
                 assert sql('fresh_chain','SELECT * FROM payment_delivery_intents')==before
                 checks.append('construction_refuses_historical_delivery_without_mutating_evidence')
                 sql('fresh_chain','DELETE FROM payment_delivery_intents; DELETE FROM payment_attempts; DELETE FROM pays')
-            sql('fresh_chain',migration.read_text())
+            if migration.name=='051_payment_message_ownership.sql':
+                sql('fresh_chain', """INSERT INTO pays(hash_id,user_id,type,price,request_date,state)
+                    VALUES ('old-message-fixture',1001,'INCREASE_WALLET',100,1700000000,'paid');
+                    INSERT INTO payment_message_refs(pay_row_id,chat_id,message_id,kind)
+                    SELECT id,user_id,123,'text' FROM pays WHERE hash_id='old-message-fixture';
+                    INSERT INTO payment_attempts(pay_row_id,provider,order_hash,quote_amount,quote_currency,local_amount_toman,stage,evidence_invoice_chat_id,evidence_invoice_message_id,evidence_invoice_digest)
+                    SELECT id,'bank_transfer',hash_id,price,'toman',price,'done',user_id,123,REPEAT('a',64) FROM pays WHERE hash_id='old-message-fixture';""")
+                before_ref=sql('fresh_chain','SELECT * FROM payment_message_refs')
+                before_attempt=sql('fresh_chain','SELECT * FROM payment_attempts')
+                # Execute the complete construction script against each
+                # forbidden source independently. Neither rows nor schema
+                # may change, even if only the second source blocks it.
+                before_defs={table:sql('fresh_chain','SHOW CREATE TABLE '+table)
+                    for table in ('payment_message_refs','payment_attempts')}
+                rejected=subprocess.run(cli+['fresh_chain'],input=migration.read_text(),text=True,env=env,capture_output=True,timeout=30)
+                assert rejected.returncode!=0 and 'existing message references require transfer' in rejected.stderr,rejected.stderr
+                assert sql('fresh_chain','SELECT * FROM payment_message_refs')==before_ref
+                assert sql('fresh_chain','SELECT * FROM payment_attempts')==before_attempt
+                assert all(sql('fresh_chain','SHOW CREATE TABLE '+table)==definition for table,definition in before_defs.items())
+                sql('fresh_chain','DELETE FROM payment_message_refs')
+                rejected=subprocess.run(cli+['fresh_chain'],input=migration.read_text(),text=True,env=env,capture_output=True,timeout=30)
+                assert rejected.returncode!=0 and 'existing API invoice references require transfer' in rejected.stderr,rejected.stderr
+                assert sql('fresh_chain','SELECT * FROM payment_attempts')==before_attempt
+                assert all(sql('fresh_chain','SHOW CREATE TABLE '+table)==definition for table,definition in before_defs.items())
+                checks.append('construction_refuses_historical_invoice_references_without_mutation')
+                sql('fresh_chain','DELETE FROM payment_message_refs; DELETE FROM payment_attempts; DELETE FROM pays')
+            if migration.name=='053_logical_report_attempts.sql':
+                sql('fresh_chain',"INSERT INTO payment_followup_intents(operational_ref,intent_key,stage,kind,role,recipient,pay_fingerprint,sealed_payload,payload_sha256,state) VALUES ('fixture:1',REPEAT('a',64),'operational_report','send','service_admin','9001',REPEAT('b',64),'fixture',REPEAT('c',64),'pending')")
+                before=sql('fresh_chain','SELECT * FROM payment_followup_intents')
+                defs={table:sql('fresh_chain','SHOW CREATE TABLE '+table) for table in ('payment_followup_intents','payment_followup_attempts')}
+                rejected=subprocess.run(cli+['fresh_chain'],input=migration.read_text(),text=True,env=env,capture_output=True,timeout=30)
+                assert rejected.returncode!=0 and 'existing followup evidence requires explicit transfer' in rejected.stderr,rejected.stderr
+                assert sql('fresh_chain','SELECT * FROM payment_followup_intents')==before
+                assert all(sql('fresh_chain','SHOW CREATE TABLE '+table)==definition for table,definition in defs.items())
+                sql('fresh_chain','DELETE FROM payment_followup_intents')
+                checks.append('construction_refuses_existing_report_evidence_without_mutation')
+            try:
+                sql('fresh_chain',migration.read_text())
+            except subprocess.CalledProcessError as error:
+                raise AssertionError((migration.name,error.stderr)) from error
         sql('fresh_single',(ROOT/'database/current-schema.sql').read_text())
         old=set(sql('fresh_chain','SHOW TABLES').splitlines())
         new=set(sql('fresh_single','SHOW TABLES').splitlines())
@@ -150,9 +189,13 @@ def main():
             assert sql('fresh_single','SELECT COUNT(*) FROM `'+table+'`')=='0',table
             checks.append('empty_and_exact:'+table)
         assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='service_operations' AND COLUMN_NAME='historical_pay_id'")=='0'
+        assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_followup_attempts' AND COLUMN_NAME IN ('ack_chat_id','ack_message_id')")=='2'
+        assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA=DATABASE() AND TABLE_NAME='payment_followup_attempts' AND CONSTRAINT_NAME='ck_followup_attempt_ack_identity'")=='1'
+        checks.append('followup_attempt_identity_schema')
+
         assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='users' AND COLUMN_NAME='userid' AND NON_UNIQUE=0")!='0'
         checks+=['no_historical_funding_column','unique_wallet_owner']
-        retired_columns=['review_notified_at', 'evidence_review_claim_token', 'evidence_review_claimed_at', 'evidence_report_digest', 'evidence_fulfillment_state', 'evidence_fulfillment_payload','review_archived_at','review_archived_by']
+        retired_columns=['review_notified_at', 'evidence_review_claim_token', 'evidence_review_claimed_at', 'evidence_report_digest', 'evidence_fulfillment_state', 'evidence_fulfillment_payload','review_archived_at','review_archived_by','evidence_invoice_chat_id','evidence_invoice_message_id','evidence_invoice_digest']
         for column in retired_columns:
             assert sql('fresh_single',"SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_attempts' AND COLUMN_NAME='"+column+"'")== '0',column
             checks.append('retired_payment_column:'+column)
@@ -173,6 +216,9 @@ def main():
             for column in columns:
                 assert sql('fresh_single',"SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='"+table+"' AND COLUMN_NAME='"+column+"'")=='NO'
                 checks.append('required_delivery_column:'+table+'.'+column)
+        for column in ('ack_chat_id','ack_message_id'):
+            assert sql('fresh_single',"SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='payment_delivery_attempts' AND COLUMN_NAME='"+column+"'")=='YES'
+            checks.append('historical_delivery_identity_nullable:'+column)
         path=work/'fresh.php';path.write_text(PHP)
         for mode in ('strict','off'):
             p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode],
@@ -214,6 +260,24 @@ def main():
                 assert p.returncode==0 and p.stdout=='REJECTED' and not p.stderr,(p.stdout,p.stderr)
                 checks.append(mode+':missing_'+key+'_denied')
             sql('fresh_single',f'ALTER TABLE {table} ADD UNIQUE INDEX {key} ({columns}); ALTER TABLE {table} DROP INDEX fixture_fk')
+        sql('fresh_single','ALTER TABLE payment_followup_attempts DROP CONSTRAINT ck_followup_attempt_wire')
+        for mode in ('strict','off'):
+            p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode,'missing_followup_index'],
+                env=env,capture_output=True,text=True,timeout=20)
+            assert p.returncode==0 and p.stdout=='REJECTED' and not p.stderr,(p.stdout,p.stderr)
+            checks.append(mode+':missing_followup_wire_constraint_denied')
+        sql('fresh_single','ALTER TABLE payment_followup_attempts DROP CONSTRAINT ck_followup_attempt_ack_identity')
+        for mode in ('strict','off'):
+            p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode,'missing_followup_index'],
+                env=env,capture_output=True,text=True,timeout=20)
+            assert p.returncode==0 and p.stdout=='REJECTED' and not p.stderr,(p.stdout,p.stderr)
+            checks.append(mode+':missing_followup_ack_constraint_denied')
+        sql('fresh_single','ALTER TABLE payment_followup_attempts DROP COLUMN ack_message_id')
+        for mode in ('strict','off'):
+            p=subprocess.run(['php',str(path),str(ROOT),str(work/'mysql.sock'),mode,'missing_followup_index'],
+                env=env,capture_output=True,text=True,timeout=20)
+            assert p.returncode==0 and p.stdout=='REJECTED' and not p.stderr,(p.stdout,p.stderr)
+            checks.append(mode+':missing_followup_ack_column_denied')
     result=dict(complete=True,status='PASS',cases=len(checks),tables=len(new),
                 migrations=len(migrations),checks=checks,external_requests=0)
     if args.report:args.report.write_text(json.dumps(result,indent=2)+'\n')

@@ -86,3 +86,12 @@ schema and source. Source test results never authorize a real financial,
 Native, Telegram, Cron, migration or deployment effect. Maintain distinct
 publication and installed acceptance in [#204](https://github.com/ach1992/bot-refactor/issues/204)
 and [#183](https://github.com/ach1992/bot-refactor/issues/183).
+
+Current subscription-action and agency tests cover both SQL reporting modes,
+literal scoped search, actual private update identity and stale editor
+ownership, verified/uncertain Native rotation with read-only recovery,
+original credential delivery guards, original event recovery, concurrent
+agency decisions, atomic rollback, and preserving independent discount
+scopes. Onboarding covers the original notice's recipient-specific recovery
+and no repeated completed event. These are disposable-source proofs, not
+an installed Telegram or provider acceptance.

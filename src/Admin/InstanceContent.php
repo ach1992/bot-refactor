@@ -91,7 +91,7 @@ function achbotInstanceCanEdit(int $actor): bool {
     return function_exists('achbotAdminCan') && achbotAdminCan('bot_settings',$actor);
 }
 /** Recheck current actor/step under the writer lease shared by settings edits. */
-function achbotInstanceSave(int $actor,string $field,$value,string $expectedStep): bool {
+function achbotInstanceSave(int $actor,string $field,$value,array $editor): bool {
     global $admin;
     if (!in_array($field,achbotInstanceFields(),true)||!achbotInstanceCanEdit($actor)) return false;
     return achbotMutateBotStates(
@@ -102,20 +102,16 @@ function achbotInstanceSave(int $actor,string $field,$value,string $expectedStep
             } else $state[$field]=$value;
             return $state;
         },
-        static function(mysqli $db) use($actor,$expectedStep,$admin): void {
-            $s=$db->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');$s->bind_param('i',$actor);$s->execute();
-            $ids=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
-            if(count($ids)!==1)throw new RuntimeException('instance_actor_unavailable');
-            $pk=(int)$ids[0]['id'];$s=$db->prepare('SELECT userid,isAdmin,step FROM users WHERE id=? FOR UPDATE');
-            $s->bind_param('i',$pk);$s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
-            if(!$row||(int)$row['userid']!==$actor||($actor!==(int)$admin&&(int)$row['isAdmin']!==1)||
-                (string)$row['step']!==$expectedStep||!achbotAdminCanLocked($db,$actor,(int)$admin,'bot_settings'))
+        static function(mysqli $db) use($actor,$editor,$admin): void {
+            $row=\AchBot\Telegram\Conversation\lockEditor($db,$actor,$editor);
+            if (!achbotAdminCanLocked($db,$actor,(int)$admin,'bot_settings'))
                 throw new RuntimeException('instance_actor_changed');
+            \AchBot\Telegram\Conversation\writeEditorLocked($db,$row,'none',null);
         }
     );
 }
 function achbotHandleInstanceContent($update,$data,$text,array $cachedUser): bool {
-    global $from_id, $message_id, $connection, $cancelKey;    $pending=str_starts_with((string)($cachedUser['step']??''),'achbotInstance:');
+    global $from_id, $message_id, $connection, $cancelKey, $removeKeyboard;    $pending=str_starts_with((string)($cachedUser['step']??''),'achbotInstance:');
     $callback=is_string($data)&&str_starts_with($data,'ic|');
     if(!$callback&&!$pending)return false;
     $actor=(int)($from_id??0);$source=$callback?($update->callback_query??null):($update->message??null);
@@ -126,10 +122,16 @@ function achbotHandleInstanceContent($update,$data,$text,array $cachedUser): boo
         ($message->message_id??null)===(int)($message_id??0)&&
         ($callback?($source->data??null)===$data:($source->text??null)===$text);
     if(!$valid||!achbotInstanceCanEdit($actor))return true;
+    require_once __DIR__.'/../Telegram/Conversation.php';
     if($callback){
-        if($data==='ic|m'){editText($message_id,achbotMessage('instance_content.title'),achbotInstanceMenu($GLOBALS['botState']??[]),'HTML');return true;}
+        if($data==='ic|m'){
+            if ($pending) {
+                if (!\AchBot\Telegram\Conversation\transitionEditor($connection,$actor,$cachedUser)) return true;
+                \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.operation_canceled'));
+            }
+            editText($message_id,achbotMessage('instance_content.title'),achbotInstanceMenu($GLOBALS['botState']??[]),'HTML');return true;}
         if(!preg_match('/^ic\|e\|([A-Za-z_]+)$/D',$data,$m)||!in_array($m[1],achbotInstanceFields(),true))return true;
-        $field=$m[1];setUser('achbotInstance:'.$field);
+        $field=$m[1];if (!\AchBot\Telegram\Conversation\transitionEditor($connection,$actor,$cachedUser,'achbotInstance:'.$field,update:$update)) return true;
         $vars=['label'=>achbotInstanceLabel($field)];
         $prompt=in_array($field,achbotInstanceMessageFields(),true)
             ? achbotMessageHtml('instance_content.message_prompt',$vars)
@@ -140,10 +142,12 @@ function achbotHandleInstanceContent($update,$data,$text,array $cachedUser): boo
     $s=$connection->prepare('SELECT step FROM users WHERE userid=? LIMIT 2');$s->bind_param('i',$actor);$s->execute();
     $rows=$s->get_result()->fetch_all(MYSQLI_ASSOC);$s->close();
     if(count($rows)!==1)return true;$step=(string)$rows[0]['step'];
+    if ($step!==($cachedUser['step']??null)) return true;
     if(!preg_match('/^achbotInstance:([A-Za-z_]+)$/D',$step,$m)||!in_array($m[1],achbotInstanceFields(),true))return true;
     $field=$m[1];
     if($text===(\achbotMessage('legacy_buttons.cancel')??null)||$text==='/cancel'){
-        setUser();
+        if (!\AchBot\Telegram\Conversation\transitionEditor($connection,$actor,$cachedUser)) return true;
+        \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.operation_canceled'));
         $isMessage=in_array($field,achbotInstanceMessageFields(),true);
         sendMessage($isMessage?achbotMessage('instance_content.title'):\achbotMessage('legacy_messages.change_bot_settings_message'),
             $isMessage?achbotInstanceMenu($GLOBALS['botState']??[]):getGateWaysKeys(),'HTML');return true;
@@ -160,11 +164,11 @@ function achbotHandleInstanceContent($update,$data,$text,array $cachedUser): boo
         $value=\AchBot\Presentation\Text\destinationUrl($text);
         if($value===''){sendMessage(achbotMessage('instance_content.invalid_destination'),$cancelKey,'HTML');return true;}
     }
-    if(!achbotInstanceSave($actor,$field,$value,$step)){
+    if(!achbotInstanceSave($actor,$field,$value,$cachedUser)){
         sendMessage(achbotMessage('instance_content.save_unavailable'),$cancelKey,'HTML');return true;
     }
-    setUser();
-    sendMessage(achbotMessage('instance_content.saved'),
+    \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('instance_content.saved'));
+    sendMessage(in_array($field,achbotInstanceMessageFields(),true)?achbotMessage('instance_content.title'):achbotMessage('legacy_messages.change_bot_settings_message'),
         in_array($field,achbotInstanceMessageFields(),true)?achbotInstanceMenu($GLOBALS['botState']??[]):getGateWaysKeys(),'HTML');
     return true;
 }

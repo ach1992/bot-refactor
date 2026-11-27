@@ -31,7 +31,7 @@ require_once __DIR__.'/src/Purchase/Core.php';
 function sendMessage($text,$keys=null,$mode=null,$recipient=null) {
     file_put_contents(getenv('ACHBOT_DIRECT_LOG'),json_encode(['recipient'=>(string)$recipient,'text'=>$text,
         'context'=>$GLOBALS['achbotTelegramDiagnosticContext']??null],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)."\n",FILE_APPEND);
-    return (object)['ok'=>true];
+    return isset($GLOBALS['achbotTelegramDiagnosticContext']['followup_id'])?fixtureMessageAck($recipient):(object)['ok'=>true];
 }
 function bot($method,$args=[]) {return (object)['ok'=>true];}
 '''
@@ -49,9 +49,12 @@ DAY=r'''<?php
 require __DIR__.'/config.php';
 $userInfo=['step'=>'giftServerDay2','isAdmin'=>true];
 $from_id=9002;$text=$argv[1];
-function setUser($step){echo json_encode(['step'=>$step]);}
+function setUser($step){echo json_encode(['step'=>$step]);return true;}
 require __DIR__.'/day-route.php';
 '''
+
+from operational_report_fixture import with_message_ack
+CONFIG=with_message_ack(CONFIG)
 
 def run(work,env,stage,script,*args):
     result=subprocess.run(['php','-d','display_errors=0',str(stage/script),*map(str,args)],

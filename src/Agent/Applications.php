@@ -1,149 +1,78 @@
 <?php
-/**
- * AchBot Access: Agent request, acceptance and rejection wizard.
- * Scoped, re-entrant, byte-compatible route at original bot.php position.
- * Internal include only. Do not execute via HTTP directly.
- */
-if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
-    http_response_code(404);
-    exit;
-}
-require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
-
+/** Current agency request and decision routes. The original application
+ * generation, state change and notifications share the existing journal. */
+if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
+require_once __DIR__.'/../../messages/loader.php';
+require_once __DIR__.'/../Telegram/Conversation.php';
+require_once __DIR__.'/../Telegram/UserEvents.php';
 require_once __DIR__.'/../Admin/Access.php';
+
+require_once __DIR__.'/State.php';
+
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
-
-
-if($data=="agencySettings" && $userInfo['is_agent'] == 1){
-    editText($message_id, \achbotMessage('legacy_messages.agent_setting_message') ,getAgentKeys());
+$agencyActor=(int)$from_id;
+$agencyCallback=\AchBot\Telegram\Conversation\source($update,$agencyActor,true);
+if ($data==='agencySettings' && $agencyCallback && (int)$userInfo['is_agent']===1) {
+    editText($message_id,achbotMessage('legacy_messages.agent_setting_message'),getAgentKeys());
+    return;
 }
-if($data=="requestAgency"){
-    if($userInfo['is_agent'] == 2){
-        alert(\achbotMessage('legacy_messages.agency_request_already_sent'));
-    }elseif($userInfo['is_agent'] == 0){
-        $msg = str_replace(["USERNAME", "NAME", "USERID"],[$username, $first_name, $from_id],\achbotMessage('legacy_messages.request_agency_message'));
-			$keys = json_encode([
-				'inline_keyboard' => [
-					[
-						['text' => \achbotMessage('legacy_buttons.approve'), 'callback_data' => "agencyApprove" . $from_id],
-						['text' => \achbotMessage('legacy_buttons.decline'), 'callback_data' => "agencyDecline" . $from_id]
-					]
-				]
-			]);
-			achbotNotifyAdmins('sendMessage', ['text'=>$msg, 'reply_markup'=>$keys, 'parse_mode'=>'HTML']);
-        setUser(2, 'is_agent');
-        alert(\achbotMessage('legacy_messages.agency_request_sent'));
-    }elseif($userInfo['is_agent'] == -1) alert(\achbotCurrentMessage('agency_request_declined'));
-    elseif($userInfo['is_agent'] == 1) editText($message_id,\achbotMessage('agent.applications.request_agency.message.b059640ccc'),getMainKeys());
-}
-// Resolve exactly one pending applicant before a state transition. The legacy
-// schema does not enforce uniqueness on users.userid; ambiguous IDs fail closed.
-function achbotPendingAgencyApplicantId(mysqli $connection, int $applicantUserId): ?int {
-    $stmt = $connection->prepare("SELECT `id`, `is_agent` FROM `users` WHERE `userid` = ? LIMIT 2");
-    $stmt->bind_param("i", $applicantUserId);
-    $stmt->execute();
-    $rows = $stmt->get_result();
-    $row = $rows->num_rows === 1 ? $rows->fetch_assoc() : null;
-    $stmt->close();
-    return $row !== null && (int)$row['is_agent'] === 2 ? (int)$row['id'] : null;
-}
-
-/**
- * Agency approval is a single-row compare-and-set (is_agent=2 -> 1).
- * The existing users.is_agent secondary index can produce an InnoDB
- * deadlock victim when two admins approve the same pending applicant.
- * Retrying ONLY a rolled-back 1213 statement is safe before ANY Telegram
- * or wizard side effect: the second CAS then observes zero affected rows.
- * A lock timeout (1205) or repeated victim fails CLOSED, never notifies.
- */
-function achbotAgencyApprovePendingRow(mysqli $connection, int $rowId,
-                                       string $discount, int $time): bool {
-    for ($attempt=0; $attempt<2; ++$attempt) {
-        $stmt=null;
-        try {
-            $stmt=$connection->prepare("UPDATE `users` SET `is_agent` = 1,
-                `discount_percent` = ?, `agent_date` = ?
-                WHERE `id` = ? AND `is_agent` = 2");
-            if (!$stmt) return false;
-            $stmt->bind_param('sii',$discount,$time,$rowId);
-            $ok=$stmt->execute();
-            return $ok===true && $stmt->affected_rows===1;
-        } catch (mysqli_sql_exception $error) {
-            // 1213 is an explicitly rolled-back InnoDB deadlock victim.
-            // Do not replay SQL on 1205 (transaction state uncertain).
-            if ((int)$error->getCode()===1213 && $attempt===0) {
-                usleep(3000);
-                continue;
-            }
-            if (in_array((int)$error->getCode(),[1213,1205],true))
-                return false;
-            throw $error;
-        } finally {
-            if ($stmt instanceof mysqli_stmt) {
-                try { $stmt->close(); } catch (Throwable $ignored) {}
-            }
-        }
+if ($data==='requestAgency' && $agencyCallback) {
+    $result=achbotAgencyRequest($connection,$agencyActor,(int)($update->update_id??0),$first_name,$username);
+    switch($result['state']){
+    case 'claimed':
+        alert(achbotMessage('legacy_messages.agency_request_sent'));
+        achbotOperationalReportDispatch($connection,$result['ref'],8.0);break;
+    case 2: alert(achbotMessage('legacy_messages.agency_request_already_sent'));break;
+    case -1: alert(achbotCurrentMessage('agency_request_declined'));break;
+    case 1: editText($message_id,achbotMessage('agent.applications.request_agency.message.b059640ccc'),getMainKeys());break;
+    default: alert(achbotMessage('legacy_messages.config_not_found'));
     }
-    return false;
+    return;
 }
-
-if(preg_match('/^agencyDecline([1-9][0-9]*)$/D', (string)$data, $match) &&
-    ($from_id == $admin || !empty($userInfo['isAdmin']))){
-    $applicant = filter_var($match[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-    $rowId = $applicant !== false ? achbotPendingAgencyApplicantId($connection, $applicant) : null;
-    if ($rowId !== null) {
-        // The acting administrator's setUser() is deliberately NOT used here.
-        // Compare-and-set prevents stale/replayed callbacks from succeeding.
-        $stmt = $connection->prepare("UPDATE `users` SET `is_agent` = -1 WHERE `id` = ? AND `is_agent` = 2");
-        $stmt->bind_param("i", $rowId);
-        $stmt->execute();
-        $changed = $stmt->affected_rows === 1;
-        $stmt->close();
-        if ($changed) {
-            editKeys(json_encode(['inline_keyboard'=>[
-                [['text'=>\achbotMessage('legacy_buttons.declined'),'callback_data'=>"wizwizch"]]
-            ]]));
-            sendMessage(\achbotCurrentMessage('agency_request_declined'), null, null, $applicant);
-        } else {
-            alert(\achbotMessage('legacy_messages.config_not_found'));
-        }
-    } else {
-        alert(\achbotMessage('legacy_messages.config_not_found'));
+if ($agencyCallback && preg_match('/^agency(Approve|Decline)([1-9][0-9]*)_([1-9][0-9]*)$/D',(string)$data,$m)) {
+    $applicant=achbotAgencyPositive($m[2]);$generation=achbotAgencyPositive($m[3]);
+    if (!$applicant || !$generation || !achbotAdminCanFor($connection,$agencyActor,(int)$admin,'agents')) {
+        alert(achbotMessage('legacy_messages.config_not_found'));return;
     }
-}
-if(preg_match('/^agencyApprove([1-9][0-9]*)$/D', (string)$data, $match) &&
-    ($from_id == $admin || !empty($userInfo['isAdmin']))){
-    $applicant = filter_var($match[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-    if ($applicant !== false && achbotPendingAgencyApplicantId($connection, $applicant) !== null) {
-        setUser($data . "_" . $message_id);
-        sendMessage(\achbotMessage('legacy_messages.send_agent_discount_percent'), $cancelKey, 'HTML');
-    } else {
-        alert(\achbotMessage('legacy_messages.config_not_found'));
-    }
-}
-if(preg_match('/^agencyApprove([1-9][0-9]*)_([1-9][0-9]*)$/D', (string)($userInfo['step'] ?? ''), $match) &&
-    $text != \achbotMessage('legacy_buttons.cancel') && ($from_id == $admin || !empty($userInfo['isAdmin']))){
-    if(is_numeric($text)){
-        $applicant = filter_var($match[1], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-        $originalMessage = filter_var($match[2], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
-        $rowId = $applicant !== false && $originalMessage !== false
-            ? achbotPendingAgencyApplicantId($connection, $applicant) : null;
-        if ($rowId !== null) {
-            $discount = json_encode(['normal'=>$text]);
-            $changed=achbotAgencyApprovePendingRow($connection,$rowId,$discount,$time);
-            setUser(); // Only the acting administrator's wizard step is cleared.
-            if ($changed) {
-                editKeys(json_encode(['inline_keyboard'=>[
-                    [['text'=>\achbotMessage('legacy_buttons.approved'),'callback_data'=>"wizwizch"]]
-                ]]), $originalMessage);
-                sendMessage(\achbotMessage('legacy_messages.saved_successfuly'), null, 'HTML');
-                sendMessage(\achbotMessage('legacy_messages.agency_request_approved'), null, null, $applicant);
-            } else {
-                alert(\achbotMessage('legacy_messages.config_not_found'));
-            }
-        } else {
-            setUser();
-            alert(\achbotMessage('legacy_messages.config_not_found'));
+    if ($m[1]==='Approve') {
+        $u=achbotAgencyApplicant($connection,$applicant);
+        if (!$u || !achbotAgencyMatches($connection,$u,$generation)) {
+            alert(achbotMessage('legacy_messages.config_not_found'));return;
         }
-    } else sendMessage(\achbotMessage('legacy_messages.send_only_number'), null, 'HTML');
+        if (\AchBot\Telegram\Conversation\transitionEditor($connection,$agencyActor,$userInfo,
+            'agencyApprove'.$applicant.'_'.$generation.'_'.$agencyCallback->message_id,update:$update)!==null)
+            sendMessage(achbotMessage('legacy_messages.send_agent_discount_percent'),$cancelKey,'HTML');
+        return;
+    }
+    $result=achbotAgencyDecision($connection,$agencyActor,$userInfo,$applicant,$generation,null,
+        achbotCurrentMessage('agency_request_declined'));
+    if ($result['state']==='claimed') {
+        if ($result['editor_closed']??false)
+            \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_buttons.declined'),$agencyActor);
+        achbotOperationalReportDispatch($connection,$result['ref'],8.0);
+        try {editKeys(json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('legacy_buttons.declined'),'callback_data'=>'wizwizch']]]],JSON_THROW_ON_ERROR));}
+        catch(Throwable $ignored){}
+    } elseif ($result['editor_closed']??false)
+        \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.config_not_found'),$agencyActor);
+    else alert(achbotMessage('legacy_messages.config_not_found'));
+    return;
+}
+if (preg_match('/^agencyApprove([1-9][0-9]*)_([1-9][0-9]*)_([1-9][0-9]*)$/D',(string)($userInfo['step']??''),$m) &&
+    $text!==achbotMessage('legacy_buttons.cancel')) {
+    $source=\AchBot\Telegram\Conversation\source($update,$agencyActor,false);
+    if (!$source || !is_string($source->text??null) || $source->message_id<=(int)$m[3]) return;
+    $applicant=achbotAgencyPositive($m[1]);$generation=achbotAgencyPositive($m[2]);
+    if (!$applicant || !$generation) return;
+    $result=achbotAgencyDecision($connection,$agencyActor,$userInfo,$applicant,$generation,$source->text,
+        achbotMessage('legacy_messages.agency_request_approved'));
+    if ($result['state']==='invalid') {sendMessage(achbotMessage('legacy_messages.send_only_number'),null,'HTML');return;}
+    if ($result['state']==='claimed') {
+        \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.saved_successfuly'),$agencyActor);
+        achbotOperationalReportDispatch($connection,$result['ref'],8.0);
+        try {editKeys(json_encode(['inline_keyboard'=>[[['text'=>achbotMessage('legacy_buttons.approved'),'callback_data'=>'wizwizch']]]],JSON_THROW_ON_ERROR),(int)$m[3]);}
+        catch(Throwable $ignored){}
+    } elseif ($result['editor_closed']??false)
+        \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.config_not_found'),$agencyActor);
+    else sendMessage(achbotMessage('legacy_messages.config_not_found'),null,'HTML');
+    return;
 }
