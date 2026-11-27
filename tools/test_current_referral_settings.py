@@ -72,7 +72,9 @@ register_shutdown_function(static function() use ($connection,&$status,&$result,
     try {$policy=achbotPurchaseReferralPolicyAmount($connection);}catch(Throwable $e){$policyError=$e->getMessage();}
     echo json_encode(['handled'=>$status,'events'=>$events,'policy'=>$policy,'policy_error'=>$policyError,'result'=>$result,
         'saved_text'=>achbotMessage('legacy_messages.saved_successfuly'),
-        'number_text'=>achbotMessage('legacy_messages.send_only_number')],JSON_THROW_ON_ERROR);
+        'number_text'=>achbotMessage('legacy_messages.send_only_number'),
+        'canceled_text'=>achbotMessage('legacy_messages.operation_canceled'),
+        'home_text'=>achbotCurrentMessage('start_message')],JSON_THROW_ON_ERROR);
 });
 // The real ingress permission gate permits a demoted actor to abandon their
 // own stale settings editor without granting settings-write authority.
@@ -253,11 +255,20 @@ def main():
             # navigation. No existence/deletion check is required.
             for nav in ({'cancel':True},{'text':'/start'},{'callback':'navHome'},
                 {'callback':'mainMenu'},{'callback':'managePanel'}):
-                g=start(mode)
-                r=run(mode,**nav,mid=int(g[0].rsplit('_',1)[1]),cleanup_fail=True)
-                assert row()==['none',''] and len(r['events'])>=1,(nav,r)
-                if 'cancel' in nav or nav.get('text')=='/start' or nav.get('callback') in ('navHome','mainMenu'):
-                    assert len(r['events'])>=2,(nav,r)
+                for cleanup_fail in (False,True):
+                    g=start(mode)
+                    r=run(mode,**nav,mid=int(g[0].rsplit('_',1)[1]),cleanup_fail=cleanup_fail)
+                    assert row()==['none',''],(nav,r)
+                    if nav.get('callback')=='managePanel':
+                        assert len(r['events'])==1 and r['events'][0]['kind']=='edit',(nav,r)
+                    else:
+                        # The relocated Home cancellation send has exactly
+                        # the prior body, parse mode, target and keyboard.
+                        # A failed removal must not suppress the next menu.
+                        assert r['events']==[
+                            {'kind':'send','body':r['canceled_text'],'keys':'{"remove_keyboard":true}','to':9001,'mode':'HTML'},
+                            {'kind':'send','body':r['home_text'],'keys':'{"inline_keyboard":[]}','to':9001,'mode':'HTML'}
+                        ],(nav,cleanup_fail,r)
             case('fresh_navigation_and_cleanup_failure_are_independent')
             # Old typed message date cannot masquerade as idle-reset input.
             g=start(mode);gen=int(g[1].split(':')[0]);opened=int(time.time())-8*86400

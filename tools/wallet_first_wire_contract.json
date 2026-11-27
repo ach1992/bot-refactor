@@ -55,11 +55,11 @@
   "baseline": "484c80e6ee030e8656da96edc3000311d10327b5",
   "changes": {
     "bot.php": {
-      "reason": "Classified disposable Home reuses the current screen; stale editor navigation and old wallet branches removed. #236 F02: move referral settings into the source-bound shared editor route.",
+      "reason": "Classified disposable Home reuses the current screen; stale editor navigation and old wallet branches removed. #236 F02: move referral settings into the source-bound shared editor route. F03: Home delegates the same cancellation notice, HTML mode and ReplyKeyboardRemove to the existing best-effort Conversation helper; the next menu remains independent. Actual transport arguments are asserted by current_referral_settings.",
       "before_count": 200,
-      "after_count": 151,
+      "after_count": 150,
       "before_sha256": "cff48d8a700a865d62d8c96389da43e7a2d34431deff1f650f3bd4b107808baa",
-      "after_sha256": "51d3aab84f6e2923ad938f4035ec9e69aa399b66ecf75df38df44eee1a2761e4"
+      "after_sha256": "8be437d273a19197f9f3db8879dc0b807efdf79423d5383a1d8b499441b83315"
     },
     "config.php": {
       "reason": "Current exemption editor cancel consumes nonce without policy write; actual input prompt carries cancel keyboard.",
