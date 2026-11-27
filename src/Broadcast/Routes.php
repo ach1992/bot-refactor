@@ -90,7 +90,7 @@ if(preg_match('/^cancelBroadcast(\d+)/', $data, $m) && ($from_id == $admin || $u
 
 if(preg_match('/^chooseSendGroup_(all|has|none|agents)$/', $data, $match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     $group = $match[1];
-    if (!setUser("s2a_title_$group")) return;
+    if (!achbotBroadcastOpenEditor($connection,(int)$from_id,(int)$admin,$userInfo,"s2a_title_$group",$update)) return;
     sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.f7c7bcfe5e'), $cancelKey, 'HTML');
     return;
 }
@@ -103,13 +103,15 @@ if (isset($update->message->text) && !isset($update->callback_query) && preg_mat
     $title = trim(preg_replace('/\s+/u', ' ', (string)$text));
 
     if (mb_strlen($title, 'UTF-8') > 255) {
-        if (!setUser("s2a_title_$group")) return;
+        if (\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,
+            "s2a_title_$group",$userInfo['temp']??null,update:$update)===null) return;
         sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.adb061a104'), $cancelKey, 'HTML');
         return;
     }
 
     if (!preg_match('/^[\p{L}\p{N}\p{P}\p{S} \-_\+\(\)=\/\\\\!]+$/u', $title)) {
-        if (!setUser("s2a_title_$group")) return;
+        if (\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,
+            "s2a_title_$group",$userInfo['temp']??null,update:$update)===null) return;
         sendMessage(
             \achbotMessage('broadcast.routes.broadcast_start.message.9df7171b87').
             \achbotMessage('broadcast.routes.broadcast_start.message.b6d57f844e'),
@@ -118,26 +120,11 @@ if (isset($update->message->text) && !isset($update->callback_query) && preg_mat
         return;
     }
 
-    $emptyText = '';
-    $state0 = 0;
-
-    $stmt = $connection->prepare(
-        "INSERT INTO send_list (type, title, text, target_group, state)
-         VALUES ('draft', ?, ?, ?, ?)"
-    );
-    $stmt->bind_param("sssi", $title, $emptyText, $group, $state0);
-    $stmt->execute();
-
-    $draftId = (int)$stmt->insert_id;
-    $stmt->close();
-
-    if ($draftId <= 0) {
-        if (!setUser("s2a_title_$group")) return;
+    $draftId=achbotBroadcastCreateDraft($connection,(int)$from_id,(int)$admin,$userInfo,$group,$title,$update);
+    if ($draftId<=0) {
         sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.0c01c8169a'), $cancelKey, 'HTML');
         return;
     }
-
-    if (!setUser("s2a_msg_$draftId")) return;
     sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.45cbfc9bc3'), $cancelKey, 'HTML');
     return;
 }
@@ -147,58 +134,29 @@ if(isset($update->message) && !isset($update->callback_query) && preg_match('/^s
    && ($from_id == $admin || $userInfo['isAdmin'] == true)){
 
     $sendId = (int)$match[1];
-    if (!setUser()) return;
-
-	if(isset($update->message) && isForwardedMessageObj($update->message)){
-
-		$preview = '';
-		if(isset($update->message->text)) {
-			$preview = (string)$update->message->text;
-		} elseif(isset($update->message->caption)) {
-			$preview = (string)$update->message->caption;
-		}
-
-		$preview = trim($preview);
-		if(mb_strlen($preview, 'UTF-8') > 300){
-			$preview = mb_substr($preview, 0, 300, 'UTF-8') . \achbotMessage('broadcast.routes.broadcast_start.text.b4935894c8');
-		}
-
-		$stmt = $connection->prepare("
-			UPDATE `send_list`
-			SET `type`='forwardall', `message_id`=?, `chat_id`=?, `text`=?
-			WHERE `id`=? AND `state`=0
-		");
-		$stmt->bind_param("sssi", $message_id, $chat_id, $preview, $sendId);
-		$stmt->execute();
-		$stmt->close();
-
-		sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.e3d28dd838'), $removeKeyboard, 'HTML');
-		sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.a3919d081e'), json_encode(['inline_keyboard'=>[
-			[['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.8157c7d122'),'callback_data'=>"yesSend2All".$sendId],['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.5734fc6a07'),'callback_data'=>"noDontSend2all".$sendId]]
-		]]), 'HTML');
-		return;
-	}
-
-    if(isset($fileid) && $fileid !== null) {
-        $stmt = $connection->prepare("
-            UPDATE `send_list`
-            SET `type`=?, `text`=?, `text_html`=?, `file_id`=?
-            WHERE `id`=? AND `state`=0
-        ");
-        $captionHtml = \AchBot\Telegram\Presentation\incomingHtml($caption,(array)($update->message->caption_entities??[]));
-        $stmt->bind_param("ssssi", $filetype, $caption, $captionHtml, $fileid, $sendId);
-        $stmt->execute();
-        $stmt->close();
+    $forwarded=isset($update->message) && isForwardedMessageObj($update->message);
+    if ($forwarded) {
+        $preview=trim((string)($update->message->text??$update->message->caption??''));
+        if (mb_strlen($preview,'UTF-8')>300)
+            $preview=mb_substr($preview,0,300,'UTF-8').achbotMessage('broadcast.routes.broadcast_start.text.b4935894c8');
+        $payload=['type'=>'forwardall','text'=>$preview,'chat'=>$chat_id,'message'=>$message_id];
+    } elseif (isset($fileid) && $fileid!==null) {
+        $payload=['type'=>$filetype,'text'=>$caption,'file'=>$fileid,
+            'html'=>\AchBot\Telegram\Presentation\incomingHtml($caption,(array)($update->message->caption_entities??[]))];
     } else {
-        $stmt = $connection->prepare("
-            UPDATE `send_list`
-            SET `type`='text', `text`=?, `text_html`=?
-            WHERE `id`=? AND `state`=0
-        ");
-        $textHtml = \AchBot\Telegram\Presentation\incomingHtml($text,(array)($update->message->entities??[]));
-        $stmt->bind_param("ssi", $text, $textHtml, $sendId);
-        $stmt->execute();
-        $stmt->close();
+        $payload=['type'=>'text','text'=>$text,
+            'html'=>\AchBot\Telegram\Presentation\incomingHtml($text,(array)($update->message->entities??[]))];
+    }
+    if (!achbotBroadcastSubmitDraft($connection,(int)$from_id,(int)$admin,$userInfo,$sendId,$payload,$update)) {
+        sendMessage(achbotMessage('broadcast.routes.content_unconfirmed'),null,'HTML');
+        return;
+    }
+    if ($forwarded) {
+        sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.e3d28dd838'), $removeKeyboard, 'HTML');
+        sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.a3919d081e'), json_encode(['inline_keyboard'=>[
+            [['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.8157c7d122'),'callback_data'=>"yesSend2All".$sendId],['text'=>\achbotMessage('broadcast.routes.broadcast_start.button.5734fc6a07'),'callback_data'=>"noDontSend2all".$sendId]]
+        ]]), 'HTML');
+        return;
     }
 
     sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.e3d28dd838'), $removeKeyboard, 'HTML');
@@ -582,11 +540,7 @@ if(preg_match('/^editBroadcastAsk_(\d+)$/', $data, $m) && ($from_id == $admin ||
         return;
     }
 
-    $updateId=$update->update_id??null;
-    if (!is_int($updateId) || $updateId<=0 ||
-        !\AchBot\Telegram\Conversation\source($update,(int)$from_id,true) ||
-        \AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,
-            "bc_edit_$bid",$updateId.':'.time(),update:$update)===null) return;
+    if (!achbotBroadcastOpenEditor($connection,(int)$from_id,(int)$admin,$userInfo,"bc_edit_$bid",$update)) return;
     sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.656de1721c'), $cancelKey, null);
     return;
 }

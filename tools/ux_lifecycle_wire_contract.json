@@ -10,9 +10,9 @@
     },
     "src/Broadcast/Routes.php": {
       "before_count": 44,
-      "after_count": 43,
+      "after_count": 44,
       "before_sha256": "d627a18a2fd59d624ce7645f9340f9165966db19bf04b67d14b0fc8d44363a53",
-      "after_sha256": "b42a1de716a7856b01f72a98f42f3171d351bb6134a81cac2bd3107ec6df5809"
+      "after_sha256": "bc91d56efde62a2d975f44ee7cb58fe4ab5a7ec563ef2ba87170ad0985d2f8fb"
     },
     "src/Finance/ManualCheckoutPresentation.php": {
       "before_count": 10,

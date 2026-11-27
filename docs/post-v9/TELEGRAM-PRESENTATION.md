@@ -174,6 +174,9 @@ commit together; a failed admission cannot leave an independently queued
 edit or consume the editor. Concurrent submissions of the same active
 action reuse the existing in-progress result rather than create a second job.
 A stale typed edit cannot authorize a new job.
+Title registration creates the initial draft and the exact content editor in
+one transaction. Initial content and editor consumption also commit together;
+stale input, role changes, and cancelled drafts cannot admit new content.
 
 Pin/unpin/delete/edit jobs use the same lease, claim and pause/finish
 checkpoints, independently of the send queue. They also continue past a

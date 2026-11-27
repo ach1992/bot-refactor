@@ -92,7 +92,7 @@ function referralSettingEditor(string $step): ?array {
  * so a row CAS alone does not establish input ownership. */
 function editorOpeningGeneration(array $cached): ?array {
     $step=(string)($cached['step']??'');
-    if (!referralSettingEditor($step) && !preg_match('/\Abc_edit_[1-9][0-9]*\z/D',$step)) return null;
+    if (!referralSettingEditor($step) && !preg_match('/\A(?:bc_edit_[1-9][0-9]*|s2a_msg_[1-9][0-9]*|s2a_title_(?:all|has|none|agents))\z/D',$step)) return null;
     if (preg_match('/^([1-9][0-9]*):([1-9][0-9]*)$/D',(string)($cached['temp']??''),$m)!==1)
         return null;
     return ['update'=>(int)$m[1],'opened_at'=>(int)$m[2]];

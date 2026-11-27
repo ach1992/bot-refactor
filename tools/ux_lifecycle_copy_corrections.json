@@ -20,6 +20,10 @@
         ]
       }
     },
+    "broadcast.routes.broadcast_start.message.0c01c8169a": {
+      "before": "⚠️ خطایی در ساخت پیش‌نویس ارسال رخ داد.",
+      "after": "⚠️ ثبت پیش‌نویس ارسال تأیید نشد."
+    },
     "broadcast.routes.broadcast_start.message.39fe6c5d7e": {
       "before": "⛔️ لغو شد. ارسال ادامه پیدا نمی‌کند.",
       "after": null
@@ -31,6 +35,10 @@
     "broadcast.routes.broadcast_start.message.b56da4fdde": {
       "before": "⏳ کم کم برا همه ارسال میشه ...",
       "after": "⏳ ارسال پیام همگانی در صف قرار گرفت."
+    },
+    "broadcast.routes.content_unconfirmed": {
+      "before": null,
+      "after": "⚠️ ثبت محتوای ارسال تأیید نشد. وضعیت پیش‌نویس را بررسی کنید."
     },
     "broadcast.routes.pm_noop.message.42f2d7e7a7": {
       "before": "❌ خطا در ثبت عملیات ویرایش.",
