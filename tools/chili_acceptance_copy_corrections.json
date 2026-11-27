@@ -280,6 +280,66 @@
         ]
       }
     },
+    "payment_settings.gateway_rule_admin.fallback_button": {
+      "before": null,
+      "after": {
+        "text": "💰 دسترسی جایگزین تا — {limit}",
+        "parameters": [
+          "limit"
+        ]
+      }
+    },
+    "payment_settings.gateway_rule_admin.fallback_clear": {
+      "before": null,
+      "after": "غیرفعال‌کردن دسترسی جایگزین"
+    },
+    "payment_settings.gateway_rule_admin.fallback_disabled": {
+      "before": null,
+      "after": "غیرفعال"
+    },
+    "payment_settings.gateway_rule_admin.fallback_prompt": {
+      "before": null,
+      "after": {
+        "text": "💰 مبلغ دسترسی جایگزین: {method}\n📋 مبلغ فعلی: {limit}\n\nحداکثر مبلغ پرداخت برای کاربران فاقد شرایط را به تومان وارد کنید. برای غیرفعال‌کردن دسترسی جایگزین، 0 را ارسال کنید.",
+        "parameters": [
+          "method",
+          "limit"
+        ]
+      }
+    },
+    "payment_settings.gateway_rule_admin.fallback_saved": {
+      "before": null,
+      "after": "✅ مبلغ دسترسی جایگزین ذخیره شد."
+    },
+    "payment_settings.gateway_rule_admin.mode_button": {
+      "before": null,
+      "after": {
+        "text": "🔀 حالت مبلغ — {mode}",
+        "parameters": [
+          "mode"
+        ]
+      }
+    },
+    "payment_settings.gateway_rule_admin.mode_cap": {
+      "before": null,
+      "after": "سقف برای همه"
+    },
+    "payment_settings.gateway_rule_admin.mode_cap_summary": {
+      "before": null,
+      "after": "\n💰 سقف مبلغ برای همهٔ کاربران واجد شرایط اعمال می‌شود."
+    },
+    "payment_settings.gateway_rule_admin.mode_fallback": {
+      "before": null,
+      "after": "دسترسی جایگزین"
+    },
+    "payment_settings.gateway_rule_admin.mode_fallback_summary": {
+      "before": null,
+      "after": "\n💰 کاربران واجد شرایط بدون سقف، سایر کاربران تا مبلغ تعیین‌شده دسترسی دارند."
+    },
+    "payment_settings.gateway_rule_admin.mode_invalid_summary": {
+      "before": null,
+      "after": "\n⚠️ حالت مبلغ نامعتبر است. حالت صحیح را تنظیم کنید."
+    },
     "purchase.entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e": {
       "before": "📂 مرحلهٔ دوم\n\nدسته بندی مورد نظرت رو انتخاب کن 🤭",
       "after": null
@@ -303,5 +363,6 @@
       }
     }
   },
-  "amount_cap_owner_contract": "https://github.com/ach1992/bot-refactor/issues/236#issuecomment-7227732609"
+  "amount_cap_owner_contract": "https://github.com/ach1992/bot-refactor/issues/236#issuecomment-7227732609",
+  "amount_mode_owner_contract": "https://github.com/ach1992/bot-refactor/issues/236#issuecomment-7230334336"
 }

@@ -1452,6 +1452,20 @@ return [
             'parameters'=>['method','limit']
         ],
         'gateway_rule_admin.cap_saved' => '✅ سقف مبلغ پرداخت ذخیره شد.',
+        'gateway_rule_admin.mode_button' => ['text'=>'🔀 حالت مبلغ — {mode}','parameters'=>['mode']],
+        'gateway_rule_admin.mode_cap' => 'سقف برای همه',
+        'gateway_rule_admin.mode_fallback' => 'دسترسی جایگزین',
+        'gateway_rule_admin.mode_cap_summary' => "\n💰 سقف مبلغ برای همهٔ کاربران واجد شرایط اعمال می‌شود.",
+        'gateway_rule_admin.mode_fallback_summary' => "\n💰 کاربران واجد شرایط بدون سقف، سایر کاربران تا مبلغ تعیین‌شده دسترسی دارند.",
+        'gateway_rule_admin.mode_invalid_summary' => "\n⚠️ حالت مبلغ نامعتبر است. حالت صحیح را تنظیم کنید.",
+        'gateway_rule_admin.fallback_button' => ['text'=>'💰 دسترسی جایگزین تا — {limit}','parameters'=>['limit']],
+        'gateway_rule_admin.fallback_disabled' => 'غیرفعال',
+        'gateway_rule_admin.fallback_clear' => 'غیرفعال‌کردن دسترسی جایگزین',
+        'gateway_rule_admin.fallback_prompt' => [
+            'text'=>"💰 مبلغ دسترسی جایگزین: {method}\n📋 مبلغ فعلی: {limit}\n\nحداکثر مبلغ پرداخت برای کاربران فاقد شرایط را به تومان وارد کنید. برای غیرفعال‌کردن دسترسی جایگزین، 0 را ارسال کنید.",
+            'parameters'=>['method','limit']
+        ],
+        'gateway_rule_admin.fallback_saved' => '✅ مبلغ دسترسی جایگزین ذخیره شد.',
         'gateway_rule_admin.exempt_button' => '🔓 معاف کاربر از قوانین',
         'gateway_rule_admin.exempt_prompt' => [
             'text' => "🔓 معافیت قوانین: {method}\n👥 تعداد شناسه‌های معاف: {count}\n🎫 شناسه‌های فعلی: <code>{ids}</code>\n\n👤 شناسه‌های عددی را با فاصله، ویرگول یا در چند خط ارسال کنید.\n➕ افزودن: <code>123456 789012</code>\n➖ حذف: <code>-123456 -789012</code>\n💡 این معافیت فقط وقتی روش پرداخت روشن باشد معتبر است.",

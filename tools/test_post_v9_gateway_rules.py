@@ -609,7 +609,7 @@ def main():
         expanded={method:[blank('has_active_order')] for method in methods}
         store({**initial,'gatewayRules':{'version':1,'methods':expanded}})
         for method in methods:
-            for screen in ('gr|r|'+method+'|has_active_order',
+            for screen in ('gr|m|'+method,'gr|r|'+method+'|has_active_order',
                            'gr|f|'+method+'|has_active_order|volume'):
                 shown,_=act(screen)
                 assert len(shown)==1 and shown[0][0]=='edit',shown
@@ -707,6 +707,102 @@ def main():
         store(initial)
         cases.append('operator_amount_cap_create_clear_direct_edit_cas_independent_methods_and_authorization')
         cases.append('operator_amount_cap_staged_save_cancel_and_replay')
+        # Actual private operator route: amount-mode controls appear together,
+        # preserve the numeric amount, and never modify other methods.
+        store({**initial,'gatewayMaxAmountToman':{'bank_transfer':500000,'wallet':100}})
+        old_cap=cap_button('bank_transfer')
+        old_clear=cap_button('bank_transfer','u')
+        toggle=cap_button('bank_transfer','b')
+        assert toggle['text']=='🔀 حالت مبلغ — سقف برای همه',toggle
+        assert toggle['callback_data'].split('|')[-1]==old_cap['callback_data'].split('|')[-1]
+        events,_=act('gr|m|bank_transfer')
+        rows=json.loads(events[0][2])['inline_keyboard']
+        i=next(i for i,row in enumerate(rows) if row[0]['callback_data']==old_cap['callback_data'])
+        assert rows[i+1]==[toggle],rows
+        assert 'سقف مبلغ برای همه' in events[0][1],events
+        before=state()
+        for who,invalid in ((1001,None),(9001,'token'),(9001,'group'),(9001,'chat')):
+            act(toggle['callback_data'],who=who,invalid=invalid)
+            assert state()==before
+        events,_=act(toggle['callback_data'])
+        assert state()['gatewayAmountMode']=={'bank_transfer':'fallback'}
+        assert state()['gatewayMaxAmountToman']==before['gatewayMaxAmountToman']
+        assert any(e[0]=='edit' and 'کاربران واجد شرایط بدون سقف' in e[1] for e in events)
+        assert cap_button('bank_transfer')['text']=='💰 دسترسی جایگزین تا — 500,000 تومان'
+        assert cap_button('bank_transfer','b')['text']=='🔀 حالت مبلغ — دسترسی جایگزین'
+        assert cap_button('bank_transfer','u')['text']=='غیرفعال‌کردن دسترسی جایگزین'
+        before=state()
+        for stale in (toggle,old_cap,old_clear):
+            events,_=act(stale['callback_data'])
+            assert state()==before and any(e[0]=='deny' for e in events),events
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        # Save/Cancel and the displayed copy use the same fallback context.
+        events,_=act(cap_button('bank_transfer')['callback_data'])
+        assert any(e[0]=='send' and 'کاربران فاقد شرایط' in e[1] and '0 را ارسال کنید' in e[1] for e in events)
+        nonce,_=propose_cap('۶۰۰٬۰۰۰')
+        act('gr|x|'+str(nonce))
+        assert state()==before
+        act(cap_button('bank_transfer')['callback_data'])
+        nonce,_=propose_cap('۶۰۰٬۰۰۰')
+        events,_=act('gr|s|'+str(nonce))
+        assert state()['gatewayMaxAmountToman']['bank_transfer']==600000
+        assert state()['gatewayAmountMode']=={'bank_transfer':'fallback'}
+        assert any(e[0]=='edit' and 'مبلغ دسترسی جایگزین ذخیره شد' in e[1] for e in events)
+        cases.append('operator_amount_mode_toggle_actual_copy_preserves_amount_and_stale_buttons')
+        # Cross-mode edits are one CAS field; another method is independent.
+        act(cap_button('bank_transfer')['callback_data'],who=9001)
+        nonce,_=propose_cap('700000',who=9001)
+        other=cap_button('wallet','b',who=9002)
+        act(other['callback_data'],who=9002)
+        act('gr|s|'+str(nonce),who=9001)
+        assert state()['gatewayMaxAmountToman']=={'bank_transfer':700000,'wallet':100}
+        assert state()['gatewayAmountMode']=={'bank_transfer':'fallback','wallet':'fallback'}
+        act(cap_button('bank_transfer')['callback_data'],who=9001)
+        nonce,_=propose_cap('800000',who=9001)
+        act(cap_button('bank_transfer','b',who=9002)['callback_data'],who=9002)
+        before=state()
+        events,_=act('gr|s|'+str(nonce),who=9001)
+        assert state()==before and any(e[0]=='deny' for e in events),events
+        act('gr|x|'+str(nonce),who=9001)
+        assert state()['gatewayAmountMode']=={'wallet':'fallback'}
+        assert state()['gatewayMaxAmountToman']['bank_transfer']==700000
+        # A direct amount edit also invalidates a previously rendered toggle.
+        toggle=cap_button('bank_transfer','b')
+        sql(w,e,"UPDATE setting SET value=JSON_SET(value,'$.gatewayMaxAmountToman.bank_transfer',750000) WHERE type='BOT_STATES'")
+        before=state()
+        events,_=act(toggle['callback_data'])
+        assert state()==before and any(e[0]=='deny' for e in events),events
+        act(cap_button('bank_transfer','b')['callback_data'])
+        assert state()['gatewayAmountMode']['bank_transfer']=='fallback'
+        act(cap_button('bank_transfer','u')['callback_data'])
+        assert state()['gatewayAmountMode']['bank_transfer']=='fallback'
+        assert 'bank_transfer' not in state()['gatewayMaxAmountToman']
+        assert cap_button('bank_transfer')['text']=='💰 دسترسی جایگزین تا — غیرفعال'
+        act(cap_button('bank_transfer')['callback_data'])
+        nonce,_=propose_cap('10')
+        act('gr|s|'+str(nonce))
+        act(cap_button('bank_transfer')['callback_data'])
+        nonce,_=propose_cap('0')
+        act('gr|s|'+str(nonce))
+        assert 'bank_transfer' not in state()['gatewayMaxAmountToman']
+        assert state()['gatewayAmountMode']['bank_transfer']=='fallback'
+        cases.append('operator_amount_mode_cross_mode_cas_independent_methods_and_zero_clear')
+        # A malformed individual field is explicitly repairable, preserving
+        # other methods; a malformed entire map must not be overwritten.
+        store({**initial,'gatewayAmountMode':{'bank_transfer':'bad','wallet':'fallback'},
+               'gatewayMaxAmountToman':{'bank_transfer':500000}})
+        toggle=cap_button('bank_transfer','b')
+        assert 'نامعتبر' in toggle['text']
+        act(toggle['callback_data'])
+        assert state()['gatewayAmountMode']=={'wallet':'fallback'}
+        assert state()['gatewayMaxAmountToman']=={'bank_transfer':500000}
+        for malformed in (None,'bad',[1]):
+            store({**initial,'gatewayAmountMode':malformed})
+            before=state()
+            events,_=act(cap_button('bank_transfer','b')['callback_data'])
+            assert state()==before and any(e[0]=='deny' for e in events),events
+        store(initial)
+        cases.append('operator_amount_mode_invalid_field_repair_preserves_other_policies')
         events,_=act('gr|l')
         assert any(x[0]=='edit' and 'روش‌های پرداخت' in x[1] for x in events)
         events,_=act('gr|r|wallet|non_agents')

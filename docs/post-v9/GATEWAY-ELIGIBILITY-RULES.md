@@ -140,15 +140,21 @@ confirmations and revoked/non-admin/wrong-chat actions fail closed.
 The eligibility menu appears in the main administrator menu below the
 operations-attention entry, for Owner, Manager and Operator (not
 Support), independently of the Manager-only general gateway/settings menu.
-Each method has a «سقف مبلغ پرداخت» row, displaying the current amount or
-«بدون محدودیت». Open it, enter a nonnegative whole Toman amount (0 removes
-the limit); numeric input stages the amount and presents the existing
-bound Save/Cancel confirmation. Save commits the exact normalized value
-and returns to the current method menu; Cancel preserves the old cap.
-A separate «بدون محدودیت» action clears a configured cap. Both are
-field-revision bound, so direct edits to another method are preserved and a
-stale same-method editor cannot overwrite a new value. No schema migration
-is required for this setting. Each payment method has a single «معاف کاربر از قوانین» button immediately
+Each method has a monetary amount row and the adjacent «حالت مبلغ» toggle.
+The default «سقف برای همه» shows «سقف مبلغ پرداخت» and «بدون محدودیت» when
+unset. Toggle to «دسترسی جایگزین» to show «دسترسی جایگزین تا» and «غیرفعال»
+when unset. The toggle preserves the stored numeric amount. The page
+explains the current interpretation. Open the amount row, enter a
+nonnegative whole Toman amount (0 clears the amount condition, not the
+mode); numeric input stages it and presents the existing bound Save/Cancel
+confirmation. Save commits the exact normalized value and returns to the
+current method menu; Cancel preserves the old amount. The separate clear
+action removes the amount under the current interpretation. Both fields
+share one method-local revision: a stale amount editor, toggle or clear
+cannot overwrite a changed amount or mode, but direct edits and admins
+working on different methods remain independent. An invalid individual
+mode can be repaired to cap via the toggle; a malformed whole map cannot
+be overwritten by a per-method action. No schema migration is required. Each payment method has a single «معاف کاربر از قوانین» button immediately
 before Back. It opens a signed private input for one or more positive decimal
 IDs separated by whitespace or commas; prefixing IDs with - removes them
 from the same method's exemption list. Duplicates are ignored, invalid batches

@@ -409,6 +409,9 @@ REQUIRED_SCENARIOS = {
         "amount_fallback_all_methods_inclusive_disabled_zero_identity_policy_and_exemptions",
         "operator_amount_cap_create_clear_direct_edit_cas_independent_methods_and_authorization",
         "operator_amount_cap_staged_save_cancel_and_replay",
+        "operator_amount_mode_toggle_actual_copy_preserves_amount_and_stale_buttons",
+        "operator_amount_mode_cross_mode_cas_independent_methods_and_zero_clear",
+        "operator_amount_mode_invalid_field_repair_preserves_other_policies",
     ),
     "manual_checkout_conversation": (
         "committed_topup_selector_recovery_exact_owner_no_second_draft",

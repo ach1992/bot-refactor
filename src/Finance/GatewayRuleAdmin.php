@@ -18,7 +18,7 @@ function achbotGatewayRuleCallback(string $data): ?array {
     $p=explode('|',$data);
     if (count($p)<2 || $p[0]!=='gr') return null;
     $action=$p[1];
-    if (in_array($action,['k','u'],true)) {
+    if (in_array($action,['k','u','b'],true)) {
         return count($p)===4 && array_key_exists($p[2],achbotPayUxAudienceMethods()) &&
             preg_match('/\A[a-f0-9]{15}\z/D',$p[3])===1
             ? ['action'=>$action,'method'=>$p[2],'expected_tag'=>$p[3]] : null;
@@ -114,13 +114,34 @@ function achbotGatewayAmountInput(string $value): ?int {
         $value=str_replace([',','٬'],'',$value);
     return achbotGatewayAmountNumber($value);
 }
-/** Compare just this method's effective cap, including malformed field
- * evidence. Unrelated direct edits or other administrators remain independent. */
+/** Compare the amount and its interpretation as one method-local policy.
+ * A stale amount editor cannot silently write under a different mode.
+ * Keep malformed field evidence distinct from a valid normalized value. */
 function achbotGatewayAmountTag(array $state,string $method): string {
-    $map=$state['gatewayMaxAmountToman']??[];
     $limit=achbotGatewayAmountLimit($state,$method);
-    $value=$limit!==null?['limit',$limit]:['invalid',is_array($map) && !array_is_list($map)?($map[$method]??null):$map];
-    return achbotGatewayRuleControlTag($value);
+    $mode=achbotGatewayAmountMode($state,$method);
+    $amountMap=$state['gatewayMaxAmountToman']??[];
+    $modeMap=array_key_exists('gatewayAmountMode',$state)?$state['gatewayAmountMode']:[];
+    $invalid=static fn($map)=>is_array($map) && !array_is_list($map)
+        ? ['field',$map[$method]??null] : ['map',$map];
+    return achbotGatewayRuleControlTag([
+        'amount'=>$limit!==null?['valid',$limit]:['invalid',$invalid($amountMap)],
+        'mode'=>$mode!==null?['valid',$mode]:['invalid',$invalid($modeMap)]
+    ]);
+}
+/** A deliberate toggle keeps the stored numeric amount. Restore the normal
+ * cap interpretation when repairing an invalid individual mode, without
+ * discarding any other method's policy or a malformed whole map. */
+function achbotGatewayAmountToggleMode(array $state,string $method): array {
+    $map=array_key_exists('gatewayAmountMode',$state)?$state['gatewayAmountMode']:[];
+    if (!is_array($map) || ($map && array_is_list($map)))
+        throw new RuntimeException('gateway_amount_mode_map_invalid');
+    $mode=achbotGatewayAmountMode($state,$method);
+    if ($mode==='cap') $map[$method]='fallback';
+    else unset($map[$method]);
+    if ($map) $state['gatewayAmountMode']=$map;
+    else unset($state['gatewayAmountMode']);
+    return $state;
 }
 function achbotGatewayAmountSet(array $state,string $method,int $limit): array {
     $map=$state['gatewayMaxAmountToman']??[];
@@ -217,11 +238,12 @@ function achbotGatewayRuleMutate(array $state,string $kind,string $key,
     $parsed=achbotGatewayRuleCallback($key);
     if ($parsed===null) throw new RuntimeException('gateway_rule_action_invalid');
     $act=$parsed['action'];
-    if (in_array($act,['k','u'],true)) {
+    if (in_array($act,['k','u','b'],true)) {
         $method=$parsed['method'];
         if (!hash_equals($parsed['expected_tag'],achbotGatewayAmountTag($state,$method)))
             throw new RuntimeException('gateway_amount_stale_operator_button');
         if ($act==='u') return achbotGatewayAmountSet($state,$method,0);
+        if ($act==='b') return achbotGatewayAmountToggleMode($state,$method);
         $newStep='gr|cap|'.$method.'|'.$parsed['expected_tag'];
         return $state;
     }
@@ -362,17 +384,34 @@ function achbotGatewayAdminExemptPrompt(string $method): string {
 }
 function achbotGatewayAdminAmountLabel(array $state,string $method): string {
     $n=achbotGatewayAmountLimit($state,$method);
-    return $n===null?achbotMessage('payment_settings.gateway_rule_admin.cap_invalid'):
-        ($n===0?achbotMessage('payment_settings.gateway_rule_admin.cap_unlimited'):
-        achbotMessage('payment_settings.gateway_rule_admin.cap_value',['amount'=>number_format($n)]));
+    if ($n===null) return achbotMessage('payment_settings.gateway_rule_admin.cap_invalid');
+    if ($n!==0) return achbotMessage('payment_settings.gateway_rule_admin.cap_value',['amount'=>number_format($n)]);
+    return achbotGatewayAmountMode($state,$method)==='fallback'
+        ? achbotMessage('payment_settings.gateway_rule_admin.fallback_disabled')
+        : achbotMessage('payment_settings.gateway_rule_admin.cap_unlimited');
+}
+function achbotGatewayAdminAmountModeLabel(?string $mode): string {
+    return match($mode) {
+        'cap'=>achbotMessage('payment_settings.gateway_rule_admin.mode_cap'),
+        'fallback'=>achbotMessage('payment_settings.gateway_rule_admin.mode_fallback'),
+        default=>achbotMessage('payment_settings.gateway_rule_admin.cap_invalid')
+    };
+}
+function achbotGatewayAdminAmountSaved(string $method): string {
+    $state=achbotGatewayAdminCurrent();
+    return $state!==null && achbotGatewayAmountMode($state,$method)==='fallback'
+        ? achbotMessage('payment_settings.gateway_rule_admin.fallback_saved')
+        : achbotMessage('payment_settings.gateway_rule_admin.cap_saved');
 }
 function achbotGatewayAdminAmountPrompt(string $method): string {
     $state=achbotGatewayAdminCurrent();
     if ($state===null || !array_key_exists($method,achbotPayUxAudienceMethods()))
         return achbotMessage('payment_settings.gateway_rule_admin.gateway_admin_page.button.36e4da5935');
-    return achbotMessage('payment_settings.gateway_rule_admin.cap_prompt',[
-        'method'=>achbotPayUxAudienceMethods()[$method],
-        'limit'=>achbotGatewayAdminAmountLabel($state,$method)]);
+    $params=['method'=>achbotPayUxAudienceMethods()[$method],
+        'limit'=>achbotGatewayAdminAmountLabel($state,$method)];
+    return achbotGatewayAmountMode($state,$method)==='fallback'
+        ? achbotMessage('payment_settings.gateway_rule_admin.fallback_prompt',$params)
+        : achbotMessage('payment_settings.gateway_rule_admin.cap_prompt',$params);
 }
 function achbotGatewayAdminMarkup(array $rows): string {
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
@@ -452,11 +491,24 @@ function achbotGatewayAdminPage(string $data,?int $nonce=null): array {
                 'callback_data'=>'gr|r|'.$method.'|'.$category]];
         }
         $tag=achbotGatewayAmountTag($state,$method);
-        $rows[]=[['text'=>achbotMessage('payment_settings.gateway_rule_admin.cap_button',[
-            'limit'=>achbotGatewayAdminAmountLabel($state,$method)]),
+        $mode=achbotGatewayAmountMode($state,$method);
+        $text.=match($mode) {
+            'cap'=>achbotMessage('payment_settings.gateway_rule_admin.mode_cap_summary'),
+            'fallback'=>achbotMessage('payment_settings.gateway_rule_admin.mode_fallback_summary'),
+            default=>achbotMessage('payment_settings.gateway_rule_admin.mode_invalid_summary')
+        };
+        $params=['limit'=>achbotGatewayAdminAmountLabel($state,$method)];
+        $rows[]=[['text'=>$mode==='fallback'
+                ? achbotMessage('payment_settings.gateway_rule_admin.fallback_button',$params)
+                : achbotMessage('payment_settings.gateway_rule_admin.cap_button',$params),
             'callback_data'=>'gr|k|'.$method.'|'.$tag]];
+        $rows[]=[['text'=>achbotMessage('payment_settings.gateway_rule_admin.mode_button',[
+                'mode'=>achbotGatewayAdminAmountModeLabel($mode)]),
+            'callback_data'=>'gr|b|'.$method.'|'.$tag]];
         if (achbotGatewayAmountLimit($state,$method)!==0)
-            $rows[]=[['text'=>achbotMessage('payment_settings.gateway_rule_admin.cap_clear'),
+            $rows[]=[['text'=>$mode==='fallback'
+                ? achbotMessage('payment_settings.gateway_rule_admin.fallback_clear')
+                : achbotMessage('payment_settings.gateway_rule_admin.cap_clear'),
                 'callback_data'=>'gr|u|'.$method.'|'.$tag]];
         $rows[]=[['text'=>achbotMessage('payment_settings.gateway_rule_admin.exempt_button'),
             'callback_data'=>'gr|e|'.$method]];
