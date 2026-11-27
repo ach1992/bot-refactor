@@ -1442,6 +1442,16 @@ return [
         'invite_reward_hint' => "🎁 مبلغ پاداش را با عدد صحیح انگلیسی از 0 تا 999999999 به تومان وارد کنید؛ برای غیرفعال‌کردن 0 یا /clear را بفرستید.",
 
         // Dedicated payment-rule navigation and direct method exemptions
+        'gateway_rule_admin.cap_button' => ['text'=>'💰 سقف مبلغ پرداخت — {limit}','parameters'=>['limit']],
+        'gateway_rule_admin.cap_unlimited' => 'بدون محدودیت',
+        'gateway_rule_admin.cap_invalid' => 'نامعتبر',
+        'gateway_rule_admin.cap_value' => ['text'=>'{amount} تومان','parameters'=>['amount']],
+        'gateway_rule_admin.cap_clear' => '♾️ بدون محدودیت',
+        'gateway_rule_admin.cap_prompt' => [
+            'text'=>"💰 سقف مبلغ پرداخت: {method}\n📋 سقف فعلی: {limit}\n\nمبلغ سقف را به تومان وارد کنید. برای حذف سقف، 0 را ارسال کنید.",
+            'parameters'=>['method','limit']
+        ],
+        'gateway_rule_admin.cap_saved' => '✅ سقف مبلغ پرداخت ذخیره شد.',
         'gateway_rule_admin.exempt_button' => '🔓 معاف کاربر از قوانین',
         'gateway_rule_admin.exempt_prompt' => [
             'text' => "🔓 معافیت قوانین: {method}\n👥 تعداد شناسه‌های معاف: {count}\n🎫 شناسه‌های فعلی: <code>{ids}</code>\n\n👤 شناسه‌های عددی را با فاصله، ویرگول یا در چند خط ارسال کنید.\n➕ افزودن: <code>123456 789012</code>\n➖ حذف: <code>-123456 -789012</code>\n💡 این معافیت فقط وقتی روش پرداخت روشن باشد معتبر است.",

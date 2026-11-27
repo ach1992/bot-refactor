@@ -484,12 +484,14 @@ if (is_string($data??null) &&
         // A rejection must never leave a stale editor that invites more
         // unsafe clicks. Re-validate authorization before showing fresh data.
         if ($operation!==null &&
-            in_array($operation['action'],['t','v','c','n','p','h'],true) &&
+            in_array($operation['action'],['t','v','c','n','p','h','k','u'],true) &&
             achbotGatewayAdminCanView($update,(int)$from_id,
                 (int)$chat_id,(int)$message_id,(int)$admin,$data)) {
-            $refresh=in_array($operation['action'],['v','c','p'],true)
-                ? 'gr|f|'.$operation['method'].'|'.$operation['category'].'|'.$operation['metric']
-                : 'gr|r|'.$operation['method'].'|'.$operation['category'];
+            $refresh=match($operation['action']) {
+                'k','u'=>'gr|m|'.$operation['method'],
+                'v','c','p'=>'gr|f|'.$operation['method'].'|'.$operation['category'].'|'.$operation['metric'],
+                default=>'gr|r|'.$operation['method'].'|'.$operation['category']
+            };
             $page=achbotGatewayAdminPage($refresh);
             editText($message_id,
                 \achbotMessage('bot.bot.gateway_audience_settings.message.553d718ccf').
@@ -497,8 +499,10 @@ if (is_string($data??null) &&
         }
         return;
     }
-    if ($operation['action']==='e') {
-        sendMessage(achbotGatewayAdminExemptPrompt($operation['method']),$cancelKey,'HTML');
+    if (in_array($operation['action'],['e','k'],true)) {
+        sendMessage($operation['action']==='k'
+            ? achbotGatewayAdminAmountPrompt($operation['method'])
+            : achbotGatewayAdminExemptPrompt($operation['method']),$cancelKey,'HTML');
         return;
     }
     if ($operation['action']==='n') {
@@ -524,7 +528,7 @@ if (is_string($data??null) &&
             "\n".$page['text'],$page['keyboard']);
         return;
     }
-    $target=$operation['action']==='d'
+    $target=in_array($operation['action'],['d','u'],true)
         ? 'gr|m|'.$operation['method']
         : ($operation['action']==='q' ? 'gr|q|'.$operation['method'].'|'.$operation['category']
         : (in_array($operation['action'],['v','c','p'],true)
@@ -537,7 +541,8 @@ if (is_string($data??null) &&
 }
 if (is_string($userInfo['step']??null) &&
     (str_starts_with($userInfo['step'],'gr|edit|') ||
-     str_starts_with($userInfo['step'],'gr|exempt|'))) {
+     str_starts_with($userInfo['step'],'gr|exempt|') ||
+     str_starts_with($userInfo['step'],'gr|cap|'))) {
     if (!achbotAdminGatewayChange($update,(int)$from_id,
             (int)$chat_id,(int)$message_id,(int)$admin,'number',
             $userInfo['step'],(string)$text)) {
@@ -545,14 +550,18 @@ if (is_string($userInfo['step']??null) &&
                     $cancelKey, 'HTML');
         return;
     }
-    if (str_starts_with($userInfo['step'],'gr|exempt|')) {
-        $method=substr($userInfo['step'],strlen('gr|exempt|'));
+    if (str_starts_with($userInfo['step'],'gr|exempt|') ||
+        str_starts_with($userInfo['step'],'gr|cap|')) {
+        $editor=achbotGatewayRuleStep($userInfo['step']);
+        $method=$editor['method'];
         $page=achbotGatewayAdminPage('gr|m|'.$method);
         // An inline keyboard cannot also remove the temporary ReplyKeyboard.
         // Finish the wizard first, then show the same method's current menu.
         sendMessage($text===(\achbotMessage('legacy_buttons.cancel')??null)
             ? \achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02')
-            : \achbotMessage('payment_settings.gateway_rule_admin.exempt_saved'),
+            : ($editor['phase']==='cap'
+                ? \achbotMessage('payment_settings.gateway_rule_admin.cap_saved')
+                : \achbotMessage('payment_settings.gateway_rule_admin.exempt_saved')),
             $removeKeyboard, 'HTML');
         sendMessage($page['text'],$page['keyboard'],'HTML');
         return;

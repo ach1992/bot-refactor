@@ -420,10 +420,10 @@ def main():
         for staff,customer,expected in [
             ('createAccServer2','selectServer2_none','createAccCategory1_2'),
             ('createAccCategory1_2','selectCategory1_2_none','createAccPlan7')]:
-            a=run('entry',actor=9001,callback=staff)
-            b=run('catalogue',callback=customer)
-            assert expected in callbacks(a),a
-            assert [e[1] for e in a['events'] if e[0]=='edit']==[e[1] for e in b['events'] if e[0]=='edit'],(a,b)
+            staff_result=run('entry',actor=9001,callback=staff)
+            customer_result=run('catalogue',callback=customer)
+            assert expected in callbacks(staff_result),staff_result
+            assert [e[1] for e in staff_result['events'] if e[0]=='edit']==[e[1] for e in customer_result['events'] if e[0]=='edit'],(staff_result,customer_result)
         cases.append('staff_bulk_and_customer_single_catalogue_prompts_identical')
         # All references, even inactive plans, prevent category deletion.
         sql("INSERT INTO server_categories(id,title,parent,active) VALUES (90,'Referenced',0,1),(91,'Empty',0,1)")
@@ -846,7 +846,7 @@ def main():
         cases.append('full_discount_zero_confirmation_without_wallet_or_gateway')
         # Fresh discount discovery works for each existing commercial route
         # with all monetary methods off, or an ineligible method audience.
-        no_method_notice='\u26a0\ufe0f \u0647\u06cc\u0686 \u0631\u0648\u0634 \u067e\u0631\u062f\u0627\u062e\u062a\u06cc \u0628\u0631\u0627\u06cc \u0627\u06cc\u0646 \u0633\u0641\u0627\u0631\u0634 \u062f\u0631 \u062f\u0633\u062a\u0631\u0633 \u0646\u06cc\u0633\u062a. \u062f\u0631 \u0627\u06cc\u0646 \u0634\u0631\u0627\u06cc\u0637 \u0641\u0642\u0637 \u06a9\u062f \u062a\u062e\u0641\u06cc\u0641\u06cc \u06a9\u0647 \u0645\u0628\u0644\u063a \u0646\u0647\u0627\u06cc\u06cc \u0631\u0627 \u0635\u0641\u0631 \u06a9\u0646\u062f \u0642\u0627\u0628\u0644 \u0627\u0633\u062a\u0641\u0627\u062f\u0647 \u0627\u0633\u062a.'
+        no_method_notice='⚠️ هیچ روش پرداختی برای مبلغ فعلی در دسترس نیست. کد تخفیف در صورتی قابل استفاده است که مبلغ نهایی صفر شود یا یکی از روش\u200cهای پرداخت برای مبلغ جدید در دسترس باشد.'
         def buttons(r):
             return [b for e in r['events'] if e[0] in ('send','edit') and len(e)>2 and e[2]
                 for row in json.loads(e[2]).get('inline_keyboard',[]) for b in row]
@@ -995,6 +995,12 @@ def main():
                     return any('?'+prefix+'&hash_id='+h in b.get('url','') for b in buttons(r))
                 return prefix+h in callbacks(r)
             assert method_visible(r), (method,r)
+            state(**({'walletState':'off',flag:'on'} if flag!='walletState' else {'walletState':'on'}),
+                gatewayMaxAmountToman={method:80})
+            r=run('standard',callback='selectPlan7_1_none')
+            pid,h,price,_=latest(2001)
+            assert int(price)==100 and not method_visible(r),(method,r)
+            no_money_card(r,pid)
             code='methodpositive'+str(index)
             sql(f"INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('{code}','percent',20,0,2,-1)")
             run('discount',callback='haveDiscountCheckout_'+pid)
@@ -1011,6 +1017,29 @@ def main():
         sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
         state()
         cases.append('all_eight_configured_methods_positive_discount_and_crypto_audience_exactness')
+        cases.append('all_eight_method_caps_and_final_discount_inclusive_boundary')
+        state(gatewayMaxAmountToman={'wallet':100})
+        run('standard',actor=2002,callback='selectPlan7_1_much')
+        r=run('standard',actor=2002,text='3')
+        pid,h,price,_=latest(2002)
+        assert int(price)>100 and 'pw_'+h not in callbacks(r),r
+        state(gatewayMaxAmountToman={'wallet':100})
+        r=run('standard',callback='selectPlan7_1_none');pid,h,price,_=latest(2001)
+        assert 'pw_'+h in callbacks(r) and int(price)==100,r
+        state(gatewayMaxAmountToman={'wallet':99},gatewayAudience={'wallet':'off'},
+            gatewayRuleExemptUsers={'wallet':[2001]})
+        before=tuple(sql(q) for q in ('SELECT COUNT(*) FROM service_operations',
+            'SELECT COUNT(*) FROM wallet_entries','SELECT wallet FROM users WHERE userid=2001'))
+        rr=run('wallet',hash=h,expect_denied=True,stale_state={'gatewayMaxAmountToman':{'wallet':0}})
+        assert rr['events']==[['denied','checkout_method_unavailable']],rr
+        assert tuple(sql(q) for q in ('SELECT COUNT(*) FROM service_operations',
+            'SELECT COUNT(*) FROM wallet_entries','SELECT wallet FROM users WHERE userid=2001'))==before
+        assert sql(f'SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}')=='1'
+        state(gatewayMaxAmountToman={'wallet':100},gatewayAudience={'wallet':'off'},
+            gatewayRuleExemptUsers={'wallet':[2001]})
+        assert run('wallet',hash=h)['events'][0][1]['status']=='funded'
+        state()
+        cases.append('bulk_total_and_locked_wallet_cap_with_exemption_and_stale_request')
         # Invalid destination types are unavailable, never an implicit
         # string conversion into a bank recipient or crypto destination.
         state(walletState='off',cartToCartState='on',giftCardState='on',manualUsdtState='on')
@@ -1063,6 +1092,26 @@ def main():
             else:
                 assert_topup_methods(set() if method=='wallet' else expected)
         cases.append('configured_methods_shared_by_independent_topup_no_wallet_self_payment')
+        sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
+        state(walletState='off',cartToCartState='on',gatewayMaxAmountToman={'bank_transfer':99999})
+        assert_topup_methods(set())
+        state(walletState='off',cartToCartState='on',gatewayMaxAmountToman={'bank_transfer':'100000'})
+        assert_topup_methods({'bank_transfer'})
+        pid,h,_,_=latest(2001)
+        # The random transfer amount is not the cap input.
+        state(walletState='off',cartToCartState='on',gatewayMaxAmountToman={'bank_transfer':99999})
+        before=sql('SELECT COUNT(*) FROM payment_attempts')
+        rr=run('manual_claim',pay=int(pid),method='bank_transfer',mode='topup',
+            stale_state={'gatewayMaxAmountToman':{'bank_transfer':0}})
+        assert ['claim',False] in rr['events'] and sql('SELECT COUNT(*) FROM payment_attempts')==before,rr
+        state(walletState='off',cartToCartState='on',gatewayMaxAmountToman={'bank_transfer':100000})
+        rr=run('manual_claim',pay=int(pid),method='bank_transfer',mode='topup')
+        assert ['claim',True] in rr['events'],rr
+        issued=sql(f'SELECT quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}')
+        state(walletState='off',cartToCartState='on',gatewayMaxAmountToman={'bank_transfer':1})
+        rr=run('manual_claim',pay=int(pid),method='bank_transfer',mode='topup')
+        assert ['claim',True] in rr['events'] and sql(f'SELECT quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}')==issued,rr
+        cases.append('topup_manual_cap_uses_invoice_amount_and_preserves_admitted_receipt')
         state(walletState='off',zarinpal='on',nextpay='on',nowPaymentOther='on',nowPaymentWallet='on')
         sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
         assert_topup_methods(set(),stale_keys={'zarinpal':'stale','nextpay':'stale','nowpayment':'stale','manualUsdtRateToman':'1000'})

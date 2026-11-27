@@ -507,7 +507,7 @@ return [
         // discounts.apply_discount_to_pay
         'select_method' => '💳 لطفاً روش پرداخت را انتخاب کنید:',
         'no_available_method' => '⚠️ در حال حاضر هیچ روش پرداختی برای این درخواست در دسترس نیست.',
-        'discounts.no_monetary_method' => '⚠️ هیچ روش پرداختی برای این سفارش در دسترس نیست. در این شرایط فقط کد تخفیفی که مبلغ نهایی را صفر کند قابل استفاده است.',
+        'discounts.no_monetary_method' => '⚠️ هیچ روش پرداختی برای مبلغ فعلی در دسترس نیست. کد تخفیف در صورتی قابل استفاده است که مبلغ نهایی صفر شود یا یکی از روش‌های پرداخت برای مبلغ جدید در دسترس باشد.',
         'discounts.apply_discount_to_pay.button.16e81418a3' => '❤️',
         // payment_lifecycle.pay_ux_reference
         'payment_lifecycle.pay_ux_reference.label.edb6e627ea' => '🧾 شناسه سفارش: <code>',

@@ -232,6 +232,54 @@
         ]
       }
     },
+    "payment.discounts.no_monetary_method": {
+      "before": "⚠️ هیچ روش پرداختی برای این سفارش در دسترس نیست. در این شرایط فقط کد تخفیفی که مبلغ نهایی را صفر کند قابل استفاده است.",
+      "after": "⚠️ هیچ روش پرداختی برای مبلغ فعلی در دسترس نیست. کد تخفیف در صورتی قابل استفاده است که مبلغ نهایی صفر شود یا یکی از روش‌های پرداخت برای مبلغ جدید در دسترس باشد."
+    },
+    "payment_settings.gateway_rule_admin.cap_button": {
+      "before": null,
+      "after": {
+        "text": "💰 سقف مبلغ پرداخت — {limit}",
+        "parameters": [
+          "limit"
+        ]
+      }
+    },
+    "payment_settings.gateway_rule_admin.cap_clear": {
+      "before": null,
+      "after": "♾️ بدون محدودیت"
+    },
+    "payment_settings.gateway_rule_admin.cap_invalid": {
+      "before": null,
+      "after": "نامعتبر"
+    },
+    "payment_settings.gateway_rule_admin.cap_prompt": {
+      "before": null,
+      "after": {
+        "text": "💰 سقف مبلغ پرداخت: {method}\n📋 سقف فعلی: {limit}\n\nمبلغ سقف را به تومان وارد کنید. برای حذف سقف، 0 را ارسال کنید.",
+        "parameters": [
+          "method",
+          "limit"
+        ]
+      }
+    },
+    "payment_settings.gateway_rule_admin.cap_saved": {
+      "before": null,
+      "after": "✅ سقف مبلغ پرداخت ذخیره شد."
+    },
+    "payment_settings.gateway_rule_admin.cap_unlimited": {
+      "before": null,
+      "after": "بدون محدودیت"
+    },
+    "payment_settings.gateway_rule_admin.cap_value": {
+      "before": null,
+      "after": {
+        "text": "{amount} تومان",
+        "parameters": [
+          "amount"
+        ]
+      }
+    },
     "purchase.entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e": {
       "before": "📂 مرحلهٔ دوم\n\nدسته بندی مورد نظرت رو انتخاب کن 🤭",
       "after": null
@@ -254,5 +302,6 @@
         ]
       }
     }
-  }
+  },
+  "amount_cap_owner_contract": "https://github.com/ach1992/bot-refactor/issues/236#issuecomment-7227732609"
 }

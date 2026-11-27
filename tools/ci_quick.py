@@ -100,6 +100,7 @@ OTHER_TESTS = (
 # Replaced execution families must be covered by affirmative named cases,
 # not merely removed from the roster. See docs/post-v9/CI-VALIDATION.md.
 REQUIRED_CURRENT_CASES = {
+    "wallet_first_fresh_schema": ("direct_addon_business_edits_generated_scope_and_conflict_isolation",),
     "current_storage_transfer": ("current_groups_and_original_sealed_identity",),
     "current_database_isolation": (
         "bot_states_cross_db_same_db","payment_keys_cross_db_same_db","panel_groups_cross_db_same_db",
@@ -283,6 +284,9 @@ REQUIRED_CURRENT_CASES = {
         "actual_public_nextpay_checkout_expiry_and_late_return",
         "actual_public_zarinpal_checkout_expiry_and_late_return",
         "actual_public_nowpayment_checkout_expiry_and_late_return",
+        "actual_public_nextpay_cap_first_admission_and_original_settlement",
+        "actual_public_zarinpal_cap_first_admission_and_original_settlement",
+        "actual_public_nowpayment_cap_first_admission_and_original_settlement",
         "actual_browser_nowpayments_local_policy_validation_and_original_reopen",
         "actual_browser_current_config_not_request_snapshot_and_original_receipt",
         "signed_child_verified_exact_quote_once",
@@ -395,6 +399,8 @@ REQUIRED_SCENARIOS = {
     ),
     "gateway_rules": (
         "current_service_history_funding_only_excluded_auto_renew_counted_once",
+        "amount_caps_all_methods_inclusive_exemption_independent_and_bad_value_isolation",
+        "operator_amount_cap_create_clear_direct_edit_cas_independent_methods_and_authorization",
     ),
     "manual_checkout_conversation": (
         "committed_topup_selector_recovery_exact_owner_no_second_draft",
@@ -454,6 +460,13 @@ REQUIRED_SCENARIOS = {
         "nowpayments_local_policy_quote_validation_atomic_discount_and_zero",
         "actual_crypto_submenu_and_manual_issuance_current_config_original_receipt",
         "actual_renewal_hosted_navigation_current_method_configuration",
+        "actual_addon_admin_repair_direct_edit_noop_and_create",
+        "staff_bulk_and_customer_single_catalogue_prompts_identical",
+        "direct_standard_plan_edits_apply_to_fresh_quotes_preserve_original",
+        "wallet_credit_shortcuts_preserve_evidence_and_current_entry_guards",
+        "all_eight_method_caps_and_final_discount_inclusive_boundary",
+        "bulk_total_and_locked_wallet_cap_with_exemption_and_stale_request",
+        "topup_manual_cap_uses_invoice_amount_and_preserves_admitted_receipt",
     ),
     "current_sales_discount": (
         "actual_sales_keyboard_net_completed_value_wallet_origin_and_original_windows",

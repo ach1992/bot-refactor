@@ -460,8 +460,16 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                         responses['/np/issue']=(200,dict(id=ref,invoice_url='https://nowpayments.io/payment/'+ref))
                         query=dict(nowpayment='',NP_id=child,hash_id=name)
                     start=len(calls)
+                    sql("UPDATE setting SET value=JSON_SET(value,'$.gatewayMaxAmountToman',JSON_OBJECT('"+method+"',204)) WHERE type='BOT_STATES'")
+                    before=snapshot()
+                    assert result(mode,'browser_issue',flag=flag,hash=name,
+                        stale_state={'gatewayMaxAmountToman':{method:0}})['status']!=302
+                    assert len(calls)==start and snapshot()==before
+                    assert sql(f'SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}')=='0'
+                    sql("UPDATE setting SET value=JSON_SET(value,'$.gatewayMaxAmountToman',JSON_OBJECT('"+method+"',205)) WHERE type='BOT_STATES'")
                     assert result(mode,'browser_issue',flag=flag,hash=name)['status']==302
                     assert sql(f"SELECT provider FROM payment_attempts WHERE pay_row_id={pid}")==method
+                    sql("UPDATE setting SET value=JSON_SET(value,'$.gatewayMaxAmountToman',JSON_OBJECT('"+method+"',1)) WHERE type='BOT_STATES'")
                     assert result(mode,'browser_issue',flag=flag,hash=name)['status']==302
                     assert len(calls)==start+1 and bal()==b
                     deadline=int(sql(f"SELECT invoice_expires_at FROM payment_attempts WHERE pay_row_id={pid}"))
@@ -488,6 +496,8 @@ $id=achbotServiceIssueLocked($db,1001,'fixture',$argv[4],$q);$db->commit();echo 
                     result(mode,'browser_return',query=query)
                     assert bal()==b+205
                     case('actual_public_'+flag+'_checkout_expiry_and_late_return')
+                    case('actual_public_'+flag+'_cap_first_admission_and_original_settlement')
+                    sql("UPDATE setting SET value=JSON_REMOVE(value,'$.gatewayMaxAmountToman') WHERE type='BOT_STATES'")
 
                 # The actual browser route must use exactly the same local
                 # quote input and validation as method availability. Invalid

@@ -49,6 +49,10 @@ RETIRED_KEYS = (
     "plans.administration.edit_custom_plan.message.7b314b58c9",
 )
 KNOWN_NONCOPY = {
+    # Locale-specific numeric input parsing, never user-facing copy.
+    ("src/Finance/GatewayRuleAdmin.php", "'۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩'"),
+    ("src/Finance/GatewayRuleAdmin.php", r"'/\A[0-9]{1,3}(?:[,٬][0-9]{3})+\z/uD'"),
+    ("src/Finance/GatewayRuleAdmin.php", "'٬'"),
     ("settings/jdf.php", "'٫'"),  # PHP date locale decimal separator
     ("src/Finance/GatewayRuleAdmin.php", r"'/[\\s,،]+/u'"),  # separator regex
 }

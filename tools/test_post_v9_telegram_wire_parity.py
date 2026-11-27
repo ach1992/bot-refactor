@@ -171,6 +171,14 @@ def compare_chili(before, after):
         "purchase.entry_and_bulk.create_multiple_accounts.message.2f3dfcbe8e":"legacy_messages.buy_sub_select_category",
         "purchase.entry_and_bulk.create_multiple_accounts.message.7f4d98ab9b":"legacy_messages.buy_sub_select_plan",
     }
+    # Exactly two argument changes for the cap editor, preserving original
+    # exempt input/cancel/return transport and all other direct sends.
+    bot_replacements={
+        "achbotGatewayAdminExemptPrompt($operation['method'])":
+            "$operation['action']==='k'?achbotGatewayAdminAmountPrompt($operation['method']):achbotGatewayAdminExemptPrompt($operation['method'])",
+        r"$text===($buttonValues['cancel']??null)?\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'):\achbotMessage('payment_settings.gateway_rule_admin.exempt_saved')":
+            r"$text===($buttonValues['cancel']??null)?\achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02'):($editor['phase']==='cap'?\achbotMessage('payment_settings.gateway_rule_admin.cap_saved'):\achbotMessage('payment_settings.gateway_rule_admin.exempt_saved'))"
+    }
     seen=Counter()
     for name,rows in before.items():
         expected=[]
@@ -182,9 +190,14 @@ def compare_chili(before, after):
                         if arg==php_args.canonical_expression("\\achbotMessage('"+old+"')"):
                             args[i]=php_args.canonical_expression("\\achbotMessage('"+new+"')")
                             seen[old]+=1
+            if name=='bot.php' and method=='sendMessage':
+                for i,arg in enumerate(args):
+                    if arg in bot_replacements:
+                        args[i]=bot_replacements[arg]
+                        seen[arg]+=1
             expected.append([method,args])
         assert expected==after[name],("unapproved_chili_wire_delta",name)
-    assert seen==Counter({key:1 for key in replacements}),seen
+    assert seen==Counter({key:1 for key in (*replacements,*bot_replacements)}),seen
     return dict(Counter(method for rows in after.values() for method,_ in rows))
 
 def main():
