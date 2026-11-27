@@ -5,8 +5,8 @@ require_once __DIR__.'/../Telegram/Conversation.php';
 require_once __DIR__.'/GatewayClient.php';
 
 /**
- * The customer message registry is the sole projection owner. Receipt staff
- * message IDs and immutable payment facts live in their original ledgers.
+ * The payment message registry holds per-target projection state. Staff
+ * identities and immutable payment facts remain in their original ledgers.
  * Every reference has an explicit purpose; retired identities are tombstones,
  * not successful edits, and may never become projection targets again.
  */
@@ -32,6 +32,22 @@ function achbotPayUxRegister(mysqli $db,int $payId,int $actor,int $message,strin
     }
 }
 
+/** Project an already recorded staff receipt, not a new send. */
+function achbotPayUxStaffRef(mysqli $db,array $pay,int $chat,int $message): ?array {
+    $payId=(int)$pay['id'];
+    if ($payId<=0 || $chat<=0 || $message<=0) return null;
+    $owned=false;
+    foreach (achbotReceiptMessageTargets($db,$pay) as $target)
+        if ($target['chat_id']===$chat && $target['message_id']===$message) {$owned=true;break;}
+    if (!$owned) return null;
+    $q=achbotProviderStatement($db,"INSERT INTO payment_message_refs(pay_row_id,chat_id,message_id,kind,purpose)
+        VALUES (?,?,?,'text','staff') ON DUPLICATE KEY UPDATE id=payment_message_refs.id",
+        'iii',[$payId,$chat,$message]);
+    $q->close();
+    return achbotProviderRow($db,"SELECT *,updated_at<=NOW(6) AS due FROM payment_message_refs
+        WHERE pay_row_id=? AND chat_id=? AND message_id=? AND purpose='staff'",'iii',[$payId,$chat,$message]);
+}
+
 function achbotPayUxTrackMessage(mysqli $db,int $payId,int $actor,$response,string $purpose,string $kind='text'): bool {
     $id=\AchBot\Telegram\Conversation\acknowledgedMessage($response,$actor);
     return $id!==null && achbotPayUxRegister($db,$payId,$actor,$id,$purpose,$kind);
@@ -45,7 +61,7 @@ function achbotPayUxTrackByHash(mysqli $db,string $hash,int $actor,$response,str
 function achbotPayUxRef(mysqli $db,int $payId,int $actor,int $message): ?array {
     if ($payId<=0 || $actor<=0 || $message<=0) return null;
     $s=$db->prepare('SELECT r.*,r.updated_at<=NOW(6) AS due FROM payment_message_refs r JOIN pays p ON p.id=r.pay_row_id
-        WHERE r.pay_row_id=? AND r.chat_id=? AND r.message_id=? AND p.user_id=?');
+        WHERE r.pay_row_id=? AND r.chat_id=? AND r.message_id=? AND p.user_id=? AND r.purpose<>\'staff\'');
     $s->bind_param('iiii',$payId,$actor,$message,$actor);
     $s->execute();$row=$s->get_result()->fetch_assoc();$s->close();
     return $row?:null;
@@ -155,8 +171,8 @@ function achbotPayUxChangePurpose(mysqli $db,array $ref,string $purpose): bool {
     return $ok;
 }
 
-function achbotPayUxEditAccepted($reply): bool {
-    return \AchBot\Telegram\Response\isSuccessful($reply) || \AchBot\Telegram\Response\isEditNoop($reply);
+function achbotPayUxEditAccepted($reply,int $chat,int $message): bool {
+    return \AchBot\Telegram\Response\messageDeliveryOutcome($reply,(string)$chat,$message)['result']==='acknowledged';
 }
 
 function achbotPayUxEditFailureCategory($reply): string {
@@ -192,7 +208,7 @@ function achbotPayUxApplyProjection(mysqli $db,array $ref,string $body,string $k
         if ($ref['kind']!=='media') $payload['disable_web_page_preview']=true;
     }
     try {$response=bot($method,$payload);} catch (Throwable $e) {$response=null;}
-    if (achbotPayUxEditAccepted($response)) {
+    if (achbotPayUxEditAccepted($response,$chat,$message)) {
         $s=$db->prepare('UPDATE payment_message_refs SET synced_digest=?,updated_at=NOW(6) WHERE id=? AND pay_row_id=? AND retired_reason IS NULL');
         $s->bind_param('sii',$digest,$id,$pay);$s->execute();$s->close();
         return 'acknowledged';
@@ -207,7 +223,7 @@ function achbotPayUxApplyProjection(mysqli $db,array $ref,string $body,string $k
         if (!$markupOnly && $definite && $outcome['code']===400) {
             try {
                 $r=bot('editMessageReplyMarkup',['chat_id'=>$chat,'message_id'=>$message,'reply_markup'=>$keys]);
-                $fallback=achbotPayUxEditAccepted($r);
+                $fallback=achbotPayUxEditAccepted($r,$chat,$message);
                 $fallbackOutcome=\AchBot\Telegram\Response\deliveryOutcome($r);
                 if ($fallbackOutcome['result']==='rejected' && in_array(achbotPayUxEditFailureCategory($r),['message_missing','message_not_editable'],true))
                     $retired=achbotPayUxRetire($db,$ref,achbotPayUxEditFailureCategory($r));
@@ -308,7 +324,7 @@ function achbotPayUxSyncMessages(mysqli $db,int $payId): int {
             // One bounded edit batch per payment. Digest filtering is per
             // purpose, so acknowledged rows cannot consume all batch slots.
             $changed=0;$budget=10;
-            $s=$db->prepare('SELECT * FROM payment_message_refs WHERE pay_row_id=? AND retired_reason IS NULL
+            $s=$db->prepare('SELECT * FROM payment_message_refs WHERE pay_row_id=? AND purpose<>\'staff\' AND retired_reason IS NULL
                 AND updated_at<=NOW(6) ORDER BY updated_at,id');
             $s->bind_param('i',$payId);$s->execute();$rows=$s->get_result();$s->close();
             $projections=[];
@@ -355,7 +371,7 @@ function achbotPayUxSyncMessages(mysqli $db,int $payId): int {
  * action, so Catalogue cannot overwrite an issued/retired record. */
 function achbotPayUxNavigateBack(mysqli $db,int $actor,int $message,string $body,string $keys): bool {
     try {
-        $locator=achbotProviderRow($db,'SELECT pay_row_id FROM payment_message_refs WHERE chat_id=? AND message_id=?','ii',[$actor,$message]);
+        $locator=achbotProviderRow($db,"SELECT pay_row_id FROM payment_message_refs WHERE chat_id=? AND message_id=? AND purpose<>'staff'",'ii',[$actor,$message]);
         if (!$locator) return false; // an ordinary non-payment catalogue
         $id=(int)$locator['pay_row_id'];
         achbotPayUxWithLease($db,$id,static function() use ($db,$id,$actor,$message,$body,$keys): void {

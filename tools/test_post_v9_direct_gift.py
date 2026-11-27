@@ -296,7 +296,7 @@ def setup(work: Path, env: dict) -> Path:
     fallback=bot[legacy_start:legacy_end]
     ensure(fallback.count('Conversation\\transitionEditor(')==1 and
            fallback.index('Conversation\\transitionEditor(') <
-               fallback.index("sendMessage(\\achbotMessage('legacy_messages.operation_canceled')"),
+               fallback.index("Conversation\\removeReplyKeyboard("),
            'Actual final CANCEL no longer guards persisted actor/step before feedback')
     ensure(re.search(r'\bDELETE\s+FROM\s+\x60?server_plans\x60?(?:\s|$)',
                      fallback,re.I) is None,
@@ -761,7 +761,7 @@ def verify_admin_ingress_and_legacy_manual(work: Path, env: dict, stage: Path,
     reset(work,env)
     q(work,env,'UPDATE users SET isAdmin=0 WHERE userid=9002')
     revoked=call(work,env,stage,route='moderation',kind='callback',
-        actor=9002,update_id=550,message_id=65,text='toggleAgent_1001')
+        actor=9002,update_id=550,message_id=65,text='toggleUserAgent_1001')
     ensure(q(work,env,"SELECT is_agent FROM users WHERE userid=1001")=='0' and
            not moderation_rows(work,env) and
            'MOD_NOTICE' not in revoked['events'],
@@ -770,13 +770,13 @@ def verify_admin_ingress_and_legacy_manual(work: Path, env: dict, stage: Path,
 
     reset(work,env)
     success=call(work,env,stage,route='moderation',kind='callback',
-        actor=9001,update_id=550,message_id=65,text='toggleAgent_1001')
+        actor=9001,update_id=550,message_id=65,text='toggleUserAgent_1001')
     ensure(q(work,env,'SELECT is_agent FROM users WHERE userid=1001')=='1' and
            'MOD_NOTICE' in success['events'] and
            len(moderation_rows(work,env))==1,
            'A fresh verified administrator could not toggle agent status')
     repeated=call(work,env,stage,route='moderation',kind='callback',
-        actor=9001,update_id=550,message_id=65,text='toggleAgent_1001')
+        actor=9001,update_id=550,message_id=65,text='toggleUserAgent_1001')
     ensure(q(work,env,'SELECT is_agent FROM users WHERE userid=1001')=='1' and
            'MOD_NOTICE' not in repeated['events'] and
            len(moderation_rows(work,env))==1,
@@ -816,7 +816,7 @@ def verify_admin_ingress_and_legacy_manual(work: Path, env: dict, stage: Path,
       "VALUES(1001,'Duplicate','duplicate','0',0,'1700000000')")
     try:
         denied=call(work,env,stage,route='moderation',kind='callback',
-            actor=9001,update_id=601,message_id=60,text='toggleAgent_1001')
+            actor=9001,update_id=601,message_id=60,text='toggleUserAgent_1001')
         ensure('MOD_NOTICE' not in denied['events'] and
                not moderation_rows(work,env) and temp()==before,
                'Ambiguous target identity was accepted for moderation')
@@ -828,14 +828,14 @@ def verify_admin_ingress_and_legacy_manual(work: Path, env: dict, stage: Path,
     # that retry cannot reverse a completed toggle, and no success is claimed.
     reset(work,env)
     uncertain=call(work,env,stage,route='moderation',kind='callback',
-        actor=9001,update_id=610,message_id=70,text='toggleAgent_1001',
+        actor=9001,update_id=610,message_id=70,text='toggleUserAgent_1001',
         mode='moderation_commit_unknown')
     ensure(q(work,env,'SELECT is_agent FROM users WHERE userid=1001')=='1' and
            'MOD_NOTICE' not in uncertain['events'] and
            len(moderation_rows(work,env))==1,
            'Unknown moderation COMMIT did not fail closed with journal')
     retry=call(work,env,stage,route='moderation',kind='callback',
-        actor=9001,update_id=610,message_id=70,text='toggleAgent_1001')
+        actor=9001,update_id=610,message_id=70,text='toggleUserAgent_1001')
     ensure(q(work,env,'SELECT is_agent FROM users WHERE userid=1001')=='1' and
            'MOD_NOTICE' not in retry['events'],
            'Moderation duplicate replay after uncertain COMMIT changed state')
@@ -1069,7 +1069,7 @@ def verify_exemption_and_ban_freshness(work: Path, env: dict, stage: Path,
 
     reset(work,env)
     first=call(work,env,stage,route='moderation',kind='callback',
-        actor=9001,update_id=550,message_id=70,text='toggleAgent_1001')
+        actor=9001,update_id=550,message_id=70,text='toggleUserAgent_1001')
     second=call(work,env,stage,route='moderation',kind='callback',
         actor=9001,update_id=551,message_id=35,text='toggleBan_1001')
     ensure('MOD_NOTICE' in first['events'] and

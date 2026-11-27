@@ -26,7 +26,7 @@ if(isset($update->message)){
 if(isset($update->callback_query)){
     $callbackId = $update->callback_query->id;
     $data = $update->callback_query->data;
-    $text = $update->callback_query->message->text ?? null;
+    $text = ''; // A button is not new human-authored input.
     $message_id = $update->callback_query->message->message_id;
     $chat_id = $update->callback_query->message->chat->id;
     $chat_type = $update->callback_query->message->chat->type;

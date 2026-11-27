@@ -224,12 +224,17 @@ function achbotPayUxLockDraftOwner(mysqli $db, int $userId): void {
 }
 
 /** Execute a NEW customer draft under the same lock held by all issuers. */
-function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, array $pricingPolicy, bool $scopedAddon = false, array $display = [], array $states = []): int {
+function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, array $pricingPolicy, bool $scopedAddon = false, array $display = [], array $states = [], ?array $editor = null): int {
     $started=false;
     try {
         if (!$db->begin_transaction()) throw new RuntimeException('draft_begin_failed');
         $started=true;
         achbotPayUxLockDraftOwner($db,$actor);
+        $editorRow=null;
+        if ($editor!==null) {
+            require_once __DIR__.'/../Telegram/Conversation.php';
+            $editorRow=\AchBot\Telegram\Conversation\lockEditor($db,$actor,$editor);
+        }
         if (!$insert->execute() || $insert->affected_rows!==1)
             throw new RuntimeException('draft_insert_failed');
         $draftId=(int)$insert->insert_id;
@@ -292,6 +297,8 @@ function achbotPayUxInsertDraft(mysqli $db, int $actor, mysqli_stmt $insert, arr
         require_once __DIR__.'/CheckoutAdmission.php';
         achbotCheckoutRequireSchema($db);
         achbotCheckoutSealDraftLocked($db,$draftId,$pay,$display,$states);
+        if ($editorRow!==null)
+            \AchBot\Telegram\Conversation\writeEditorLocked($db,$editorRow,'none',null);
         if ($draftId<=0 || !$db->commit())
             throw new RuntimeException('draft_commit_unknown');
         return $draftId;
@@ -920,7 +927,7 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
                 $stmt=$db->prepare(
                     "SELECT r.pay_row_id FROM payment_message_refs r
                      JOIN pays p ON p.id=r.pay_row_id
-                     WHERE r.retired_reason IS NULL AND r.updated_at<=NOW(6) AND r.synced_digest IS NULL
+                     WHERE r.purpose<>'staff' AND r.retired_reason IS NULL AND r.updated_at<=NOW(6) AND r.synced_digest IS NULL
                        AND p.state IN ('approved','paid','auto_cart_approved','paid_with_wallet')
                      GROUP BY r.pay_row_id ORDER BY MAX(r.id) DESC LIMIT {$priorityLimit}"
                 );
@@ -933,7 +940,7 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
             // under sustained unsynced traffic, without a cursor/migration.
             $stmt=$db->prepare(
                 "SELECT pay_row_id FROM payment_message_refs
-                 WHERE retired_reason IS NULL AND updated_at<=NOW(6) AND synced_digest IS NULL
+                 WHERE purpose<>'staff' AND retired_reason IS NULL AND updated_at<=NOW(6) AND synced_digest IS NULL
                  GROUP BY pay_row_id ORDER BY MIN(updated_at) ASC LIMIT {$messageBatch}"
             );
             $stmt->execute();
@@ -956,7 +963,7 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
             if (count($selected)<$messageBatch) {
                 $stmt=$db->prepare(
                     "SELECT pay_row_id FROM payment_message_refs
-                     WHERE retired_reason IS NULL AND updated_at<=NOW(6)
+                     WHERE purpose<>'staff' AND retired_reason IS NULL AND updated_at<=NOW(6)
                      GROUP BY pay_row_id ORDER BY MIN(updated_at) ASC LIMIT {$messageBatch}"
                 );
                 $stmt->execute();
@@ -972,7 +979,7 @@ function achbotPayUxMaintain(mysqli $db, int $maxRows=45): array {
                 // Fair scanning; a failed Telegram edit remains eligible later.
                 $stmt=$db->prepare(
                     'UPDATE payment_message_refs SET updated_at=NOW(6)
-                     WHERE pay_row_id=? AND retired_reason IS NULL AND updated_at<=NOW(6)'
+                     WHERE pay_row_id=? AND purpose<>\'staff\' AND retired_reason IS NULL AND updated_at<=NOW(6)'
                 );
                 $stmt->bind_param('i',$id);$stmt->execute();$stmt->close();
             }

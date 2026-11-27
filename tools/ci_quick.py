@@ -369,6 +369,8 @@ REQUIRED_SCENARIOS = {
         "actual_full_discount_zero_price_wallet_admission_and_no_replay",
         "actual_invalid_discount_preserves_card_and_stale_target_consumes_nothing",
         "actual_shortcuts_and_callback_share_purchase_methods_and_entry_gates",
+        "terminal_reply_keyboard_removed_and_idle_cancel_not_false_success",
+        "order_agent_callback_namespace_and_idempotent_desired_state",
         "actual_owned_renewal_discount_and_subscription_shortcut",
         "managed_trial_policy_and_revoked_draft_denied_before_effect",
         "actual_trial_only_and_mixed_catalogue_purpose_and_custom_gate",

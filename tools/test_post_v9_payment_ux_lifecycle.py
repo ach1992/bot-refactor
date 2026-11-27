@@ -45,7 +45,7 @@ function bot($method,$data=[]) {
             'description'=>'Bad Request: message is not modified'];
     if (($GLOBALS['spec']['fail_text_only']??false) &&
         $method==='editMessageText') return (object)['ok'=>false,'error_code'=>400,'description'=>'Bad Request: cannot parse entities'];
-    return (object)['ok'=>!$fail];
+    return $fail?(object)['ok'=>false]:(object)['ok'=>true,'result'=>(object)['message_id'=>(int)$data['message_id'],'chat'=>(object)['id'=>(int)$data['chat_id']]]];
 }
 function sendMessage($text,$keys=null,$mode='HTML',$chat=null) {
     $GLOBALS['events'][]=['method'=>'sendMessage','text'=>$text,'keyboard'=>$keys,'mode'=>$mode];

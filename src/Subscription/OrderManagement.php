@@ -10,10 +10,11 @@ require_once __DIR__ . '/../Finance/ReceiptHelpers.php';
 require_once __DIR__.'/AccountDetails.php';
 require_once __DIR__.'/../Panel/ServiceLifecycle.php';
 require_once __DIR__.'/../Presentation/Text.php';
+require_once __DIR__.'/../Telegram/Conversation.php';
 // Every local-record management callback is privileged. A forged old button
 // or stale cached role must not disclose or mutate another customer's order.
 $achbotOrderAdminRoute=is_string($data??null) &&
-    ($data==='manageorderdatabase' || preg_match('/^(?:showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleAgent_|orderWarningStatus_|changeExpireDate_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|recoverPlanJournal_|reviewPlanCorrection_|confirmPlanCorrection_|quickUserOrderDetails_)/D',$data));
+    ($data==='manageorderdatabase' || preg_match('/^(?:showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|toggleOrderAgent_|orderWarningStatus_|changeExpireDate_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|recoverPlanJournal_|reviewPlanCorrection_|confirmPlanCorrection_|quickUserOrderDetails_)/D',$data));
 $achbotOrderAdminStep=preg_match('/^(?:awaitingOrderRemarkOnly$|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_)/D',(string)($userInfo['step']??''));
 if (($achbotOrderAdminRoute || $achbotOrderAdminStep) &&
     !\AchBot\Subscription\AccountDetails\canReadAdminOrderDetails()) {
@@ -24,9 +25,8 @@ if (($achbotOrderAdminRoute || $achbotOrderAdminStep) &&
 if ($achbotOrderAdminStep && ($text??null)===(\achbotMessage('legacy_buttons.cancel')??null)) {
     $ownedStep=(string)$userInfo['step'];
     $id=preg_match('/^(?:manageOrderById_|awaitingExpireChange_)([1-9][0-9]*)$/D',$ownedStep,$ownedMatch)?(int)$ownedMatch[1]:0;
-    $stmt=$connection->prepare("UPDATE users SET step='none',temp=NULL WHERE userid=? AND step=?");
-    $stmt->bind_param('is',$from_id,$ownedStep);$stmt->execute();$changed=$stmt->affected_rows;$stmt->close();
-    if ($changed!==1) {alert(\achbotMessage('subscription.order_management.show_order_management_panel.alert.abcbb638e7'),true);return;}
+    if (!\AchBot\Telegram\Conversation\source($update,(int)$from_id,false) ||
+        !\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo)) return;
     $userInfo['step']='none';$userInfo['temp']=null;
     sendMessage(\achbotMessage('admin_settings.management.canceled'),$removeKeyboard, 'HTML');
     $order=$id>0?\AchBot\Subscription\AccountDetails\findOrder($id):null;
@@ -62,24 +62,22 @@ if (preg_match('/^showUserSubscriptions(\d+)/', $data, $match)) {
 
 // Begin of Manage a specific order
 if ($data == "manageorderdatabase" && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
-    delMessage();
+    if (!setUser("awaitingOrderRemarkOnly")) return;
     sendMessage(\achbotMessage('subscription.order_management.manageorderdatabase.message.e16b131103'), $cancelKey, "HTML");
-    setUser("awaitingOrderRemarkOnly");
+    return;
 }
-if ($userInfo['step'] == "awaitingOrderRemarkOnly" && $text != \achbotMessage('legacy_buttons.cancel')) {
+if (isset($update->message->text) && !isset($update->callback_query) && $userInfo['step'] == "awaitingOrderRemarkOnly" && $text != \achbotMessage('legacy_buttons.cancel')) {
     $remark = trim($text);
-    $remark = mysqli_real_escape_string($connection, $remark);
 
     // بررسی کاراکترهای معتبر
     if (!preg_match('/^[a-zA-Z0-9\s\-_]+$/', $remark)) {
         sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.a94b913d39'), $cancelKey, 'HTML');
-        setUser();
         return;
     }
 
     $stmt = $connection->prepare("SELECT * FROM orders_list WHERE remark = ?");
     if (!$stmt) {
-        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.99b2e0169a'), $cancelKey, 'HTML');
+        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.99b2e0169a'), $removeKeyboard, 'HTML');
         setUser();
         return;
     }
@@ -91,19 +89,14 @@ if ($userInfo['step'] == "awaitingOrderRemarkOnly" && $text != \achbotMessage('l
     $count = $result->num_rows;
 
     if ($count == 0) {
-        $keyboard = json_encode([
-            'inline_keyboard' => [
-                [['text' => \achbotMessage('subscription.order_management.awaiting_order_remark_only.button.76f3daea16'), 'callback_data' => "manageorderdatabase"]]
-            ]
-        ]);
-        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.2ae43a0263'), $keyboard, 'HTML');
-        setUser();
+        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.2ae43a0263'), $cancelKey,'HTML');
         return;
     }
 
     if ($count == 1) {
         $order = $result->fetch_assoc();
-        setUser("manageOrderById_" . $order['id']);
+        if (!setUser()) return;
+        \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.receving_information'));
         showOrderManagementPanel($order);
         return;
     }
@@ -117,14 +110,14 @@ if ($userInfo['step'] == "awaitingOrderRemarkOnly" && $text != \achbotMessage('l
     while ($row = $result->fetch_assoc()) {
         if (!in_array($row['userid'], $useridList)) {
             if ($counter >= $maxResults) {
-                sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.f8c9916b9c'), $cancelKey, 'HTML');
+                sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.f8c9916b9c'), $removeKeyboard, 'HTML');
                 setUser();
                 return;
             }
             $useridList[] = $row['userid'];
             $callbackData = "selectOrderByRemark_userid_{$row['userid']}_tempId_" . $tempRemarkId;
             if (strlen($callbackData) > 64) {
-                sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.45a8b2af73'), $cancelKey, 'HTML');
+                sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.45a8b2af73'), $removeKeyboard, 'HTML');
                 setUser();
                 return;
             }
@@ -134,16 +127,10 @@ if ($userInfo['step'] == "awaitingOrderRemarkOnly" && $text != \achbotMessage('l
     }
     $keyboard['inline_keyboard'][] = [['text' => \achbotMessage('subscription.order_management.awaiting_order_remark_only.button.76f3daea16'), 'callback_data' => "manageorderdatabase"]];
 
-    // ارسال پیام با مدیریت خطا
-    $response = sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.e02c72df1d'), json_encode($keyboard), 'HTML');
-    if (!$response) {
-        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.b345c0eb1e'), $cancelKey, 'HTML');
-        setUser();
-        return;
-    }
-
-    // ذخیره حالت کاربر و ریمارک موقت
-    setUser("awaitingUserIdSelection_" . $tempRemarkId . "_" . $remark);
+    if (!setUser("awaitingUserIdSelection_" . $tempRemarkId . "_" . $remark)) return;
+    \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.receving_information'));
+    sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.e02c72df1d'), json_encode($keyboard), 'HTML');
+    return;
 }
 // مدیریت انتخاب userID
 if (preg_match('/^selectOrderByRemark_userid_(\d+)_tempId_(.+)/', $data, $match)) {
@@ -154,14 +141,13 @@ if (preg_match('/^selectOrderByRemark_userid_(\d+)_tempId_(.+)/', $data, $match)
     if (preg_match('/^awaitingUserIdSelection_' . $tempRemarkId . '_(.+)/', $userInfo['step'], $remarkMatch)) {
         $remark = $remarkMatch[1];
     } else {
-        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.7ebcf50a27'), $cancelKey, 'HTML');
-        setUser();
+        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.7ebcf50a27'), null, 'HTML');
         return;
     }
 
     $stmt = $connection->prepare("SELECT * FROM orders_list WHERE userid = ? AND remark = ? LIMIT 1");
     if (!$stmt) {
-        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.99b2e0169a'), $cancelKey, 'HTML');
+        sendMessage(\achbotMessage('subscription.order_management.awaiting_order_remark_only.message.99b2e0169a'), $removeKeyboard, 'HTML');
         setUser();
         return;
     }
@@ -183,8 +169,9 @@ if (preg_match('/^selectOrderByRemark_userid_(\d+)_tempId_(.+)/', $data, $match)
 
     $order = $result->fetch_assoc();
 
-    setUser("manageOrderById_" . $order['id']);
-    showOrderManagementPanel($order);
+    if (!setUser()) return;
+    showOrderManagementPanel($order,$message_id);
+    return;
 }
 
 /** Warning processing and the deletion grace are lifecycle state, never an ON/OFF preference. */
@@ -229,7 +216,7 @@ function showOrderManagementPanel($order, $msgId = null,string $notice=''){
             ["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.8824464622'), "callback_data" => "changeServerId_{$order['id']}"],
             ["text" => \achbotMessage('admin_settings.management.local_plan'), "callback_data" => "changeFileId_{$order['id']}_{$order['server_id']}"]
         ],
-		[["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.72e5322e9a', ['agentStatus' => $agentStatus]), "callback_data" => "toggleAgent_{$order['id']}"]],
+		[["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.72e5322e9a', ['agentStatus' => $agentStatus]), "callback_data" => "toggleOrderAgent_{$order['id']}_".((int)$order['agent_bought']===1?0:1)]],
         [["text"=>$warning['label'],"callback_data"=>"orderWarningStatus_{$order['id']}"]],
 		[["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.bf169ddbf3'), "callback_data" => "quickUserOrderDetails_{$order['id']}"]],
         [["text" => \achbotMessage('subscription.order_management.show_order_management_panel.button.087a5a43b1'), "callback_data" => "managePanel"]],
@@ -306,7 +293,7 @@ if (preg_match('/^returnToPanel_(\\d+)/', $data, $match)) {
         $order = $result->fetch_assoc();
         showOrderManagementPanel($order, $message_id);
     }
-    setUser("manageOrderById_" . $id);
+    return;
 }
 
 if (preg_match('/^deleteOrder_([1-9][0-9]*)$/D',(string)$data,$match)) {
@@ -372,32 +359,26 @@ if (preg_match('/^confirmDeleteOrder_([1-9][0-9]*)$/D', (string)$data, $match)) 
     setUser();
 }
 
-if (preg_match('/^toggleAgent_(\\d+)/', $data, $match)) {
-    $id = intval($match[1]);
-    $stmt = $connection->prepare("SELECT `agent_bought` FROM `orders_list` WHERE `id` = ?");
-    $stmt->bind_param("i", $id);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $stmt->close();
-
-    if ($result->num_rows > 0) {
-        $row = $result->fetch_assoc();
-        $newAgent = $row['agent_bought'] == 0 ? 1 : 0;
-        $stmt = $connection->prepare("UPDATE `orders_list` SET `agent_bought` = ? WHERE `id` = ?");
-        $stmt->bind_param("ii", $newAgent, $id);
-        $stmt->execute();
-        $stmt->close();
-
-        $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
-        $stmt->bind_param("i", $id);
-        $stmt->execute();
-        $result = $stmt->get_result();
-        $stmt->close();
-        if ($result->num_rows > 0) {
-            $order = $result->fetch_assoc();
-            showOrderManagementPanel($order, $message_id);
-        }
+if (preg_match('/^toggleOrderAgent_([1-9][0-9]*)_([01])$/D', (string)$data, $match)) {
+    if (!\AchBot\Telegram\Conversation\source($update,(int)$from_id,true) ||
+        !achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'agents')) return;
+    $id=(int)$match[1];$desired=(int)$match[2];
+    try {
+        if (!$connection->begin_transaction()) return;
+        if (!achbotAdminCanLocked($connection,(int)$from_id,(int)$admin,'orders') ||
+            !achbotAdminCanLocked($connection,(int)$from_id,(int)$admin,'agents'))
+            throw new DomainException('order_agent_role_changed');
+        $order=achbotProviderRow($connection,'SELECT * FROM orders_list WHERE id=? FOR UPDATE','i',[$id]);
+        if (!$order) throw new DomainException('order_agent_target_changed');
+        $q=achbotProviderStatement($connection,'UPDATE orders_list SET agent_bought=? WHERE id=?','ii',[$desired,$id]);$q->close();
+        if (!$connection->commit()) throw new RuntimeException('order_agent_commit_unconfirmed');
+        $order['agent_bought']=$desired;
+    } catch (Throwable $e) {
+        $connection->rollback();
+        return;
     }
+    showOrderManagementPanel($order,$message_id);
+    return;
 }
 
 // This read-only action observes the current lifecycle state.
@@ -414,33 +395,38 @@ if (preg_match('/^orderWarningStatus_([1-9][0-9]*)$/D',(string)$data,$match)) {
     return;
 }
 
-if (preg_match('/^changeExpireDate_(\\d+)/', $data, $match)) {
+if (preg_match('/^changeExpireDate_([1-9][0-9]*)$/D', (string)$data, $match)) {
     $id = intval($match[1]);
+    if (!setUser("awaitingExpireChange_$id")) return;
     sendMessage(\achbotMessage('admin_settings.management.local_expiry_prompt'), $cancelKey, "HTML");
-    setUser("awaitingExpireChange_$id");
+    return;
 }
 
-if (preg_match('/^awaitingExpireChange_(\\d+)/', $userInfo['step'], $match) && $text!=\achbotMessage('legacy_buttons.cancel')) {
+if (isset($update->message->text) && !isset($update->callback_query) && preg_match('/^awaitingExpireChange_(\\d+)$/D', $userInfo['step'], $match) && $text!=\achbotMessage('legacy_buttons.cancel')) {
     $id = intval($match[1]);
     if (!is_string($text) || preg_match('/^-?[1-9][0-9]{0,4}$/D',$text)!==1 || abs((int)$text)>achbotServiceDaysMax(0)) {
         sendMessage(\achbotMessage('admin_settings.management.local_expiry_prompt'),$cancelKey,'HTML');return;
     }
     $days=(int)$text;
-    $stmt = $connection->prepare("UPDATE `orders_list` SET `expire_date` = `expire_date` + (? * 86400) WHERE `id` = ? AND `expire_date` + (? * 86400) BETWEEN 1 AND 2147483647");
-    $stmt->bind_param("iii", $days, $id, $days);
-    $stmt->execute();$changed=$stmt->affected_rows;
-    $stmt->close();
-    if ($changed!==1) {sendMessage(\achbotMessage('admin_settings.management.local_expiry_prompt'),$cancelKey,'HTML');return;}
-
-    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.86c15dd0ed'), null, 'HTML');
+    $closed=\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,'none',null,
+        static function(mysqli $db) use($from_id,$admin,$id,$days): void {
+            if (!achbotAdminCanLocked($db,(int)$from_id,(int)$admin,'orders'))
+                throw new DomainException('expiry_editor_role_changed');
+            $q=achbotProviderStatement($db,'UPDATE orders_list SET expire_date=expire_date+(?*86400)
+                WHERE id=? AND expire_date+(?*86400) BETWEEN 1 AND 2147483647','iii',[$days,$id,$days]);
+            $changed=$q->affected_rows;$q->close();
+            if ($changed!==1) throw new DomainException('expiry_editor_target_changed');
+        });
+    if (!$closed) return;
+    sendMessage(\achbotMessage('subscription.order_management.show_order_management_panel.message.86c15dd0ed'), $removeKeyboard, 'HTML');
     $stmt = $connection->prepare("SELECT * FROM `orders_list` WHERE `id` = ?");
     $stmt->bind_param("i", $id);
     $stmt->execute();
     $result = $stmt->get_result();
     $stmt->close();
     $order = $result->fetch_assoc();
-    showOrderManagementPanel($order, $message_id);
-    setUser();
+    showOrderManagementPanel($order);
+    return;
 }
 
 // An admin may change the logical service label only within one verified

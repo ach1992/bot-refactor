@@ -29,11 +29,11 @@ NUMERIC = re.compile(
 )
 NUMERIC_KEY = PREFIX + "12c329225f"
 AUDITED_COUNT = 10
-EXPECTED_SHA256 = "730215138ef69f586673516628986ec4c7104062f59c99c44144aebe50ded30b"
+EXPECTED_SHA256 = "371c4da8b98ab3d88b4ecb167f7010f992c9cfbca4b23eaa51c34a5a28ebaa4f"
 # Independent of the ten sendMessage call-site fingerprints: executable PHP
 # tokens from the owning conditional through the send retain reviewed control
 # flow. Whitespace/comments are deliberately ignored.
-EXPECTED_UID_PATH_SHA256 = "16a7783b85309a54a94c7be82fd44c7e545daf4d7fa5d3f6ecc571cd30657b7f"
+EXPECTED_UID_PATH_SHA256 = "15a8a6e5321add50aaefdbac4ba43276f5a053d734f0cf48638a09ca0301e90d"
 
 
 
@@ -207,7 +207,7 @@ def inventory(source: str, catalog: dict) -> list[dict]:
             continue
         if len(arguments) != 3 or not static.HTML.fullmatch(arguments[2]):
             raise AssertionError("composed discount prompt lost explicit HTML mode")
-        if arguments[1] != ("null" if kind == "integer" else "$cancelKey"):
+        if arguments[1] != ("$removeKeyboard" if kind == "integer" else "$cancelKey"):
             raise AssertionError("discount keyboard argument changed")
         for key in keys:
             if key not in catalog:

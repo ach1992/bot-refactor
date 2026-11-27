@@ -212,6 +212,19 @@ introduce a global history registry. Telegram reply-keyboard removal and
 inline markup are mutually exclusive; keep the necessary removal separate
 where used. Callback acknowledgements use the normal Bot API transport.
 
+For ordinary typed editors, successful completion consumes the current
+actor's editor and removes its reply keyboard in the result message.
+Validation failures keep the real pending editor and its Cancel keyboard.
+When no editor is active, Cancel clears the obsolete keyboard and returns
+Home without claiming an operation was canceled. Local settings/plan
+writes and checkout draft admission consume the editor inside the owned
+database transaction. Best-effort Telegram cleanup does not roll back
+committed work. The generic step setter also compares current ownership;
+dedicated money, evidence and Native boundaries remain authoritative.
+User-role and order agency buttons have distinct callback namespaces;
+order flags express a desired value instead of a replayable blind toggle.
+Former ambiguous toggle callbacks are not current actions.
+
 Subscription search prefers a unique exact name and otherwise permits a
 unique literal substring within the current authorized active order scope.
 Ambiguous matches ask for refinement, not an arbitrary first result.

@@ -3,6 +3,7 @@ declare(strict_types=1);
 if (realpath($_SERVER['SCRIPT_FILENAME']??'')===__FILE__) {http_response_code(404);exit;}
 require_once __DIR__.'/../Finance/CheckoutAdmission.php';
 require_once __DIR__.'/../Admin/InstanceContent.php';
+require_once __DIR__.'/../Telegram/Conversation.php';
 
 /** Shared payment rows for every current checkout. Only established
  * mode-specific labels and navigation differ; eligibility is decided once
@@ -43,7 +44,7 @@ function achbotCheckoutPaymentKeyboard(string $mode,string $hash,int $amount,arr
     return $keyboard;
 }
 
-function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $offerDiscount,bool $discountRejectedNoMethod=false): void {
+function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $offerDiscount,bool $discountRejectedNoMethod=false): bool {
     $pay=$view['pay'];$q=$view['quote'];$plan=$view['plan'];$mode=$view['mode'];
     $hash_id=$pay['hash_id'];$actor=(int)$pay['user_id'];$amount=(int)$pay['price'];
     $renew=$mode==='renew';
@@ -86,11 +87,11 @@ function achbotRenderCheckoutDraft(mysqli $db,array $view,string $botUrl,bool $o
     if (($noMethod && !$renew) || ($discountRejectedNoMethod && !$noMethod)) $msg.="\n\n".$notice;
     $sent=sendMessage($msg,json_encode(['inline_keyboard'=>$keyboard]),'HTML');
     achbotPayUxTrackByHash($db,(string)$hash_id,$actor,$sent,'selector');
+    return \AchBot\Telegram\Conversation\acknowledgedMessage($sent,$actor)!==null;
 }
 
 function achbotRenderNewCheckoutDraft(mysqli $db,int $id,int $actor,array $states,string $botUrl): bool {
     $view=achbotCheckoutDraftView($db,$id,$actor,$states);
     if ($view===null) return false;
-    achbotRenderCheckoutDraft($db,$view,$botUrl,true);
-    return true;
+    return achbotRenderCheckoutDraft($db,$view,$botUrl,true);
 }

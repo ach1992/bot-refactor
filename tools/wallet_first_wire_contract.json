@@ -54,18 +54,18 @@
   "baseline": "484c80e6ee030e8656da96edc3000311d10327b5",
   "changes": {
     "bot.php": {
-      "after_count": 167,
-      "after_sha256": "48c3207048ca6a5e4bca594fe73edea80a615e91b1e1b96d81414f6a475d3969",
+      "reason": "F7 retire unsupported shared availability, F8 dispatch authenticated shortcuts through canonical Home and customer routes; F6 denied content reads do not send values #209: 3 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged. #51: remove retired bank timer prompt branch; preserve reward report editor.; Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts. Combine first-start welcome and Home, preserving only Telegram-length fallback; #236. #236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation. #236: Shared actor-owned Home/cancel and durable combined welcome, replacing direct unsolicited notice.; #236 terminal lifecycle: Typed-input ownership, terminal reply-keyboard removal, idle cancellation and separate retained report prompt.",
       "before_count": 200,
+      "after_count": 166,
       "before_sha256": "cff48d8a700a865d62d8c96389da43e7a2d34431deff1f650f3bd4b107808baa",
-      "reason": "F7 retire unsupported shared availability, F8 dispatch authenticated shortcuts through canonical Home and customer routes; F6 denied content reads do not send values #209: 3 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged. #51: remove retired bank timer prompt branch; preserve reward report editor.; Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts. Combine first-start welcome and Home, preserving only Telegram-length fallback; #236. #236: one private support router; atomic message history and recipient-specific durable notices, scoped queue views, genuine typed input and best-effort editor exit. Retire replaced direct sends and preserve retained conversation. #236: Shared actor-owned Home/cancel and durable combined welcome, replacing direct unsolicited notice."
+      "after_sha256": "5587d349be2f96d4620962a260e3c2a05d313b62986b626cccc694d92586e176"
     },
     "config.php": {
-      "after_count": 18,
-      "after_sha256": "45c021ec895e1f5d1da17c217057c79854bc2ccba75117a432c235f3bca512ad",
+      "reason": "F8 remove duplicate configuration-time shortcut dispatch; F7 retire shared availability toggle; #236 terminal lifecycle: Retire the unused bootstrap cancellation callback; shared editor completion.",
       "before_count": 23,
+      "after_count": 17,
       "before_sha256": "f10f2b6ae51d9503f2cce6cb4dbf30d12caed7abc89c91dba6688e931cbaae20",
-      "reason": "F8 remove duplicate configuration-time shortcut dispatch; F7 retire shared availability toggle"
+      "after_sha256": "86f7fb5cbfa46611c1a16d4cd969d9c538ce994c9a86cc5c840402679a258f8f"
     },
     "pay/checkout.php": {
       "after_count": 0,
@@ -201,11 +201,11 @@
       "reason": "Success delivery owned by shared command; remove obsolete inline wallet notices. Current manual and wallet admission own all validation; duplicate pre-admission branches removed. Independent review F03: gift retry cancellation uses the original persisted checkout family through the shared receipt callback mapping; the actual callback and message are unchanged. Remove duplicate manual invoice and receipt handlers; shared current route; #236."
     },
     "src/Finance/Routes/DiscountEntry.php": {
-      "after_count": 3,
-      "after_sha256": "251d5907114eda1a28430706a8945bcc94c239f413424a23d0c6f2c581035018",
+      "reason": "F5 one owned current draft prompt and redemption route with exact continuation; Owner-approved no-monetary-method discount explanation, with fallback send if the original card becomes unavailable.; #236 terminal lifecycle: Owned discount prompt and terminal reply-keyboard removal.",
       "before_count": 1,
+      "after_count": 4,
       "before_sha256": "33676f503ea1ccf762f477c6859b83364dccf586e77187d6e9d18de2d30fb189",
-      "reason": "F5 one owned current draft prompt and redemption route with exact continuation; Owner-approved no-monetary-method discount explanation, with fallback send if the original card becomes unavailable."
+      "after_sha256": "72715a6bec05bd7b1ba5ff6d53018e8c58f37235279b7b86bf50c55f2e9d8621"
     },
     "src/Finance/Routes/Extensions.php": {
       "after_count": 7,
@@ -313,11 +313,11 @@
       "reason": "Remove obsolete filter callback handler; current scope editor retained.; Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts."
     },
     "src/Plans/Administration.php": {
-      "after_count": 25,
-      "after_sha256": "ddad3965174ddae0da1f3eff2f1c83829adf870a34d0aea19140594d6ac4030d",
+      "reason": "Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts.; #236 terminal lifecycle: Committed plan editor completion removes obsolete reply keyboard.",
       "before_count": 25,
+      "after_count": 25,
       "before_sha256": "145326e3f390e3c1a53208b8a7ec7142697503289baf886fd192d07c9edb1ed9",
-      "reason": "Owner-approved canonical HTML: explicit formatting, escaped dynamic inputs and shared entity rendering; same recipient and action contracts."
+      "after_sha256": "b8a690dd43fe1905bfc592be3605eb144828b9858f4157c4c1ea99bf652d10d2"
     },
     "src/Plans/Categories.php": {
       "after_count": 9,
@@ -334,11 +334,11 @@
       "reason": "Remove old unscoped catalog creation and editing; current scoped editor is sole owner."
     },
     "src/Purchase/Catalogue.php": {
-      "after_count": 15,
-      "after_sha256": "27df3a2cb8cfbd1c1d2553e2edc1ec9d46d772c50fa963e1a53aa9ae98d97b78",
+      "reason": "F5 render original custom draft through shared presentation; remove duplicate discount continuation #209: 2 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged. Guard plan navigation against admitted original and retire exact transient reference; #236.; #236 terminal lifecycle: Keep cancel for actual staged input; remove on terminal draft admission.",
       "before_count": 18,
+      "after_count": 16,
       "before_sha256": "f834fa0961d4d1557238d2cf9efe9d2bb94b7bbf971887697ace11d9258b7400",
-      "reason": "F5 render original custom draft through shared presentation; remove duplicate discount continuation #209: 2 source-owned plain/numeric notices use explicit HTML; existing message expressions, keys, arguments and catalog text are unchanged. Guard plan navigation against admitted original and retire exact transient reference; #236."
+      "after_sha256": "521907425c2f71e804b16d258f86c953dd62c7440e630a69848f7ec7b20a8804"
     },
     "src/Purchase/CheckoutPresentation.php": {
       "after_count": 1,
@@ -348,18 +348,18 @@
       "reason": "F5 one shared current draft card and method menu for standard, custom, bulk and renew"
     },
     "src/Purchase/EntryAndBulk.php": {
-      "after_count": 19,
-      "after_sha256": "cffdbbab877bbdd2eaac9baef12a9cb80333946c9a46643b4293537cd88d6b59",
+      "reason": "F7 shared admin and customer purpose-appropriate catalogue; retire unreachable shared-inbound capacity notice; #236 terminal lifecycle: Remove reply keyboard on admitted bulk work and give actual result.",
       "before_count": 16,
+      "after_count": 20,
       "before_sha256": "fb1144f3c00f379edcd82d9fcb14c9db57098d66d633ac88cd2745c1e764db59",
-      "reason": "F7 shared admin and customer purpose-appropriate catalogue; retire unreachable shared-inbound capacity notice"
+      "after_sha256": "4084f790bac58b051d440dd801c40465138f27120b820082790b8f1401e96d9c"
     },
     "src/Purchase/SelectPlan.php": {
-      "after_count": 4,
-      "after_sha256": "50d21e50e22027fdcc52f74f9fd5250b64a66c6da9841c7974bab5617b49f277",
+      "reason": "F9 original free commercial command instead of one-account trial; remove duplicate presentation; #236 terminal lifecycle: Acknowledge replacement prompt; retire typed editor on draft admission.",
       "before_count": 5,
+      "after_count": 5,
       "before_sha256": "39dc221acd00a309063d3ac87c0577a8096e470325d3ed1cb1da82182a484420",
-      "reason": "F9 original free commercial command instead of one-account trial; remove duplicate presentation"
+      "after_sha256": "85e26b6cc200e515581dfd5b49b2205207393f6c4ea2d58e5210fb639ce07412"
     },
     "src/Purchase/TrialCatalogue.php": {
       "after_count": 1,
@@ -411,11 +411,11 @@
       "reason": "Original gift customer text is sealed with the verified gift and dispatched through the existing common durable followup sender; no direct send or duplicate notice path remains."
     },
     "src/Subscription/OrderManagement.php": {
-      "after_count": 29,
-      "after_sha256": "56154f0b61819ce0807e28a812b7dfbf56d8f054527b6423b30f8529d8c09262",
+      "reason": "Retire local Marzban token/UUID mutations and retain stale callback denial; PasarGuard order management unchanged.; Escape actual local-order-deletion UI remark; retain existing callback and message semantics.; #236 terminal lifecycle: Separate input and read-only panel; finish local editor with removal, not edit of human input.",
       "before_count": 33,
+      "after_count": 27,
       "before_sha256": "77aa64673ce8da62ffcecc02d50f00579503b2868690b154b52844b96e357b05",
-      "reason": "Retire local Marzban token/UUID mutations and retain stale callback denial; PasarGuard order management unchanged.; Escape actual local-order-deletion UI remark; retain existing callback and message semantics."
+      "after_sha256": "9d423b0c8e1e03ecff47f64734d36b9d515ef3ba1929ca8464e214e04af705d2"
     },
     "src/Subscription/ServerDisplaySettings.php": {
       "after_count": 7,
@@ -486,6 +486,20 @@
       "before_count": 0,
       "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
       "reason": "#236: Unified callback acknowledgement transport."
+    },
+    "src/Admin/InstanceContent.php": {
+      "reason": "#236 terminal lifecycle: Terminal settings result removes reply keyboard before contextual menu.",
+      "before_count": 7,
+      "after_count": 7,
+      "before_sha256": "c5463f8f3a5c9c81616556352e3c0574c76c4dad26c4778894abc2727f935eb4",
+      "after_sha256": "13f9a9e614fce1609438ba4417f3f35453f623bb20c386bdca8e6fe2892f64b7"
+    },
+    "src/Finance/Routes/DiscountAdministration.php": {
+      "reason": "#236 terminal lifecycle: Remove completed discount editors reply keyboard, retain retry prompts.",
+      "before_count": 70,
+      "after_count": 70,
+      "before_sha256": "b4eb8bec5d1aa1d4317012268e5e41d537181dd2bf4b7b50b2d3547b4783af23",
+      "after_sha256": "2c979b31bef136c84f5d34f72a7f5bfab8276d17b3519a951a463e52bbb9c657"
     }
   },
   "removed": [

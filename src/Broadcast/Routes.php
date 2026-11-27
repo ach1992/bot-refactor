@@ -99,7 +99,7 @@ if(preg_match('/^chooseSendGroup_(all|has|none|agents)$/', $data, $match) && ($f
     sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.f7c7bcfe5e'), $cancelKey, 'HTML');
 }
 
-if (preg_match('/^s2a_title_(all|has|none|agents)$/', $userInfo['step'], $match)
+if (isset($update->message->text) && !isset($update->callback_query) && preg_match('/^s2a_title_(all|has|none|agents)$/', $userInfo['step'], $match)
     && $text != \achbotMessage('legacy_buttons.cancel')
     && ($from_id == $admin || $userInfo['isAdmin'] == true)) {
 
@@ -145,12 +145,12 @@ if (preg_match('/^s2a_title_(all|has|none|agents)$/', $userInfo['step'], $match)
     sendMessage(\achbotMessage('broadcast.routes.broadcast_start.message.45cbfc9bc3'), $cancelKey, 'HTML');
 }
 
-if(preg_match('/^s2a_msg_(\d+)$/', $userInfo['step'], $match)
+if(isset($update->message) && !isset($update->callback_query) && preg_match('/^s2a_msg_(\d+)$/', $userInfo['step'], $match)
    && $text != \achbotMessage('legacy_buttons.cancel')
    && ($from_id == $admin || $userInfo['isAdmin'] == true)){
 
     $sendId = (int)$match[1];
-    setUser();
+    if (!setUser()) return;
 
 	if(isset($update->message) && isForwardedMessageObj($update->message)){
 
@@ -685,14 +685,14 @@ if(preg_match('/^jobCreate_(pin|unpin|delete)_(\d+)$/', $data, $m) && ($from_id 
     ])); 
 }
 
-if(preg_match('/^bc_edit_(\d+)$/', $userInfo['step'], $m)
+if(isset($update->message) && !isset($update->callback_query) && preg_match('/^bc_edit_(\d+)$/', $userInfo['step'], $m)
    && ($from_id == $admin || $userInfo['isAdmin'] == true)){
 
     $bid = (int)$m[1];
     $input = (string)($text ?? $caption ?? '');
 
     if($input === \achbotMessage('legacy_buttons.cancel')){
-        setUser();
+        if (!setUser()) return;
         sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.3d8a2c45c2'), $removeKeyboard, null);
         return;
     }
@@ -710,14 +710,14 @@ if(preg_match('/^bc_edit_(\d+)$/', $userInfo['step'], $m)
     $chk->close();
 
     if(!$rr || $rr->num_rows==0){
-        setUser();
+        if (!setUser()) return;
         sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.cc3858d5b2'), $removeKeyboard, null);
         return;
     }
 
     $info = $rr->fetch_assoc();
     if(($info['type'] ?? '') === 'forwardall'){
-        setUser();
+        if (!setUser()) return;
         sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.48a8e21213'), $removeKeyboard, null);
         return;
     }
@@ -734,7 +734,7 @@ if(preg_match('/^bc_edit_(\d+)$/', $userInfo['step'], $m)
     $chk2->close();
 
     if($r2 && $r2->num_rows>0){
-        setUser();
+        if (!setUser()) return;
         sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.ddd2c4a6c0'), $removeKeyboard, null);
         return;
     }
@@ -760,7 +760,7 @@ if(preg_match('/^bc_edit_(\d+)$/', $userInfo['step'], $m)
     $jid = (int)$ins->insert_id;
     $ins->close();
 
-    setUser();
+    if (!setUser()) return;
 
     if(!$ok || $jid <= 0){
         sendMessage(\achbotMessage('broadcast.routes.pm_noop.message.42f2d7e7a7'), $removeKeyboard, null);

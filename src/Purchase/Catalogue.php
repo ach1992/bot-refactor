@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 
 require_once __DIR__ . '/../Finance/PaymentLifecycle.php';
+require_once __DIR__.'/../Telegram/Conversation.php';
 
 if(preg_match('/\AselectServer(?<serverId>[1-9][0-9]*)_(?<buyType>none|one|much)\z/D',$data, $match) && achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin) ) {
     if (!achbotPurchaseModeAllowed($userInfo,$botState,$match['buyType'])) return;
@@ -89,12 +90,16 @@ if(preg_match('/\AselectCustomePlan(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-
         alert(achbotMessage('purchase.catalogue.alert.67fda139df'), true);
         return;
     }
-    delMessage();
+    if (!\AchBot\Telegram\Conversation\source($update,(int)$from_id,true) ||
+        !\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,
+            "selectCustomPlanGB".$match[1]."_".$match[2]."_".$match['buyType'])) return;
     [$price]=achbotAgencyPrice($userInfo,$botState,(int)$plan['id'],(int)$plan['server_id'],(int)$botState['gbPrice']);
-	sendMessage(str_replace("VOLUME-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_volume')),$cancelKey, 'HTML');
-	setUser("selectCustomPlanGB" . $match[1] . "_" . $match[2] . "_" . $match['buyType']);
+    $prompt=sendMessage(str_replace("VOLUME-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_volume')),$cancelKey, 'HTML');
+    if (\AchBot\Telegram\Conversation\acknowledgedMessage($prompt,(int)$from_id)!==null)
+        try {delMessage();}catch(Throwable $ignored) {}
+    return;
 }
-if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AselectCustomPlanGB(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'], $match) && achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin) && $text != \achbotMessage('legacy_buttons.cancel')){
+if(isset($update->message->text) && \AchBot\Telegram\Conversation\source($update,(int)$from_id,false)!==null && preg_match('/\AselectCustomPlanGB(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'], $match) && achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin) && $text != \achbotMessage('legacy_buttons.cancel')){
     $plan=null;
     foreach (achbotCustomerCustomPlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,null,(int)$match['categoryId']) as $candidate)
         if ((int)$candidate['id']===(int)$match['planId']) {$plan=$candidate;break;}
@@ -121,10 +126,12 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     
     $id=(int)$plan['id'];
     [$price]=achbotAgencyPrice($userInfo,$botState,$id,(int)$plan['server_id'],(int)$botState['dayPrice']);
-	sendMessage(str_replace("DAY-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_day')), null, 'HTML');
-	setUser("selectCustomPlanDay" . $id . "_" . $match['categoryId'] . "_" . $units . "_" . $match['buyType']);
+    if (!\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,
+        "selectCustomPlanDay".$id."_".$match['categoryId']."_".$units."_".$match['buyType'])) return;
+    sendMessage(str_replace("DAY-PRICE", $price, \achbotMessage('legacy_messages.customer_custome_plan_day')), $cancelKey, 'HTML');
+    return;
 }
-if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AselectCustomPlanDay(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<accountCount>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'], $match) && achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin) && $text != \achbotMessage('legacy_buttons.cancel')){
+if(isset($update->message->text) && \AchBot\Telegram\Conversation\source($update,(int)$from_id,false)!==null && preg_match('/\AselectCustomPlanDay(?<planId>[1-9][0-9]*)_(?<categoryId>[1-9][0-9]*)_(?<accountCount>[1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'], $match) && achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin) && $text != \achbotMessage('legacy_buttons.cancel')){
     $plan=null;
     foreach (achbotCustomerCustomPlans($connection,$userInfo,$botState,$match['buyType'],(int)$from_id,(int)$admin,null,(int)$match['categoryId']) as $candidate)
         if ((int)$candidate['id']===(int)$match['planId']) {$plan=$candidate;break;}
@@ -149,11 +156,13 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
     if ($units===null || !preg_match('/^[1-9][0-9]*$/D',(string)$text)) return;
 
 
-	sendMessage(\achbotMessage('legacy_messages.customer_custome_plan_name'), null, 'HTML');
-	setUser("enterCustomPlanName" . $match['planId'] . "_" . $match['categoryId'] . "_" . $match['accountCount'] . "_" . $units . "_" . $match['buyType']);
+    if (!\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,
+        "enterCustomPlanName".$match['planId']."_".$match['categoryId']."_".$match['accountCount']."_".$units."_".$match['buyType'])) return;
+    sendMessage(\achbotMessage('legacy_messages.customer_custome_plan_name'), $cancelKey, 'HTML');
+    return;
 }
 
-if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/\AenterCustomPlanName([1-9][0-9]*)_([1-9][0-9]*)_([1-9][0-9]*)_([1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'],$match) &&
+if(isset($update->message->text) && \AchBot\Telegram\Conversation\source($update,(int)$from_id,false)!==null && preg_match('/\AenterCustomPlanName([1-9][0-9]*)_([1-9][0-9]*)_([1-9][0-9]*)_([1-9][0-9]*)_(?<buyType>none|one)\z/D',$userInfo['step'],$match) &&
     achbotCustomerSaleAllowed($botState,(int)$from_id,(int)$admin) && $text!=achbotMessage('legacy_buttons.cancel')){
     if (!achbotSupportsPlan($connection,(int)$match[1])) {
         alert(achbotMessage('purchase.catalogue.alert.10fd7f4fa9'),true);return;
@@ -196,15 +205,15 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
         $stmt = $connection->prepare("INSERT INTO `pays` (`hash_id`, `description`, `user_id`, `type`, `plan_id`, `server_id`, `volume`, `day`, `price`, `request_date`, `state`, `agent_bought`) 
 									VALUES (?, ?, ?, 'BUY_SUB', ?, ?, ?, ?, ?, ?, 'pending', ?)"); 
 		$stmt->bind_param("ssiiiiiiii", $hash_id, $text, $from_id, $id, $sid, $volume, $days, $price, $time, $agentBought); 
-        $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,achbotAgencyQuotePolicy($userInfo,$botState,(int)$id,(int)$sid));
+        $rowId=achbotPayUxInsertDraft($connection,(int)$from_id,$stmt,achbotAgencyQuotePolicy($userInfo,$botState,(int)$id,(int)$sid),false,[],$botState,$userInfo);
         $stmt->close();
         if ($rowId<=0) {
             alert(\achbotMessage('purchase.catalogue.alert.201380d8bf'),true);
             return;
         }
     require_once __DIR__.'/CheckoutPresentation.php';
+    \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.saved_successfuly'));
     if (!achbotRenderNewCheckoutDraft($connection,$rowId,(int)$from_id,$botState,$botUrl))
-        alert(achbotMessage('purchase.catalogue.alert.201380d8bf'),true);
-    setUser();
+        sendMessage(achbotMessage('purchase.catalogue.alert.201380d8bf'),null,'HTML');
     return;
 }

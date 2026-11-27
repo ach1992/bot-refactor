@@ -432,7 +432,7 @@ function achbotMutateBotStates(callable $mutate, ?callable $beforeStateLock = nu
         }
     }
 }
-function setSettings($field, $value): bool {
+function setSettings($field, $value, ?array $editor=null): bool {
     // The persistence boundary is explicit, not a denylist of retired methods.
     // A future accidental writer cannot resurrect unsupported BOT_STATES flags.
     static $editable = [
@@ -460,6 +460,12 @@ function setSettings($field, $value): bool {
     return achbotMutateBotStates(static function(array $state) use($field,$value): array {
         $state[$field]=$value;
         return $state;
+    },$editor===null?null:static function(mysqli $db) use($editor): void {
+        $actor=(int)$editor['userid'];
+        $row=\AchBot\Telegram\Conversation\lockEditor($db,$actor,$editor);
+        if (!achbotAdminCanLocked($db,$actor,(int)$GLOBALS['admin'],achbotAdminRequestCapability($row['step'])??'bot_settings'))
+            throw new RuntimeException('settings_editor_role_revoked');
+        \AchBot\Telegram\Conversation\writeEditorLocked($db,$row,'none',null);
     });
 }
 /**
@@ -1761,12 +1767,12 @@ if (!function_exists('parseStatsDateRange')) {
 }
 
 
-function calculateSalesBetweenDates($startDate, $endDate) {
+function calculateSalesBetweenDates($startDate, $endDate,?array $editor=null): bool {
     global $connection, $cancelKey, $removeKeyboard;
 
     if (empty($startDate) || empty($endDate)) {
         sendMessage(\achbotMessage('admin_settings.config.calculate_sales_between_dates.message.91315a4cbe'), $cancelKey, "HTML");
-        return;
+        return false;
     }
 
     $startTimestamp = strtotime($startDate . ' 00:00:00');
@@ -1774,7 +1780,7 @@ function calculateSalesBetweenDates($startDate, $endDate) {
 
     if ($startTimestamp === false || $endTimestamp === false) {
         sendMessage(\achbotMessage('admin_settings.config.calculate_sales_between_dates.message.1e138ee7c6'), $cancelKey, "HTML");
-        return;
+        return false;
     }
 
     require_once __DIR__.'/src/Finance/ServiceHistory.php';
@@ -1787,22 +1793,19 @@ function calculateSalesBetweenDates($startDate, $endDate) {
     } catch (Throwable $e) {
         sendMessage(\achbotMessage('admin_settings.config.calculate_sales_between_dates.message.85858f5676'), $cancelKey, "HTML");
         error_log('achbot_sales_range_deferred class='.get_class($e));
-        return;
+        return false;
     }
 
+    if ($editor!==null && !\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$editor['userid'],$editor)) return false;
     sendMessage(
         \achbotMessage('admin_settings.config.calculate_sales_between_dates.message.020a3bcea9') . date("Y-m-d", $startTimestamp) . \achbotMessage('admin_settings.config.calculate_sales_between_dates.message.bd8ed16d1e') . date("Y-m-d", $endTimestamp) . \achbotMessage('admin_settings.config.calculate_sales_between_dates.message.28ec14e2c0') . number_format($totalSales) . \achbotMessage('admin_settings.config.calculate_sales_between_dates.text.9944ee4dd6') .
         \achbotMessage('admin_settings.config.calculate_sales_between_dates.text.dd92eb2ae0') . number_format($totalPayments) . "</b>",
         $removeKeyboard,
         "HTML"
     );
+    return true;
 }
 
-// در صورتی که دکمه لغو (Cancel) فشرده شد
-if ($data == 'cancel_operation') {
-    setUser("none", "step");
-    sendMessage(\achbotMessage('admin_settings.config.calculate_sales_between_dates.message.0108e71350'), $removeKeyboard, "HTML");
-}
 // انتهای بخش آمار ربات
 
 function achbotAdminRoleKeys(int $target): string {
@@ -2039,7 +2042,7 @@ function getUserInfoKeys($userId) {
                     ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.88bf6cf5c6'), 'callback_data' => "wizwizch"]
                 ],
                 [
-                    ['text' => $agentStatus, 'callback_data' => $canManageAgents ? "toggleAgent_{$userId}" : "wizwizch"],
+                    ['text' => $agentStatus, 'callback_data' => $canManageAgents ? "toggleUserAgent_{$userId}" : "wizwizch"],
                     ['text' => \achbotMessage('admin_settings.config.get_user_info_keys.button.agent_label'), 'callback_data' => "wizwizch"]
                 ],
                 ...($canManageAgents ? [[
@@ -2326,13 +2329,13 @@ function achbotHandleChannelExemption($data, $text, $cached): bool {
 function handleToggleCallbacks($data, $chat_id, $message_id): bool {
     global $connection, $admin, $from_id, $update, $callbackId;
     if (!is_string($data) ||
-        !preg_match('/\Atoggle(?:Ban|Agent)_/D',$data))
+        !preg_match('/\Atoggle(?:Ban|UserAgent)_/D',$data))
         return false;
 
     $inTransaction=false;
     try {
         if (strlen($data)>55 ||
-            preg_match('/\Atoggle(Ban|Agent)_([1-9][0-9]*)\z/D',$data,$m)!==1 ||
+            preg_match('/\Atoggle(Ban|UserAgent)_([1-9][0-9]*)\z/D',$data,$m)!==1 ||
             !function_exists('achbotWebhookIngressAuthenticated') ||
             !achbotWebhookIngressAuthenticated())
             throw new RuntimeException('moderation_source_invalid');
@@ -2448,6 +2451,8 @@ function handleToggleCallbacks($data, $chat_id, $message_id): bool {
                 throw new RuntimeException('moderation_stale_source_or_corrupt_journal');
         }
 
+        if (!achbotAdminCanLocked($connection,$actorId,(int)$admin,$m[1]==='Ban'?'moderation':'agents'))
+            throw new RuntimeException('moderation_role_revoked');
         if ($m[1]==='Ban') {
             $before=(string)$targetRow['step'];
             $next=$before==='banned'?'none':'banned';
@@ -2993,9 +2998,13 @@ function generateUID(){
     return sprintf('%08s-%04s-%04x-%04x-%012s', $time_low, $time_mid, $time_hi_and_version, $clock_seq_hi_and_reserved, $node);
 }
 function setUser($value = 'none', $field = 'step'){
-    global $connection, $from_id, $username, $first_name;
+    global $connection, $from_id, $username, $first_name, $userInfo;
 
     if ($field === 'wallet') throw new LogicException('wallet_requires_monetary_command');
+    if ($field === 'step') {
+        require_once __DIR__.'/src/Telegram/Conversation.php';
+        return \AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo??[],(string)$value)!==null;
+    }
 
     $stmt = $connection->prepare("SELECT * FROM `users` WHERE `userid`=?");
     $stmt->bind_param("i", $from_id);
@@ -3020,7 +3029,6 @@ function setUser($value = 'none', $field = 'step'){
     // ownership of an active direct-gift generation. Only the dedicated
     // authorized unban endpoints may consume 'banned'.
     // Other legacy routes use cached userInfo and must not overwrite it.
-    elseif($field == "step") $stmt = $connection->prepare("UPDATE `users` SET `step` = ? WHERE `userid` = ? AND `step` <> 'banned' AND `step` NOT LIKE 'achbotDirectGift%' AND `step` NOT LIKE 'achbotExempt:%'");
     elseif($field == "freetrial") $stmt = $connection->prepare("UPDATE `users` SET `freetrial` = ? WHERE `userid` = ?");
     elseif($field == "isAdmin") $stmt = $connection->prepare("UPDATE `users` SET `isAdmin` = ? WHERE `userid` = ?");
     elseif($field == "first_start") $stmt = $connection->prepare("UPDATE `users` SET `first_start` = ? WHERE `userid` = ?");

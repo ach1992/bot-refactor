@@ -167,7 +167,7 @@ function achbotAdminRequestCapability(string $value): ?string {
         'stats'=>'~^(?:botReports|show_stats_menu|stats_|top_50_|agent_users_list|plan_sales|server_sales|custom_sales_date|awaitingDateRange)~D',
         'servers'=>'~^(?:serversSetting|nextServerPage|showServerSettings|toggleServerState|setServerState|addManagedServer|managePanelGroups|addPanelGroup|newPanelGroup|deletePanelGroup_|editPanelGroup|setServerPanelGroup_|changesServer|editServer|wizwizdeleteserver|yesDeleteServer|cancelDeleteServer|editSubLinks|subLinksInput|serverDisplay|achbotDisplay\\||achbotManage\\||achbotField\\||am\\||addServer|pg:|pgRotate|pgServerGroups)~D',
         'plans'=>'~^(?:backplan|planDetails|plansList|togglePlanState|setPlanSale|confirmDeletePlan|cancelDeletePlan|newPlanForServer|addManagedPlan|planDays|planVolume|pgPlanGroups|categoriesSetting|nextCategoryPage|addNewCategory|wizwizcategory|wizwizplan|editCustom|volumePlanSettings|dayPlanSettings|addNewDayPlan|addNewVolumePlan|deleteDayPlan|deleteVolumePlan|changeDayPlan|changeVolumePlan|addon)~D',
-        'agents'=>'~^(?:agentsList|nextAgentList|agentDetails|removeAgent|toggleAgent_|agentPercentDetails|editAgentDiscount|nextAgentDiscount|addDiscountServerAgent|addDiscountPlanAgent|removePercentOfAgent|agencyApprove|agencyDecline|rejectedAgentList|releaseRejectedAgent)~D',
+        'agents'=>'~^(?:agentsList|nextAgentList|agentDetails|removeAgent|toggleUserAgent_|toggleOrderAgent_|agentPercentDetails|editAgentDiscount|nextAgentDiscount|addDiscountServerAgent|addDiscountPlanAgent|removePercentOfAgent|agencyApprove|agencyDecline|rejectedAgentList|releaseRejectedAgent)~D',
         'customers'=>'~^(?:userReports|userInfoDetails|quickUserDetails)~D',
         'moderation'=>'~^(?:banUser|unbanUser|toggleBan_)~D',
         'orders'=>'~^(?:switchLocation|switchServer|manageorderdatabase|showUserSubscriptions|selectOrderByRemark_userid_|returnToPanel_|deleteOrder_|confirmDeleteOrder_|orderWarningStatus_|changeExpireDate_|changeToken_|changeUUID_|changeServerId_|selectServerId_|changeFileId_|selectFileId_|quickUserOrderDetails_|userOrderDetails|searchUsersConfig|adminToggleAutoRenew|awaitingOrderRemarkOnly|awaitingUserIdSelection_|manageOrderById_|awaitingExpireChange_|awaitingToken_|awaitingUUID_)~D',
@@ -182,7 +182,8 @@ function achbotAdminRequestAllowed(?string $callback,?string $text,string $step)
     // Callback message text is not fresh typed input and cannot provide escape.
     if (in_array($callback,['mainMenu','evidenceHome'],true) ||
         (($callback??'')==='' && $text!==null &&
-         (preg_match('~^/[Ss]tart(?:\\s|$)~D',$text) ||
+         (preg_match('~^/[Ss]tart(?:@[A-Za-z0-9_]{1,32})?(?:\\s|$)~D',$text) ||
+          $text===achbotMessage('legacy_buttons.back_to_main') ||
           $text===achbotMessage('legacy_buttons.cancel')))) return true;
     foreach (array_unique([(string)$callback,$step]) as $value) {
         $capability=achbotAdminRequestCapability($value);

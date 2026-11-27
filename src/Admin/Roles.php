@@ -40,13 +40,15 @@ if (preg_match('/^adminAssign\\|([1-9][0-9]{0,18})\\|(manager|operator|support)$
     }
     editText($message_id,achbotMessage('admin.roles.saved'),getAdminsKeys(),'HTML');
 }
-if ($achbotRoleInput && ($text??null)!==(\achbotMessage('legacy_buttons.cancel')??null)) {
+if ($achbotRoleInput && isset($update->message->text) && !isset($update->callback_query) && ($text??null)!==(\achbotMessage('legacy_buttons.cancel')??null)) {
     if (!is_string($text) || !preg_match('/^[1-9][0-9]{0,18}$/D',$text) || (int)$text===(int)$admin) {
         sendMessage(achbotMessage('admin.roles.target_prompt'),$cancelKey,'HTML');return;
     }
     $stmt=$connection->prepare('SELECT id FROM users WHERE userid=? LIMIT 2');
     $target=(int)$text;$stmt->bind_param('i',$target);$stmt->execute();$matches=$stmt->get_result()->num_rows;$stmt->close();
     if ($matches!==1) {sendMessage(achbotMessage('admin.roles.assignment_failed'),$cancelKey,'HTML');return;}
-    setUser();
+    require_once __DIR__.'/../Telegram/Conversation.php';
+    if (!\AchBot\Telegram\Conversation\transitionFromUpdate($connection,(int)$from_id,$userInfo,$update)) return;
+    \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.receving_information'));
     sendMessage(achbotMessage('admin.roles.choose_level',['userId'=>$text]),achbotAdminRoleKeys($target),'HTML');
 }

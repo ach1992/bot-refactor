@@ -121,12 +121,6 @@ function achbotApiPaymentPresentation(mysqli $db,array $pay,array $attempt): arr
         'confirmed_accounts'=>$recordedCount];
 }
 
-function achbotApiPaymentRichReport(array $pay,string $body,array $presentation): string {
-    $details=(string)($presentation['details']??'');
-    if ($details==='' || strlen($body)+strlen($details)>3500)return $body;
-    return $body."\n\n".$details;
-}
-
 function achbotApiPaymentFinalKeyboard(array $pay,string $fallback,bool $automatic,array $presentation,?bool $walletSubject=null): string {
     $hash=(string)($pay['hash_id']??'');
     $actor=(int)($pay['approved_by']??0);

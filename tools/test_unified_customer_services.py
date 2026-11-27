@@ -370,7 +370,7 @@ echo json_encode($out,JSON_THROW_ON_ERROR);
    return json.loads(r.stdout)
   # Neither cached administrative flags nor forged old buttons confer a role.
   sql("UPDATE users SET isAdmin=0,step='none' WHERE userid IN(1002,9002)")
-  protected=['returnToPanel_91','toggleAgent_91','toggleNotif_91','orderWarningStatus_91','changeExpireDate_91',
+  protected=['returnToPanel_91','toggleOrderAgent_91_1','toggleNotif_91','orderWarningStatus_91','changeExpireDate_91',
    'changeToken_91','changeUUID_91','changeServerId_91','selectServerId_91_2',
    'changeFileId_91_2','selectFileId_91_7','deleteOrder_91','confirmDeleteOrder_91',
    'showUserSubscriptions1001','quickUserOrderDetails_91','manageorderdatabase']

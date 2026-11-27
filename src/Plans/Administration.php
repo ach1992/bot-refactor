@@ -8,6 +8,7 @@ require_once __DIR__ . '/../../messages/loader.php'; // ACHBOT_TEXT_CATALOG
 
 require_once __DIR__.'/../Admin/Access.php';
 require_once __DIR__.'/../Admin/IntentSafety.php';
+require_once __DIR__.'/../Telegram/Conversation.php';
 if (!achbotAdminRequestAllowed(is_string($data??null)?$data:null,is_string($text??null)?$text:null,(string)($userInfo['step']??''))) {achbotAdminDeny();return;}
 
 
@@ -41,10 +42,11 @@ if($data == 'backplan' and achbotAdminCanFor($connection,(int)$from_id,(int)$adm
 
     exit;
 }
-if(($data=="editCustomPlan" || preg_match('/^editCustom(gbPrice|dayPrice)/',$userInfo['step'],$match)) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != \achbotMessage('legacy_buttons.cancel')){
-    if(!isset($data)){
+if(($data=="editCustomPlan" || (isset($update->message->text) && !isset($update->callback_query) && preg_match('/^editCustom(gbPrice|dayPrice)$/D',$userInfo['step'],$match))) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != \achbotMessage('legacy_buttons.cancel')){
+    if(!isset($update->callback_query)){
+        if (!isset($update->message->text) || isset($update->callback_query)) return;
         if(is_numeric($text)){
-            setSettings($match[1], $text);
+            if (!setSettings($match[1],$text,$userInfo)) return;
             sendMessage(\achbotMessage('legacy_messages.saved_successfuly'),$removeKeyboard, 'HTML');
         }else{
             sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.be59f23713'), null, 'HTML');
@@ -68,9 +70,9 @@ if(($data=="editCustomPlan" || preg_match('/^editCustom(gbPrice|dayPrice)/',$use
             ]
 
         ]]);
-    if(!isset($data)){
+    if(!isset($update->callback_query)){
         sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.e3b03f6c8e'),$keys, 'HTML');
-        setUser();
+
     }else{
         editText($message_id,\achbotMessage('plans.administration.edit_custom_plan.message.e3b03f6c8e'),$keys);
     }
@@ -229,18 +231,22 @@ if(preg_match('/^confirmDeletePlan([1-9][0-9]*)_([a-f0-9]{16})$/D',(string)$data
     return;
 }
 if(preg_match('/^wizwizplanname(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != \achbotMessage('legacy_buttons.cancel')){
-    setUser($data);
+    if (!setUser($data)) return;
     delMessage();
     sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.0253b1982e'),$cancelKey, 'HTML');exit;
 }
-if(preg_match('/^wizwizplanname(\d+)/',$userInfo['step'], $match) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
-    $stmt = $connection->prepare("UPDATE `server_plans` SET `title`=? WHERE `id`=?");
-    $stmt->bind_param("si", $text, $match[1]);
-    $stmt->execute();
-    $stmt->close();
+if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/^wizwizplanname(\d+)/',$userInfo['step'], $match) && $text != \achbotMessage('legacy_buttons.cancel') && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')){
+    $closed=\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,'none',null,
+        static function(mysqli $db) use($from_id,$admin,$match,$text): void {
+            if (!achbotAdminCanLocked($db,(int)$from_id,(int)$admin,'plans') ||
+                !achbotProviderRow($db,'SELECT id FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$match[1]]))
+                throw new DomainException('plan_editor_target_changed');
+            $q=achbotProviderStatement($db,'UPDATE server_plans SET title=? WHERE id=?','si',[$text,(int)$match[1]]);$q->close();
+        });
+    if (!$closed) return;
 
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), null, 'HTML');
-    setUser();
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), $removeKeyboard, 'HTML');
+
 
     $keys = getPlanDetailsKeys($match[1]);
     if($keys == null){
@@ -249,19 +255,23 @@ if(preg_match('/^wizwizplanname(\d+)/',$userInfo['step'], $match) && $text != \a
     }else sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.06d5c646c1'), $keys, 'HTML');
 }
 if(preg_match('/^wizwizplaneditdes(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != \achbotMessage('legacy_buttons.cancel')){
-    setUser($data);
+    if (!setUser($data)) return;
     delMessage();
     sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.090fe8ddfd'),$cancelKey, 'HTML');exit;
 }
-if(preg_match('/^wizwizplaneditdes(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != \achbotMessage('legacy_buttons.cancel')){
-    $stmt = $connection->prepare("UPDATE `server_plans` SET `descr`=? WHERE `id`=?");
-    $stmt->bind_param("si", $text, $match[1]);
-    $stmt->execute();
-    $stmt->close();
+if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/^wizwizplaneditdes(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != \achbotMessage('legacy_buttons.cancel')){
+    $closed=\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,'none',null,
+        static function(mysqli $db) use($from_id,$admin,$match,$text): void {
+            if (!achbotAdminCanLocked($db,(int)$from_id,(int)$admin,'plans') ||
+                !achbotProviderRow($db,'SELECT id FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$match[1]]))
+                throw new DomainException('plan_editor_target_changed');
+            $q=achbotProviderStatement($db,'UPDATE server_plans SET descr=? WHERE id=?','si',[$text,(int)$match[1]]);$q->close();
+        });
+    if (!$closed) return;
 
 
-    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), null, 'HTML');
-    setUser();
+    sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), $removeKeyboard, 'HTML');
+
 
     $keys = getPlanDetailsKeys($match[1]);
     if($keys == null){
@@ -270,19 +280,23 @@ if(preg_match('/^wizwizplaneditdes(\d+)/',$userInfo['step'], $match) && achbotAd
     }else sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.06d5c646c1'), $keys, "HTML");
 }
 if(preg_match('/^wizwizplanrial(\d+)/',$data) and achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans') && $text != \achbotMessage('legacy_buttons.cancel')){
-    setUser($data);
+    if (!setUser($data)) return;
     delMessage();
     sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.031fdf541a'),$cancelKey, 'HTML');exit;
 }
-if(preg_match('/^wizwizplanrial(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')&& $text != \achbotMessage('legacy_buttons.cancel')){
+if(isset($update->message->text) && !isset($update->callback_query) && preg_match('/^wizwizplanrial(\d+)/',$userInfo['step'], $match) && achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'plans')&& $text != \achbotMessage('legacy_buttons.cancel')){
     if(is_numeric($text)){
-        $stmt = $connection->prepare("UPDATE `server_plans` SET `price`=? WHERE `id`=?");
-        $stmt->bind_param("ii", $text, $match[1]);
-        $stmt->execute();
-        $stmt->close();
+        $closed=\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,'none',null,
+            static function(mysqli $db) use($from_id,$admin,$match,$text): void {
+                if (!achbotAdminCanLocked($db,(int)$from_id,(int)$admin,'plans') ||
+                    !achbotProviderRow($db,'SELECT id FROM server_plans WHERE id=? FOR UPDATE','i',[(int)$match[1]]))
+                    throw new DomainException('plan_editor_target_changed');
+                $q=achbotProviderStatement($db,'UPDATE server_plans SET price=? WHERE id=?','ii',[(int)$text,(int)$match[1]]);$q->close();
+            });
+        if (!$closed) return;
 
-        sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), null, 'HTML');
-        setUser();
+        sendMessage(\achbotMessage('plans.administration.edit_custom_plan.message.43afd491f6'), $removeKeyboard, 'HTML');
+
 
         $keys = getPlanDetailsKeys($match[1]);
         if($keys == null){

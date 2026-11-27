@@ -27,6 +27,9 @@ $chat_id = $mode === 'group' ? 1001 : $from_id;
 $callbackId = 'owned-wallet-callback';
 $message_id = 50;
 $userInfo = ['step' => 'none'];
+$update=(object)['update_id'=>12345,'callback_query'=>(object)['id'=>$callbackId,
+    'from'=>(object)['id'=>$from_id],'data'=>$data,'message'=>(object)['message_id'=>$message_id,
+    'chat'=>(object)['id'=>$chat_id,'type'=>$mode==='group'?'group':'private']]]];
 // Do not CONNECT: all queries fail; only response/denial dispatch is tested.
 $connection = new mysqli();
 $GLOBALS['route_events'] = [];

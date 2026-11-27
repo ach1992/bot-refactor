@@ -46,7 +46,7 @@ if (array_key_exists('settlement_policy',$spec))
     $nowpaymentsSettlementPolicy=$spec['settlement_policy'];
 if (isset($spec['stale_state'])) $botState=array_replace($botState,$spec['stale_state']);
 if (isset($spec['stale_keys'])) $paymentKeys=array_replace($paymentKeys,$spec['stale_keys']);
-$cancelKey=$removeKeyboard='{}';$events=[];$inviteReward=0;$joinLink='https://t.me/fixture';
+$cancelKey=json_encode(['keyboard'=>[[achbotMessage('legacy_buttons.cancel')]],'resize_keyboard'=>true]);$removeKeyboard=json_encode(['remove_keyboard'=>true]);$events=[];$inviteReward=0;$joinLink='https://t.me/fixture';
 $channelLock=$spec['forced']??'';$joinMembershipVerified=$spec['member']??false;
 $data=$spec['callback']??'';$text=$spec['text']??'';
 $chat=(object)['id'=>(int)($spec['chat']??$from_id),'type'=>$spec['chat_type']??'private'];
@@ -66,10 +66,10 @@ function sendMessage($text,$keys=null,$mode=null,$uid=null){
 }
 function editText($id,$text,$keys=null,$mode=null){$GLOBALS['events'][]=['edit',$text,$keys,$mode,$id];
     if (array_key_exists('edit_result',$GLOBALS['spec'])) return json_decode(json_encode($GLOBALS['spec']['edit_result']));
-    return (object)['ok'=>true];}
+    return (object)['ok'=>true,'result'=>(object)['message_id'=>(int)$id,'chat'=>(object)['id'=>(int)$GLOBALS['from_id']]]];}
 function bot($method,$data=[]){
     if ($method==='editMessageText') return editText($data['message_id'],$data['text'],$data['reply_markup']??null,$data['parse_mode']??null);
-    if ($method==='editMessageReplyMarkup') {$GLOBALS['events'][]=['markup',$data['message_id'],$data['reply_markup']??null];return (object)['ok'=>true];}
+    if ($method==='editMessageReplyMarkup') {$GLOBALS['events'][]=['markup',$data['message_id'],$data['reply_markup']??null];return (object)['ok'=>true,'result'=>(object)['message_id'=>(int)$data['message_id'],'chat'=>(object)['id'=>(int)$data['chat_id']]]];}
     throw new RuntimeException('unexpected fixture bot method '.$method);
 }
 function delMessage(...$a){if (($GLOBALS['spec']['op']??'')==='manual_checkout') $GLOBALS['events'][]=['delete',...$a];return (object)['ok'=>true];}
@@ -97,6 +97,22 @@ case 'public':
     break;
 case 'delete_main':
     eval(fixtureSection("if(preg_match('/\\AdelMainButton", 'if($data == "addNewMainButton"'));
+    break;
+case 'cancel_idle':
+    eval(fixtureSection("// Final ordinary-editor cancellation", "\n?>"));
+    break;
+case 'plan_admin':
+    function getPlanDetailsKeys($id){return json_encode(['inline_keyboard'=>[]]);}
+    require $root.'/src/Plans/Administration.php';
+    break;
+case 'order_agent':
+    require_once $root.'/src/Telegram/Conversation.php';
+    function showOrderManagementPanel($order,$message){$GLOBALS['events'][]=['order_flag',(int)$order['id'],(int)$order['agent_bought']];}
+    $src=file_get_contents($root.'/src/Subscription/OrderManagement.php');
+    $start=strpos($src,"if (preg_match('/^toggleOrderAgent_");
+    $end=strpos($src,'// This read-only action observes',$start);
+    if ($start===false || $end===false) throw new RuntimeException('fixture_order_agent_boundary');
+    eval(substr($src,$start,$end-$start));
     break;
 case 'plan_category':
     require $root.'/src/Plans/Categories.php';break;
@@ -200,9 +216,11 @@ def main():
             r=subprocess.run(args,env=env,capture_output=True,text=True,timeout=20)
             assert r.returncode==0,(op,kw,r.returncode,r.stdout[-1200:],r.stderr[-1600:])
             for line in r.stderr.splitlines():
-                assert op in ('manual_claim','manual_checkout') and line.startswith('[AChBot] '),(op,line)
+                assert line.startswith('[AChBot] '),(op,line)
                 diagnostic=json.loads(line[len('[AChBot] '):])
-                assert diagnostic['event']=='achbot.finance.checkout_manual_admission_deferred',diagnostic
+                assert (op in ('manual_claim','manual_checkout') and diagnostic['event']=='achbot.finance.checkout_manual_admission_deferred') or (
+                    op=='shortcut' and diagnostic['event']=='achbot.delivery.followup_result' and
+                    diagnostic.get('operational_ref','').startswith('welcome:') and diagnostic.get('result')=='acknowledged'),(op,diagnostic)
             return json.loads(r.stdout)
         def callbacks(r):
             out=[]
@@ -431,6 +449,24 @@ def main():
         sql("UPDATE users SET step='none' WHERE userid=2001")
         r=run('shortcut',actor=2019,text='/start buy')
         assert r['user'] and 'selectServer2_none' in callbacks(r),r
+        def removed(r):
+            return any(e[0]=='send' and e[2] and json.loads(e[2]).get('remove_keyboard') is True for e in r['events'])
+        sql("UPDATE users SET step='none' WHERE userid=2001")
+        cancel=subprocess.check_output(['php','-r',"require 'messages/loader.php';echo achbotMessage('legacy_buttons.cancel');"],cwd=ROOT,text=True)
+        r=run('cancel_idle',actor=2001,text=cancel)
+        assert removed(r) and r['user']['step']=='none',r
+        canceled=subprocess.check_output(['php','-r',"require 'messages/loader.php';echo achbotMessage('legacy_messages.operation_canceled');"],cwd=ROOT,text=True)
+        assert not any(canceled in str(e[1]) for e in r['events'] if e[0]=='send'),r
+        sql("UPDATE users SET step='wizwizplanname7' WHERE userid=9001")
+        r=run('plan_admin',actor=9001,text='Fixture changed plan')
+        assert removed(r) and r['user']['step']=='none' and sql('SELECT title FROM server_plans WHERE id=7')=='Fixture changed plan',r
+        sql("UPDATE users SET step='wizwizplanrial7' WHERE userid=9001")
+        r=run('plan_admin',actor=9001,text='invalid price')
+        assert not removed(r) and r['user']['step']=='wizwizplanrial7',r
+        r=run('plan_admin',actor=9001,text='100')
+        assert removed(r) and r['user']['step']=='none' and sql('SELECT price FROM server_plans WHERE id=7')=='100',r
+        sql("UPDATE server_plans SET title='Plan 7',price=100 WHERE id=7")
+        cases.append('terminal_reply_keyboard_removed_and_idle_cancel_not_false_success')
         cases.append('actual_shortcuts_and_callback_share_purchase_methods_and_entry_gates')
         # Trial-only category and server, with an explicit custom purpose.
         sql("INSERT INTO server_categories(id,title,parent,active) VALUES (3,'Trial category',0,1)")
@@ -670,7 +706,7 @@ def main():
         run('discount',callback=f'haveDiscountCheckout_{pid}')
         r=run('discount',text='nomoneyfull')
         assert 'pw_'+h in callbacks(r),r
-        assert any(b.get('text')=='📥 دریافت رایگان' for e in r['events'] if e[0]=='send' and e[2] for row in json.loads(e[2])['inline_keyboard'] for b in row),r
+        assert any(b.get('text')=='📥 دریافت رایگان' for e in r['events'] if e[0]=='send' and e[2] for row in json.loads(e[2]).get('inline_keyboard',[]) for b in row),r
         assert sql(f"SELECT price FROM pays WHERE id={pid}")=='0'
         before=sql("SELECT COUNT(*) FROM wallet_entries")
         op=run('wallet',hash=h)['events'][0][1]
@@ -768,7 +804,7 @@ def main():
         before=sql("SELECT COUNT(*) FROM wallet_entries")
         before_wallet=sql("SELECT wallet FROM users WHERE userid=2001")
         r=redeem(2001,r,'nomoneyrenew','renew','mainMenu',0,zero=True)
-        assert any(b.get('text')=='✅ تمدید رایگان' for e in r['events'] if e[0]=='send' and e[2] for row in json.loads(e[2])['inline_keyboard'] for b in row),r
+        assert any(b.get('text')=='✅ تمدید رایگان' for e in r['events'] if e[0]=='send' and e[2] for row in json.loads(e[2]).get('inline_keyboard',[]) for b in row),r
         assert sql("SELECT COUNT(*) FROM wallet_entries")==before
         assert sql("SELECT wallet FROM users WHERE userid=2001")==before_wallet
         assert sql(f"SELECT COUNT(*) FROM payment_attempts WHERE pay_row_id={pid}")=='0'
@@ -1016,6 +1052,18 @@ def main():
         assert 'ps_'+h in callbacks(r),r
         assert not any('مهلت انتخاب روش پرداخت پایان یافت' in e[1] for e in r['events'] if e[0]=='edit'),r
         cases.append('expired_unadmitted_current_draft_only_home_and_uncertain_retains_recovery')
+        # Same numeric identity in two distinct namespaces must not cross-mutate.
+        sql("INSERT INTO orders_list(id,userid,token,transid,fileid,server_id,remark,expire_date,link,amount,status,date,agent_bought) VALUES(2001,2002,'fixture','fixture',7,2,'collision-fixture',2000000000,'fixture',100,1,'fixture',0)")
+        role=sql("SELECT is_agent FROM users WHERE userid=2001")
+        for actor,cb in ((2001,'toggleOrderAgent_2001_1'),(2004,'toggleOrderAgent_2001_1'),(9001,'toggleAgent_2001')):
+            run('order_agent',actor=actor,callback=cb)
+            assert sql("SELECT agent_bought FROM orders_list WHERE id=2001")=='0'
+        for _ in range(2):
+            r=run('order_agent',actor=9001,callback='toggleOrderAgent_2001_1')
+            assert ['order_flag',2001,1] in r['events'],r
+        assert sql("SELECT agent_bought FROM orders_list WHERE id=2001")=='1'
+        assert sql("SELECT is_agent FROM users WHERE userid=2001")==role
+        cases.append('order_agent_callback_namespace_and_idempotent_desired_state')
 
 
         sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")

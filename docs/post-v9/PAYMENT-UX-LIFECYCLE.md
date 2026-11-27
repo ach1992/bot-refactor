@@ -53,8 +53,8 @@ checkout/message projection and the merchant configuration workflow.
 
 ## Message ownership and recovery
 
-`payment_message_refs` is the single customer projection registry, with a
-semantic purpose (`selector`, `invoice`, `status`, `receipt`) and exact
+`payment_message_refs` is the shared payment projection registry, with an explicit
+semantic purpose (`selector`, `invoice`, `status`, `receipt`, `staff`) and exact
 owned chat/message identity. The existing payment session lease serializes
 message promotion, navigation retirement and projection. No database
 transaction is held across a Telegram edit. Selector retirement checks
@@ -82,6 +82,17 @@ replacement. Status requests from retained evidence use the active invoice
 or status view when available; a new explicit request has a durable
 update cursor before a new send. No repeated processing of the same update
 may blindly resend an unknown result.
+
+A staff projection reference is created only from an exact original
+receipt target and is never a customer selector or invoice. Each
+recipient/message has its own acknowledged digest, known-missing
+retirement and retry deadline; a failed or removed staff message does
+not force repeated edits of healthy recipients. Recheck current staff
+authorization and the original payment state under the existing target
+lease. Unknown and rate-limited results are not acknowledgements.
+Historical aggregate staff digests do not acknowledge a new per-target
+projection. No schema expansion, duplicate receipt report or new
+worker is needed.
 
 A recorded Wallet debit or receipt credit is not proof of delivery. Use the
 original command and service completion evidence to distinguish pending

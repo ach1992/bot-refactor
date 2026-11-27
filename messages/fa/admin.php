@@ -531,7 +531,6 @@ return [
         'order_management.awaiting_order_remark_only.message.f8c9916b9c' => '⚠️ تعداد نتایج زیاد است. لطفاً ریمارک دقیق‌تری وارد کنید.',
         'order_management.awaiting_order_remark_only.message.45a8b2af73' => '❌ خطا: داده‌های callback خیلی طولانی هستند.',
         'order_management.awaiting_order_remark_only.message.e02c72df1d' => '👤 چند سفارش با این remark یافت شد. لطفاً یکی از userID‌ها را انتخاب کنید:',
-        'order_management.awaiting_order_remark_only.message.b345c0eb1e' => '❌ خطایی در ارسال پیام رخ داد. لطفاً دوباره تلاش کنید.',
         'order_management.awaiting_order_remark_only.message.7ebcf50a27' => '❌ خطا: ریمارک موقت نامعتبر است.',
         'order_management.awaiting_order_remark_only.message.d11ef21837' => '❌ سفارشی با این مشخصات پیدا نشد.',
         // order_management.show_order_management_panel
@@ -785,7 +784,6 @@ return [
     'manual_payment' => [
         'api_payment.currency_rial' => 'ریال',
         'api_payment.currency_toman' => 'تومان',
-        'api_payment.report' => ['text' => "📋 گزارش بررسی پرداخت\n📎 شناسه پیگیری: <code>{reference}</code>\n🎫 شناسه عددی: <code>{userId}</code>\n💰 مبلغ: {amount} {unit}\n💳 روش پرداخت: {method}\n🔎 مرجع بررسی: <code>{evidence}</code>\n🧾 موضوع: {subject}\n📋 نتیجه: {status}", 'parameters' => ["reference", "userId", "amount", "unit", "method", "evidence", "subject", "status"]],
         'api_payment.code_used' => 'کد گیفت‌کارت طبق API قبلاً مصرف شده است.',
         'api_payment.code_revoked' => 'کد گیفت‌کارت طبق API باطل شده است.',
         'api_payment.code_expired' => 'کد گیفت‌کارت طبق API منقضی شده است.',
@@ -1324,7 +1322,6 @@ return [
         'config.calculate_sales_between_dates.message.28ec14e2c0' => '</code> برابر با <b>',
         'config.calculate_sales_between_dates.text.9944ee4dd6' => '</b> تومان است.' . "\n" . '' . "\n" . '',
         'config.calculate_sales_between_dates.text.dd92eb2ae0' => '🧾 تعداد پرداخت‌های موفق در این بازه: <b>',
-        'config.calculate_sales_between_dates.message.0108e71350' => '❌ عملیات لغو شد.',
         // config.get_admins_keys
         'config.get_admins_keys.button.bc56086ddd' => '➕ افزودن ادمین',
         // config.get_user_info_keys
