@@ -397,6 +397,7 @@ REQUIRED_SCENARIOS = {
         "unified_method_issue_exact_owner_and_retained_invoice",
         "prompt_reuse_and_exact_cancel_no_financial_cancellation",
         "chronological_evidence_feedback_exact_ack_retires_only_previous_prompt",
+        "owner_waiting_copy_survives_receipt_state_projection",
         "same_receipt_status_and_separate_actual_credit_notification",
         "definite_receipt_target_loss_explicit_recovery_no_blind_replay",
         "draft_cancel_retires_selector_only",

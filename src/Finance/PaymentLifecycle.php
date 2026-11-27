@@ -823,6 +823,9 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         $title=achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.aa6e41205d');
     $safe = static fn($v) => htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     $amount = number_format((int)($pay['price'] ?? 0));
+    $waitingGuidance=achbotManualTypedGiftAttempt($attempt??[])?
+        achbotMessage('payment.payment_lifecycle.gift_waiting_guidance'):
+        achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.d5b12a8ef5');
     $next = match ($state) {
         'service_superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.service_superseded_next'),
         'expired' => achbotPayUxManualProvider((string)($attempt['provider']??''))
@@ -831,7 +834,7 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         'awaiting_receipt' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.4bca689fc3'),
         'superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.c0ee0533a8'),
         'declined' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.b2948cf010'),
-        'receipt_review' => achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.d5b12a8ef5'),
+        'receipt_review' => $waitingGuidance,
         'receipt_monitoring'=>achbotMessage('payment.payment_lifecycle.receipt_monitoring_next'),
         'receipt_manual'=>achbotMessage('payment.payment_lifecycle.receipt_manual_next'),
         'receipt_verifying'=>achbotMessage('payment.payment_lifecycle.receipt_verifying_next'),
@@ -842,6 +845,11 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         'needs_review' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.f1092775b2'),
         default => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.5e55076dd5'),
     };
+    // The Owner's established review-time wording remains visible in
+    // ordinary waiting states after the state-specific projection split.
+    // Do not promise this timing for invalid, uncertain or final outcomes.
+    if (in_array($state,['receipt_monitoring','receipt_manual','receipt_verifying'],true))
+        $next.="\n".$waitingGuidance;
     if ($state==='payment_recorded' && $outcome!==null) {
         $next=match ($outcome) {
             'service_pending'=>achbotMessage('payment.payment_lifecycle.progress_pending'),

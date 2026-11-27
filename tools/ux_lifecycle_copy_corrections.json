@@ -186,6 +186,10 @@
       "before": null,
       "after": "📥 کد گیفت‌کارت دریافت شد."
     },
+    "payment.payment_lifecycle.gift_waiting_guidance": {
+      "before": null,
+      "after": "⏳ درخواست در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد."
+    },
     "payment.payment_lifecycle.hosted_awaiting_next": {
       "before": null,
       "after": "برای پرداخت از دکمه همین فاکتور استفاده کنید. اگر قبلاً پرداخت کرده‌اید، وضعیت سفارش را بررسی کنید."

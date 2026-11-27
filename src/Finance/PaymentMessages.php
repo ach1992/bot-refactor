@@ -348,8 +348,9 @@ function achbotPayUxProjection(mysqli $db,array $pay,?array $attempt,string $pur
 }
 
 /** Once the customer has an acknowledged receipt status, old bot-owned
- * payment instructions are disposable. Keep all SQL evidence. A definite
- * deletion failure can be sanitized in place; no new message is sent. */
+ * payment instructions are disposable. Keep all SQL evidence. An
+ * unacknowledged deletion may be sanitized on the same exact target,
+ * respecting rate limits; no new message is sent. */
 function achbotPayUxRetireObsoleteInstruction(mysqli $db,array $ref): string {
     try {$reply=delMessage((int)$ref['message_id'],(int)$ref['chat_id']);}
     catch (Throwable $ignored) {$reply=null;}

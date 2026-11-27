@@ -81,8 +81,9 @@ An acknowledged receipt status (`receipt_view`) is the single mutable
 customer view for admitted evidence. The original receipt acknowledgement
 journal can establish its identity. Customer-authored input, staff evidence,
 and independent result notices remain separate. After receipt admission the
-old instructions are retired by verified identity, or sanitized if deletion
-is definitively rejected; never delete the human receipt. Closed invoices
+old instructions are retired by verified identity; if deletion is not
+acknowledged, the same obsolete target may be sanitized in place without
+a replacement send, respecting rate limits. Never delete the human receipt. Closed invoices
 preserve original financial facts in storage, not obsolete destinations in
 customer messages. Hosted gateways project the original guarded payment URL
 only while actionable. The same renderer serves explicit status requests
@@ -106,7 +107,9 @@ retirement and retry deadline; a failed or removed staff message does
 not force repeated edits of healthy recipients. Recheck current staff
 authorization and the original payment state under the existing target
 lease. Unknown and rate-limited results are not acknowledgements.
-Normal API monitoring is distinct from exceptional review. Staff retain
+Normal API monitoring is distinct from exceptional review. The established
+3/30-minute waiting guidance remains unchanged in ordinary receipt waiting
+views; invalid, uncertain and final outcomes use their own truthful status. Staff retain
 currently admissible manual actions and the actual review-case link. A persisted
 external evidence operation fences the negative decision; the renderer and
 server-side rejection guard share this predicate. Delayed first staff delivery

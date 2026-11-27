@@ -20,7 +20,7 @@ File placement does not authorize a recipient. Existing actor/owner checks and e
   retaining original technical timestamps and log evidence.
 - Do not stack emoji, decorate both ends of a heading, or add emoji to date words, units, continuation fragments, URLs or data labels indiscriminately. A flag or joined emoji is one glyph and must remain intact.
 - Telegram text and captions use HTML, escaping dynamic values once. Buttons and callback alerts remain plain text. Use `<b>` for headings/important amounts and `<code>` for copyable IDs/addresses only in HTML messages. Many entries are fragments; check the complete message before changing tags. See [Telegram presentation](../docs/post-v9/TELEGRAM-PRESENTATION.md) for shared rendering.
-- Keep existing wording unless clarity/privacy requires a reviewed correction. A payment or delivery with an unknown result remains under review; never imply confirmed success, rollback or refund without evidence.
+- Keep Owner-approved wording and intentional deterrence/expectation-setting messages unchanged, including the five-subscription warning, the 3/30-minute review guidance and receipt/referral warnings. Preserve their use in applicable live presentation paths, not just their catalog values. Do not infer a new hard limit, SLA or automatic enforcement from such copy. Any change to established visible wording or formatting requires the Owner’s specific approval of the exact before/after and reason; semantic sharing with unchanged output is allowed. A payment or delivery with an unknown result remains under review; never imply confirmed success, rollback or refund without evidence.
 
 ## Runtime API and evidence
 

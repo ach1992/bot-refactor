@@ -386,6 +386,12 @@ def main():
                 result(mode,'issue',pid,method='gift_card',api=True)
                 code=evidence.fixture_gift_code(mode+'-recover-typed-gift')
                 assert result(mode,'admit',pid,method='gift_card',file=code,api=True)
+                # Preserve the exact established typed-gift waiting line
+                # in the real receipt-admitted customer delivery.
+                customer=result(mode,'report',pid,report=notice(pid,1001),api=True)
+                waiting='⏳ درخواست در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.'
+                assert customer['status']=='acknowledged' and len(customer['sends'])==1,customer
+                assert customer['sends'][0]['args'][0].count(waiting)==1,customer
                 recovered=result(mode,'review',pid,callback=f'attentionReceipt_{pid}',api=True)
                 assert len(recovered['sends'])==1 and recovered['sends'][0]['kind']=='message' and code in recovered['sends'][0]['args'][0],recovered
                 assert sql(f'SELECT state FROM pays WHERE id={pid}')=='have_sent'

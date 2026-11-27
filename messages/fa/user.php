@@ -536,6 +536,7 @@ return [
         'payment_lifecycle.pay_ux_status_text.text.c7ccf032ac' => '🧾 فاکتور در انتظار پرداخت است.',
         'payment_lifecycle.pay_ux_status_text.text.8b1195f62f' => 'پرداخت جدید انجام ندهید. اگر قبلاً وجهی پرداخت کرده‌اید، همان پرداخت را برای بررسی ارسال کنید. پس از بسته‌شدن درخواست، مبلغ تأییدشده به کیف پول شما اضافه می‌شود.',
         'payment_lifecycle.gift_received' => '📥 کد گیفت‌کارت دریافت شد.',
+        'payment_lifecycle.gift_waiting_guidance' => '⏳ درخواست در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.',
         'payment_lifecycle.gift_not_verified' => '⚠️ اعتبار کد گیفت‌کارت تأیید نشد.',
         'payment_lifecycle.gift_not_verified_next' => 'کد ثبت‌شده معتبر تشخیص داده نشد. برای بررسی همین سفارش با پشتیبانی هماهنگ کنید؛ دوباره پرداخت نکنید.',
         'payment_lifecycle.receipt_uncertain' => '⚠️ نتیجه بررسی پرداخت هنوز مشخص نیست.',
