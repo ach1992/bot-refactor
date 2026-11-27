@@ -495,16 +495,16 @@ function achbotPayUxHostedAttentionElapsed(mysqli $db,int $payId): bool {
  */
 require_once __DIR__.'/GatewayRules.php';
 function achbotPayUxAudienceModes(): array {
-    return ['all'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.15270886ea'),'agents'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.452a2d6fed'),'non_agents'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.8b3e917f90'),
+    return ['all'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.15270886ea'),'agents'=>\achbotMessage('labels.labels.audience.label.452a2d6fed'),'non_agents'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.8b3e917f90'),
             'buyers'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.446e7017e1'),'non_buyers'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.711a7d07d3'),
             'has_active_order'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.08f38edd68'),
             'no_active_order'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.3310f2a1e3'),'off'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.29dbbef63d')];
 }
 function achbotPayUxAudienceMethods(): array {
     return [
-        'nowpayments'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.n_o_w_payments.83db3cb125'),'zarinpal'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.7d213c0bc4'),'nextpay'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.d5f4cc2d6e'),
-        'bank_transfer'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.64c20e2b45'),'gift_card'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.3904ef0f3d'),
-        'manual_usdt'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.4fafcb549d'),'manual_trx'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.349ece736f'),'wallet'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212')
+        'nowpayments'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.n_o_w_payments.83db3cb125'),'zarinpal'=>\achbotMessage('automatic_gateway_review.provider_zarinpal'),'nextpay'=>\achbotMessage('payment.payment_lifecycle.pay_ux_audience_methods.text.d5f4cc2d6e'),
+        'bank_transfer'=>\achbotMessage('automatic_gateway_review.provider_bank_transfer'),'gift_card'=>\achbotMessage('manual_payment.receipt_helpers.manual_label.text.3904ef0f3d'),
+        'manual_usdt'=>\achbotMessage('manual_payment.receipt_helpers.manual_label.text.2f1fd66193'),'manual_trx'=>\achbotMessage('manual_payment.receipt_helpers.manual_label.text.ea9faa7b63'),'wallet'=>\achbotMessage('labels.wallet')
     ];
 }
 /** Current exact settings row under the existing owner/setting lock order.
@@ -712,15 +712,36 @@ function achbotPayUxState(array $pay, ?array $attempt): string {
     if ($state === 'declined') return 'declined';
     if (in_array($state, ['paid','approved','auto_cart_approved',
                           'paid_with_wallet'],true)) return 'payment_recorded';
-    if ($state === 'have_sent' || $stage === 'receiving' ||
-        ($state==='service_superseded' && $stage==='review' && achbotPayUxManualProvider((string)($attempt['provider']??'')))) return 'receipt_review';
+    $provider=(string)($attempt['provider']??'');
+    if ($state==='have_sent' ||
+        ($state==='service_superseded' && $stage==='review' && achbotPayUxManualProvider($provider))) {
+        return match($attempt['evidence_state']??null) {
+            'invalid_code'=>'receipt_invalid',
+            'dispatched','uncertain'=>'receipt_uncertain',
+            // Pending review has one customer meaning, regardless of how
+            // the original evidence is checked or whether the API is available.
+            default=>'receipt_review'
+        };
+    }
+    // Ordinary merchant progress is not an exceptional/manual-review
+    // outcome, and does not re-open a hosted payment link.
+    if (achbotPayUxHostedProvider($provider) && $state==='pending' &&
+        in_array($stage,['pending','review'],true)) {
+        $status=(string)($attempt['provider_status']??'');
+        $observed=$pay['projection_hosted_observation']??null;
+        if (in_array($status,['confirming','confirmed','sending'],true) &&
+            ($observed===null || in_array($observed,['waiting','confirming','confirmed','sending'],true)))
+            return 'hosted_confirming';
+        if ($stage==='pending' && in_array($status,['','waiting','pending'],true) &&
+            !empty($attempt['payment_id']) && $observed==='waiting')
+            return 'hosted_waiting';
+    }
     if ($stage === 'review' || $stage === 'checking' || $stage === 'fulfilling' ||
         $stage === 'creating') return 'needs_review';
     if ($state === 'service_superseded') return 'service_superseded';
     if ($state === 'expired' || $state === 'mismatched_plan' ||
         $state === 'expired_have_sent') return 'expired';
     // Issued deadlines are sealed, not recomputed from current settings.
-    $provider=(string)($attempt['provider']??'');
 
     if (achbotPayUxManualProvider($provider) && $stage==='pending') {
         if (!achbotPayUxReceiptOpen($attempt)) return 'expired';
@@ -782,7 +803,13 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         'expired' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.a1026d7b85'),
         'superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.74adf2adfe'),
         'declined' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.f8f1a7f2f5'),
-        'receipt_review' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.0a0cf2fd64'),
+        'receipt_review' =>
+            achbotMessage(achbotManualTypedGiftAttempt($attempt??[])?
+                'payment.payment_lifecycle.gift_received':'payment.payment_lifecycle.pay_ux_status_text.text.0a0cf2fd64'),
+        'receipt_invalid'=>achbotMessage('payment.payment_lifecycle.gift_not_verified'),
+        'receipt_uncertain'=>achbotMessage('payment.payment_lifecycle.receipt_uncertain'),
+        'hosted_waiting'=>achbotMessage('payment.payment_lifecycle.hosted_waiting'),
+        'hosted_confirming'=>achbotMessage('payment.payment_lifecycle.hosted_confirming'),
         'awaiting_receipt' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.8c253d0486'),
         'needs_review' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.aa6e41205d'),
         'payment_recorded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.7873970550'),
@@ -795,6 +822,9 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         $title=achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.aa6e41205d');
     $safe = static fn($v) => htmlspecialchars((string)$v,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
     $amount = number_format((int)($pay['price'] ?? 0));
+    $waitingGuidance=achbotManualTypedGiftAttempt($attempt??[])?
+        achbotMessage('payment.payment_lifecycle.gift_waiting_guidance'):
+        achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.d5b12a8ef5');
     $next = match ($state) {
         'service_superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.service_superseded_next'),
         'expired' => achbotPayUxManualProvider((string)($attempt['provider']??''))
@@ -803,7 +833,10 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         'awaiting_receipt' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.4bca689fc3'),
         'superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.c0ee0533a8'),
         'declined' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.b2948cf010'),
-        'receipt_review' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.d5b12a8ef5'),
+        'receipt_review' => $waitingGuidance,
+        'receipt_invalid'=>achbotMessage('payment.payment_lifecycle.gift_not_verified_next'),
+        'receipt_uncertain'=>achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.f1092775b2'),
+        'hosted_waiting','hosted_confirming'=>achbotMessage('payment.payment_lifecycle.hosted_progress_next'),
         'payment_recorded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.368ad58967'),
         'needs_review' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.f1092775b2'),
         default => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.5e55076dd5'),
@@ -814,21 +847,21 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
             'completed'=>achbotMessage('payment.payment_lifecycle.progress_completed'),
             'delivery_unconfirmed'=>achbotMessage('payment.payment_lifecycle.progress_delivery_unconfirmed'),
             'wallet_credited'=>achbotMessage('payment.payment_lifecycle.progress_wallet_credited'),
-            'resolved'=>achbotMessage('payment.payment_lifecycle.progress_resolved'),
+            'resolved_refunded'=>achbotMessage('payment.payment_lifecycle.progress_resolved_refunded'),
+            'resolved_closed'=>achbotMessage('payment.payment_lifecycle.progress_resolved_closed'),
             default=>achbotMessage('payment.payment_lifecycle.progress_unverified'),
         };
     }
     if ($state==='awaiting_payment' && achbotPayUxHostedProvider((string)($attempt['provider']??'')))
-        $next=achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.0c4a9612f7').
-            achbotMessage('gateway.gateway_initiation.mark_checkout_uncertain.message.0a2e0bc7bc');
-    if ($attempt!==null && in_array($state,['receipt_review','needs_review'],true) &&
+        $next=achbotMessage('payment.payment_lifecycle.hosted_awaiting_next');
+    if ($attempt!==null && (str_starts_with($state,'receipt_') || $state==='needs_review') &&
         in_array($pay['state']??null,['expired','service_superseded'],true))
         $next.="\n".achbotMessage('payment.payment_lifecycle.pay_ux_status_text.service_superseded_next');
     return "<b>".$safe($title)."</b>\n".achbotPayUxReference($pay)
         .\achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.d251ffde03').$safe($subject).\achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.20714482be', ['amount' => $amount]).$safe($next).
         ($attempt!==null && achbotCreditMethodDefinition((string)($attempt['provider']??''))!==null
             ?achbotMessage('payment.pre_payment.text.c8886e46d5').$safe(achbotCreditMethodLabel($attempt['provider'])):'').
-        achbotPayUxDeadlineText($attempt??[]);
+        (in_array($state,['awaiting_payment','awaiting_receipt'],true) && achbotPayUxInvoiceOpen($attempt??[]) ? achbotPayUxDeadlineText($attempt??[]) : '');
 }
 
 /** Invoice deadline is an absolute time, never a new destination or quote. */
@@ -836,7 +869,7 @@ function achbotPayUxDeadlineText(array $attempt): string {
     $deadline=achbotPayUxInvoiceDeadline($attempt);
     if ($deadline<=0) return '';
     $date=(new DateTimeImmutable('@'.$deadline))->setTimezone(new DateTimeZone('Asia/Tehran'));
-    return "\n".achbotMessageHtml('payment.payment_lifecycle.invoice_deadline',['deadline'=>$date->format('Y-m-d H:i').' (IR)']);
+    return "\n<b>".achbotMessageHtml('payment.payment_lifecycle.invoice_deadline',['deadline'=>$date->format('Y-m-d H:i').' (IR)']).'</b>';
 }
 
 function achbotPayUxStatusKeyboard(string $hash,?array $pay=null,?array $attempt=null): string {
@@ -856,7 +889,7 @@ function achbotPayUxStatusKeyboard(string $hash,?array $pay=null,?array $attempt
         $rows[] = [['text'=>achbotMessage($previous?'payment.payment_lifecycle.previous_payment_review':
             'payment.payment_lifecycle.pay_ux_status_keyboard.button.9e25b02e86'),'callback_data'=>'ps_'.$hash]];
     }
-    $rows[] = [['text'=>\achbotMessage('payment.payment_lifecycle.pay_ux_status_keyboard.button.1121ffbf88'),'callback_data'=>!$draftClosed && preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)?'ph_'.$hash:'mainMenu']];
+    $rows[] = [['text'=>\achbotMessage('labels.home'),'callback_data'=>!$draftClosed && preg_match('/^[A-Za-z0-9_-]{1,50}$/D',$hash)?'ph_'.$hash:'mainMenu']];
     return json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE);
 }
 

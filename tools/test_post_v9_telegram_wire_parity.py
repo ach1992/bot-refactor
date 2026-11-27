@@ -139,6 +139,27 @@ def compare_hygiene(before, after):
         assert rows==after[name],("unapproved_hygiene_wire_delta",name)
     return dict(Counter(method for rows in after.values() for method,_ in rows))
 
+# #236 changes a bounded set of exact current call producers. Keep both
+# earlier proofs, then require the explicit candidate delta against v0.12.0.
+UX=json.loads((ROOT / "tools/ux_lifecycle_wire_contract.json").read_text())
+
+def compare_ux(before, after):
+    assert before.keys()==after.keys()
+    changes=set()
+    for name in sorted(before):
+        previous,current=before[name],after[name]
+        if previous==current:
+            continue
+        changes.add(name)
+        contract=UX["changes"].get(name)
+        assert contract is not None,("unapproved_ux_wire_delta",name)
+        assert (len(previous),len(current),digest(previous),digest(current))==(
+            contract["before_count"],contract["after_count"],
+            contract["before_sha256"],contract["after_sha256"]),(
+            "exact_ux_wire_delta_changed",name)
+    assert changes==set(UX["changes"]),"missing_declared_ux_wire_delta"
+    return dict(Counter(method for rows in after.values() for method,_ in rows))
+
 def main():
     def accepted(name):
         return (name.endswith(".php") and not name.startswith("messages/fa/")
@@ -160,7 +181,11 @@ def main():
         ["git","show",HYGIENE["baseline"]+":"+name],cwd=ROOT,text=True)
         for name in integrated_names if accepted(name)})
     compare_accepted(previous,integrated)
-    total = compare_hygiene(integrated,current)
+    hygiene = canonical({name:subprocess.check_output(
+        ["git","show",UX["baseline"]+":"+name],cwd=ROOT,text=True)
+        for name in current})
+    compare_hygiene(integrated,hygiene)
+    total = compare_ux(hygiene,current)
 
     # Mutate an actual current call, not a hand-written parser fixture.
     bot = now["bot.php"]
@@ -179,18 +204,18 @@ def main():
         assert replacement != bot
         mutation = dict(now, **{"bot.php": replacement})
         try:
-            compare_hygiene(integrated, canonical(mutation))
+            compare_ux(hygiene, canonical(mutation))
         except AssertionError:
             pass
         else:
             raise AssertionError("wire_mutation_not_detected")
     mutation = dict(now, **{"bot.php": bot.replace(
         "<?php", "<?php\n// sendMessage('inactive comment');", 1)})
-    assert compare_hygiene(integrated, canonical(mutation)) == total
+    assert compare_ux(hygiene, canonical(mutation)) == total
     print(json.dumps({"complete": True, "status": "PASS", "baseline": BASE,
         "calls": total, "cases": sum(total.values()),
         "exact_unchanged_paths_and_pinned_deltas": True,
-        "changed_paths": len(AUDIT["changes"]), "negative_fixtures": 4,
+        "changed_paths": len(AUDIT["changes"]), "ux_changed_paths":len(UX["changes"]), "negative_fixtures": 4,
         "network_calls": 0}))
 
 

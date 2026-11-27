@@ -53,8 +53,8 @@ if(($data=="editCustomPlan" || (isset($update->message->text) && !isset($update-
             exit();
         }
     }
-    $gbPrice=number_format($botState['gbPrice']??0) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
-    $dayPrice=number_format($botState['dayPrice']??0) . \achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c');
+    $gbPrice=number_format($botState['gbPrice']??0) . \achbotMessage('labels.currency_toman_suffix');
+    $dayPrice=number_format($botState['dayPrice']??0) . \achbotMessage('labels.currency_toman_suffix');
 
     $keys = json_encode(['inline_keyboard'=>[
         [

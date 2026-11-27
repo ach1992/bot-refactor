@@ -182,7 +182,7 @@ if ($isStart) {
         $inviterMsg = \achbotMessage('bot.bot.webhook_ingress_authenticated.inviter_msg.0a64da8ef5')
             . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.750b1aaad1') . number_format($actualReward) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
             . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.87d0794e8e') . number_format($oldWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.81a62ff6c6')
-            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
+            . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.447278518a') . number_format($newWallet) . \achbotMessage('labels.currency_toman_suffix');
         sendMessage($inviterMsg, null, 'html', $inviter);
     }
     $text = '/start';
@@ -252,24 +252,26 @@ if (($isStart??false) || (!isset($update->callback_query) && ($text==='/start' |
 
     require_once __DIR__.'/src/Telegram/UserProfile.php';
     achbotRefreshUserProfile($connection, $update ?? null, $menuActor);
-    if (!in_array($menuRow['step'],['','none'],true))
-        \AchBot\Telegram\Conversation\removeReplyKeyboard(\achbotMessage('legacy_messages.operation_canceled'));
+    $abandoned=\AchBot\Telegram\Conversation\abandonedEditorPresentation($menuRow,$menuActor);
+    $home=achbotCurrentMessage('start_message');
+    if ($abandoned==='reply')
+        \AchBot\Telegram\Conversation\removeReplyKeyboard(achbotMessage('legacy_messages.operation_canceled'));
+    elseif ($abandoned==='inline') $home=achbotMessage('legacy_messages.operation_canceled')."\n\n".$home;
 
     if ($customerShortcut===null && $data==='navHome') {
         // This button is produced only for disposable catalogue/list screens.
-        if (\AchBot\Telegram\Conversation\verifiedCallback($update,$menuActor,(int)$message_id))
-            \AchBot\Telegram\Conversation\replaceTransient($menuActor,(int)$message_id,achbotCurrentMessage('start_message'),getMainKeys());
-        else sendMessage(achbotCurrentMessage('start_message'),getMainKeys(),'HTML');
+        if ($abandoned!=='inline' && \AchBot\Telegram\Conversation\verifiedCallback($update,$menuActor,(int)$message_id))
+            \AchBot\Telegram\Conversation\replaceTransient($menuActor,(int)$message_id,$home,getMainKeys());
+        else sendMessage($home,getMainKeys(),'HTML');
     } elseif ($customerShortcut===null && isset($data) && ($data == "mainMenu" || $data == "evidenceHome" || $paymentHome)) {
         // Legacy Home buttons can be on untracked financial/support evidence.
         // Always send the actor's own menu; never edit/delete the source or
         // read another customer's invoice merely to navigate Home.
-        sendMessage(\achbotCurrentMessage('start_message'), getMainKeys(), 'HTML');
+        sendMessage($home, getMainKeys(), 'HTML');
 
     } else {
 
         $isFirstStart=false;
-        $home=\achbotCurrentMessage('start_message');
         if ($from_id != $admin && empty($menuRow['first_start'])) {
             require_once __DIR__.'/src/Telegram/UserEvents.php';
             $reportKeys=json_encode(['inline_keyboard'=>[[[
@@ -311,8 +313,15 @@ if(preg_match('/^sendMessageToUser(\d+)/',$data,$match) && ($from_id == $admin |
 }
 if(isset($update->message) && !isset($update->callback_query) && preg_match('/^sendMessageToUser(\d+)$/D',$userInfo['step'],$match) && ($from_id == $admin || $userInfo['isAdmin'] == true) && $text != \achbotMessage('legacy_buttons.cancel')){
     if (!setUser()) return;
-    sendMessage($text,null,null,$match[1]);
-	sendMessage(\achbotMessage('bot.bot.webhook_ingress_authenticated.message.21095e090c', ['match_1' => $match[1]]), $removeKeyboard, "html");
+    try {$response=sendMessage($text,null,null,$match[1]);}
+    catch (Throwable $ignored) {$response=null;}
+    $result=\AchBot\Telegram\Response\messageDeliveryOutcome($response,(string)(int)$match[1])['result'];
+    $feedback=match($result) {
+        'acknowledged'=>achbotMessageHtml('bot.bot.webhook_ingress_authenticated.message.21095e090c',['match_1'=>$match[1]]),
+        'rejected'=>achbotMessageHtml('bot.bot.direct_message_rejected',['user'=>$match[1]]),
+        default=>achbotMessageHtml('bot.bot.direct_message_unknown',['user'=>$match[1]])
+    };
+    sendMessage($feedback,$removeKeyboard,'HTML');
     sendMessage(\achbotCurrentMessage('reached_main_menu'), getAdminKeys(), 'HTML');
     return;
 }
@@ -390,8 +399,8 @@ if (in_array($data, $statOptions) && ($from_id == $admin || $userInfo['isAdmin']
     // آرایه برای عنوان‌ها
     $titles = [
         'stats_users' => \achbotMessage('bot.bot.webhook_ingress_authenticated.text.d4b423ba4f'),
-        'stats_orders' => \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2ef1b34354'),
-        'stats_sales' => \achbotMessage('bot.bot.webhook_ingress_authenticated.text.adb2cb111d'),
+        'stats_orders' => \achbotMessage('labels.admin_subscription_stats'),
+        'stats_sales' => \achbotMessage('labels.admin_sales_stats'),
     ];
 
     // انتخاب عنوان بر اساس کلید
@@ -557,7 +566,7 @@ if (is_string($userInfo['step']??null) &&
     sendMessage(\achbotMessage('bot.bot.gateway_audience_settings.message.397d3e91b6').$text.\achbotMessage('bot.bot.gateway_audience_settings.message.c5bdeadc6b'),
         json_encode(['inline_keyboard'=>[
             [['text'=>\achbotMessage('bot.bot.gateway_audience_settings.button.9b026e4934'),'callback_data'=>'gr|s|'.$sourceId]],
-            [['text'=>\achbotMessage('bot.bot.gateway_audience_settings.button.1fe862ea18'),'callback_data'=>'gr|x|'.$sourceId]]
+            [['text'=>\achbotMessage('labels.dismiss'),'callback_data'=>'gr|x|'.$sourceId]]
         ]],JSON_UNESCAPED_UNICODE), 'HTML');
     return;
 }
@@ -804,81 +813,100 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
 }
 
 if($data=="inviteFriends"){
-    $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'INVITE_BANNER_TEXT'");
-    $stmt->execute();
-    $inviteText = $stmt->get_result()->fetch_assoc()['value'];
-
-    if($inviteText != null){
-        require_once __DIR__.'/src/Presentation/Text.php';
-        $link=\AchBot\Presentation\Text\inviteStartLink($botUsername??null,$from_id);
-        if ($link==='') {
-            error_log('achbot_invite_username_unavailable');
-            alert(\achbotMessage('bot.bot.invite_friends.alert.56fd80c6d5'));
-            return;
-        }
-        delMessage();
-        $inviteText = json_decode($inviteText, true);
-
-        $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'INVITE_BANNER_AMOUNT'");
+    $actor=(int)$from_id;
+    $source=\AchBot\Telegram\Conversation\source($update,$actor,true);
+    if (!$source || ($source->from->is_bot??false)!==true) return;
+    try {
+        $stmt = $connection->prepare("SELECT * FROM `setting` WHERE `type` = 'INVITE_BANNER_TEXT'");
         $stmt->execute();
-        $inviteAmount = number_format($stmt->get_result()->fetch_assoc()['value'] ?? 0) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
+        $inviteText = $stmt->get_result()->fetch_assoc()['value']??null;
         $stmt->close();
 
-        if($inviteText['type'] == "text"){
-            $txt = str_replace('LINK', $link, $inviteText['text']);
-            $res = sendMessage($txt, null, "HTML");
-        } else {
-            $txt = str_replace('LINK', $link, $inviteText['caption']);
-            $res = sendPhoto($inviteText['file_id'], $txt, null, "HTML");
-        }
+        if($inviteText != null){
+            require_once __DIR__.'/src/Presentation/Text.php';
+            $link=\AchBot\Presentation\Text\inviteStartLink($botUsername??null,$from_id);
+            if ($link==='') {
+                error_log('achbot_invite_username_unavailable');
+                alert(\achbotMessage('bot.bot.invite_friends.alert.56fd80c6d5'));
+                return;
+            }
+            $inviteText = json_decode($inviteText, true);
+            if (!is_array($inviteText) ||
+                !(($inviteText['type']??null)==='text' && is_string($inviteText['text']??null)) &&
+                !(($inviteText['type']??null)==='photo' && is_string($inviteText['caption']??null) &&
+                    is_string($inviteText['file_id']??null) && $inviteText['file_id']!=='')) {
+                alert(\achbotMessage('bot.bot.invite_friends.alert.56fd80c6d5'));
+                return;
+            }
 
-        $msgId = $res->result->message_id;
+            $inviteAmount=achbotReferralAmountLabel(achbotPurchaseReferralPolicyAmount($connection));
 
-        $secondText = str_replace(
-            ['{INVITE_REWARD}', '{INVITE_AMOUNT}'],
-            [$inviteReward, $inviteAmount],
-            \achbotMessage('legacy_messages.invite_second_text')
-        );
+            if($inviteText['type'] == "text"){
+                $txt = str_replace('LINK', $link, $inviteText['text']);
+                $res = sendMessage($txt, null, "HTML");
+            } else {
+                $txt = str_replace('LINK', $link, $inviteText['caption']);
+                $res = sendPhoto($inviteText['file_id'], $txt, null, "HTML");
+            }
 
-        $keyboard = json_encode([
-            'inline_keyboard' => [
-                [
-                    ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]
+            // A missing or foreign delivery acknowledgement is not a reply target.
+            // Keep the entry menu until both parts are confirmed at the actor.
+            $msgId = \AchBot\Telegram\Conversation\acknowledgedMessage($res,$actor);
+            if ($msgId===null || $msgId===$source->message_id) return;
+
+            $secondText = str_replace(
+                ['{INVITE_REWARD}', '{INVITE_AMOUNT}'],
+                [$inviteReward, $inviteAmount],
+                \achbotMessage('legacy_messages.invite_second_text')
+            );
+
+            $keyboard = json_encode([
+                'inline_keyboard' => [
+                    [
+                        ['text' => \achbotMessage('legacy_buttons.back_to_main'), 'callback_data' => "mainMenu"]
+                    ]
                 ]
-            ]
-        ]);
+            ]);
 
-        $photoPath = __DIR__ . "/affiliate.jpg";
+            $photoPath = __DIR__ . "/affiliate.jpg";
 
-        if(file_exists($photoPath) && is_readable($photoPath)){
-            $caption =
-\achbotMessage('bot.bot.invite_friends.caption.16ca7a4696', ['inviteReward' => $inviteReward]) .
-\achbotMessage('bot.bot.invite_friends.text.c14f10907e', ['inviteAmount' => $inviteAmount]);
+            if(file_exists($photoPath) && is_readable($photoPath)){
+                $caption =
+                    \achbotMessage('bot.bot.invite_friends.caption.16ca7a4696', ['inviteReward' => $inviteReward]) .
+                    \achbotMessage('bot.bot.invite_friends.text.c14f10907e', ['inviteAmount' => $inviteAmount]);
 
-            $photoFile = function_exists('curl_file_create')
-                ? curl_file_create($photoPath)
-                : new CURLFile($photoPath);
+                $photoFile = function_exists('curl_file_create')
+                    ? curl_file_create($photoPath)
+                    : new CURLFile($photoPath);
 
-            sendPhoto(
-                $photoFile,
-                $caption,
-                $keyboard,
-                "HTML",
-                $from_id,
-                $msgId
-            );
+                $details=sendPhoto(
+                    $photoFile,
+                    $caption,
+                    $keyboard,
+                    "HTML",
+                    $from_id,
+                    $msgId
+                );
+            } else {
+                $details=sendMessage(
+                    $secondText,
+                    $keyboard,
+                    "HTML",
+                    null,
+                    $msgId
+                );
+            }
+            $detailsId=\AchBot\Telegram\Conversation\acknowledgedMessage($details,$actor);
+            if ($detailsId!==null && $detailsId!==$msgId && $detailsId!==$source->message_id &&
+                \AchBot\Telegram\Conversation\verifiedCallback($update,$actor,$source->message_id)) {
+                try {delMessage($source->message_id,$actor);} catch(Throwable $ignored){}
+            }
+
         } else {
-            sendMessage(
-                $secondText,
-                $keyboard,
-                "HTML",
-                null,
-                $msgId
-            );
+            alert(\achbotMessage('bot.bot.invite_friends.alert.56fd80c6d5'));
         }
-
-    } else {
-        alert(\achbotMessage('bot.bot.invite_friends.alert.56fd80c6d5'));
+    } catch(Throwable $e) {
+        error_log('achbot_invite_navigation_deferred actor='.$actor.' class='.get_class($e));
     }
 }
 
@@ -889,7 +917,7 @@ if($data=="myInfo"){
     $totalBuys = $stmt->get_result()->num_rows;
     $stmt->close();
 
-    $myWallet = number_format($userInfo['wallet']) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c');
+    $myWallet = number_format($userInfo['wallet']) . \achbotMessage('labels.currency_toman_suffix');
 
     $keys = json_encode(['inline_keyboard'=>[
         [
@@ -1071,7 +1099,7 @@ if($data=="mainMenuButtons" && ($from_id == $admin || $userInfo['isAdmin'] == tr
 if(preg_match('/\AdelMainButton([1-9][0-9]*)\z/D',$data,$match) && ($from_id == $admin || $userInfo['isAdmin'] == true)){
     if (!achbotDeleteContentSetting($connection,(int)$from_id,(int)$admin,(int)$match[1],'main')) return;
 
-    alert(\achbotMessage('bot.bot.process_callback_query.alert.e1e7245408'));
+    alert(\achbotMessage('labels.deleted_successfully'));
     editText($message_id,\achbotMessage('bot.bot.process_callback_query.message.70afb19fd8'),getMainMenuButtonsKeys());
 }
 if($data == "addNewMainButton" && ($from_id == $admin || $userInfo['isAdmin'] == true)){
@@ -1576,7 +1604,7 @@ if(preg_match('/^wizwizdeleteserver([1-9][0-9]*)$/D',(string)$data,$match)){
         $confirmation=achbotAdminIntentIssue($connection,(int)$from_id,(int)$admin,
             'server',(int)$match[1],$update,(string)$data);
         editText($message_id,\achbotMessage('admin_settings.management.server_delete_confirm'),json_encode(['inline_keyboard'=>[
-            [['text'=>\achbotMessage('bot.bot.addserver_name.button.13159f8c74'),'callback_data'=>$confirmation],
+            [['text'=>\achbotMessage('labels.confirm_yes'),'callback_data'=>$confirmation],
              ['text'=>\achbotMessage('bot.bot.addserver_name.button.f47dddc181'),'callback_data'=>str_replace('yesDeleteServer','cancelDeleteServer',$confirmation)]]
         ]],JSON_UNESCAPED_UNICODE));
     } catch (Throwable $error) {
@@ -1641,10 +1669,12 @@ if ($text===\achbotMessage('legacy_buttons.cancel') &&
     \AchBot\Telegram\Conversation\source($update,(int)$from_id,false)) {
     $closed=\AchBot\Telegram\Conversation\transitionEditor($connection,(int)$from_id,$userInfo,update:$update);
     if ($closed===null) return;
-    $idle=in_array($closed['step'],['','none'],true);
-    \AchBot\Telegram\Conversation\removeReplyKeyboard($idle
+    $abandoned=\AchBot\Telegram\Conversation\abandonedEditorPresentation($closed,(int)$from_id);
+    $home=achbotCurrentMessage('start_message');
+    if ($abandoned==='inline') $home=achbotMessage('legacy_messages.operation_canceled')."\n\n".$home;
+    else \AchBot\Telegram\Conversation\removeReplyKeyboard($abandoned==='idle'
         ?achbotCurrentMessage('reached_main_menu'):achbotMessage('legacy_messages.operation_canceled'));
-    sendMessage(\achbotCurrentMessage('start_message'), getMainKeys(), 'HTML');
+    sendMessage($home, getMainKeys(), 'HTML');
     return;
 }
 

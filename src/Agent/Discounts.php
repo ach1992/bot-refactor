@@ -185,7 +185,7 @@ if(preg_match('/^removePercentOfAgent(?<type>Server|Plan)(?<agentId>[1-9][0-9]*)
     $info=$uid?achbotAgencyDiscountWrite($connection,(int)$from_id,$uid,$match['type']==='Server'?'servers':'plans',$match['serverId'],null):null;
     if (!$info) {alert(achbotMessage('legacy_messages.config_not_found'));return;}
     $userName=htmlspecialchars((string)$info['name'],ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
-    alert(\achbotMessage('agent.discounts.agents_list.alert.e1e7245408'));
+    alert(\achbotMessage('labels.deleted_successfully'));
     editText($message_id, str_replace("AGENT-NAME", $userName, \achbotMessage('legacy_messages.agent_discount_settings')), getAgentDiscounts($match['agentId']));
 }
 if(preg_match('/^editAgentDiscount(Server|Plan|Normal)([1-9][0-9]*)_(0|userinfo|[1-9][0-9]*)$/D',(string)$data,$match) && $agentDiscountAccess){

@@ -156,7 +156,7 @@ function achbotAdminRequestCapability(string $value): ?string {
     $groups=[
         'admin'=>'~^managePanel$~D',
         'admins'=>'~^(?:adminsList|addNewAdmin|delAdmin|adminRole\\||adminAssign\\||adminNotify\\|)~D',
-        'review'=>'~^attention(?:Inbox|Case)~D',
+        'review'=>'~^attention(?:Inbox|Case|OpenCase)~D',
         'gateway_rules'=>'~^(?:gatewayAudienceSettings|gr\\|)~D',
         'gateways'=>'~^(?:gateWays_Channels|changeGateWays|changePaymentKeys|achbotPaymentKey\\||cycleGatewayAudience_|paymentPolicy|editPaymentPolicy_)~D',
         'bot_settings'=>'~^(?:botSettings|changeBot|changeConfigRemarkType|editSupportID|editRewardChannel|editLockChannel|inviteSetting|inviteBanner|editInvite|editRewaredTime|addExemptUser|removeExempt|achbotExempt:|ic\\||achbotInstance:)~D',

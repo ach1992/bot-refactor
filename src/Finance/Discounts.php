@@ -193,9 +193,9 @@ function getDiscountCodeKeys($page = 1){
         $keys[] = [
             ['text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.7f34ceb3ad'),      'callback_data' => "wizwizch"],
             ['text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.70fad032e5'),  'callback_data' => "wizwizch"],
-            ['text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.68d7eb08ef'),  'callback_data' => "wizwizch"],
-            ['text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.d6aa12d559'), 'callback_data' => "wizwizch"],
-            ['text' => \achbotMessage('payment.discounts.get_discount_code_keys.button.59ca629220'),    'callback_data' => "wizwizch"],
+            ['text' => \achbotMessage('labels.status'),  'callback_data' => "wizwizch"],
+            ['text' => \achbotMessage('labels.edit'), 'callback_data' => "wizwizch"],
+            ['text' => \achbotMessage('labels.delete'),    'callback_data' => "wizwizch"],
         ];
 
         while($row = $list->fetch_assoc()){
@@ -209,7 +209,7 @@ function getDiscountCodeKeys($page = 1){
             if($row['type'] == 'percent'){
                 $amountText = $row['amount'] . "%";
             }else{
-                $amountText = number_format($row['amount']) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
+                $amountText = number_format($row['amount']) . \achbotMessage('labels.currency_toman_suffix');
             }
 
             $isExpiredDate   = ($expireDate != 0 && $expireDate < $now);

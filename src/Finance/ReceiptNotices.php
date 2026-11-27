@@ -9,7 +9,7 @@ require_once __DIR__.'/FollowupOutbox.php';
 /** Admission and the original delivery intents have ONE SQL commit.
  * No staff/customer transport result is a financial admission prerequisite. */
 function achbotManualAdmitReceipt(mysqli $db,array $original,string $method,int $actor,
-    string $evidence,string $caption,string $keys,string $botUsername,
+    string $evidence,string $caption,string $keys,
     ?string $expectedMode=null,?string $expectedStep=null,?array $screen=null): bool {
     $id=(int)$original['id'];
     $opened=false;
@@ -74,14 +74,8 @@ function achbotManualAdmitReceipt(mysqli $db,array $original,string $method,int 
         $primary=(int)($GLOBALS['admin']??0);
         if ($primary<=0) throw new RuntimeException('receipt_admission_owner_missing');
         $stage='receipt_admitted';$fingerprint=$proof['fingerprint'];
-        $customerText=$pay['state']==='service_superseded'?achbotPayUxStatusText($pay,$a):
-            achbotManualAcknowledgement($pay,$method,$typed);
-        $customerKeys=inlineKeyboard([
-            [['text'=>achbotMessage('manual_payment.receipt_helpers.send_with_start_button.button.dcb9c20928'),
-                'callback_data'=>'ps_'.$pay['hash_id']]],
-            [['text'=>achbotMessage('legacy_buttons.start_bot'),
-                'url'=>'https://t.me/'.$botUsername.'?start=mainMenu']]
-        ]);
+        $customerText=achbotPayUxStatusText($pay,$a);
+        $customerKeys=achbotPayUxStatusKeyboard((string)$pay['hash_id'],$pay,$a);
         achbotFollowupStoreLocked($db,$id,null,$stage,'customer','send',(string)$actor,null,$fingerprint,
             ['text'=>$customerText,'keys'=>$customerKeys,'mode'=>'HTML']);
         $packet=['text'=>$caption,'keys'=>$keys,'mode'=>'HTML'];
@@ -156,6 +150,14 @@ function achbotReceiptNoticeValidateLocked(mysqli $db,array $pay,array $r): ?arr
     if (!$packet) return null;
     if ($r['role']==='customer') {
         if ($r['recipient']!==(string)(int)$pay['user_id'] || isset($packet['photo'])) return null;
+        // The sealed admission packet remains evidence. Delivery renders the
+        // current status, including a decision committed before this send.
+        if ($pay['state']==='paid') {
+            require_once __DIR__.'/CheckoutRoutes.php';
+            $pay['projection_outcome']=achbotCheckoutReceiptOutcomeLocked($db,(int)$pay['id'],(int)$pay['user_id']);
+        }
+        $packet['text']=achbotPayUxStatusText($pay,$a);
+        $packet['keys']=achbotPayUxStatusKeyboard((string)$pay['hash_id'],$pay,$a);
         return $packet;
     }
     if (!achbotFollowupReceiptStaffRole($r['role']) || (string)(int)$r['recipient']!==$r['recipient'] ||
@@ -169,6 +171,14 @@ function achbotReceiptNoticeValidateLocked(mysqli $db,array $pay,array $r): ?arr
     // evidence with read-only controls, not obsolete approval actions.
     $terminal=achbotReceiptTerminalMarkupLocked($db,$pay,$a);
     if ($terminal!==null) $packet['keys']=$terminal;
+    elseif ($a['evidence_profile']!==null) {
+        // A delayed first staff ACK must not restore stale controls after
+        // an API claim or a changed evidence state.
+        require_once __DIR__.'/ApiPayments.php';
+        $label=achbotApiPaymentStatusLabel($pay,$a);
+        $packet['keys']=achbotApiPaymentReviewKeyboard($db,$pay,$a,$label,
+            achbotGatewayAttentionCaseOpen($db,(int)$pay['id']))??$packet['keys'];
+    }
     return $packet;
 }
 
@@ -179,7 +189,7 @@ function achbotReceiptNoticeFinishLocked(mysqli $db,array $pay,array $r,array $o
     $ack=$outcome['ack'];$id=(int)$pay['id'];
     if ($r['role']==='customer') {
         require_once __DIR__.'/PaymentMessages.php';
-        if (!achbotPayUxRegister($db,$id,(int)$pay['user_id'],$ack['message_id'],'receipt'))
+        if (!achbotPayUxRecordReceiptAck($db,$id,(int)$pay['user_id'],$ack['message_id'],$wirePacket))
             throw new RuntimeException('receipt_customer_ack_registration_failed');
         return;
     }
@@ -221,7 +231,7 @@ function achbotReceiptRequestView(mysqli $db,int $id,int $actor,int $updateId): 
             $keys=inlineKeyboard([[
                 ['text'=>achbotMessage('legacy_buttons.decline'),'callback_data'=>'declineAction_'.$pay['hash_id']],
                 ['text'=>achbotMessage('legacy_buttons.approve'),'callback_data'=>achbotManualApprovalCallbackData($pay)]
-            ],[['text'=>achbotMessage('automatic_gateway_review.open_case'),'callback_data'=>'attentionCase_'.$id]]]);
+            ],[['text'=>achbotMessage('automatic_gateway_review.open_case'),'callback_data'=>'attentionOpenCase_'.$id]]]);
             $packet=['text'=>$body,'keys'=>$keys,'mode'=>'HTML'];
             if ($proof['kind']==='typed')
                 $packet['text'].="\n<code>".htmlspecialchars($proof['value'],ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8').'</code>';

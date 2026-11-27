@@ -187,7 +187,7 @@ function achbotIntervalShow(mysqli $db,string $kind,?int $editMessageId=null): v
     $keys=[];
     foreach ($rows as $row) {
         $keys[]=[['text'=>\achbotMessage('plans.intervals.day_plan_settings.button.2b2966a54e'),'callback_data'=>achbotAddonOfferCallback($day?'deleteDayPlan':'deleteVolumePlan',$kind,$row)],
-            ['text'=>number_format($row['price']).\achbotMessage('plans.administration.edit_custom_plan.text.2cc98f7f7c'),'callback_data'=>achbotAddonOfferCallback($day?'changeDayPlanPrice':'changeVolumePlanPrice',$kind,$row)],
+            ['text'=>number_format($row['price']).\achbotMessage('labels.currency_toman_suffix'),'callback_data'=>achbotAddonOfferCallback($day?'changeDayPlanPrice':'changeVolumePlanPrice',$kind,$row)],
             ['text'=>(string)$row['volume'],'callback_data'=>achbotAddonOfferCallback($day?'changeDayPlanDay':'changeVolumePlanVolume',$kind,$row)]];
         $scope=achbotAddonScopeRow($row);
         $keys[]=[['text'=>achbotAddonAdminScopeLabel($scope),
@@ -252,7 +252,7 @@ if($achbotIntervalMessage && preg_match('/^changeVolumePlanPrice([1-9][0-9]*)_[a
     $price=achbotIntervalPrice($text);
     if ($price===null) {sendMessage(\achbotMessage('admin_settings.management.interval_price'),$cancelKey, 'HTML');return;}
     if (!achbotIntervalWrite($connection,"UPDATE `increase_plan` SET `price` = ? WHERE `id` = ?",'ii',[$price,(int)$match[1]],true)) {achbotIntervalWriteNotice();return;}
-    sendMessage(\achbotMessage('plans.intervals.add_new_volume_plan.message.76731ef62b'),$removeKeyboard, 'HTML');
+    sendMessage(\achbotMessage('plans.intervals.add_new_day_plan.message.d03501095b'),$removeKeyboard, 'HTML');
     achbotIntervalShow($connection,'volume');
 }
 if(preg_match('/^changeVolumePlanVolume([1-9][0-9]*)_[a-f0-9]{20}$/D',$data) and ($from_id == $admin || $userInfo['isAdmin'] == true)){

@@ -1,0 +1,403 @@
+{
+  "baseline": "4db40265b54f839d31605ea5bbe2ffb375c94cf5",
+  "owner_contract": "https://github.com/ach1992/bot-refactor/issues/236#issuecomment-7222535933",
+  "changes": {
+    "bot.bot.direct_message_rejected": {
+      "before": null,
+      "after": {
+        "text": "❌ ارسال پیام به کاربر <code>{user}</code> ناموفق بود. در صورت نیاز دوباره از گزینه ارسال پیام استفاده کنید.",
+        "parameters": [
+          "user"
+        ]
+      }
+    },
+    "bot.bot.direct_message_unknown": {
+      "before": null,
+      "after": {
+        "text": "⚠️ ارسال پیام به کاربر <code>{user}</code> هنوز تأیید نشده است. پیش از تکرار، نتیجه را بررسی کنید.",
+        "parameters": [
+          "user"
+        ]
+      }
+    },
+    "broadcast.routes.broadcast_start.message.0c01c8169a": {
+      "before": "⚠️ خطایی در ساخت پیش‌نویس ارسال رخ داد.",
+      "after": "⚠️ ثبت پیش‌نویس ارسال تأیید نشد."
+    },
+    "broadcast.routes.broadcast_start.message.39fe6c5d7e": {
+      "before": "⛔️ لغو شد. ارسال ادامه پیدا نمی‌کند.",
+      "after": null
+    },
+    "broadcast.routes.broadcast_start.message.78511c235c": {
+      "before": "این ارسال قابل لغو نیست یا قبلاً تمام/لغو شده است.",
+      "after": null
+    },
+    "broadcast.routes.broadcast_start.message.b56da4fdde": {
+      "before": "⏳ کم کم برا همه ارسال میشه ...",
+      "after": "⏳ ارسال پیام همگانی در صف قرار گرفت."
+    },
+    "broadcast.routes.content_unconfirmed": {
+      "before": null,
+      "after": "⚠️ ثبت محتوای ارسال تأیید نشد. وضعیت پیش‌نویس را بررسی کنید."
+    },
+    "broadcast.routes.pm_noop.message.42f2d7e7a7": {
+      "before": "❌ خطا در ثبت عملیات ویرایش.",
+      "after": "⚠️ ثبت عملیات ویرایش تأیید نشد. وضعیت عملیات را بررسی کنید."
+    },
+    "broadcast.routes.pm_noop.message.55c6d689fd": {
+      "before": "⚠️ خطا در ساخت عملیات، دوباره تلاش کنید.",
+      "after": "⚠️ ثبت عملیات تأیید نشد. وضعیت عملیات را بررسی کنید."
+    },
+    "broadcast.routes.state_ack_count": {
+      "before": null,
+      "after": {
+        "text": "تعداد ارسال‌های تأییدشده: {count}",
+        "parameters": [
+          "count"
+        ]
+      }
+    },
+    "broadcast.routes.state_draft": {
+      "before": null,
+      "after": "پیش‌نویس پیام همگانی هنوز در صف ارسال قرار نگرفته است."
+    },
+    "broadcast.routes.state_finished": {
+      "before": null,
+      "after": "✅ پردازش ارسال پیام همگانی پایان یافته است."
+    },
+    "broadcast.routes.state_missing": {
+      "before": null,
+      "after": "⚠️ وضعیت این درخواست ارسال قابل تأیید نیست."
+    },
+    "broadcast.routes.state_sending": {
+      "before": null,
+      "after": "⏳ ارسال پیام همگانی در حال انجام است."
+    },
+    "gateway.gateway_initiation.mark_checkout_uncertain.message.0a2e0bc7bc": {
+      "before": "پردازش ممکن است بیش از چند دقیقه طول بکشد.",
+      "after": null
+    },
+    "gateway.gateway_initiation.mark_checkout_uncertain.message.0c4a9612f7": {
+      "before": "⚠️ پرداخت فقط پس از تأیید درگاه و ثبت نتیجه در ربات نهایی است؛ ",
+      "after": null
+    },
+    "manual_payment.api_payment.current_monitoring": {
+      "before": null,
+      "after": "⏳ در انتظار بررسی خودکار"
+    },
+    "manual_payment.api_payment.current_verifying": {
+      "before": null,
+      "after": "⏳ در حال تأیید شواهد پرداخت"
+    },
+    "manual_payment.receipt_helpers.manual_acknowledgement.label.a5f27211f7": {
+      "before": "📥 تصویر ",
+      "after": null
+    },
+    "manual_payment.receipt_helpers.manual_acknowledgement.text.29e14cf62e": {
+      "before": " دریافت شد.\n",
+      "after": null
+    },
+    "manual_payment.receipt_helpers.manual_acknowledgement.text.62e569e922": {
+      "before": "⏳ رسید در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.",
+      "after": null
+    },
+    "manual_payment.receipt_helpers.send_with_start_button.button.dcb9c20928": {
+      "before": "🔄 بررسی وضعیت",
+      "after": null
+    },
+    "operational_reports.receipt_credit": {
+      "before": "<b>💳 اعتبار پرداخت ثبت‌شده</b>",
+      "after": null
+    },
+    "operational_reports.service_wallet": {
+      "before": {
+        "text": "شناسهٔ کسر از کیف پول: <code>W{entry}</code>\nموجودی پیش از کسر: {before} تومان\nموجودی پس از کسر: {after} تومان\n📅 تاریخ ثبت کسر (ایران): {date}",
+        "parameters": [
+          "entry",
+          "before",
+          "after",
+          "date"
+        ]
+      },
+      "after": null
+    },
+    "operational_reports.service_wallet_balance": {
+      "before": null,
+      "after": {
+        "text": "موجودی قبل: {before} تومان\nموجودی بعد: {after} تومان",
+        "parameters": [
+          "before",
+          "after"
+        ]
+      }
+    },
+    "operational_reports.service_wallet_credit": {
+      "before": null,
+      "after": {
+        "text": "➕ اعتبار پرداخت: {amount} تومان | <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}",
+        "parameters": [
+          "entry",
+          "amount",
+          "date"
+        ]
+      }
+    },
+    "operational_reports.service_wallet_debit": {
+      "before": null,
+      "after": {
+        "text": "➖ کسر بابت سرویس: {amount} تومان | <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}",
+        "parameters": [
+          "entry",
+          "amount",
+          "date"
+        ]
+      }
+    },
+    "operational_reports.service_wallet_net": {
+      "before": null,
+      "after": {
+        "text": "خالص تغییر موجودی: {net} تومان",
+        "parameters": [
+          "net"
+        ]
+      }
+    },
+    "operational_reports.service_wallet_title": {
+      "before": null,
+      "after": "<b>💰 گردش کیف پول</b>"
+    },
+    "payment.api_payment.code_acknowledgement": {
+      "before": "✅ کد گیفت‌کارت دریافت شد.\n⏳ درخواست در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.",
+      "after": null
+    },
+    "payment.no_available_method": {
+      "before": null,
+      "after": "⚠️ در حال حاضر هیچ روش پرداختی برای این درخواست در دسترس نیست."
+    },
+    "payment.payment_lifecycle.gift_not_verified": {
+      "before": null,
+      "after": "⚠️ اعتبار کد گیفت‌کارت تأیید نشد."
+    },
+    "payment.payment_lifecycle.gift_not_verified_next": {
+      "before": null,
+      "after": "کد ثبت‌شده معتبر تشخیص داده نشد. برای بررسی همین سفارش با پشتیبانی هماهنگ کنید؛ دوباره پرداخت نکنید."
+    },
+    "payment.payment_lifecycle.gift_received": {
+      "before": null,
+      "after": "📥 کد گیفت‌کارت دریافت شد."
+    },
+    "payment.payment_lifecycle.gift_waiting_guidance": {
+      "before": null,
+      "after": "⏳ درخواست در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد."
+    },
+    "payment.payment_lifecycle.hosted_awaiting_next": {
+      "before": null,
+      "after": "برای پرداخت از دکمه همین فاکتور استفاده کنید. اگر قبلاً پرداخت کرده‌اید، وضعیت سفارش را بررسی کنید."
+    },
+    "payment.payment_lifecycle.hosted_confirming": {
+      "before": null,
+      "after": "⏳ پرداخت در حال تأیید توسط درگاه است."
+    },
+    "payment.payment_lifecycle.hosted_progress_next": {
+      "before": null,
+      "after": "نتیجه پرداخت هنوز نهایی نشده است. از همین پیام وضعیت سفارش را بررسی کنید و پرداخت را تکرار نکنید."
+    },
+    "payment.payment_lifecycle.hosted_waiting": {
+      "before": null,
+      "after": "⏳ در انتظار ثبت پرداخت در درگاه هستیم."
+    },
+    "payment.payment_lifecycle.original_bank_destination": {
+      "before": {
+        "text": "💳 شماره کارت: <code>{account}</code>\n👤 صاحب حساب: {holder}",
+        "parameters": [
+          "account",
+          "holder"
+        ]
+      },
+      "after": null
+    },
+    "payment.payment_lifecycle.original_crypto_destination": {
+      "before": {
+        "text": "🌐 شبکه: {network}\n📋 آدرس مقصد: <code>{wallet}</code>",
+        "parameters": [
+          "network",
+          "wallet"
+        ]
+      },
+      "after": null
+    },
+    "payment.payment_lifecycle.original_invoice_record": {
+      "before": {
+        "text": "<b>🧾 اطلاعات فاکتور اصلی (سوابق)</b>\n💳 روش: {method}\n💰 مبلغ فاکتور: <code>{amount}</code> {currency}",
+        "parameters": [
+          "method",
+          "amount",
+          "currency"
+        ]
+      },
+      "after": null
+    },
+    "payment.payment_lifecycle.progress_resolved": {
+      "before": "رسیدگی به این درخواست پایان یافته است؛ برای جزئیات، وضعیت سفارش را از پشتیبانی پیگیری کنید.",
+      "after": null
+    },
+    "payment.payment_lifecycle.progress_resolved_closed": {
+      "before": null,
+      "after": "رسیدگی به این درخواست بدون بازگشت وجه پایان یافت. جزئیات نتیجه به‌صورت جداگانه اعلام می‌شود."
+    },
+    "payment.payment_lifecycle.progress_resolved_refunded": {
+      "before": null,
+      "after": "✅ رسیدگی پایان یافت و بازگشت وجه تعیین‌شده ثبت شد. جزئیات نتیجه به‌صورت جداگانه اعلام می‌شود."
+    },
+    "payment.payment_lifecycle.receipt_instruction_retired": {
+      "before": null,
+      "after": "🧾 اطلاعات پرداخت قبلی دیگر قابل استفاده نیست. وضعیت سفارش را از پیام ثبت رسید بررسی کنید."
+    },
+    "payment.payment_lifecycle.receipt_uncertain": {
+      "before": null,
+      "after": "⚠️ نتیجه بررسی پرداخت هنوز مشخص نیست."
+    },
+    "payment.payment_lifecycle.status_update_unconfirmed": {
+      "before": null,
+      "after": "به‌روزرسانی پیام هنوز تأیید نشده است؛ لطفاً دوباره وضعیت سفارش را بررسی کنید."
+    },
+    "payment.payment_lifecycle.toman": {
+      "before": "تومان",
+      "after": null
+    },
+    "payment.pre_payment.alert.fdf0d1d6f9": {
+      "before": "وضعیت سفارش از اطلاعات ثبت‌شده خوانده شد.",
+      "after": null
+    },
+    "payment.select_method": {
+      "before": null,
+      "after": "💳 لطفاً روش پرداخت را انتخاب کنید:"
+    },
+    "renewal.extensions.amount": {
+      "before": null,
+      "after": {
+        "text": "<b>🧾 اطلاعات سفارش</b>\n💵 مبلغ: {amount} تومان",
+        "parameters": [
+          "amount"
+        ]
+      }
+    },
+    "renewal.extensions.message.48930749a9": {
+      "before": {
+        "text": "<b>🧾 روش پرداخت سفارش را انتخاب کنید.</b>\n💵 مبلغ: {amount} تومان",
+        "parameters": [
+          "amount"
+        ]
+      },
+      "after": null
+    },
+    "wallet.wallet_start.amount_registered": {
+      "before": null,
+      "after": "✅ مبلغ شارژ ثبت شد."
+    },
+    "wallet.wallet_start.selector_amount": {
+      "before": null,
+      "after": {
+        "text": "<b>🧾 اطلاعات شارژ</b>\n💰 مبلغ: {amount} تومان",
+        "parameters": [
+          "amount"
+        ]
+      }
+    },
+    "wallet.wallet_start.selector_delivery_pending": {
+      "before": null,
+      "after": "⚠️ درخواست شارژ ثبت شده اما نمایش روش‌های پرداخت هنوز تأیید نشده است. دوباره گزینه شارژ کیف پول را انتخاب کنید."
+    },
+    "wallet.wallet_start.start_wallet_payment.message.1f46b2b87f": {
+      "before": "🧾 اطلاعات شارژ:\n💰 مبلغ: ",
+      "after": null
+    },
+    "wallet.wallet_start.start_wallet_payment.message.64ab796d01": {
+      "before": " تومان\n\n💳 لطفاً روش پرداخت را انتخاب کنید:",
+      "after": null
+    }
+  },
+  "semantic_equal": {
+    "purchase.entry_and_bulk.create_multiple_accounts.alert.de33518bf8": "legacy_messages.category_not_avilable",
+    "purchase.entry_and_bulk.create_multiple_accounts.alert.174c6a61d7": "legacy_messages.receive_categories",
+    "purchase.entry_and_bulk.create_multiple_accounts.alert.465c2a0af9": "legacy_messages.receive_plans",
+    "admin_settings.config.get_bot_setting_keys.button.df1c62b99e": "legacy_buttons.renew_config",
+    "admin_settings.config.get_bot_setting_keys.button.546c2c8acc": "legacy_buttons.individual_existence",
+    "subscription.manual_accounts.manual_account_consume_selection.button.11b0188fcb": "legacy_buttons.search_agent_config",
+    "admin_settings.config.get_main_keys.button.11b0188fcb": "legacy_buttons.search_agent_config",
+    "admin_settings.config.get_bot_setting_keys.button.59be548183": "legacy_buttons.qr_config",
+    "bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c": "labels.currency_toman_suffix",
+    "wallet.admin_wallet.admin_wallet_report_result.text.2cc98f7f7c": "labels.currency_toman_suffix",
+    "purchase.select_plan.text.2cc98f7f7c": "labels.currency_toman_suffix",
+    "renewal.extensions.text.2cc98f7f7c": "labels.currency_toman_suffix",
+    "payment.discounts.apply_discount_to_pay.text.2cc98f7f7c": "labels.currency_toman_suffix",
+    "admin_settings.config.get_gate_ways_keys.text.2cc98f7f7c": "labels.currency_toman_suffix",
+    "plans.administration.edit_custom_plan.text.2cc98f7f7c": "labels.currency_toman_suffix",
+    "manual_payment.api_payment.currency_toman": "labels.currency_toman",
+    "automatic_gateway_review.toman": "labels.currency_toman",
+    "bot.bot.webhook_ingress_authenticated.text.2ef1b34354": "labels.admin_subscription_stats",
+    "admin_settings.config.get_bot_report_keys.button.2ef1b34354": "labels.admin_subscription_stats",
+    "bot.bot.webhook_ingress_authenticated.text.adb2cb111d": "labels.admin_sales_stats",
+    "admin_settings.config.get_bot_report_keys.button.adb2cb111d": "labels.admin_sales_stats",
+    "bot.bot.gateway_audience_settings.button.1fe862ea18": "labels.dismiss",
+    "renewal.renewal_checkout.button.1fe862ea18": "labels.dismiss",
+    "payment_settings.gateway_rule_admin.gateway_admin_page.button.fa7af603d4": "labels.dismiss",
+    "bot.bot.invite_banner.button.d6aa12d559": "labels.edit",
+    "payment.discounts.get_discount_code_keys.button.d6aa12d559": "labels.edit",
+    "broadcast.routes.pin_manage_all.button.1780efa62b": "labels.edit",
+    "payment.discounts.get_discount_code_keys.button.59ca629220": "labels.delete",
+    "support.categories.tickets_category.button.59ca629220": "labels.delete",
+    "admin_settings.config.get_agents_list.button.59ca629220": "labels.delete",
+    "broadcast.routes.pm_noop.text.bc26818ef0": "labels.delete",
+    "bot.bot.process_callback_query.alert.e1e7245408": "labels.deleted_successfully",
+    "support.categories.add_ticket_category.alert.e1e7245408": "labels.deleted_successfully",
+    "agent.discounts.agents_list.alert.e1e7245408": "labels.deleted_successfully",
+    "bot.bot.addserver_name.button.13159f8c74": "labels.confirm_yes",
+    "subscription.account_deletion.button.13159f8c74": "labels.confirm_yes",
+    "wallet.wallet_transfer.wallet_transfer_restart.text.b059640ccc": "labels.select_option",
+    "purchase.trial_catalogue.get_test_account.message.b059640ccc": "labels.select_option",
+    "agent.applications.request_agency.message.b059640ccc": "labels.select_option",
+    "purchase.catalogue.text.dda7ff2974": "labels.free_price",
+    "renewal.extensions.price.dda7ff2974": "labels.free_price",
+    "renewal.renewal_checkout.alert.201380d8bf": "purchase.catalogue.alert.201380d8bf",
+    "subscription.account_deletion.no_dont_delete.alert.3c93240b6e": "subscription.account_deletion.no_dont_delete.alert.9347ccc8b0",
+    "subscription.account_details.get_user_order_detail_keys.button.c9b4331f4f": "labels.customer_name",
+    "support.customer_conversation.user_all_tickets.button.c9b4331f4f": "labels.customer_name",
+    "admin_settings.config.get_rejected_agent_list.button.c9b4331f4f": "labels.customer_name",
+    "subscription.order_management.show_order_management_panel.button.087a5a43b1": "labels.back_to_admin",
+    "admin_settings.config.get_bot_report_keys.button.255cc89ba7": "labels.back_to_admin",
+    "automatic_gateway_review.back_admin": "labels.back_to_admin",
+    "subscription.order_management.show_order_management_panel.alert.057ec5448c": "labels.access_denied",
+    "provider.provider_admin.handle_provider_admin.alert.057ec5448c": "labels.access_denied",
+    "payment.payment_lifecycle.pay_ux_status_keyboard.button.1121ffbf88": "labels.home",
+    "manual_payment.manual_crypto.button.1121ffbf88": "labels.home",
+    "payment.discounts.get_discount_code_keys.button.68d7eb08ef": "labels.status",
+    "admin_settings.config.get_server_list_keys.button.68d7eb08ef": "labels.status",
+    "payment.payment_lifecycle.pay_ux_audience_modes.text.452a2d6fed": "labels.labels.audience.label.452a2d6fed",
+    "payment.payment_lifecycle.pay_ux_audience_methods.text.7d213c0bc4": "automatic_gateway_review.provider_zarinpal",
+    "payment.payment_lifecycle.pay_ux_audience_methods.text.64c20e2b45": "automatic_gateway_review.provider_bank_transfer",
+    "payment.payment_lifecycle.pay_ux_audience_methods.text.3904ef0f3d": "manual_payment.receipt_helpers.manual_label.text.3904ef0f3d",
+    "automatic_gateway_review.provider_gift_card": "manual_payment.receipt_helpers.manual_label.text.3904ef0f3d",
+    "payment.payment_lifecycle.pay_ux_audience_methods.text.4fafcb549d": "manual_payment.receipt_helpers.manual_label.text.2f1fd66193",
+    "payment.payment_lifecycle.pay_ux_audience_methods.text.349ece736f": "manual_payment.receipt_helpers.manual_label.text.ea9faa7b63",
+    "payment.payment_lifecycle.pay_ux_audience_methods.text.6295c35212": "labels.wallet",
+    "automatic_gateway_review.wallet_provider": "labels.wallet",
+    "payment.discount_administration.add_discount_code.button.ee7ae9b315": "labels.all_users_button",
+    "broadcast.routes.broadcast_start.button.fac6686c54": "labels.all_users_button",
+    "manual_payment.manual_receipts.alert.8b8e660e87": "admin.bans.unban_user.message.8b8e660e87",
+    "support.queue_and_history.all_tickets.button.12e9251ccb": "support.admin_reply.button.173875ae6b",
+    "support.queue_and_history.all_tickets.button.ce4f25e31b": "support.customer_conversation.user_all_tickets.button.2f9a0fbfd0",
+    "support.categories.tickets_list.button.33d6fa9470": "support.entry.support_section.button.a203213e37",
+    "support.customer_conversation.user_all_tickets.button.2dc9dcf8cd": "labels.telegram_numeric_id",
+    "admin_settings.config.get_rejected_agent_list.button.2dc9dcf8cd": "labels.telegram_numeric_id",
+    "automatic_gateway_review.purchase": "labels.labels.payment_type.label.e6343571a4",
+    "automatic_gateway_review.renew": "labels.labels.payment_type.label.df1c62b99e",
+    "payment_settings.gateway_rules.gateway_rule_metrics.text.991ae08d64": "labels.labels.payment_type.label.991ae08d64",
+    "automatic_gateway_review.volume": "labels.labels.payment_type.label.160a34aa6d",
+    "admin_settings.config.get_gate_ways_keys.text.9fec3d676e": "payment_settings.payment_key_admin.payment_key_admin_merchant_label.text.9fec3d676e",
+    "admin_settings.config.get_gate_ways_keys.text.ad271ae97c": "payment_settings.payment_key_admin.payment_key_admin_merchant_label.text.ad271ae97c",
+    "manual_receipt_final.back": "automatic_gateway_review.back_list",
+    "plans.intervals.add_new_volume_plan.message.76731ef62b": "plans.intervals.add_new_day_plan.message.d03501095b",
+    "broadcast.routes.broadcast_start.title.eaf516bb5a": "broadcast.routes.message2_all.text.b00aae4551"
+  }
+}

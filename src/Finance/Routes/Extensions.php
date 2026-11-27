@@ -50,8 +50,8 @@ if(preg_match('/\AincreaseADay([1-9][0-9]{0,9})\z/D', $data, $match)){
         $title = $cat['volume'];
         $price = $cat['price'];
         $price=achbotExistingServicePrice($userInfo,$botState,$orderInfo,(int)$price);
-        if($price == 0) $price = \achbotMessage('renewal.extensions.price.dda7ff2974');
-        else $price = (string)$price . \achbotMessage('renewal.extensions.text.2cc98f7f7c');
+        if($price == 0) $price = \achbotMessage('labels.free_price');
+        else $price = (string)$price . \achbotMessage('labels.currency_toman_suffix');
         $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.fbb9f61105', ['title' => $title, 'price' => $price]), 'callback_data' => "selectPlanDayIncrease{$match[1]}_$id"]];
     }
     $keyboard[] = [['text' => \achbotMessage('legacy_buttons.back_button'), 'callback_data' => "orderDetails{$match[1]}"]];
@@ -126,8 +126,9 @@ if(preg_match('/\AselectPlanDayIncrease(?<orderId>[1-9][0-9]{0,9})_(?<dayId>[1-9
     require_once __DIR__.'/../../Purchase/CheckoutPresentation.php';
     $methods=$free?[]:array_keys(achbotCheckoutDraftPaymentOptions($connection,$newDraftId,(int)$from_id));
     $keyboard=achbotCheckoutPaymentKeyboard('day',$hash_id,(int)$planprice,$methods,$botUrl);
+    $noMethod=!$keyboard;
     $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.cancel'), 'callback_data'=> 'dc_'.$hash_id]];
-    $sent=sendMessage($free?achbotMessage('renewal.free_confirmation.prompt'):\achbotMessageHtml('renewal.extensions.message.48930749a9',['amount'=>number_format((int)$planprice)]),
+    $sent=sendMessage($free?achbotMessage('renewal.free_confirmation.prompt'):achbotMessageHtml('renewal.extensions.amount',['amount'=>number_format((int)$planprice)])."\n\n".achbotMessage($noMethod?'payment.no_available_method':'payment.select_method'),
         json_encode(['inline_keyboard'=>$keyboard]),'HTML',$from_id);
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent,'selector');
@@ -248,9 +249,9 @@ if (preg_match('/^increaseAVolume([1-9][0-9]{0,9})$/D', $data, $match)) {
         $price = $cat['price'];
         $price=achbotExistingServicePrice($userInfo,$botState,$orderInfo,(int)$price);
         if ($price == 0)
-            $price = \achbotMessage('renewal.extensions.price.dda7ff2974');
+            $price = \achbotMessage('labels.free_price');
         else
-            $price = (string)$price . \achbotMessage('renewal.extensions.text.2cc98f7f7c');
+            $price = (string)$price . \achbotMessage('labels.currency_toman_suffix');
 
         $keyboard[] = [['text' => \achbotMessage('renewal.extensions.button.249377f2b7', ['title' => $title, 'price' => $price]), 'callback_data' => "increaseVolumePlan{$match[1]}_{$id}"]];
     }
@@ -330,8 +331,9 @@ if(preg_match('/^increaseVolumePlan(?<orderId>[1-9][0-9]{0,9})_(?<volumeId>[1-9]
     require_once __DIR__.'/../../Purchase/CheckoutPresentation.php';
     $methods=$free?[]:array_keys(achbotCheckoutDraftPaymentOptions($connection,$newDraftId,(int)$from_id));
     $keyboard=achbotCheckoutPaymentKeyboard('volume',$hash_id,(int)$planprice,$methods,$botUrl);
+    $noMethod=!$keyboard;
     $keyboard[] = [['text'=>\achbotMessage('legacy_buttons.cancel'), 'callback_data'=> 'dc_'.$hash_id]];
-    $sent=sendMessage($free?achbotMessage('renewal.free_confirmation.prompt'):\achbotMessageHtml('renewal.extensions.message.48930749a9',['amount'=>number_format((int)$planprice)]),
+    $sent=sendMessage($free?achbotMessage('renewal.free_confirmation.prompt'):achbotMessageHtml('renewal.extensions.amount',['amount'=>number_format((int)$planprice)])."\n\n".achbotMessage($noMethod?'payment.no_available_method':'payment.select_method'),
         json_encode(['inline_keyboard'=>$keyboard]),'HTML',$from_id);
     require_once __DIR__ . '/../PaymentLifecycle.php';
     achbotPayUxTrackByHash($connection,(string)$hash_id,(int)$from_id,$sent,'selector');

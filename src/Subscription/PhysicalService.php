@@ -278,7 +278,7 @@ function achbotPhysicalHideRetiredReceiptActions(mysqli $db,array $rows): void {
                     if (achbotGatewayAttentionCaseOpen($db,(int)$pay['id']))
                         $args['reply_markup']=json_encode(['inline_keyboard'=>[[
                             ['text'=>achbotMessage('automatic_gateway_review.open_case'),
-                             'callback_data'=>'attentionCase_'.(int)$pay['id']]
+                             'callback_data'=>'attentionOpenCase_'.(int)$pay['id']]
                         ]]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
                     $confirmed=achbotReceiptStatusEdit($db,$pay,$chat,$message,static function() use ($args): ?bool {
                         $response=bot('editMessageReplyMarkup',$args);

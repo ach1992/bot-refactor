@@ -18,6 +18,7 @@ $adminCallback=(string)($data??'');
 // the receiving route performs fresh payment, actor and Native checks.
 if (str_starts_with($adminCallback,'attentionInbox') ||
     str_starts_with($adminCallback,'attentionCase_') ||
+    str_starts_with($adminCallback,'attentionOpenCase_') ||
     str_starts_with($adminCallback,'attentionReceipt_') ||
     str_starts_with($adminCallback,'attentionDelivery') ||
     str_starts_with($adminCallback,'attentionService') ||
@@ -66,7 +67,7 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',
             achbotCheckoutReceiptOutcome($connection,$payId):'unknown');
         // This action began inside the shared attention inbox. Its result
         // always returns there, even if the original case is now closed.
-        $rows=[[['text'=>achbotMessage('manual_receipt_final.back'),
+        $rows=[[['text'=>achbotMessage('automatic_gateway_review.back_list'),
             'callback_data'=>'attentionInbox']]];
         // A deferred result is NOT a terminal denial: expose the original
         // case directly, where the next confirmed preview uses fresh evidence.
@@ -82,9 +83,7 @@ if (preg_match('/^apiEvidenceResume_([1-9][0-9]{0,17})$/D',
         $buttons=json_encode(['inline_keyboard'=>$rows],
             JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         $text=achbotMessageHtml('manual_receipt_final.result',['result'=>$result]);
-        $reply=editText($message_id,$text,$buttons,'HTML',(int)$from_id);
-        if (!is_object($reply)||($reply->ok??false)!==true)
-            sendMessage($text,$buttons,'HTML',(int)$from_id);
+        \AchBot\Telegram\Conversation\replaceTransient((int)$from_id,(int)$message_id,$text,$buttons);
     } catch(Throwable $error) {
         error_log('achbot_api_review_resume_unavailable pay_id='.$payId.
             ' class='.get_class($error));
@@ -177,7 +176,7 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
     }
 
     $uid = $payInfo['user_id'];
-    $price = !empty($payInfo['price']) ? number_format($payInfo['price']) . \achbotMessage('bot.bot.webhook_ingress_authenticated.text.2cc98f7f7c') : "---";
+    $price = !empty($payInfo['price']) ? number_format($payInfo['price']) . \achbotMessage('labels.currency_toman_suffix') : "---";
     $reason = htmlspecialchars((string)$text, ENT_QUOTES|ENT_SUBSTITUTE, 'UTF-8');
 	$remark = "---";
 
@@ -315,6 +314,9 @@ if (preg_match('/^declineActionReason_(.+)_(\d+)$/', (string)($userInfo['step']?
         achbotMessage('legacy_messages.saved_successfuly'),(int)$from_id);
     // An edit exception never suppresses independent customer/staff notices.
     // Missing ACK is UNKNOWN, not permission for a duplicate message.
+    // The reason/retry instruction is independent meaningful information.
+    // The acknowledged receipt status still converges on the same decision.
+    achbotPayUxSyncMessages($connection,$payId);
     achbotFollowupDispatchPending($connection,$payId,'manual_reject');
 
 }
@@ -327,7 +329,7 @@ if (is_string($data) &&
     if ($status==='changed') {
         alert(\achbotMessage('manual_payment.manual_receipts.alert.61d5318e58', ['m_1' => $m[1]]));
     } elseif ($status==='already') {
-        alert(\achbotMessage('manual_payment.manual_receipts.alert.8b8e660e87'));
+        alert(\achbotMessage('admin.bans.unban_user.message.8b8e660e87'));
     } else {
         alert(\achbotMessage('manual_payment.manual_receipts.alert.abf0b6c70d'),true);
     }

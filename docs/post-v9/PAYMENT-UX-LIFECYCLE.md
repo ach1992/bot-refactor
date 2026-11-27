@@ -19,8 +19,9 @@ checkout/message projection and the merchant configuration workflow.
   original receipt and rc_ cancels its current acknowledged prompt.
   The subject/method come from the owned persisted invoice, not the callback.
   The receipt step has a generation and exact bot prompt ID; validation
-  reuses the prompt and only a definite target-specific edit rejection
-  permits replacement. A concurrent changed step cannot authorize evidence.
+  sends a new corrective reply below the human input and retires the
+  previous bot prompt only on exact acknowledgement of its replacement.
+  A concurrent changed step cannot authorize evidence.
   Invoice Home (ph_) preserves the retained invoice. Draft cancellation
   (dc_) retires a selector, not a financial claim. Hosted methods, including
   renewal, use the same guarded URL directly.
@@ -29,8 +30,9 @@ checkout/message projection and the merchant configuration workflow.
   code input. Bank and crypto retain their own approved labels; closed
   invoices offer original-payment review without a new payment link.
   Starting a manual receipt flow must not delete the original invoice.
-  A durable funding admission receives a non-modal acceptance notice,
-  without implying service or delivery completion.
+  After durable receipt admission, the acknowledged receipt status takes
+  ownership of the customer view; obsolete payment instructions are retired.
+  Receipt admission does not imply service or delivery completion.
 - Owned gateway initiation URLs re-check the original payment and
   authoritative current draft; public Return and authenticated merchant
   evidence are separate. Raw historical external links cannot be revoked
@@ -54,7 +56,7 @@ checkout/message projection and the merchant configuration workflow.
 ## Message ownership and recovery
 
 `payment_message_refs` is the shared payment projection registry, with an explicit
-semantic purpose (`selector`, `invoice`, `status`, `receipt`, `staff`) and exact
+semantic purpose (`selector`, `invoice`, `status`, `receipt`, `receipt_view`, `staff`) and exact
 owned chat/message identity. The existing payment session lease serializes
 message promotion, navigation retirement and projection. No database
 transaction is held across a Telegram edit. Selector retirement checks
@@ -62,24 +64,39 @@ positive absence of original financial evidence and commits under the same
 original pay row lock as browser admission. Navigation does not cancel
 an external invoice or change the payment state.
 
+A Wallet top-up draft and its committed editor reference are written in the same
+transaction. Telegram delivery is a separate acknowledged fact. A fresh private
+menu action or matching old amount callback can recover that exact unissued draft
+without inserting a second one; the same update cannot retry an unknown send.
+The original exact prompt is retired only after a new selector is acknowledged.
+A completed editor is not a cancellation. A selector with no eligible payment
+method states that fact rather than inviting an impossible choice.
+
 Manual issuance promotes the existing selector to the invoice in place.
 A committed original whose selector was not promoted is recovered by the
 same projector. A stale method or crypto network click reconciles an
 already admitted original rather than reviving its selection keyboard.
 Other selectors are status views, not additional invoices.
-Receipt acknowledgements retain their original text; their keyboard alone
-may be updated. Closed manual invoices retain pinned amount and destination
-as historical facts, without new payment instructions. Hosted gateways
-project the original guarded payment URL; they do not send a second
-provider-specific invoice notice.
+An acknowledged receipt status (`receipt_view`) is the single mutable
+customer view for admitted evidence. The original receipt acknowledgement
+journal can establish its identity. Customer-authored input, staff evidence,
+and independent result notices remain separate. After receipt admission the
+old instructions are retired by verified identity; if deletion is not
+acknowledged, the same obsolete target may be sanitized in place without
+a replacement send, respecting rate limits. Never delete the human receipt. Closed invoices
+preserve original financial facts in storage, not obsolete destinations in
+customer messages. Hosted gateways project the original guarded payment URL
+only while actionable. The same renderer serves explicit status requests
+and automatic projection; a separate Wallet-credit or service-delivery
+notice remains independently idempotent.
 
 A retired navigation reference is not a successful edit and cannot become a
 payment target again. Definite Telegram missing/non-editable responses retire
 that reference. Unknown outcomes do not authorize replacement sends; the
 existing due time and Telegram retry_after govern edits, including direct
 status clicks. A definite target rejection can permit one explicit
-replacement. Status requests from retained evidence use the active invoice
-or status view when available; a new explicit request has a durable
+replacement. Status requests from retained evidence use the acknowledged receipt status
+first, otherwise the active invoice or status view when available; a new explicit request has a durable
 update cursor before a new send. No repeated processing of the same update
 may blindly resend an unknown result.
 
@@ -90,6 +107,27 @@ retirement and retry deadline; a failed or removed staff message does
 not force repeated edits of healthy recipients. Recheck current staff
 authorization and the original payment state under the existing target
 lease. Unknown and rate-limited results are not acknowledgements.
+A successful evidence search without a match records normal monitoring.
+A failed pre-consumption provider read with no usable evidence records
+`unavailable` in the existing attempt evidence state; a later successful
+no-match read restores monitoring. The existing retry/backoff and human
+review remain available. An original journaled external operation retains
+its own reserved/dispatched/uncertain/review or proven evidence instead of
+being downgraded by an unavailable read; an exception without a completed
+observation retains the last durable state. No new payment owner or schema
+is involved. Staff distinguish monitoring, unavailable reads, manual review
+and original operation/proof states. Customers see one ordinary admitted
+receipt waiting presentation regardless of automatic or manual verification,
+provider availability or intermediate verification progress. The established
+3/30-minute guidance remains exact for the actual receipt/request kind.
+Only genuinely different customer-relevant outcomes (invalid evidence,
+unresolved effects requiring follow-up, rejection and terminal results)
+change that presentation; internal transitions alone require no edit or
+new notice. Staff retain
+currently admissible manual actions and the actual review-case link. A persisted
+external evidence operation fences the negative decision; the renderer and
+server-side rejection guard share this predicate. Delayed first staff delivery
+uses current controls rather than obsolete ones.
 Historical aggregate staff digests do not acknowledge a new per-target
 projection. No schema expansion, duplicate receipt report or new
 worker is needed.
@@ -97,7 +135,13 @@ worker is needed.
 A recorded Wallet debit or receipt credit is not proof of delivery. Use the
 original command and service completion evidence to distinguish pending
 service, completed delivery, completed service with unconfirmed delivery,
-Wallet credit only, resolved and unverified outcomes.
+Wallet credit only, verified resolution with or without returned funds, and
+unverified outcomes. An actual rejection updates the receipt view immediately;
+its reason and retry instruction remain a separate meaningful notice. Service
+reports group the original credit and debit by verified Wallet entries. A shared
+opening/closing balance and net change are rendered only when the same owner
+has no intervening entry and the balances connect exactly. Otherwise each
+entry retains its own balance pair. No sealed financial evidence is rewritten.
 
 ## Existing-instance transfer boundary
 

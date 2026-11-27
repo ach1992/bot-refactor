@@ -140,7 +140,7 @@ if(isset($update->message->text) && !isset($update->callback_query) && preg_matc
         $keys = [
             'inline_keyboard' => [
                 [
-                    ['text' => \achbotMessage('payment.discount_administration.add_discount_code.button.ee7ae9b315'),              'callback_data' => 'setDiscountAudience_all'],
+                    ['text' => \achbotMessage('labels.all_users_button'),              'callback_data' => 'setDiscountAudience_all'],
                 ],
                 [
                     ['text' => \achbotMessage('payment.discount_administration.add_discount_code.button.8d713207b6'),             'callback_data' => 'setDiscountAudience_user'],
@@ -566,14 +566,14 @@ function achbotDiscountAdminDetails(mysqli $connection,int $discountId): ?array 
     if($row['type'] == 'percent'){
         $amountText = $row['amount'] . "%";
     }else{
-        $amountText = number_format($row['amount']) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
+        $amountText = number_format($row['amount']) . \achbotMessage('labels.currency_toman_suffix');
     }
 
     $minPrice     = isset($row['min_price']) ? (int)$row['min_price'] : 0;
-    $minPriceText = $minPrice > 0 ? number_format($minPrice) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c') : \achbotMessage('payment.discount_administration.add_discount_code.text.21799b16ee');
+    $minPriceText = $minPrice > 0 ? number_format($minPrice) . \achbotMessage('labels.currency_toman_suffix') : \achbotMessage('payment.discount_administration.add_discount_code.text.21799b16ee');
 
     $maxDiscount     = isset($row['max_discount']) ? (int)$row['max_discount'] : 0;
-    $maxDiscountText = $maxDiscount > 0 ? number_format($maxDiscount) . \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c') : \achbotMessage('payment.discount_administration.add_discount_code.text.b86208d3b3');
+    $maxDiscountText = $maxDiscount > 0 ? number_format($maxDiscount) . \achbotMessage('labels.currency_toman_suffix') : \achbotMessage('payment.discount_administration.add_discount_code.text.b86208d3b3');
 
     $audienceType   = isset($row['audience_type']) ? $row['audience_type'] : 'all';
     $audienceUserId = isset($row['audience_user_id']) ? (int)$row['audience_user_id'] : 0;
@@ -583,7 +583,7 @@ function achbotDiscountAdminDetails(mysqli $connection,int $discountId): ?array 
             $audienceText = \achbotMessage('payment.discount_administration.add_discount_code.audience_text.c193cf44ad', ['audienceUserId' => $audienceUserId]);
             break;
         case 'agents':
-            $audienceText = \achbotMessage('payment.payment_lifecycle.pay_ux_audience_modes.text.452a2d6fed');
+            $audienceText = \achbotMessage('labels.labels.audience.label.452a2d6fed');
             break;
         case 'non_agents':
             $audienceText = \achbotMessage('payment.discount_administration.add_discount_code.button.04640cdbe9');
@@ -602,7 +602,7 @@ function achbotDiscountAdminDetails(mysqli $connection,int $discountId): ?array 
             break;
         case 'all':
         default:
-            $audienceText = \achbotMessage('payment.discount_administration.add_discount_code.button.ee7ae9b315');
+            $audienceText = \achbotMessage('labels.all_users_button');
     }
 
     $targetType = isset($row['target_type']) ? $row['target_type'] : 'all';
@@ -837,7 +837,7 @@ if(preg_match('/^editD_(\d+)_audience$/', $data, $m) && achbotAdminCanFor($conne
     $keys = [
         'inline_keyboard' => [
             [
-                ['text' => \achbotMessage('payment.discount_administration.add_discount_code.button.ee7ae9b315'),        'callback_data' => "editDAud_{$discountId}_all"],
+                ['text' => \achbotMessage('labels.all_users_button'),        'callback_data' => "editDAud_{$discountId}_all"],
             ],
             [
                 ['text' => \achbotMessage('payment.discount_administration.add_discount_code.button.8d713207b6'),       'callback_data' => "editDAud_{$discountId}_user"],

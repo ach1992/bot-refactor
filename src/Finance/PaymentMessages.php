@@ -12,7 +12,7 @@ require_once __DIR__.'/GatewayClient.php';
  */
 function achbotPayUxRegister(mysqli $db,int $payId,int $actor,int $message,string $purpose,string $kind='text'): bool {
     if ($payId<=0 || $actor<=0 || $message<=0 ||
-        !in_array($purpose,['selector','invoice','status','receipt'],true) ||
+        !in_array($purpose,['selector','invoice','status','receipt','receipt_view'],true) ||
         !in_array($kind,['text','media'],true)) return false;
     if (!achbotPayUxTable($db,'payment_message_refs')) return false;
     try {
@@ -30,6 +30,30 @@ function achbotPayUxRegister(mysqli $db,int $payId,int $actor,int $message,strin
             ' code='.(int)$error->getCode().' class='.get_class($error));
         return false;
     }
+}
+
+/** Called only for the exact journaled receipt acknowledgement in its
+ * finish transaction. A verified callback may have registered the same
+ * bot message before the Telegram send response arrived. */
+function achbotPayUxRecordReceiptAck(mysqli $db,int $payId,int $actor,int $message,array $packet): bool {
+    if (!achbotPayUxRegister($db,$payId,$actor,$message,'receipt_view')) {
+        $ref=achbotPayUxRef($db,$payId,$actor,$message);
+        if (!$ref || $ref['purpose']!=='receipt' || $ref['kind']!=='text') return false;
+        $s=achbotProviderStatement($db,"UPDATE payment_message_refs SET purpose='receipt_view'
+            WHERE id=? AND purpose='receipt'",'i',[(int)$ref['id']]);$s->close();
+    }
+    $ref=achbotPayUxRef($db,$payId,$actor,$message);
+    if (!$ref) return false;
+    // Do not resurrect a definite target loss if a callback raced the ACK.
+    if ($ref['retired_reason']!==null) return true;
+    $digest=achbotPayUxProjectionDigest('text',(string)$packet['text'],(string)$packet['keys']);
+    $s=achbotProviderStatement($db,'UPDATE payment_message_refs SET synced_digest=COALESCE(synced_digest,?),updated_at=updated_at
+        WHERE id=? AND retired_reason IS NULL','si',[$digest,(int)$ref['id']]);$s->close();
+    return true;
+}
+
+function achbotPayUxProjectionDigest(string $kind,string $body,string $keys): string {
+    return hash('sha256',$kind."\n".$body."\n".$keys);
 }
 
 /** Project an already recorded staff receipt, not a new send. */
@@ -89,6 +113,20 @@ function achbotPayUxRecoveryRef(mysqli $db,int $payId,int $actor,int $message,$u
     return achbotPayUxRef($db,$payId,$actor,$message);
 }
 
+/** An exact acknowledged receipt is a mutable status view, unlike a
+ * retained history message recovered solely from its callback. Older
+ * receipt refs can be recognized by their original delivery journal. */
+function achbotPayUxReceiptView(mysqli $db,int $payId,int $actor,bool $includeRetired=false): ?array {
+    return achbotProviderRow($db,"SELECT r.*,r.updated_at<=NOW(6) AS due FROM payment_message_refs r
+        WHERE r.pay_row_id=? AND r.chat_id=? AND r.kind='text' AND (?=1 OR r.retired_reason IS NULL)
+        AND (r.purpose='receipt_view' OR (r.purpose='receipt' AND EXISTS (
+            SELECT 1 FROM payment_followup_intents f JOIN payment_followup_attempts a ON a.intent_id=f.id
+            WHERE f.pay_row_id=r.pay_row_id AND f.stage='receipt_admitted' AND f.role='customer'
+            AND f.recipient=CAST(r.chat_id AS CHAR) AND a.result='acknowledged'
+            AND a.ack_chat_id=r.chat_id AND a.ack_message_id=r.message_id)))
+        ORDER BY r.retired_reason IS NULL DESC,r.id LIMIT 1",'iii',[$payId,$actor,(int)$includeRetired]);
+}
+
 /** An explicit status recovery send has one durable claim per update.
  * A replay of the same delivery cannot blindly resend on an unknown ACK.
  * A newer user click remains a recovery action, not an automatic retry.
@@ -98,7 +136,7 @@ function achbotPayUxClaimStatusRequest(mysqli $db,array $ref,int $updateId): boo
     if ($updateId<=0) return false;
     $id=(int)$ref['id'];
     $s=$db->prepare('UPDATE payment_message_refs SET last_status_update_id=?,last_status_requested_at=NOW(6),updated_at=updated_at
-        WHERE id=? AND retired_reason IS NULL AND (last_status_update_id IS NULL OR last_status_update_id<?
+        WHERE id=? AND (retired_reason IS NULL OR retired_reason IN (\'message_missing\',\'message_not_editable\',\'receipt_replaced\')) AND (last_status_update_id IS NULL OR last_status_update_id<?
             OR last_status_requested_at<DATE_SUB(NOW(6),INTERVAL 7 DAY))');
     $s->bind_param('iii',$updateId,$id,$updateId);$ok=$s->execute() && $s->affected_rows===1;$s->close();
     return $ok;
@@ -164,10 +202,9 @@ function achbotPayUxEditAccepted($reply,int $chat,int $message): bool {
 function achbotPayUxEditFailureCategory($reply): string {
     if (!is_object($reply)) return 'transport_unavailable';
     $code=(int)($reply->error_code??0);
-    $description=strtolower((string)($reply->description??''));
-    if ($code===400 && str_contains($description,'message to edit not found')) return 'message_missing';
-    if ($code===400 && (str_contains($description,"message can't be edited") ||
-        str_contains($description,'message can not be edited'))) return 'message_not_editable';
+    $target=\AchBot\Telegram\Response\editTargetFailure($reply);
+    if ($target==='followup_edit_target_missing') return 'message_missing';
+    if ($target==='followup_edit_target_uneditable') return 'message_not_editable';
     if ($code===403) return 'access_denied';
     if ($code===429) return 'rate_limited';
     if ($code>=500) return 'telegram_server_error';
@@ -183,7 +220,7 @@ function achbotPayUxApplyProjection(mysqli $db,array $ref,string $body,string $k
     $id=(int)$ref['id'];$pay=(int)$ref['pay_row_id'];
     $chat=(int)$ref['chat_id'];$message=(int)$ref['message_id'];
     if ($ref['retired_reason']!==null) return 'retired';
-    $digest=hash('sha256',($markupOnly?'markup':$ref['kind'])."\n".$body."\n".$keys);
+    $digest=achbotPayUxProjectionDigest($markupOnly?'markup':$ref['kind'],$body,$keys);
     if (($ref['synced_digest']??null)===$digest) return 'unchanged';
     if (isset($ref['due']) && (int)$ref['due']!==1) return 'deferred';
     $method=$markupOnly?'editMessageReplyMarkup':($ref['kind']==='media'?'editMessageCaption':'editMessageText');
@@ -238,6 +275,15 @@ function achbotPayUxProjectionSource(mysqli $db,int $payId): ?array {
         $s=$db->prepare('SELECT * FROM payment_attempts WHERE pay_row_id=?');
         $s->bind_param('i',$payId);$s->execute();$attempt=$s->get_result()->fetch_assoc()?:null;$s->close();
         $pay['superseded']=achbotPayUxHasNewer($db,$pay);
+        if ($attempt && achbotPayUxHostedProvider((string)$attempt['provider']) &&
+            !empty($attempt['payment_id'])) {
+            $q=achbotProviderStatement($db,'SELECT payment_id,observed_status FROM payment_transactions
+                WHERE attempt_id=? AND provider=? ORDER BY id LIMIT 2','is',[(int)$attempt['id'],$attempt['provider']]);
+            $children=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
+            $pay['projection_hosted_observation']=count($children)===1 &&
+                (string)$children[0]['payment_id']===(string)$attempt['payment_id']
+                ?(string)$children[0]['observed_status']:'unknown';
+        }
     } catch (Throwable $error) {
         $pay['projection_unknown']=true;
         error_log('achbot_payment_projection_source_unavailable pay_id='.$payId.' class='.get_class($error));
@@ -282,6 +328,7 @@ function achbotPayUxProjection(mysqli $db,array $pay,?array $attempt,string $pur
     $keys=achbotPayUxStatusKeyboard((string)$pay['hash_id'],$pay,$attempt);
     $body=achbotPayUxStatusText($pay,$attempt);
     if ($purpose==='receipt') return ['', $keys, true];
+    if ($purpose==='receipt_view') return [$body,$keys,false];
     if ($purpose==='invoice') {
         // If original evidence is unreadable, do not overwrite retained
         // instructions with a fabricated invoice/status. Retry read later.
@@ -291,13 +338,37 @@ function achbotPayUxProjection(mysqli $db,array $pay,?array $attempt,string $pur
         require_once __DIR__.'/ReceiptHelpers.php';
         $open=$pay['state']==='pending' && !($pay['superseded']??false) &&
             achbotPayUxInvoiceOpen($attempt) && $attempt['stage']==='pending';
-        $invoice=achbotManualInvoiceText($db,$pay,$attempt,$open);
+        if (!$open) return [$body,$keys,false];
+        $invoice=achbotManualInvoiceText($pay,$attempt);
         if ($invoice==='') return null;
-        if ($open) return [$invoice,achbotManualReceiptKeyboard($pay,$attempt),false];
-        return [$body."\n\n".$invoice,$keys,false];
+        return [$invoice,achbotManualReceiptKeyboard($pay,$attempt),false];
     }
     if ($purpose==='selector' && $state==='awaiting_payment' && $attempt===null) return null;
     return [$body,$keys,false];
+}
+
+/** Once the customer has an acknowledged receipt status, old bot-owned
+ * payment instructions are disposable. Keep all SQL evidence. An
+ * unacknowledged deletion may be sanitized on the same exact target,
+ * respecting rate limits; no new message is sent. */
+function achbotPayUxRetireObsoleteInstruction(mysqli $db,array $ref): string {
+    try {$reply=delMessage((int)$ref['message_id'],(int)$ref['chat_id']);}
+    catch (Throwable $ignored) {$reply=null;}
+    if (is_object($reply) && ($reply->ok??null)===true && ($reply->result??null)===true)
+        return achbotPayUxRetire($db,$ref,'receipt_replaced')?'retired':'deferred';
+    $outcome=\AchBot\Telegram\Response\deliveryOutcome($reply);
+    if ($outcome['code']===400 && str_contains(strtolower((string)$reply->description),'message to delete not found'))
+        return achbotPayUxRetire($db,$ref,'receipt_replaced')?'retired':'deferred';
+    if ($outcome['code']===429) {
+        $s=achbotProviderStatement($db,'UPDATE payment_message_refs SET updated_at=DATE_ADD(NOW(6),INTERVAL ? SECOND) WHERE id=? AND retired_reason IS NULL',
+            'ii',[$outcome['retry_after']??180,(int)$ref['id']]);$s->close();
+        return 'deferred';
+    }
+    $result=achbotPayUxApplyProjection($db,$ref,achbotMessage('payment.payment_lifecycle.receipt_instruction_retired'),
+        inlineKeyboard([]));
+    if (in_array($result,['acknowledged','unchanged'],true))
+        return achbotPayUxRetire($db,$ref,'receipt_replaced')?'retired':'deferred';
+    return $result;
 }
 
 function achbotPayUxSyncMessages(mysqli $db,int $payId): int {
@@ -310,9 +381,11 @@ function achbotPayUxSyncMessages(mysqli $db,int $payId): int {
             // One bounded edit batch per payment. Digest filtering is per
             // purpose, so acknowledged rows cannot consume all batch slots.
             $changed=0;$budget=10;
+            $receiptView=achbotPayUxReceiptView($db,$payId,(int)$pay['user_id']);
+            $receiptId=(int)($receiptView['id']??0);
             $s=$db->prepare('SELECT * FROM payment_message_refs WHERE pay_row_id=? AND purpose<>\'staff\' AND retired_reason IS NULL
-                AND updated_at<=NOW(6) ORDER BY updated_at,id');
-            $s->bind_param('i',$payId);$s->execute();$rows=$s->get_result();$s->close();
+                AND updated_at<=NOW(6) ORDER BY (id=?) DESC,updated_at,id');
+            $s->bind_param('ii',$payId,$receiptId);$s->execute();$rows=$s->get_result();$s->close();
             $projections=[];
             $hasInvoice=(bool)achbotProviderRow($db,"SELECT id FROM payment_message_refs
                 WHERE pay_row_id=? AND purpose='invoice' AND retired_reason IS NULL LIMIT 1",'i',[$payId]);
@@ -322,6 +395,13 @@ function achbotPayUxSyncMessages(mysqli $db,int $payId): int {
                     achbotPayUxRetire($db,$ref,'invalid_owner');continue;
                 }
                 $purpose=$ref['purpose'];
+                if ((int)$ref['id']===$receiptId) $purpose='receipt_view';
+                elseif ($receiptView && in_array($purpose,['selector','invoice','status','receipt_view'],true)) {
+                    $result=achbotPayUxRetireObsoleteInstruction($db,$ref);
+                    if ($result==='retired') ++$changed;
+                    --$budget;
+                    continue;
+                }
                 // Recover an admission committed before the UI promotion.
                 // The first available selector owns the original manual invoice;
                 // additional selectors can only become status views.
@@ -341,6 +421,7 @@ function achbotPayUxSyncMessages(mysqli $db,int $payId): int {
                 [$body,$keys,$markup]=$projection;
                 $result=achbotPayUxApplyProjection($db,$ref,$body,$keys,$markup);
                 if ($result==='acknowledged') ++$changed;
+                if ((int)$ref['id']===$receiptId && $result==='retired') $receiptView=null;
                 if (!in_array($result,['unchanged'],true)) --$budget;
             }
             $rows->free();

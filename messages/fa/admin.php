@@ -14,7 +14,6 @@ return [
         'import_report' => ['text'=>"📥 ثبت اشتراک موجود\nکاربر: {user}\nاشتراک: {remark}\nشناسهٔ اشتراک: {order}\nسرور: {server}\nثبت‌کننده: {actor}",'parameters'=>['user','remark','order','server','actor']],
         'credit_title' => '<b>💰 افزایش موجودی کیف پول</b>',
         'funded_title' => '<b>💳 ثبت پرداخت و تأمین مالی سرویس</b>',
-        'receipt_credit' => '<b>💳 اعتبار پرداخت ثبت‌شده</b>',
         'service_zero_title' => '<b>🧾 ثبت درخواست سرویس</b>',
         'service_zero_pending' => '⏳ درخواست بدون هزینه ثبت شد؛ نتیجه اجرای سرویس جداگانه بررسی می‌شود.',
         'service_funding_pending' => '⏳ تأمین مالی انجام شد؛ نتیجه اجرای سرویس جداگانه بررسی می‌شود.',
@@ -43,7 +42,11 @@ return [
         'finite_volume' => ['text' => '{volume} گیگابایت', 'parameters' => ['volume']],
         'service_added_days' => ['text' => '📅 زمان اضافه‌شده: {days} روز', 'parameters' => ['days']],
         'service_added_volume' => ['text' => '📦 حجم اضافه‌شده: {volume} گیگابایت', 'parameters' => ['volume']],
-        'service_wallet' => ['text' => "شناسهٔ کسر از کیف پول: <code>W{entry}</code>\nموجودی پیش از کسر: {before} تومان\nموجودی پس از کسر: {after} تومان\n📅 تاریخ ثبت کسر (ایران): {date}", 'parameters' => ['entry','before','after','date']],
+        'service_wallet_title' => '<b>💰 گردش کیف پول</b>',
+        'service_wallet_credit' => ['text' => "➕ اعتبار پرداخت: {amount} تومان | <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}", 'parameters' => ['entry','amount','date']],
+        'service_wallet_debit' => ['text' => "➖ کسر بابت سرویس: {amount} تومان | <code>W{entry}</code>\n📅 تاریخ ثبت (ایران): {date}", 'parameters' => ['entry','amount','date']],
+        'service_wallet_balance' => ['text' => "موجودی قبل: {before} تومان\nموجودی بعد: {after} تومان", 'parameters' => ['before','after']],
+        'service_wallet_net' => ['text' => 'خالص تغییر موجودی: {net} تومان', 'parameters' => ['net']],
         'service_order' => ['text' => 'شناسهٔ اشتراک: <code>{order}</code>', 'parameters' => ['order']],
         'source_adjustment' => 'تغییر موجودی توسط ادمین',
         'source_transfer' => 'انتقال موجودی کیف پول',
@@ -61,7 +64,6 @@ return [
         'provider_zarinpal' => 'زرین‌پال',
         'provider_nextpay' => 'NextPay',
         'provider_bank_transfer' => 'کارت‌به‌کارت',
-        'provider_gift_card' => 'گیفت‌کارت',
         'open_case' => '🔎 بررسی پرونده',
         'recover' => '🔄 بررسی و بازیابی عملیات',
         'service_action' => '✅ تأیید و تکمیل عملیات',
@@ -135,11 +137,7 @@ return [
         'updated' => ['text' => '📅 آخرین تغییر: {date}', 'parameters' => ['date']],
         'warning' => 'پیش از تأیید یا رد، وضعیت واقعی این صورتحساب را در پنل درگاه بررسی کنید. بازگشت از درگاه به معنی پرداخت موفق نیست.',
         'manual_hold' => '⚠️ این مورد دارای وضعیت نامطمئن یا عملیات قبلی است؛ برای جلوگیری از تکرار، تأیید و رد خودکار آن مجاز نیست.',
-        'toman' => 'تومان',
-        'purchase' => 'خرید اشتراک',
-        'renew' => 'تمدید اشتراک',
         'wallet' => 'افزایش موجودی کیف پول',
-        'wallet_provider' => 'کیف پول',
         'wallet_report_action' => '🔎 بررسی گزارش ادمین',
         'wallet_report_confirm' => ['text' => "⚠️ تأیید تلاش مجدد برای گزارش اصلی ادمین
 
@@ -152,14 +150,12 @@ return [
         'wallet_report_hold' => '⚠️ وضعیت گزارش اصلی هنوز نامعلوم است. پردازش قبلی ممکن است انجام شده باشد؛ مدارک Telegram را مستقل بررسی کنید.',
         'wallet_review_warning' => '⚠️ وجه از کیف پول قبلاً کسر شده است. پیش از هر تصمیم، هویت حساب و وضعیت واقعی PasarGuard را بررسی کنید. تمدید با همان سفارش و تأیید مجدد مدیر مجاز است؛ افزایش حجم/زمان یا ساخت اکانت تکراری نیست.',
         'days' => 'افزایش مدت اشتراک',
-        'volume' => 'افزایش حجم اشتراک',
         'unknown' => 'ثبت نشده',
         'approve' => '✅ تأیید',
         'reject' => '❌ رد',
         'older' => '⬅️ موارد قدیمی‌تر',
         'newest' => '🔄 ابتدای فهرست',
         'back_list' => '↪️ بازگشت به لیست بررسی',
-        'back_admin' => '↪️ بازگشت به مدیریت',
         'resolved' => 'این پرداخت دیگر نیازمند بررسی نیست.',
         'checking' => 'در حال بررسی پرونده',
         'unavailable' => '⚠️ اطلاعات پرداخت فعلاً قابل بررسی نیست.',
@@ -239,6 +235,8 @@ return [
     'bot' => [
         // bot.webhook_ingress_authenticated
         'bot.webhook_ingress_authenticated.message.305cb98154' => '✉️ لطفا پیام خود را بنویسید.',
+        'bot.direct_message_rejected' => ['text'=>'❌ ارسال پیام به کاربر <code>{user}</code> ناموفق بود. در صورت نیاز دوباره از گزینه ارسال پیام استفاده کنید.','parameters'=>['user']],
+        'bot.direct_message_unknown' => ['text'=>'⚠️ ارسال پیام به کاربر <code>{user}</code> هنوز تأیید نشده است. پیش از تکرار، نتیجه را بررسی کنید.','parameters'=>['user']],
         'bot.webhook_ingress_authenticated.message.21095e090c' => ['text' => '💬 پیام شما برای کاربر <code>{match_1}</code> ارسال شد.', 'parameters' => ['match_1']],
         'bot.webhook_ingress_authenticated.message.4e0fd88f4b' => '📅 لطفاً تاریخ شروع و پایان فروش را وارد کنید:' . "\n" . '' . "\n" . '',
         'bot.webhook_ingress_authenticated.message.9c3afd43bd' => 'فرمت نمونه:' . "\n" . '<code>2026-05-21 to 2026-05-22</code>' . "\n" . '',
@@ -246,8 +244,6 @@ return [
         'bot.webhook_ingress_authenticated.message.f438b1a27b' => '❌ فرمت تاریخ درست نیست. لطفاً دقیقاً مثل نمونه وارد کنید:' . "\n" . '<code>2026-05-21 to 2026-05-22</code>',
         'bot.webhook_ingress_authenticated.message.4684e19e66' => '❌ تاریخ شروع نباید بعد از تاریخ پایان باشد.',
         'bot.webhook_ingress_authenticated.text.d4b423ba4f' => '👤 آمار کاربران',
-        'bot.webhook_ingress_authenticated.text.2ef1b34354' => '📦 آمار اشتراک‌ها',
-        'bot.webhook_ingress_authenticated.text.adb2cb111d' => '💰 آمار فروش',
         'bot.webhook_ingress_authenticated.text.cab0824f0a' => '📊 لطفاً یکی از بخش‌های آماری زیر را انتخاب کنید:',
         'bot.webhook_ingress_authenticated.alert.c0889a8ad7' => 'این تنظیم قدیمی یا ناشناخته قابل تغییر نیست.',
         'bot.webhook_ingress_authenticated.alert.18796a4549' => 'دسترسی مدیریت پرداخت تأیید نشد.',
@@ -266,7 +262,6 @@ return [
         'bot.gateway_audience_settings.message.397d3e91b6' => '🔎 مقدار پیشنهادی: ',
         'bot.gateway_audience_settings.message.c5bdeadc6b' => '' . "\n" . 'تا انتخاب «ذخیره»، قانون قبلی برقرار است.',
         'bot.gateway_audience_settings.button.9b026e4934' => '💾 ذخیره مقدار',
-        'bot.gateway_audience_settings.button.1fe862ea18' => '❌ انصراف',
         'bot.gateway_audience_settings.message.e2238b091f' => '👥 دسترسی درگاه‌ها برای گروه‌های مختلف کاربران',
         'bot.gateway_audience_settings.alert.a677e95601' => 'روش پرداخت ناشناخته است.',
         'bot.gateway_audience_settings.alert.0b06afc291' => 'تنظیم ذخیره نشد؛ دسترسی یا اعتبار درخواست را بررسی کنید.',
@@ -306,7 +301,6 @@ return [
         'bot.invite_setting.button.0854688c71' => '💰 مقدار پورسانت',
         'bot.invite_setting.message.554f354e70' => '✅ تنظیمات بازاریابی',
         // bot.invite_banner
-        'bot.invite_banner.button.d6aa12d559' => '✏️ ویرایش',
         'bot.invite_banner.message.379af3c42e' => 'بنر فعلی: ' . "\n" . '',
         'bot.invite_banner.message.e5b34cbee4' => '⚠️ تصویر فعلی یافت نشد، لطفا اقدام به ویرایش بنر کنید',
         // bot.edit_invite_banner_text
@@ -334,7 +328,6 @@ return [
         'bot.process_callback_query.text.d789169bd3' => ' اکانت',
         'bot.process_callback_query.message.e8f25aae49' => '📊 موجودی سرویس‌ها:',
         'bot.process_callback_query.message.70afb19fd8' => '🧮 مدیریت دکمه ها',
-        'bot.process_callback_query.alert.e1e7245408' => '✅ با موفقیت حذف شد.',
         'bot.process_callback_query.message.ed098f7f93' => '📝 لطفا اسم دکمه را وارد کنید',
         'bot.process_callback_query.message.0caee5986d' => '📝 لطفا فقط متن بفرستید',
         'bot.process_callback_query.message.ea8c224138' => '📝 لطفا پاسخ دکمه را وارد کنید',
@@ -387,7 +380,6 @@ return [
         'bot.addserver_name.alert.9ee9f25355' => '⚠️ این نوع پنل پشتیبانی نمی‌شود یا سرور معتبر نیست.',
         'bot.addserver_name.alert.a5625b915f' => '⛔️ ذخیره گروه پنل انجام نشد. معتبر بودن گروه و سرور را بررسی کنید و دوباره تلاش کنید.',
         'bot.addserver_name.message.9495c6622a' => '✅ گروه پنل سرور به‌روزرسانی شد.',
-        'bot.addserver_name.button.13159f8c74' => '✅ بله',
         'bot.addserver_name.button.f47dddc181' => '❌ نخير',
         // bot.manage_panel
         'bot.manage_panel.msg.5db5d59c90' => ['text' => '' . "\n" . '👤 به بخش مدیریت خوش اومدی {first_name}' . "\n" . '' . "\n" . '🚪 شروع دوباره: /start' . "\n" . '', 'parameters' => ['first_name']],
@@ -470,7 +462,6 @@ return [
         'account_deletion.no_dont_delete.admin_message.53224aee55' => ['text' => '' . "\n" . '❌ اشتراک توسط ادمین حذف شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: {userId}' . "\n" . '🔄 نام کاربری اشتراک: {remark}' . "\n" . '', 'parameters' => ['userId', 'remark']],
         // account_details.build_admin_protocol_buttons
         'account_details.get_user_order_detail_keys.button.d35e1b4661' => '🎫 آیدی کاربر',
-        'account_details.get_user_order_detail_keys.button.c9b4331f4f' => '👤 اسم کاربر',
         'account_details.get_user_order_detail_keys.button.1c7f597d4f' => '🤝 خرید همکار',
         'account_details.get_user_order_detail_keys.text.ed76444585' => '🟢 تمدید خودکار روشن',
         'account_details.get_user_order_detail_keys.text.fb6d00ad8d' => '🔴 تمدید خودکار خاموش',
@@ -511,7 +502,6 @@ return [
         // manual_accounts.manual_account_consume_selection
         'manual_accounts.manual_account_consume_selection.msg.86a1eb982f' => ['text' => '✅ شناسه عددی <b>{customUserId}</b> با موفقیت ثبت شد.', 'parameters' => ['customUserId']],
         'manual_accounts.manual_account_consume_selection.button.0c983c9f0f' => '➕ افزودن به اشتراک های کاربر',
-        'manual_accounts.manual_account_consume_selection.button.11b0188fcb' => '🔍 جستجوی اشتراک',
         // manual_accounts.detect_server_id_from_remark
         'manual_accounts.detect_server_id_from_remark.alert.ecf2df32d7' => '✅ اشتراک با موفقیت به لیست اضافه شد.',
         'manual_accounts.detect_server_id_from_remark.button.48f23552b7' => '💡مشاهده مشخصات اشتراک',
@@ -536,7 +526,6 @@ return [
         'order_management.show_order_management_panel.button.8824464622' => '🖥 تغییر Server ID',
         'order_management.show_order_management_panel.button.72e5322e9a' => ['text' => '💎 خرید همکار ←  {agentStatus}', 'parameters' => ['agentStatus']],
         'order_management.show_order_management_panel.button.bf169ddbf3' => '💡 مشاهده مشخصات اشتراک',
-        'order_management.show_order_management_panel.button.087a5a43b1' => '↪️ بازگشت به مدیریت',
         'order_management.show_order_management_panel.button.198b410113' => '🔄 صفر کردن مصرف (PasarGuard)',
         'order_management.show_order_management_panel.msg.4292e04017' => ['text' => '🔧 مدیریت سفارش' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{order_userid}</code>' . "\n" . '🎈 نام اشتراک: <code>{order_remark}</code>', 'parameters' => ['order_userid', 'order_remark']],
         'order_management.show_order_management_panel.alert.c9b07798db' => '⛔️ دسترسی به حذف سفارش ندارید.',
@@ -547,7 +536,6 @@ return [
         'order_management.show_order_management_panel.message.606600ccca' => ['text' => '✅ سفارش از دیتابیس حذف شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{userid}</code>' . "\n" . '🔄 نام کاربری اشتراک: <code>{remark}</code>' . "\n" . '' . "\n" . 'برای مدیریت سفارش دیگر، دوباره «ویرایش سفارش در دیتابیس» را بزنید.', 'parameters' => ['userid', 'remark']],
         'order_management.show_order_management_panel.admin_message.c7c4748cee' => ['text' => '🗑 سفارش از دیتابیس حذف شد.' . "\n" . '' . "\n" . '🎫 شناسه عددی: <code>{userid}</code>' . "\n" . '🔄 نام کاربری اشتراک: <code>{remark}</code>' . "\n" . '👤 مدیر: <code>{from_id}</code>', 'parameters' => ['userid', 'remark', 'from_id']],
         'order_management.show_order_management_panel.message.86c15dd0ed' => '✅ تاریخ انقضا با موفقیت ویرایش شد.',
-        'order_management.show_order_management_panel.alert.057ec5448c' => '⛔️ دسترسی لازم وجود ندارد.',
         'order_management.show_order_management_panel.alert.3e801d365f' => '⛔️ سفارش یا اتصال پاسارگارد معتبر نیست.',
         'order_management.show_order_management_panel.alert.7a6ebab798' => '⚠️ هیچ سرور دیگری متصل به همین پنل پاسارگارد وجود ندارد.',
         'order_management.show_order_management_panel.message.557fb66856' => '🌐 سرور منطقی مقصد را انتخاب کنید. تنظیمات مقصد پس از بررسی اشتراک اعمال می‌شود.',
@@ -625,9 +613,6 @@ return [
         'discounts.get_discount_code_keys.button.54f0bc3a22' => ['text' => '📋 لیست کدهای تخفیف (صفحه {page})', 'parameters' => ['page']],
         'discounts.get_discount_code_keys.button.7f34ceb3ad' => 'کد',
         'discounts.get_discount_code_keys.button.70fad032e5' => 'مقدار',
-        'discounts.get_discount_code_keys.button.68d7eb08ef' => 'ℹ️ وضعیت',
-        'discounts.get_discount_code_keys.button.d6aa12d559' => '✏️ ویرایش',
-        'discounts.get_discount_code_keys.button.59ca629220' => '🗑 حذف',
         'discounts.get_discount_code_keys.status_text.83f88b09cc' => '📅 منقضی',
         'discounts.get_discount_code_keys.status_text.5136ccff12' => '🔢 ناموجود',
         'discounts.get_discount_code_keys.text.96befbea77' => '✅ فعال',
@@ -640,7 +625,6 @@ return [
         'discounts.get_discount_code_keys.button.87e5644bfa' => '➕ افزودن کد تخفیف',
         // payment_lifecycle.pay_ux_audience_modes
         'payment_lifecycle.pay_ux_audience_modes.text.15270886ea' => 'همه',
-        'payment_lifecycle.pay_ux_audience_modes.text.452a2d6fed' => 'همکاران',
         'payment_lifecycle.pay_ux_audience_modes.text.8b3e917f90' => 'غیرهمکاران',
         'payment_lifecycle.pay_ux_audience_modes.text.446e7017e1' => 'خریداران',
         'payment_lifecycle.pay_ux_audience_modes.text.711a7d07d3' => 'بدون خرید',
@@ -649,13 +633,7 @@ return [
         'payment_lifecycle.pay_ux_audience_modes.text.29dbbef63d' => 'هیچ‌کس',
         // payment_lifecycle.pay_ux_audience_methods
         'payment_lifecycle.pay_ux_audience_methods.n_o_w_payments.83db3cb125' => 'درگاه NOWPayments',
-        'payment_lifecycle.pay_ux_audience_methods.text.7d213c0bc4' => 'زرین‌پال',
         'payment_lifecycle.pay_ux_audience_methods.text.d5f4cc2d6e' => 'نکست‌پی',
-        'payment_lifecycle.pay_ux_audience_methods.text.64c20e2b45' => 'کارت‌به‌کارت',
-        'payment_lifecycle.pay_ux_audience_methods.text.3904ef0f3d' => 'گیفت‌کارت',
-        'payment_lifecycle.pay_ux_audience_methods.text.4fafcb549d' => 'تتر دستی (USDT)',
-        'payment_lifecycle.pay_ux_audience_methods.text.349ece736f' => 'ترون دستی (TRX)',
-        'payment_lifecycle.pay_ux_audience_methods.text.6295c35212' => 'کیف پول',
         // referral_reward.referral_warn_operator
         'referral_reward.give_referral_reward.operator_msg.7c8cfd9d4f' => '👥 پاداش معرفی خرید ثبت شد.' . "\n" . 'شناسه پرداخت: ',
         'referral_reward.give_referral_reward.text.23d0786d9b' => '' . "\n" . 'شناسه خریدار: ',
@@ -676,7 +654,6 @@ return [
         'discount_administration.add_discount_code.message.1415403ff4' => '🔘 لطفا تعداد استفاده این تخفیف را وارد کنید.' . "\n" . 'برای نامحدود بودن 0 وارد کنید.',
         'discount_administration.add_discount_code.message.50cd9cde9a' => '🔘 لطفا فقط عدد بفرستید.',
         'discount_administration.add_discount_code.message.4359ee21ce' => '🔘 لطفا تعداد استفاده هر کاربر از این کد را وارد کنید.' . "\n" . 'برای نامحدود بودن 0 وارد کنید.',
-        'discount_administration.add_discount_code.button.ee7ae9b315' => '👥 همه کاربران',
         'discount_administration.add_discount_code.button.8d713207b6' => '👤 یک کاربر خاص',
         'discount_administration.add_discount_code.button.921ac284c7' => '👥 همکاران (agents)',
         'discount_administration.add_discount_code.button.04640cdbe9' => '👥 کاربران غیر همکار',
@@ -778,7 +755,6 @@ return [
     // ── رسیدهای پرداخت دستی ──
     'manual_payment' => [
         'api_payment.currency_rial' => 'ریال',
-        'api_payment.currency_toman' => 'تومان',
         'api_payment.code_used' => 'کد گیفت‌کارت طبق API قبلاً مصرف شده است.',
         'api_payment.code_revoked' => 'کد گیفت‌کارت طبق API باطل شده است.',
         'api_payment.code_expired' => 'کد گیفت‌کارت طبق API منقضی شده است.',
@@ -790,6 +766,8 @@ return [
         'api_payment.gift_not_verified' => 'نیازمند بررسی دستی',
         'api_payment.gift_not_provided' => 'در پاسخ API ارائه نشده',
         'api_payment.status_settled' => "پرداخت قبلاً نهایی شده است.",
+        'api_payment.current_monitoring' => '⏳ در انتظار بررسی خودکار',
+        'api_payment.current_verifying' => '⏳ در حال تأیید شواهد پرداخت',
         'api_payment.status_review' => "نیازمند بررسی مدیر",
         'api_payment.status_uncertain' => "نتیجهٔ عملیات بیرونی نامشخص است.",
         'api_payment.status_evidence_only' => "پیامک دیررس ثبت شد؛ پرداخت قبلاً نهایی بود و عملیات مالی تکرار نشد",
@@ -828,7 +806,6 @@ return [
         'manual_receipts.button.7918a2f411' => '🚫 مسدود کردن کاربر',
         // manual_receipts.message
         'manual_receipts.alert.61d5318e58' => ['text' => '✅ کاربر {m_1} مسدود شد.', 'parameters' => ['m_1']],
-        'manual_receipts.alert.8b8e660e87' => '☑️ این کاربر از قبل مسدود بود.',
         'manual_receipts.alert.abf0b6c70d' => '⛔️ این درخواست مسدودسازی تأیید نشد؛ وضعیت را بررسی کنید.',
         // manual_receipts.button
         'manual_receipts.button.85f4d0ad41' => ['text' => '✅ مسدود شد: {m_1}', 'parameters' => ['m_1']],
@@ -853,8 +830,6 @@ return [
         'customer_conversation.user_all_tickets.text.a79a2fa69e' => ['text' => '' . "\n" . 'متن پیام: {text}', 'parameters' => ['text']],
         'customer_conversation.user_all_tickets.text.46d8580795' => ['text' => '' . "\n" . 'متن پیام: {caption}', 'parameters' => ['caption']],
         'customer_conversation.user_all_tickets.text.497743bb13' => ['text' => '📨 رأی به تیکت ' . "\n" . '' . "\n" . '🎫 شناسه عددی: {from_id}' . "\n" . '👤 نام کاربر: {first_name}' . "\n" . '🔖 نام کاربری: @{username}' . "\n" . '〽️ عنوان: {title}' . "\n" . '⚜️ دسته بندی: {category}' . "\n" . '❤️ رای: {rate}' . "\n" . '', 'parameters' => ['from_id', 'first_name', 'username', 'title', 'category', 'rate']],
-        'customer_conversation.user_all_tickets.button.2dc9dcf8cd' => '🎫 شناسه عددی',
-        'customer_conversation.user_all_tickets.button.c9b4331f4f' => '👤 اسم کاربر',
         'customer_conversation.user_all_tickets.button.74190f4bb0' => 'عنوان',
         'customer_conversation.user_all_tickets.button.105e0409bc' => '💬 رای تیکت',
         // admin_reply.message
@@ -862,20 +837,17 @@ return [
         // admin_reply.button
         // admin_reply.message
         // categories.tickets_list
-        'categories.tickets_list.button.33d6fa9470' => '💬 تیکت های باز',
         'categories.tickets_list.button.732c0fd101' => '💬 تیکت های جدید',
         'categories.tickets_list.button.c77cd22d1c' => '💬 همه ی تیکت ها',
         'categories.tickets_list.button.0e6cb76a8c' => '💬 دسته بندی تیکت ها',
         'categories.tickets_list.message.41905ef3f3' => 'به بخش تیکت ها خوش اومدید' . "\n" . '    ' . "\n" . '🚪 شروع دوباره: /start' . "\n" . '    ',
         // categories.tickets_category
-        'categories.tickets_category.button.59ca629220' => '🗑 حذف',
         'categories.tickets_category.button.0fc3aac224' => '🗂 دسته بندی',
         'categories.tickets_category.button.2b2966a54e' => '❌',
         'categories.tickets_category.button.7f9f2e3157' => '⚠️ دسته بندی یافت نشد',
         'categories.tickets_category.button.ee4edcb19e' => '🗂 افزودن دسته بندی',
         // categories.add_ticket_category
         'categories.add_ticket_category.message.f17638132c' => 'لطفا اسم دسته بندی را وارد کنید',
-        'categories.add_ticket_category.alert.e1e7245408' => '✅ با موفقیت حذف شد.',
         // create_ticket.button
         'create_ticket.button.3b90dccc67' => '💬 پاسخ',
         // create_ticket.txt
@@ -884,8 +856,6 @@ return [
         'create_ticket.text.fe45cc8381' => ['text' => '' . "\n" . 'متن تیکت: {text}', 'parameters' => ['text']],
         'create_ticket.text.4479736037' => ['text' => '' . "\n" . 'متن تیکت: {caption}', 'parameters' => ['caption']],
         // queue_and_history.all_tickets
-        'queue_and_history.all_tickets.button.12e9251ccb' => '💬 بستن تیکت',
-        'queue_and_history.all_tickets.button.ce4f25e31b' => '💬 آخرین پیام ها',
         'queue_and_history.all_tickets.rate.c5509cf4dc' => '' . "\n" . 'رأی: ',
         'queue_and_history.all_tickets.message.abf3f55cac' => ['text' => '🎫 شناسه عددی: {admin}' . "\n" . 'نام کاربر: {username}' . "\n" . 'دسته بندی: {category} {rate}' . "\n" . '' . "\n" . '🧾 موضوع: {title}' . "\n" . 'آخرین پیام:' . "\n" . '[{sentType}] {lastmsg}', 'parameters' => ['admin', 'username', 'category', 'rate', 'title', 'sentType', 'lastmsg']],
         'queue_and_history.all_tickets.alert.5974314756' => '⚠️ تیکتی یافت نشد.',
@@ -900,7 +870,6 @@ return [
         'discounts.agents_list.message.3c0d01e71b' => ['text' => 'لطفا سرور مورد نظر را برای افزودن تخفیف به همکار {userName} انتخاب کنید.', 'parameters' => ['userName']],
         'discounts.agents_list.alert.75b2cb38d6' => '⚠️ سروری باقی نمانده است.',
         'discounts.agents_list.button.a38a46edb9' => '◀️️',
-        'discounts.agents_list.alert.e1e7245408' => '✅ با موفقیت حذف شد.',
         // rejected.rejected_agent_list
         'rejected.rejected_agent_list.message.4bb2ce6b81' => 'لیست کاربران رد شده از همکاری',
         'rejected.rejected_agent_list.alert.d5290e0a13' => '⚠️ کاربری یافت نشد.',
@@ -908,6 +877,17 @@ return [
 
     // ── برچسب‌های مشترک ──
     'labels' => [
+        'admin_subscription_stats' => '📦 آمار اشتراک‌ها',
+        'admin_sales_stats' => '💰 آمار فروش',
+        'edit' => '✏️ ویرایش',
+        'delete' => '🗑 حذف',
+        'deleted_successfully' => '✅ با موفقیت حذف شد.',
+        'customer_name' => '👤 اسم کاربر',
+        'back_to_admin' => '↪️ بازگشت به مدیریت',
+        'access_denied' => '⛔️ دسترسی لازم وجود ندارد.',
+        'status' => 'ℹ️ وضعیت',
+        'all_users_button' => '👥 همه کاربران',
+        'telegram_numeric_id' => '🎫 شناسه عددی',
         // labels.audience
         'labels.audience.label.7550933a0a' => 'دارای اشتراک',
         'labels.audience.label.06899237ef' => 'بدون اشتراک',
@@ -1085,13 +1065,10 @@ return [
 
 
         // config.get_main_keys
-        'config.get_main_keys.button.11b0188fcb' => '🔍 جستجوی اشتراک',
         'config.get_main_keys.button.d9c51cced4' => '⚙️ مدیریت ربات',
         // config.get_admin_keys
         // config.get_rejected_agent_list
         'config.get_rejected_agent_list.button.df8e33a61a' => '✅ آزاد ساختن',
-        'config.get_rejected_agent_list.button.c9b4331f4f' => '👤 اسم کاربر',
-        'config.get_rejected_agent_list.button.2dc9dcf8cd' => '🎫 شناسه عددی',
         'config.get_rejected_agent_list.button.1d456424c3' => '✅',
         // config.get_agent_details
         'config.get_agent_details.button.5a788e64cb' => '📅 درآمد امروز',
@@ -1099,7 +1076,6 @@ return [
         'config.get_agent_details.button.b939f33fef' => '💰 درآمد یک هفته',
         'config.get_agent_details.button.12c33cffe7' => '💰 درآمد یک ماه',
         // config.get_agents_list
-        'config.get_agents_list.button.59ca629220' => '🗑 حذف',
         'config.get_agents_list.button.9f7ae9d87f' => '🎁 درصد تخفیف',
         'config.get_agents_list.button.83a20e2f87' => '📅 تاریخ همکاری',
         'config.get_agents_list.button.1882d627a1' => '👤 اسم همکار',
@@ -1119,7 +1095,6 @@ return [
         'config.get_server_config_keys.text.176dbab285' => 'بدون گروه',
         'config.get_server_config_keys.button.2f6b3d0d80' => '❕نام سرور',
         'config.get_server_config_keys.button.d004e8d654' => '🚩 پرچم سرور',
-        'config.get_server_list_keys.button.68d7eb08ef' => 'ℹ️ وضعیت',
         'config.get_server_list_keys.button.6badcac8c1' => '⚙️ تنظیمات',
         'config.get_server_list_keys.button.b55501074d' => 'نوع',
         'config.get_server_list_keys.button.0b29754285' => '🌐 سرور',
@@ -1146,8 +1121,6 @@ return [
         'config.gateway_audience_keyboard.text.256b1382f5' => '⚠️ سیاست نامعتبر (مسدود)',
         'config.gateway_audience_keyboard.text.3b2e8119b6' => ' — ',
         // config.get_gate_ways_keys
-        'config.get_gate_ways_keys.text.9fec3d676e' => '⚠️ تنظیم‌نشده',
-        'config.get_gate_ways_keys.text.ad271ae97c' => '✅ تنظیم‌شده',
         'config.get_gate_ways_keys.text.213a608ab9' => '⚠️ نامعتبر',
         'config.get_gate_ways_keys.button.e1971f4d7a' => 'آدرس USDT ',
         'config.get_gate_ways_keys.button.99a296169c' => 'آدرس TRX — TRON',
@@ -1182,9 +1155,7 @@ return [
         'config.get_bot_setting_keys.button.f386be17f5' => '🎗 بنر بازاریابی',
         'config.get_bot_setting_keys.button.3b878712ee' => '🤝 همکاری',
         'config.get_bot_setting_keys.button.c2df8234c5' => '🎁 نوع تخفیف همکاری',
-        'config.get_bot_setting_keys.button.546c2c8acc' => '📊 موجودی سرویس‌ها',
         'config.get_bot_setting_keys.button.11ee94f26d' => '🎁 اکانت تست',
-        'config.get_bot_setting_keys.button.df1c62b99e' => '♻️ تمدید اشتراک',
         'config.get_bot_setting_keys.button.f9a77f614a' => '♻️ تمدید خودکار اشتراک',
         'config.get_bot_setting_keys.button.8ef9c2184e' => '📋 پلن دلخواه',
         'config.get_bot_setting_keys.customer_plan_toggle' => '📦 تغییر پلن کاربران',
@@ -1197,7 +1168,6 @@ return [
         'config.get_bot_setting_keys.button.c56b392566' => '📋 مشخصات اشتراک',
         'config.get_bot_setting_keys.button.242b408ae2' => '🔗 دریافت لینک جدید',
         'config.get_bot_setting_keys.button.fb0475aeb4' => '📅 بروزرسانی لینک',
-        'config.get_bot_setting_keys.button.59be548183' => '🔳 کیوآرکد کانفیگ',
         'config.get_bot_setting_keys.button.ae54bb8cbe' => '🔳 کیوآرکد اشتراک',
         'config.get_bot_setting_keys.button.8855cd3ee5' => 'نوع ریمارک',
         'config.get_bot_setting_keys.button.2d0dc535a6' => '💰 ارسال گزارش درآمد',
@@ -1209,9 +1179,6 @@ return [
         'config.send_chunked_messages.text.bffd2d6f62' => ['text' => '💰 مبلغ پرداختی: <b>{amount} تومان</b>' . "\n" . '' . "\n" . '', 'parameters' => ['amount']],
         // config.get_bot_report_keys
         'config.get_bot_report_keys.button.6d1fec5b8b' => '👥 آمار کاربران',
-        'config.get_bot_report_keys.button.2ef1b34354' => '📦 آمار اشتراک‌ها',
-        'config.get_bot_report_keys.button.adb2cb111d' => '💰 آمار فروش',
-        'config.get_bot_report_keys.button.255cc89ba7' => '↪️ بازگشت به مدیریت',
         'config.get_bot_report_keys.text.e9de3103c2' => '📈 کاربران با بیشترین موجودی',
         'config.get_bot_report_keys.text.cc383ee7c0' => '📦 کاربران با بیشترین تعداد اشتراک',
         'config.get_bot_report_keys.text.178803da84' => '🛍 کاربران با بیشترین حجم خرید',
@@ -1367,7 +1334,6 @@ return [
         'administration.backplan.msg.20bb3eca34' => '☑️ مدیریت پلن ها:',
         // administration.edit_custom_plan
         'administration.edit_custom_plan.message.be59f23713' => '🔢 فقط عدد ارسال کن',
-        'administration.edit_custom_plan.text.2cc98f7f7c' => ' تومان',
         'administration.edit_custom_plan.button.7a96416b62' => '📦 هزینه هر گیگ',
         'administration.edit_custom_plan.button.31bc93a08d' => '📅 هزینه هر روز',
         'administration.edit_custom_plan.message.e3b03f6c8e' => '📋 تنظیمات پلن دلخواه',
@@ -1412,14 +1378,12 @@ return [
         'intervals.volume_plan_settings.msg.573ae79cf6' => ' 📍 برای دیدن جزییات پلن حجمی روی آن بزنید👇',
         // intervals.add_new_volume_plan
         'intervals.add_new_volume_plan.alert.d5009733f9' => '✅ پلن مورد نظر با موفقیت حذف شد.',
-        'intervals.add_new_volume_plan.message.76731ef62b' => '✅ عملیات با موفقیت انجام شد.',
         'intervals.add_new_volume_plan.message.149e31d927' => '⚠️ حجم جدید را به گیگابایت کامل وارد کنید؛ مقدار اعشاری پشتیبانی نمی‌شود.',
     ],
 
     // ── مدیریت پنل‌ها ──
     'provider' => [
         // provider_admin.pg_server_admin_keys
-        'provider_admin.handle_provider_admin.alert.057ec5448c' => '⛔️ دسترسی لازم وجود ندارد.',
         'provider_admin.handle_provider_admin.message.b3a3ec95dd' => '✅ مصرف اشتراک پس از بررسی صفر شد.',
         'provider_admin.handle_provider_admin.message.254f747510' => 'شناسه گروه‌های دسترسی را با کاما بفرستید. برای ارث‌بری پلن از سرور /inherit را بفرستید.' . "\n" . '',
         'provider_admin.handle_provider_admin.message.7a19204ab5' => '✅ کلید API تأیید و تعویض شد.',
@@ -1523,7 +1487,6 @@ return [
         'gateway_rule_admin.gateway_admin_page.button.50abbe7e6f' => ['text' => '⚠️ قانون {categoryLabel} از {methodLabel} حذف شود؟' . "\n" . '', 'parameters' => ['categoryLabel', 'methodLabel']],
         'gateway_rule_admin.gateway_admin_page.text.63f13c4d9f' => 'اگر آخرین قانون باشد، روش تا تعریف قانون جدید مسدود می‌ماند.',
         'gateway_rule_admin.gateway_admin_page.button.909c78e8f7' => '🗑 تأیید حذف',
-        'gateway_rule_admin.gateway_admin_page.button.fa7af603d4' => '❌ انصراف',
         'gateway_rule_admin.gateway_admin_page.method_label_category_label.2d180b42ba' => ['text' => '💳 {methodLabel} / {categoryLabel}' . "\n" . '', 'parameters' => ['methodLabel', 'categoryLabel']],
         'gateway_rule_admin.gateway_admin_page.text.c050f2e620' => 'هنوز قانونی ثبت نشده است. با ذخیره، این دسته بدون شرط عددی مجاز می‌شود. ',
         'gateway_rule_admin.gateway_admin_page.text.9a38991a3b' => 'می‌توانید بعداً سن و سابقهٔ خرید را محدود کنید.',
@@ -1577,7 +1540,6 @@ return [
         'gateway_rules.gateway_rule_metrics.text.3225fab3cd' => 'تمدید',
         'gateway_rules.gateway_rule_metrics.text.4bbbd988ad' => 'افزایش حجم',
         'gateway_rules.gateway_rule_metrics.text.070602773a' => 'افزایش زمان',
-        'gateway_rules.gateway_rule_metrics.text.991ae08d64' => 'شارژ کیف پول',
         // payment_key_admin.payment_key_admin_merchant_label
         'payment_key_admin.payment_key_admin_merchant_label.text.ad271ae97c' => '✅ تنظیم‌شده',
         'payment_key_admin.payment_key_admin_merchant_label.text.9fec3d676e' => '⚠️ تنظیم‌نشده',
@@ -1608,17 +1570,15 @@ return [
         'routes.message2_all.button.7dba3a00f7' => '📨 ارسال پیام جدید',
         // routes.broadcast_start
         'routes.broadcast_start.message.76bb0d02d0' => '💬 پیام را به کدام گروه می‌خواهید ارسال کنید؟',
-        'routes.broadcast_start.button.fac6686c54' => '👥 همه کاربران',
         'routes.broadcast_start.button.ebc2cb2366' => '✅ کاربران دارای اشتراک',
         'routes.broadcast_start.button.49b4568f0c' => '❌ کاربران بدون اشتراک',
         'routes.broadcast_start.button.706e4a7807' => '🧑‍💼 همکاران',
-        'routes.broadcast_start.message.39fe6c5d7e' => '⛔️ لغو شد. ارسال ادامه پیدا نمی‌کند.',
-        'routes.broadcast_start.message.78511c235c' => 'این ارسال قابل لغو نیست یا قبلاً تمام/لغو شده است.',
         'routes.broadcast_start.message.f7c7bcfe5e' => '🏷 لطفاً یک عنوان برای این ارسال وارد کنید.' . "\n" . 'مثال: اطلاعیه تعطیلی / آپدیت جدید',
         'routes.broadcast_start.message.adb061a104' => '⚠️ عنوان خیلی طولانی است.',
         'routes.broadcast_start.message.9df7171b87' => '⚠️ عنوان شامل کاراکتر غیرمجاز است.' . "\n" . '',
         'routes.broadcast_start.message.b6d57f844e' => 'مجاز: حروف، اعداد، علائم نگارشی، اموجی و - _ + ( ) = / \\ !',
-        'routes.broadcast_start.message.0c01c8169a' => '⚠️ خطایی در ساخت پیش‌نویس ارسال رخ داد.',
+        'routes.broadcast_start.message.0c01c8169a' => '⚠️ ثبت پیش‌نویس ارسال تأیید نشد.',
+        'routes.content_unconfirmed' => '⚠️ ثبت محتوای ارسال تأیید نشد. وضعیت پیش‌نویس را بررسی کنید.',
         'routes.broadcast_start.message.45cbfc9bc3' => '📜 حالا پیام را ارسال کنید یا پیام موردنظر را فوروارد کنید.',
         'routes.broadcast_start.text.b4935894c8' => '…',
         'routes.broadcast_start.message.e3d28dd838' => '⏳ مرسی از پیامت ...',
@@ -1627,13 +1587,17 @@ return [
         'routes.broadcast_start.button.5734fc6a07' => '❌ نفرست',
         'routes.broadcast_start.message.f041aa9600' => 'برای گروه انتخاب‌شده ارسال کنم؟',
         'routes.broadcast_start.message.372ee64c90' => 'ارسال پیام همگانی لغو شد.',
-        'routes.broadcast_start.message.b56da4fdde' => '⏳ کم کم برا همه ارسال میشه ...',
+        'routes.broadcast_start.message.b56da4fdde' => '⏳ ارسال پیام همگانی در صف قرار گرفت.',
+        'routes.state_draft' => 'پیش‌نویس پیام همگانی هنوز در صف ارسال قرار نگرفته است.',
+        'routes.state_sending' => '⏳ ارسال پیام همگانی در حال انجام است.',
+        'routes.state_finished' => '✅ پردازش ارسال پیام همگانی پایان یافته است.',
+        'routes.state_missing' => '⚠️ وضعیت این درخواست ارسال قابل تأیید نیست.',
+        'routes.state_ack_count' => ['text'=>'تعداد ارسال‌های تأییدشده: {count}','parameters'=>['count']],
         'routes.broadcast_start.text.bddb5c40d4' => 'بدون عنوان',
         'routes.broadcast_start.text.0dc38e658c' => 'فوروارد',
         'routes.broadcast_start.text.f910f3eee6' => 'ارسال',
         'routes.broadcast_start.id_type.b95c2c743a' => ['text' => '🧾 پیام شماره {id} | نوع: {type} | ', 'parameters' => ['id', 'type']],
         'routes.broadcast_start.text.2af0046efa' => ['text' => ' | {st} | ارسال‌شده:{sent} | آخرین پردازش:{lastId}' . "\n" . '', 'parameters' => ['st', 'sent', 'lastId']],
-        'routes.broadcast_start.title.eaf516bb5a' => ['text' => '🏷 عنوان: {title}' . "\n" . '', 'parameters' => ['title']],
         'routes.broadcast_start.dt.ba0c133dbc' => ['text' => '🕒 زمان: {dt}', 'parameters' => ['dt']],
         'routes.broadcast_start.out.661347ab91' => '📚 تاریخچه ارسال‌ها (صفحه ',
         'routes.broadcast_start.text.8d78e8b033' => '' . "\n" . '' . "\n" . '────────────' . "\n" . '' . "\n" . '',
@@ -1649,7 +1613,6 @@ return [
         'routes.pin_manage_all.pin_txt.00c693eabb' => '📌 همه',
         'routes.pin_manage_all.pin_txt.878906729e' => '📍 بعضی',
         'routes.pin_manage_all.pin_txt.a17e88e7f0' => '— ندارد',
-        'routes.pin_manage_all.button.1780efa62b' => '✏️ ویرایش',
         'routes.pin_manage_all.text.4fd6482802' => '📌 مدیریت پیام‌های همگانی' . "\n" . '',
         'routes.pin_manage_all.text.3586bc29c6' => '🔖 صفحه ',
         'routes.pin_manage_all.text.a624a1e41f' => ' از ',
@@ -1674,7 +1637,6 @@ return [
         'routes.pm_noop.txt.b846cf96a2' => ['text' => '🧾 وضعیت عملیات‌های ارسال ID:{bid}' . "\n" . '🔖 صفحه ', 'parameters' => ['bid']],
         'routes.pm_noop.text.f9b5a56317' => '📌 پین',
         'routes.pm_noop.text.55e164ad1c' => '📍 آنپین',
-        'routes.pm_noop.text.bc26818ef0' => '🗑 حذف',
         'routes.pm_noop.text.1ebfb10a5f' => 'در صف',
         'routes.pm_noop.text.ba31fd7d85' => 'در حال اجرا',
         'routes.pm_noop.text.98a2718667' => 'تمام شد',
@@ -1689,7 +1651,7 @@ return [
         'routes.pm_noop.message.d433f90c40' => '❌ این ارسال وجود ندارد یا هنوز کامل نشده است.',
         'routes.pm_noop.message.eeefb6dde3' => '⚠️ این ارسال قبلاً برای همه حذف شده است و امکان پین/آنپین ندارد.',
         'routes.pm_noop.message.30bfbbe059' => '⚠️ این عملیات از قبل در صف/حال اجراست.',
-        'routes.pm_noop.message.55c6d689fd' => '⚠️ خطا در ساخت عملیات، دوباره تلاش کنید.',
+        'routes.pm_noop.message.55c6d689fd' => '⚠️ ثبت عملیات تأیید نشد. وضعیت عملیات را بررسی کنید.',
         'routes.pm_noop.text.569e7df050' => '🗑 حذف پیام',
         'routes.pm_noop.message.97dfcd54fa' => ['text' => '✅ عملیات با ID:{jobId} ثبت شد.' . "\n" . '⚠️ اجرای {actFa} برای ارسال با ID:{bid} به صورت زمانبندی انجام می شود.', 'parameters' => ['jobId', 'actFa', 'bid']],
         'routes.pm_noop.message.3d8a2c45c2' => '❌ عملیات ویرایش لغو شد.',
@@ -1697,7 +1659,7 @@ return [
         'routes.pm_noop.message.72fe3f7c5d' => '⚠️ متن خیلی طولانی است.',
         'routes.pm_noop.message.cc3858d5b2' => '❌ این ارسال وجود ندارد یا کامل نشده است.',
         'routes.pm_noop.message.ddd2c4a6c0' => '⚠️ عملیات ویرایش برای این ارسال از قبل در حال اجراست.',
-        'routes.pm_noop.message.42f2d7e7a7' => '❌ خطا در ثبت عملیات ویرایش.',
+        'routes.pm_noop.message.42f2d7e7a7' => '⚠️ ثبت عملیات ویرایش تأیید نشد. وضعیت عملیات را بررسی کنید.',
         'routes.pm_noop.message.b1578cca6d' => '✅ عملیات ویرایش ثبت شد.',
         'routes.pm_noop.message.e85dadc103' => ['text' => '✏️ ویرایش با ID:{jid} ثبت شد و به‌صورت تدریجی اعمال می‌شود.', 'parameters' => ['jid']],
         'routes.pm_noop.message.9bdefaee4b' => '⚠️ هیچ عملیاتی ثبت نشده است.',
@@ -1778,7 +1740,6 @@ return [
     ],
     'manual_receipt_final' => [
         'checking' => '⏳ در حال بررسی ادامهٔ پرداخت...',
-        'back' => '↪️ بازگشت به لیست بررسی',
         'result' => ['text' => '📋 نتیجهٔ ادامهٔ پرداخت: {result}', 'parameters' => ['result']],
         'status_completed' => 'سفارش تأیید و پیام‌های ثبت‌شده تحویل شدند.',
         'status_delivery_unconfirmed' => 'سرویس ثبت شد، اما تحویل همهٔ پیام‌های مشتری تأیید نشده است.',

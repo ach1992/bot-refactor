@@ -55,6 +55,36 @@ function editText(...$args) {
     $GLOBALS['review_sends'][]=['kind'=>'edit','args'=>$args];
     return (object)['ok'=>true];
 }
+// Exact message-identity acknowledgements for the real automatic
+// projection and the actual customer status callback. No Telegram network.
+function bot($method,$payload) {
+    if (!in_array($method,['editMessageText','editMessageReplyMarkup'],true))
+        throw new RuntimeException('unexpected fixture projection '.$method);
+    $GLOBALS['review_sends'][]=['kind'=>$method,'args'=>$payload];
+    return fixtureMessageAck($payload['chat_id'],(int)$payload['message_id']);
+}
+function fixtureCustomerStatus(mysqli $db,array $pay,array $spec): array {
+    $connection=$db;$from_id=(int)$pay['user_id'];$message_id=(int)$spec['message_id'];
+    $data='ps_'.$pay['hash_id'];$callbackId='fixture-status';
+    $GLOBALS['botToken']='999999:fixture';
+    $update=(object)['update_id'=>(int)($spec['update_id']??12345),'callback_query'=>(object)[
+        'data'=>$data,'from'=>(object)['id'=>$from_id],'message'=>(object)[
+            'message_id'=>$message_id,'chat'=>(object)['id'=>$from_id,'type'=>'private'],
+            'from'=>(object)['id'=>999999,'is_bot'=>true],
+            'reply_markup'=>(object)['inline_keyboard'=>[[(object)['callback_data'=>$data]]]]]]];
+    $GLOBALS['review_sends']=[];$GLOBALS['review_alerts']=[];
+    require dirname($GLOBALS['argv'][1]).'/Routes/PrePayment.php';
+    return ['sends'=>$GLOBALS['review_sends'],'alerts'=>$GLOBALS['review_alerts']];
+}
+function fixtureProjection(mysqli $db,int $id,bool $check): array {
+    $GLOBALS['review_sends']=[];
+    $status=$check?achbotApiPaymentCheck($db,$id):null;
+    if (!$check) {
+        achbotApiPaymentNotice($db,$id);
+        achbotPayUxSyncMessages($db,$id);
+    }
+    return ['status'=>$status,'sends'=>$GLOBALS['review_sends']];
+}
 function fixtureReview(mysqli $db,array $spec): array {
     $connection=$db;$admin=9001;$from_id=(int)($spec['actor']??9001);
     $chat_id=(int)($spec['chat']??$from_id);$message_id=111;$callbackId='test-review';
@@ -111,9 +141,12 @@ try {
         'start'=>achbotPayUxStartManualReceipt($db,$id,$method,(int)($spec['owner']??1001),$spec['expected_mode']??null),
         'admit'=>achbotManualAdmitReceipt($db,$pay,$method,(int)($spec['owner']??1001),$spec['file'],
             'fixture original receipt',inlineKeyboard([[['text'=>'approve','callback_data'=>achbotManualApprovalCallbackData($pay)]]]),
-            'fixture_bot',$spec['expected_mode']??null),
+            $spec['expected_mode']??null),
         'approve'=>achbotCheckoutSettleReceipt($db,$id,(int)($spec['owner']??1001),$spec['basis']??'manual',[],(int)($spec['actor']??9001),9001),
         'check'=>achbotManualReceiptCheckApi($db,$id),
+        'check_projected'=>fixtureProjection($db,$id,true),
+        'project'=>fixtureProjection($db,$id,false),
+        'status_click'=>fixtureCustomerStatus($db,$pay,$spec),
         'quote'=>achbotServiceIssueLocked($db,1001,'fixture',$spec['reference'],$spec['request']),
         default=>throw new RuntimeException('fixture_unknown_op'),
     };
@@ -175,6 +208,40 @@ def main():
             def submit(mode,pid,method,file,api=False):
                 assert result(mode,'admit',pid,method=method,file=file,api=api) is True
                 assert send_original(mode,pid,api=api)['status']=='acknowledged'
+            receipt_wait='⏳ رسید در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.'
+            gift_wait=receipt_wait.replace('رسید در انتظار','درخواست در انتظار')
+            unavailable_label='⚠️ اطلاعات پرداخت فعلاً قابل بررسی نیست.'
+            monitoring_label='⏳ در انتظار بررسی خودکار'
+            def acknowledge_view(mode,pid,waiting):
+                r=result(mode,'report',pid,report=notice(pid,1001),api=True)
+                assert r['status']=='acknowledged' and len(r['sends'])==1,r
+                assert r['sends'][0]['args'][0].count(waiting)==1,r
+                assert all(word not in r['sends'][0]['args'][0] for word in ('خودکار','بررسی مدیر','API')),r
+                message,digest=sql(f"SELECT message_id,synced_digest FROM payment_message_refs WHERE pay_row_id={pid} AND purpose='receipt_view'").split('\t')
+                assert len(digest)==64
+                return int(message),digest
+            def staff_ack(mode,pid):
+                mid=600000+pid
+                r=send_original(mode,pid,api=True,response={'ok':True,'result':{'chat':{'id':9001},'message_id':mid}})
+                assert r['status']=='acknowledged',r
+                return mid
+            def staff_buttons(r,mid):
+                edits=[e['args'] for e in r['sends'] if e['kind']=='editMessageReplyMarkup' and e['args']['chat_id']==9001]
+                assert len(edits)==1 and edits[0]['message_id']==mid,r
+                return [b for row in json.loads(edits[0]['reply_markup'])['inline_keyboard'] for b in row]
+            def assert_staff(r,mid,pid,label,reject=True):
+                buttons=staff_buttons(r,mid)
+                h=sql(f"SELECT hash_id FROM pays WHERE id={pid}")
+                keys={b['callback_data'] for b in buttons}
+                assert 'pa_'+h in keys and ('declineAction_'+h in keys)==reject,r
+                assert any(b['callback_data']==f'attentionOpenCase_{pid}' and b['text']==label for b in buttons),r
+            def assert_same_view(mode,pid,view,r):
+                message,digest=view
+                assert not any(e['kind'] in ('message','photo','editMessageText') for e in r['sends']),r
+                assert sql(f"SELECT CONCAT(message_id,':',synced_digest) FROM payment_message_refs WHERE pay_row_id={pid} AND purpose='receipt_view'")==f'{message}:{digest}'
+                click=result(mode,'status_click',pid,message_id=message)
+                assert not click['sends'] and len(click['alerts'])==1,click
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='receipt_admitted' AND role='customer'")=='1'
             def roles(pid):
                 return sql(f"SELECT GROUP_CONCAT(role ORDER BY role) FROM payment_followup_intents WHERE pay_row_id={pid} AND service_operation_id IS NULL AND stage='wallet_credit'")
             for mode in ('strict','off'):
@@ -365,7 +432,9 @@ def main():
                 wire=result(mode,'report',pid,report=edit)
                 assert wire['status']=='acknowledged' and wire['sends'][0]['args'][1]==222 and 'pa_' not in wire['sends'][0]['args'][0],wire
                 customer=result(mode,'report',pid,report=notice(pid,1001))
-                assert customer['status']=='superseded' and not customer['sends'],customer
+                assert customer['status']=='acknowledged' and len(customer['sends'])==1,customer
+                assert 'کیف پول' in customer['sends'][0]['args'][0] and 'مهلت پرداخت' not in customer['sends'][0]['args'][0],customer
+                assert sql(f"SELECT COUNT(*) FROM payment_message_refs WHERE pay_row_id={pid} AND purpose='receipt_view'")=='1'
                 assert result(mode,'approve',pid)['credit']['replayed'] and balance()==b+1000
                 case('receipt_late_ack_after_financial_commit')
                 # A definite 429 is retryable only after retry_after; each recipient is independent.
@@ -384,6 +453,12 @@ def main():
                 result(mode,'issue',pid,method='gift_card',api=True)
                 code=evidence.fixture_gift_code(mode+'-recover-typed-gift')
                 assert result(mode,'admit',pid,method='gift_card',file=code,api=True)
+                # Preserve the exact established typed-gift waiting line
+                # in the real receipt-admitted customer delivery.
+                customer=result(mode,'report',pid,report=notice(pid,1001),api=True)
+                waiting='⏳ درخواست در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.'
+                assert customer['status']=='acknowledged' and len(customer['sends'])==1,customer
+                assert customer['sends'][0]['args'][0].count(waiting)==1,customer
                 recovered=result(mode,'review',pid,callback=f'attentionReceipt_{pid}',api=True)
                 assert len(recovered['sends'])==1 and recovered['sends'][0]['kind']=='message' and code in recovered['sends'][0]['args'][0],recovered
                 assert sql(f'SELECT state FROM pays WHERE id={pid}')=='have_sent'
@@ -555,6 +630,30 @@ DELIMITER ;
                 r=result(mode,'issue',pid,method='bank_transfer',api=True,service=oid)
                 assert result(mode,'admit',pid,file='fixture-sms',api=True)
                 assert send_original(mode,pid,api=True,fail_send=True)['status']=='unknown'
+                # Exercise the actual checker through admission and durable
+                # observations, not an injected evidence_state renderer row.
+                b=balance()
+                def check_observation(expected,stored):
+                    sql(f"UPDATE payment_attempts SET evidence_next_check_at=NOW() WHERE pay_row_id={pid}")
+                    assert result(mode,'check',pid)==expected
+                    assert sql(f"SELECT CONCAT(stage,':',evidence_state,':',evidence_claim_token IS NULL,':',evidence_next_check_at>NOW()) FROM payment_attempts WHERE pay_row_id={pid}")==f'review:{stored}:1:1'
+                    assert sql(f"SELECT state FROM pays WHERE id={pid}")=='have_sent'
+                    assert balance()==b
+                check_observation('monitoring','monitoring')
+                reads=server.read_requests
+                server.read_faults=[503]
+                check_observation('monitoring','monitoring')
+                assert not server.read_faults and server.read_requests>reads+1
+                reads=server.read_requests
+                server.read_faults=[503]*3
+                check_observation('unavailable','unavailable')
+                assert not server.read_faults and server.read_requests==reads+3
+                assert result(mode,'attention',pid) is True
+                assert sql(f"SELECT COUNT(*) FROM payment_transactions WHERE attempt_id=(SELECT id FROM payment_attempts WHERE pay_row_id={pid})")=='0'
+                assert sql(f"SELECT COUNT(*) FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='receipt_admitted' AND role='customer'")=='1'
+                check_observation('monitoring','monitoring')
+                case('bank_read_unavailable_persists_and_recovers_to_monitoring')
+                sql(f"UPDATE payment_attempts SET evidence_next_check_at=NOW() WHERE pay_row_id={pid}")
                 ident='100' if mode=='strict' else '200'
                 now=datetime.now(timezone.utc).replace(microsecond=0)
                 server.messages[ident]=dict(id=int(ident),public_uid='UID'+ident,provider='BANK_FIXTURE',provider_sms_id='sms'+ident,
@@ -563,6 +662,13 @@ DELIMITER ;
                 sql('UPDATE server_info SET active=0 WHERE id=2')
                 b=balance();server.fail_once=True
                 assert result(mode,'check',pid)=='pending' and balance()==b
+                # An unavailable readback after durable consumption dispatch
+                # is an uncertain effect, NOT the pre-dispatch outage state.
+                assert sql(f"SELECT evidence_state FROM payment_attempts WHERE pay_row_id={pid}")=='uncertain'
+                server.read_faults=[503]*3
+                check_observation('pending','uncertain')
+                assert not server.read_faults and server.consumes[ident]==1
+                assert run(mode,'reject',pid)['reason']=='manual_reject_original_evidence_pending'
                 sql(f'UPDATE payment_attempts SET evidence_next_check_at=NOW() WHERE pay_row_id={pid}')
                 assert result(mode,'check',pid)=='settled' and balance()==b+100
                 assert result(mode,'check',pid)=='settled' and balance()==b+100 and server.consumes[ident]==1
@@ -571,6 +677,7 @@ DELIMITER ;
                 assert roles(pid)=='customer,service_admin,service_channel',roles(pid)
                 assert sql(f"SELECT COUNT(*) FROM payment_followup_attempts a JOIN payment_followup_intents f ON f.id=a.intent_id WHERE f.pay_row_id={pid} AND f.stage='receipt_admitted' AND a.result='acknowledged'")=='0'
                 case('actual_bank_scan_without_staff_ack_service_invalidated')
+                case('dispatched_bank_read_failure_retains_uncertain_effect')
                 # A receipt already submitted before service supersession is
                 # still real money. Never revive the invalidated service.
                 oid=result(mode,'quote',reference=mode+'-superseded',request=q)
@@ -615,20 +722,51 @@ DELIMITER ;
                 server.card=dict(card_uuid='CARD_'+mode,status='active',game_key='fixture',redeem_value_id=42,
                     redeem_amount=1000,display_amount=1000,face_value=10,currency_label='fixture',order_id=1234,
                     order_number='WEB-2026-0042',order_created_at='2026-09-09T07:00:00+00:00',created_at='2026-09-10T08:05:00+00:00')
-                submit(mode,pid,'gift_card',code,api=True)
-                b=balance()
+                assert result(mode,'admit',pid,method='gift_card',api=True,file=code)
+                mid=staff_ack(mode,pid);view=acknowledge_view(mode,pid,gift_wait)
+                b=balance();consumes=server.gift_consumes
+                verifies=server.verify_requests
+                server.verify_faults=[503]*3
+                check_observation('unavailable','unavailable')
+                assert not server.verify_faults and server.verify_requests==verifies+3
+                projected=result(mode,'project',pid,api=True)
+                assert_staff(projected,mid,pid,unavailable_label)
+                assert_same_view(mode,pid,view,projected)
+                assert server.gift_consumes==consumes
+                assert result(mode,'attention',pid) is True
+                assert sql(f"SELECT COUNT(*) FROM payment_transactions WHERE attempt_id=(SELECT id FROM payment_attempts WHERE pay_row_id={pid})")=='0'
+                sql(f"UPDATE payment_attempts SET evidence_next_check_at=NOW() WHERE pay_row_id={pid}")
+                # Recovery uses the existing read retry and original proof owner.
+                server.verify_faults=[503]
                 # Fail the actual local money insertion after successful
                 # external consume. The protected proof must survive.
                 sql("CREATE TRIGGER fixture_credit_fail BEFORE INSERT ON wallet_entries FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture'")
                 try:
                     r=run(mode,'check',pid)
                     assert not r['ok'] and balance()==b,r
+                    assert not server.verify_faults and server.gift_consumes==consumes+1
+                    assert sql(f"SELECT evidence_state FROM payment_attempts WHERE pay_row_id={pid}")=='proven'
                 finally:sql('DROP TRIGGER fixture_credit_fail')
+                projected=result(mode,'project',pid,api=True)
+                assert_staff(projected,mid,pid,'⏳ در حال تأیید شواهد پرداخت',reject=False)
+                assert_same_view(mode,pid,view,projected)
                 assert run(mode,'reject',pid)['reason']=='manual_reject_original_evidence_pending'
                 assert result(mode,'check',pid)=='settled' and balance()==b+1000
                 assert result(mode,'check',pid)=='settled' and balance()==b+1000
                 assert roles(pid)=='customer,receipt_primary,service_admin,service_channel',roles(pid)
                 case('actual_gift_proven_local_rollback_recovery_reject_denied')
+                projected=result(mode,'project',pid)
+                edits=[e['args'] for e in projected['sends'] if e['kind']=='editMessageText']
+                assert len(edits)==1 and edits[0]['message_id']==view[0] and gift_wait not in edits[0]['text'],projected
+                assert 'به کیف پول شما اضافه شد' in edits[0]['text'],projected
+                iid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='wallet_credit' AND role='customer'"))
+                delivered=result(mode,'report',pid,report=iid)
+                assert delivered['status']=='acknowledged' and len(delivered['sends'])==1,delivered
+                assert not result(mode,'report',pid,report=iid)['sends']
+                assert not result(mode,'status_click',pid,message_id=view[0])['sends']
+                assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='payment_credit' AND source_ref='{pid}'")=='1'
+                case('gift_verify_unavailable_recovers_original_proof')
+                case('actual_gift_outage_staff_distinction_shared_customer_view')
 
                 # Existing cooldown policy must use current receipt facts,
                 # not retired approved rows or automatic settlements.
@@ -795,6 +933,62 @@ DELIMITER ;
                 assert result(mode,'check',scan)=='settled' and server.consumes[str(first+400)]==1
                 for n in range(401):del server.messages[str(first+n)]
                 case('bank_filtered_search_resumes_after_page_budget')
+                pid=seed(mode+'-bank-manual-horizon',price=93871)
+                old=int(datetime.now(timezone.utc).timestamp())-31*3600
+                r=result(mode,'issue',pid,method='bank_transfer',api=True,issued_time=old)
+                assert r['status']=='closed'
+                deadline=int(sql(f"SELECT invoice_expires_at FROM payment_attempts WHERE pay_row_id={pid}"))
+                assert result(mode,'expire',pid,clock=deadline) is True
+                submit(mode,pid,'bank_transfer','manual-horizon-photo',api=True)
+                reads=server.read_requests;b=balance()
+                assert result(mode,'check',pid)=='manual'
+                assert server.read_requests==reads
+                assert sql(f"SELECT evidence_state FROM payment_attempts WHERE pay_row_id={pid}")=='manual'
+                assert result(mode,'attention',pid) is True
+                assert result(mode,'reject',pid)=='declined' and balance()==b
+                case('bank_review_horizon_remains_manual_not_unavailable')
+                # Actual checker -> persisted status -> the original staff
+                # receipt and customer ACK, then explicit status click.
+                # The backend distinction is real but invisible to customers.
+                pid=seed(mode+'-bank-projected-outage',price=94731)
+                result(mode,'issue',pid,method='bank_transfer',api=True)
+                assert result(mode,'admit',pid,api=True,file='projection-original-photo')
+                mid=staff_ack(mode,pid);view=acknowledge_view(mode,pid,receipt_wait)
+                b=balance()
+                r=result(mode,'check_projected',pid,api=True)
+                assert r['status']=='monitoring',r
+                assert_staff(r,mid,pid,monitoring_label)
+                assert_same_view(mode,pid,view,r)
+                sql(f"UPDATE payment_attempts SET evidence_next_check_at=NOW() WHERE pay_row_id={pid}")
+                server.read_faults=[503]*3
+                r=result(mode,'check_projected',pid,api=True)
+                assert r['status']=='unavailable' and not server.read_faults,r
+                assert_staff(r,mid,pid,unavailable_label)
+                assert_same_view(mode,pid,view,r)
+                assert sql(f"SELECT evidence_state FROM payment_attempts WHERE pay_row_id={pid}")=='unavailable'
+                assert balance()==b
+                sql(f"UPDATE payment_attempts SET evidence_next_check_at=NOW() WHERE pay_row_id={pid}")
+                r=result(mode,'check_projected',pid,api=True)
+                assert r['status']=='monitoring',r
+                assert_staff(r,mid,pid,monitoring_label)
+                assert_same_view(mode,pid,view,r)
+                # The previously admitted manual approval remains available;
+                # actual credit changes the same status, not its identity.
+                assert result(mode,'approve',pid)['funding']=='wallet_only' and balance()==b+94731
+                r=result(mode,'project',pid)
+                edits=[e['args'] for e in r['sends'] if e['kind']=='editMessageText']
+                assert len(edits)==1 and edits[0]['chat_id']==1001 and edits[0]['message_id']==view[0],r
+                assert receipt_wait not in edits[0]['text'] and 'به کیف پول شما اضافه شد' in edits[0]['text'],r
+                iid=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={pid} AND stage='wallet_credit' AND role='customer'"))
+                r=result(mode,'report',pid,report=iid)
+                assert r['status']=='acknowledged' and len(r['sends'])==1,r
+                r=result(mode,'report',pid,report=iid)
+                assert r['status']=='acknowledged' and not r['sends'],r
+                assert sql(f"SELECT COUNT(*) FROM wallet_entries WHERE source_kind='payment_credit' AND source_ref='{pid}'")=='1'
+                r=result(mode,'status_click',pid,message_id=view[0])
+                assert not r['sends'],r
+                case('actual_bank_outage_staff_distinction_shared_customer_view')
+
             assert sum(server.consumes.values())==10 and server.gift_consumes==2
         finally:server.shutdown();server.server_close();thread.join(timeout=5)
     report=dict(complete=True,cases=len(cases),checks=cases,owned_socket_mariadb=True,

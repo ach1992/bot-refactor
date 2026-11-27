@@ -79,7 +79,11 @@ Fallback does not mutate saved content, nor retroactively edit messages.
 The transport renderer is not authority to delete history. Preserve all
 human-authored input and retained evidence, including issued invoices,
 receipts, subscription information, support conversations and reports.
-Transient bot-owned navigation must be retired only by verified identity;
+Once a customer receipt status is acknowledged, obsolete payment instructions
+are transient and can be retired without removing actual financial evidence.
+Opening a case from staff evidence creates a separate workbench; navigation
+inside that workbench may edit it. Transient bot-owned navigation must be
+retired only by verified identity;
 a successful send, a successful edit, a definite missing target, and an
 unknown delivery are distinct outcomes. First-start welcome and normal
 menu share one message when within the Telegram text limit; an oversized
@@ -163,6 +167,16 @@ IDs for that broadcast only, independent of current audience. Persist
 completion before the optional approved admin report; distinguish processing
 completion from Telegram acceptance and exclude unconfirmed sends. Cancellation
 cannot be reopened and failure of a report cannot restart customer sends.
+
+Management-job admission serializes on the completed broadcast row. A
+current staff editor generation, queued edit, and intended raw/HTML text
+commit together; a failed admission cannot leave an independently queued
+edit or consume the editor. Concurrent submissions of the same active
+action reuse the existing in-progress result rather than create a second job.
+A stale typed edit cannot authorize a new job.
+Title registration creates the initial draft and the exact content editor in
+one transaction. Initial content and editor consumption also commit together;
+stale input, role changes, and cancelled drafts cannot admit new content.
 
 Pin/unpin/delete/edit jobs use the same lease, claim and pause/finish
 checkpoints, independently of the send queue. They also continue past a

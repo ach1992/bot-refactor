@@ -119,7 +119,7 @@ if(preg_match('/^deleteMyConfig(\d+)/', $data, $match)){
         \achbotMessage('subscription.account_deletion.message.acb79596be', ['remark' => $remark]) . "\n\n" . \achbotMessage('subscription.account_deletion.shared_effect_notice'),
         json_encode([
             'inline_keyboard' => [
-                [['text'=>\achbotMessage('subscription.account_deletion.button.13159f8c74'),'callback_data'=>"yesDeleteConfig" . $match[1]],['text'=>\achbotMessage('subscription.account_deletion.button.5f5c4c72bd'),'callback_data'=>"noDontDelete"]]
+                [['text'=>\achbotMessage('labels.confirm_yes'),'callback_data'=>"yesDeleteConfig" . $match[1]],['text'=>\achbotMessage('subscription.account_deletion.button.5f5c4c72bd'),'callback_data'=>"noDontDelete"]]
             ]
         ]),
         "HTML"
@@ -191,7 +191,7 @@ elseif(preg_match('/^delUserConfig(\d+)/',$data,$match) && ($from_id == $admin |
 
     editText($message_id, \achbotMessageHtml('subscription.account_deletion.no_dont_delete.message.2ddfbc22e4', ['remark' => $remark]) . "\n\n" . \achbotMessage('subscription.account_deletion.shared_effect_notice'),json_encode([
         'inline_keyboard' => [
-            [['text'=>\achbotMessage('subscription.account_deletion.button.13159f8c74'),'callback_data'=>"yesDeleteUserConfig" . $match[1]],['text'=>\achbotMessage('subscription.account_deletion.button.5f5c4c72bd'),'callback_data'=>"noDontDelete"]]
+            [['text'=>\achbotMessage('labels.confirm_yes'),'callback_data'=>"yesDeleteUserConfig" . $match[1]],['text'=>\achbotMessage('subscription.account_deletion.button.5f5c4c72bd'),'callback_data'=>"noDontDelete"]]
             ]
     ]));
 }
@@ -222,7 +222,7 @@ elseif(preg_match('/^yesDeleteUserConfig(\d+)/',$data,$match) && ($from_id == $a
     $deleteOutcome=achbotSubscriptionDeleteConfirmed($connection,$order,false,(int)$from_id);
     if ($deleteOutcome!=='complete') {
         $key=match($deleteOutcome) {
-            'retry'=>'subscription.account_deletion.no_dont_delete.alert.3c93240b6e',
+            'retry'=>'subscription.account_deletion.no_dont_delete.alert.9347ccc8b0',
             'local'=>'subscription.account_deletion.no_dont_delete.alert.e2cbeb044b',
             default=>'subscription.account_deletion.no_dont_delete.alert.1186ae9204'
         };

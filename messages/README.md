@@ -9,7 +9,7 @@ Both files have named topic sections. Search for the current sentence, then edit
 
 Classify editing placement from the actual recipient, including forwarded support reports and shared controls; a route filename alone is not an audience. Choose status/action emoji from the complete outcome and action, not an isolated word such as success, unsuccessful, delete or duplicate.
 
-File placement does not authorize a recipient. Existing actor/owner checks and explicit destinations decide whether a message may reach a user or administrator. A harmless shared label lives once in `user.php`, even when administrators also see it. Never move an operational diagnostic into a customer message to help troubleshooting.
+File placement does not authorize a recipient. Existing actor/owner checks and explicit destinations decide whether a message may reach a user or administrator. A harmless shared label lives once in `user.php`, even when administrators also see it. Shared administrator-only labels live under the same logical `labels` topic in `admin.php`. Reuse an existing semantic owner for genuinely equivalent labels/templates, preserving exact wording, parameters and parse mode. Identical text alone does not establish equivalence: input-command captions, independent business statuses, and context-specific fragments may have different owners. Never move an operational diagnostic into a customer message to help troubleshooting.
 
 ## Presentation conventions
 
@@ -20,7 +20,7 @@ File placement does not authorize a recipient. Existing actor/owner checks and e
   retaining original technical timestamps and log evidence.
 - Do not stack emoji, decorate both ends of a heading, or add emoji to date words, units, continuation fragments, URLs or data labels indiscriminately. A flag or joined emoji is one glyph and must remain intact.
 - Telegram text and captions use HTML, escaping dynamic values once. Buttons and callback alerts remain plain text. Use `<b>` for headings/important amounts and `<code>` for copyable IDs/addresses only in HTML messages. Many entries are fragments; check the complete message before changing tags. See [Telegram presentation](../docs/post-v9/TELEGRAM-PRESENTATION.md) for shared rendering.
-- Keep existing wording unless clarity/privacy requires a reviewed correction. A payment or delivery with an unknown result remains under review; never imply confirmed success, rollback or refund without evidence.
+- Keep Owner-approved wording and intentional deterrence/expectation-setting messages unchanged, including the five-subscription warning, the 3/30-minute review guidance and receipt/referral warnings. Preserve their use in applicable live presentation paths, not just their catalog values. Do not infer a new hard limit, SLA or automatic enforcement from such copy. Use the same established customer receipt-review message for automatic and manual processing, including recoverable API outages; keep backend status distinctions in staff/diagnostic views, and expose only customer-relevant outcomes or next actions. Any change to established visible wording or formatting requires the Owner’s specific approval of the exact before/after and reason; semantic sharing with unchanged output is allowed. A payment or delivery with an unknown result remains under review; never imply confirmed success, rollback or refund without evidence.
 
 ## Runtime API and evidence
 

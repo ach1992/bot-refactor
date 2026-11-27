@@ -94,7 +94,7 @@ function achbotHandleProviderAdmin(): bool {
         !isset($update->callback_query) &&
         !achbotAdminCanFor($connection,(int)$from_id,(int)$admin,'servers')) return false;
     if (!((int)$from_id===(int)$admin || (int)($userInfo['isAdmin']??0)===1)) {
-        alert(\achbotMessage('provider.provider_admin.handle_provider_admin.alert.057ec5448c'),true);return true;
+        alert(\achbotMessage('labels.access_denied'),true);return true;
     }
     try {
         achbotPgAdminFrame($update,(int)$from_id,(string)($data??''),is_string($text??null)?$text:null);

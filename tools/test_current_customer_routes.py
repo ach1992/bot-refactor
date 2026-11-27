@@ -73,7 +73,7 @@ function bot($method,$data=[]){
     if ($method==='editMessageReplyMarkup') {$GLOBALS['events'][]=['markup',$data['message_id'],$data['reply_markup']??null];return (object)['ok'=>true,'result'=>(object)['message_id'=>(int)$data['message_id'],'chat'=>(object)['id'=>(int)$data['chat_id']]]];}
     throw new RuntimeException('unexpected fixture bot method '.$method);
 }
-function delMessage(...$a){if (($GLOBALS['spec']['op']??'')==='manual_checkout') $GLOBALS['events'][]=['delete',...$a];return (object)['ok'=>true];}
+function delMessage(...$a){if (($GLOBALS['spec']['op']??'')==='manual_checkout' || !empty($GLOBALS['spec']['record_delete'])) $GLOBALS['events'][]=['delete',...$a];return array_key_exists('delete_result',$GLOBALS['spec'])?json_decode(json_encode($GLOBALS['spec']['delete_result'])):(object)['ok'=>true,'result'=>true];}
 function sendPhoto($file,$text,$keys=null,$mode=null,$uid=null){$GLOBALS['events'][]=['photo',$text,$keys,$mode,$uid,$file];return (object)['ok'=>true,'result'=>(object)['message_id'=>333,'chat'=>(object)['id'=>(int)$uid]]];}
 function sendToAllAdmins(...$a){}
 function alert(...$a){$GLOBALS['events'][]=['alert',...$a];}
@@ -179,12 +179,25 @@ case 'topup':
     $events[]=['topup',startWalletPayment($connection,$botUrl,$from_id,
         100000,(string)$userInfo['step'],(int)$update->update_id,$message_id)];
     break;
+case 'wallet_recharge':
+    require $root.'/src/Finance/Routes/WalletRecharge.php';break;
 case 'manual_checkout':
     require $root.'/src/Finance/Routes/ManualCheckout.php';break;
 case 'manual_claim':
     $pay=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=?','i',[(int)$spec['pay']]);
     $events[]=['claim',achbotManualClaim($connection,$pay,$spec['method'],$from_id,$spec['network']??null,$spec['mode']??'standard')];
     break;
+case 'settle_fixture':
+    require_once $root.'/src/Finance/FundingCheckout.php';
+    $events[]=['settle',achbotCheckoutSettleReceipt($connection,(int)$spec['pay'],$from_id,'manual',[],9001,9001)];
+    break;
+case 'dispatch_fixture':
+    require_once $root.'/src/Finance/FollowupOutbox.php';
+    $events[]=['dispatch',achbotFollowupDispatchOne($connection,(int)$spec['intent'])];
+    break;
+case 'staff_notice':
+    require_once $root.'/src/Finance/ApiPayments.php';
+    $events[]=['staff_notice',achbotApiPaymentNotice($connection,(int)$spec['pay'])];break;
 case 'projection':
     $events[]=['projection',achbotPayUxSyncMessages($connection,(int)$spec['pay'])];break;
 case 'payment_status':
@@ -961,6 +974,8 @@ def main():
             assert int(sql("SELECT COUNT(*) FROM pays"))==before+1,rr
             pid,h,price,_=latest(2001)
             assert price=='100000',rr
+            sends=[e for e in rr['events'] if e[0]=='send']
+            assert len(sends)==1 and sends[0][3]=='HTML' and '100,000' in sends[0][1],rr
             actual=set()
             for b in buttons(rr):
                 cb=b.get('callback_data','');url=b.get('url','')
@@ -974,6 +989,8 @@ def main():
                     assert url in urls,(b,rr)
                     actual.add(urls[url])
             assert actual==expected and 'dc_'+h in callbacks(rr),(expected,actual,rr)
+            if not expected:
+                assert any('هیچ روش پرداختی' in e[1] for e in rr['events'] if e[0]=='send'),rr
             assert not any(x.startswith('haveDiscountCheckout_') for x in callbacks(rr)),rr
         for flag,method,keys,_ in methods:
             sql("UPDATE setting SET value='"+json.dumps(base_keys|keys)+"' WHERE type='PAYMENT_KEYS'")

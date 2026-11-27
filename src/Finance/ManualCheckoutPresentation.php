@@ -143,6 +143,20 @@ function achbotReceiptPromptUpdate(mysqli $db,array $pay,int $actor,string $expe
     else delMessage($id,$actor);
 }
 
+/** Reply below the actual input, retaining the previous recovery prompt
+ * until the new response has an exact Telegram acknowledgement. */
+function achbotReceiptInputFeedback(mysqli $db,array $pay,int $actor,string $expected,string $body): void {
+    $step=achbotReceiptStep($expected);
+    if (!$step || $step['hash']!==$pay['hash_id'] ||
+        !achbotReceiptStepChange($db,$actor,$expected,$expected)) return;
+    $id=\AchBot\Telegram\Conversation\acknowledgedMessage(sendMessage($body,kbOnlyCancel($pay),'HTML',$actor),$actor);
+    if ($id===null) return;
+    $next='receipt:'.$step['hash'].':'.$step['generation'].':'.$id;
+    if (achbotReceiptStepChange($db,$actor,$expected,$next)) {
+        if ($step['prompt']>0 && $step['prompt']!==$id) try {delMessage($step['prompt'],$actor);} catch (Throwable $ignored) {}
+    } else try {delMessage($id,$actor);} catch (Throwable $ignored) {}
+}
+
 /** All mode-specific report facts originate in the immutable service quote.
  * Template tokens are replaced once, including HTML-escaped user values. */
 function achbotReceiptStaffCaption(mysqli $db,array $pay,string $mode,string $method,array $actor): ?string {
@@ -187,22 +201,22 @@ function achbotReceiptSubmit(mysqli $db,array $pay,int $actor,array $profile,str
     if (($step['prompt']??0)>0 && (int)$update->message->message_id<=$step['prompt']) return;
     $evidence=achbotManualEvidenceInput($update,$db,$pay,$method);
     if ($evidence===null) {
-        achbotReceiptPromptUpdate($db,$pay,$actor,$expected,achbotManualEvidencePrompt($db,$pay,$method,true));return;
+        achbotReceiptInputFeedback($db,$pay,$actor,$expected,achbotManualEvidencePrompt($db,$pay,$method,true));return;
     }
     $caption=achbotReceiptStaffCaption($db,$pay,$mode,$method,$profile);
     if ($caption===null) {sendMessage(achbotMessage('payment.checkout.alert.882596d0f1'),null,'HTML',$actor);return;}
     $screen=achbotManualGiftSubmissionPreflight($db,$pay,$method,$evidence);
     if (!$screen['accepted']) {
-        achbotReceiptPromptUpdate($db,$pay,$actor,$expected,achbotManualGiftRetryMessage((string)$screen['reason']));return;
+        achbotReceiptInputFeedback($db,$pay,$actor,$expected,achbotManualGiftRetryMessage((string)$screen['reason']));return;
     }
     if (achbotManualTypedGift($db,$pay,$method) && !achbotManualGiftReviewFits($caption,$evidence,$screen)) {
-        sendMessage(achbotMessage('payment.api_payment.code_too_long'),null,'HTML',$actor);return;
+        achbotReceiptInputFeedback($db,$pay,$actor,$expected,achbotMessage('payment.api_payment.code_too_long'));return;
     }
     require_once __DIR__.'/ReceiptNotices.php';
     $hash=(string)$pay['hash_id'];
     $keys=buildAdminKeyboardWithStats($db,achbotManualApprovalCallbackData($pay),'declineAction_'.$hash,$hash,$actor);
     if (!achbotManualAdmitReceipt($db,$pay,$method,$actor,$evidence,$caption,$keys,
-        (string)$GLOBALS['botUsername'],$mode,$expected,$screen)) {
+        $mode,$expected,$screen)) {
         sendMessage(achbotMessage('payment.checkout.alert.795c4bddb8'),null,'HTML',$actor);return;
     }
     $id=(int)$pay['id'];

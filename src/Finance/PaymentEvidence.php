@@ -716,20 +716,28 @@ function achbotPaymentEvidenceClaim(mysqli $db,int $payId): ?array {
         return ['token'=>$token,'pay'=>$pay,'attempt'=>$a,'profile'=>$p];
     } catch (Throwable $e) { try{$db->rollback();}catch(Throwable $x){} return null; }
 }
-function achbotPaymentEvidenceDefer(mysqli $db,int $payId,string $token,string $status='monitoring',int $seconds=60): bool {
+/** Record the latest usable checker observation and release the claim.
+ * An unavailable read cannot downgrade an already journaled external
+ * operation; no observation (null) retains the last durable state. */
+function achbotPaymentEvidenceDefer(mysqli $db,int $payId,string $token,?string $status='monitoring',int $seconds=60): bool {
     if (!preg_match('/\A[a-f0-9]{32}\z/D',$token) ||
-        !in_array($status,['monitoring','manual','review','invalid_code','proven','reserved','dispatched','uncertain'],true))
+        ($status!==null && !in_array($status,['monitoring','unavailable','manual','review','invalid_code','proven','reserved','dispatched','uncertain'],true)))
         return false;
     $seconds=max(1,min(3600,max($seconds,
         (int)($GLOBALS['achbotPaymentEvidenceRetryAfterSeconds']??0))));
     unset($GLOBALS['achbotPaymentEvidenceRetryAfterSeconds']);
     try {
         $q=$db->prepare("UPDATE payment_attempts SET
-            evidence_state=CASE WHEN evidence_state IN ('proven','invalid_code') THEN evidence_state ELSE ? END,
+            evidence_state=CASE
+                WHEN evidence_state IN ('proven','invalid_code') THEN evidence_state
+                WHEN ?='unavailable' AND (evidence_state IN ('reserved','dispatched','uncertain')
+                    OR EXISTS (SELECT 1 FROM payment_transactions t WHERE t.attempt_id=payment_attempts.id
+                        AND t.evidence_operation IS NOT NULL)) THEN evidence_state
+                ELSE COALESCE(?,evidence_state) END,
             evidence_next_check_at=DATE_ADD(NOW(),INTERVAL ? SECOND),
             evidence_claim_token=NULL,evidence_claimed_at=NULL
             WHERE pay_row_id=? AND evidence_claim_token=?");
-        $q->bind_param('siis',$status,$seconds,$payId,$token); $q->execute();
+        $q->bind_param('ssiis',$status,$status,$seconds,$payId,$token); $q->execute();
         $ok=$q->affected_rows===1; $q->close(); return $ok;
     } catch (Throwable $e) { return false; }
 }

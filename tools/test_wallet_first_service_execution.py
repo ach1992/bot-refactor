@@ -141,6 +141,35 @@ function bot($method,$data=[]) {
         $GLOBALS['fixtureWalletProjection'][]=$data;
         return fixtureMessageAck((int)$data['chat_id'],(int)$data['message_id']);
     }
+    // An acknowledged, possibly late customer receipt may converge after its
+    // followup transaction commits. Test the actual projection independently
+    // of staff markup and financial-delivery sends.
+    if (in_array($x['op'],['followup','maintain_followups'],true) && $method==='editMessageText') {
+        $ref=achbotProviderRow($db,"SELECT r.*,p.user_id FROM payment_message_refs r JOIN pays p ON p.id=r.pay_row_id
+            WHERE r.chat_id=? AND r.message_id=? AND r.kind='text' AND r.purpose IN ('receipt_view','selector','invoice','status') AND r.retired_reason IS NULL",
+            'ii',[(int)$data['chat_id'],(int)$data['message_id']]);
+        if (!$ref || (int)$ref['user_id']!==(int)$data['chat_id'] ||
+            (int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0 ||
+            ($data['parse_mode']??null)!=='HTML')
+            throw new RuntimeException('fixture_receipt_projection_target');
+        [$pay,$attempt]=achbotPayUxProjectionSource($db,(int)$ref['pay_row_id']);
+        $view=achbotPayUxReceiptView($db,(int)$ref['pay_row_id'],(int)$ref['user_id']);
+        // The fixture's delete API deliberately provides no ACK. An old
+        // selector/invoice is then sanitized in place, not a receipt edit.
+        if ($view && (int)$view['id']!==(int)$ref['id']) {
+            $body=achbotMessage('payment.payment_lifecycle.receipt_instruction_retired');
+            $keys=inlineKeyboard([]);
+        } else {
+            $projection=achbotPayUxProjection($db,$pay,$attempt,$view?'receipt_view':$ref['purpose']);
+            if (!$projection || $projection[2]) throw new RuntimeException('fixture_receipt_projection_purpose');
+            [$body,$keys]=$projection;
+        }
+        if ($data['text']!==$body || $data['reply_markup']!==$keys)
+            throw new RuntimeException('fixture_receipt_projection_content');
+        $s=achbotProviderStatement($db,'INSERT INTO fixture_receipt_projection(pay_id,chat_id,message_id,body,keys_json) VALUES (?,?,?,?,?)',
+            'iiiss',[(int)$ref['pay_row_id'],(int)$data['chat_id'],(int)$data['message_id'],$data['text'],$data['reply_markup']]);$s->close();
+        return fixtureMessageAck((int)$data['chat_id'],(int)$data['message_id']);
+    }
     if (!in_array($x['op'],['plan','plan_recover','plan_correct','reassign'],true) || $method!=='editMessageReplyMarkup' ||
         !in_array(array_keys($data),[['chat_id','message_id'],['chat_id','message_id','reply_markup']],true) ||
         (int)achbotProviderRow($db,'SELECT @@in_transaction AS tx')['tx']!==0)
@@ -365,7 +394,7 @@ try {
         if ($r && ($x['submit']??false)) {
             require_once $argv[1].'/src/Finance/ReceiptNotices.php';
             $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[(int)$pay['id']]);
-            if (!achbotManualAdmitReceipt($db,$pay,'bank_transfer',1001,'fixture-photo','fixture receipt',inlineKeyboard([]),'fixture_bot'))
+            if (!achbotManualAdmitReceipt($db,$pay,'bank_transfer',1001,'fixture-photo','fixture receipt',inlineKeyboard([])))
                 throw new RuntimeException('fixture_manual_admission');
             $notice=achbotProviderRow($db,"SELECT id FROM payment_followup_intents WHERE pay_row_id=? AND stage='receipt_admitted' AND recipient='9001'",'i',[(int)$pay['id']]);
             if (achbotFollowupDispatchOne($db,(int)$notice['id'])!=='acknowledged')
@@ -399,7 +428,7 @@ try {
         if ($issued['status']!=='issued') throw new RuntimeException('fixture_manual_issue');
         require_once $argv[1].'/src/Finance/ReceiptNotices.php';
         $pay=achbotProviderRow($db,'SELECT * FROM pays WHERE id=?','i',[$pid]);
-        if (!achbotManualAdmitReceipt($db,$pay,'bank_transfer',1001,'fixture-photo','fixture receipt',inlineKeyboard([]),'fixture_bot'))
+        if (!achbotManualAdmitReceipt($db,$pay,'bank_transfer',1001,'fixture-photo','fixture receipt',inlineKeyboard([])))
             throw new RuntimeException('fixture_manual_admission');
         $notice=achbotProviderRow($db,"SELECT id FROM payment_followup_intents WHERE pay_row_id=? AND stage='receipt_admitted' AND recipient='9001'",'i',[$pid]);
         if (achbotFollowupDispatchOne($db,(int)$notice['id'])!=='acknowledged')
@@ -709,6 +738,8 @@ def main():
 
             sql("""CREATE TABLE fixture_markup(id INT AUTO_INCREMENT PRIMARY KEY,
                 chat_id BIGINT NOT NULL,message_id BIGINT NOT NULL,markup TEXT NULL) ENGINE=InnoDB""")
+            sql("""CREATE TABLE fixture_receipt_projection(id INT AUTO_INCREMENT PRIMARY KEY,
+                pay_id BIGINT NOT NULL,chat_id BIGINT NOT NULL,message_id BIGINT NOT NULL,body TEXT,keys_json TEXT) ENGINE=InnoDB""")
             sql("""CREATE TABLE fixture_followup(id INT AUTO_INCREMENT PRIMARY KEY,intent_id BIGINT UNSIGNED NOT NULL,
                 recipient VARCHAR(128),text TEXT,mode VARCHAR(20),keys_json TEXT) ENGINE=InnoDB""")
             sql("""CREATE TABLE fixture_telegram (
@@ -754,6 +785,10 @@ def main():
                     if line.startswith('[AChBot] '):
                         diagnostics.append(json.loads(line[len('[AChBot] '):]))
                     else:
+                        projection=re.match(r'achbot_payment_telegram_edit_deferred pay_id=([0-9]+) ref_id=([0-9]+)',line)
+                        if projection:
+                            ref=int(projection[2])
+                            raise AssertionError((line,sql(f"SELECT pay_row_id,chat_id,message_id,purpose,retired_reason FROM payment_message_refs WHERE id={ref}")))
                         assert line.startswith(('achbot_auto_renew_','achbot_shared_plan_','achbot_shared_transfer_','achbot_subscription_delete_','achbot_plan_correction_')) or (op in ('telegram_wallet','telegram_approval') and line.startswith('achbot_admin_')) or re.fullmatch(r'achbot_followup_ack_unknown id=[1-9][0-9]*|achbot_qr_prepare_failed class=RuntimeException',line),line
                 last_diagnostics[:]=diagnostics
                 if 'expect_diagnostic' in kw:
@@ -1926,8 +1961,12 @@ DELIMITER ;
                 assert 'nextpay' in wire.lower() and all(row.split('\t')[2] in wire for row in rows(op)),wire
                 debit=sql(f"SELECT w.id,w.balance_before,w.balance_after FROM service_operations s JOIN wallet_entries w ON w.id=s.debit_entry_id WHERE s.id={op}").split('\t')
                 assert f'P{first[0]}' in wire and f'W{debit[0]}' in wire,wire
-                assert f"موجودی پیش از کسر: {int(debit[1]):,} تومان" in wire,wire
-                assert f"موجودی پس از کسر: {int(debit[2]):,} تومان" in wire,wire
+                credit=sql(f"SELECT id,balance_before,balance_after,delta_toman FROM wallet_entries WHERE source_kind='payment_credit' AND source_ref='{first[0]}'").split('\t')
+                assert f'W{credit[0]}' in wire and f"اعتبار پرداخت: {int(credit[3]):,} تومان" in wire,wire
+                assert f"موجودی قبل: {int(credit[1]):,} تومان" in wire,wire
+                assert f"موجودی بعد: {int(debit[2]):,} تومان" in wire,wire
+                assert wire.count('موجودی قبل:')==1 and wire.count('موجودی بعد:')==1,wire
+                assert 'خالص تغییر موجودی: 0 تومان' in wire,wire
                 cases.append(mode+'_service_report_original_receipt_and_wallet_debit')
                 credit_id=int(sql(f"SELECT id FROM payment_followup_intents WHERE pay_row_id={late[0]} AND stage='wallet_credit' AND role='customer'"))
                 assert php(mode,'followup',id=credit_id,response=dict(ok=False,error_code=429,description='Too Many Requests',parameters=dict(retry_after=35)))=='pending'
@@ -2450,9 +2489,9 @@ DELIMITER ;
                 rop=rr['operation']
                 plan=php(mode,'resolution_preview',id=rop,decision='refunded')
                 assert plan and php(mode,'resolve',id=rop,decision='refunded',token=plan['token'])['status']=='refunded'
-                assert php(mode,'receipt_outcome',pay=rpid)=='resolved'
+                assert php(mode,'receipt_outcome',pay=rpid)=='resolved_refunded'
                 assert php(mode,'checkout_approve',hash=rh)['credit']['replayed']
-                assert php(mode,'receipt_outcome',pay=rpid)=='resolved'
+                assert php(mode,'receipt_outcome',pay=rpid)=='resolved_refunded'
                 assert php(mode,'sales_snapshot')==external_sales
                 cases.append(mode+'_actual_full_refund_not_service_sale')
                 cases.append(mode+'_receipt_projection_resolved_original_never_reopened')
@@ -2503,7 +2542,7 @@ DELIMITER ;
                 assert int(sql('SELECT COUNT(*) FROM fixture_markup'))==markups+1
                 assert sql('SELECT chat_id,message_id FROM fixture_markup ORDER BY id DESC LIMIT 1')=='9001\t222'
                 markup=json.loads(sql('SELECT markup FROM fixture_markup ORDER BY id DESC LIMIT 1'))
-                assert markup['inline_keyboard'][0][0]['callback_data']==f'attentionCase_{pid}',markup
+                assert markup['inline_keyboard'][0][0]['callback_data']==f'attentionOpenCase_{pid}',markup
                 assert sql(f"SELECT state FROM pays WHERE id={pid}")=='service_superseded'
                 assert php(mode,'attention_receipt',pay=pid) is True
                 assert sql(f"SELECT stage FROM service_operations WHERE id={prior}")=='cancelled'

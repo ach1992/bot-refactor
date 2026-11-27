@@ -6,6 +6,7 @@ if (realpath($_SERVER['SCRIPT_FILENAME'] ?? '') === __FILE__) {
     http_response_code(404); exit;
 }
 require_once __DIR__.'/../../Admin/Access.php';
+require_once __DIR__.'/../../Telegram/Conversation.php';
 require_once __DIR__.'/../../../messages/loader.php';
 
 /** Telegram's 4096-character text limit applies after HTML parsing.
@@ -139,8 +140,7 @@ if (preg_match('/^attentionDelivery([CS])_([1-9][0-9]{0,17})_([1-9][0-9]{0,8})(?
         } else throw new RuntimeException('delivery_review_stale');
         $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),'callback_data'=>$back]];
         $keys=json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-        $edited=editText($message_id,$body,$keys,'HTML',$actor);
-        if (!is_object($edited)||($edited->ok??false)!==true) sendMessage($body,$keys,'HTML',$actor);
+        \AchBot\Telegram\Conversation\replaceTransient($actor,(int)$message_id,$body,$keys);
         if ($reviewAction[1]==='C') answerCallbackQuery($callbackId);
     } catch (Throwable $e) {
         answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.redrive_unavailable'),true);
@@ -205,8 +205,7 @@ if (preg_match('/^attentionReport([CS])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/
         } else throw new RuntimeException('followup_review_stale');
         $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_cancel'),'callback_data'=>$back]];
         $keys=json_encode(['inline_keyboard'=>$rows],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-        $edited=editText($message_id,$body,$keys,'HTML',$actor);
-        if (!is_object($edited)||($edited->ok??false)!==true) sendMessage($body,$keys,'HTML',$actor);
+        \AchBot\Telegram\Conversation\replaceTransient($actor,(int)$message_id,$body,$keys);
         if ($reviewAction[1]==='C') answerCallbackQuery($callbackId);
     } catch (Throwable $e) {
         answerCallbackQuery($callbackId,achbotMessage('automatic_gateway_review.redrive_unavailable'),true);
@@ -214,7 +213,7 @@ if (preg_match('/^attentionReport([CS])_([1-9][0-9]{0,17})(?:_([a-f0-9]{20}))?$/
     return;
 }
 
-if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})$/D',
+if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|(?:Open)?Case_[1-9][0-9]{0,17})$/D',
     (string)($data??''))===1) {
     require_once __DIR__.'/../PaymentLifecycle.php';
     require_once __DIR__.'/../GatewayReview.php';
@@ -233,26 +232,39 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
     $inbox=[];$case=[];
     $isInbox=preg_match('/^attentionInbox(?:_([1-9][0-9]{0,17}))?$/D',
         (string)$data,$inbox)===1;
-    $isCase=preg_match('/^attentionCase_([1-9][0-9]{0,17})$/D',
+    $isCase=preg_match('/^attention(?:Open)?Case_([1-9][0-9]{0,17})$/D',
         (string)$data,$case)===1;
     if (!$isInbox && !$isCase) return;
 
-    $send=static function(string $message,array $rows) use ($message_id,$from_id): void {
+    // Opening a case from evidence is new navigation, not an edit fallback.
+    // Exact original recorded receipts remain retained even if their
+    // already-delivered button uses the ordinary case locator.
+    $openEvidence=str_starts_with((string)$data,'attentionOpenCase_');
+    if ($isCase && !$openEvidence) {
+        require_once __DIR__.'/../ReceiptNotices.php';
+        try {
+            $original=achbotProviderRow($connection,'SELECT * FROM pays WHERE id=?','i',[(int)$case[1]]);
+            if ($original) foreach (achbotReceiptMessageTargets($connection,$original) as $target)
+                if ($target['chat_id']===(int)$from_id && $target['message_id']===(int)$message_id) {
+                    $openEvidence=true;break;
+                }
+        } catch (Throwable $ignored) {$openEvidence=true;}
+    }
+    $send=static function(string $message,array $rows) use ($message_id,$from_id,$openEvidence): void {
         $markup=json_encode(['inline_keyboard'=>$rows],
             JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
-        $result=editText($message_id,$message,$markup,'HTML',(int)$from_id);
-        if (!is_object($result) || ($result->ok??false)!==true)
-            sendMessage($message,$markup,'HTML',(int)$from_id);
+        if ($openEvidence) sendMessage($message,$markup,'HTML',(int)$from_id);
+        else \AchBot\Telegram\Conversation\replaceTransient((int)$from_id,(int)$message_id,$message,$markup);
     };
     $labels=[
         'nowpayments'=>achbotMessage('automatic_gateway_review.provider_nowpayments'),
         'zarinpal'=>achbotMessage('automatic_gateway_review.provider_zarinpal'),
         'nextpay'=>achbotMessage('automatic_gateway_review.provider_nextpay'),
         'bank_transfer'=>achbotMessage('automatic_gateway_review.provider_bank_transfer'),
-        'gift_card'=>achbotMessage('automatic_gateway_review.provider_gift_card'),
+        'gift_card'=>achbotMessage('manual_payment.receipt_helpers.manual_label.text.3904ef0f3d'),
         'manual_usdt'=>achbotManualLabel('manual_usdt'),
         'manual_trx'=>achbotManualLabel('manual_trx'),
-        'wallet'=>achbotMessage('automatic_gateway_review.wallet_provider'),
+        'wallet'=>achbotMessage('labels.wallet'),
     ];
     $safe=static fn($v) => htmlspecialchars(mb_substr((string)($v??''),0,180,'UTF-8'),
         ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
@@ -287,10 +299,10 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 'ii',[$before,$before]);
             $items=$q->get_result()->fetch_all(MYSQLI_ASSOC);$q->close();
             $more=count($items)>12;$items=array_slice($items,0,12);
-            $kinds=['BUY'=>achbotMessage('automatic_gateway_review.purchase'),
-                'RENEW'=>achbotMessage('automatic_gateway_review.renew'),
+            $kinds=['BUY'=>achbotMessage('labels.labels.payment_type.label.e6343571a4'),
+                'RENEW'=>achbotMessage('labels.labels.payment_type.label.df1c62b99e'),
                 'ADD_TIME'=>achbotMessage('automatic_gateway_review.days'),
-                'ADD_VOLUME'=>achbotMessage('automatic_gateway_review.volume')];
+                'ADD_VOLUME'=>achbotMessage('labels.labels.payment_type.label.160a34aa6d')];
             foreach ($items as $item) {
                 if ($item['source']==='nonpaid_delivery') {
                     $rows[]=[['text'=>achbotMessage('automatic_gateway_review.redrive_action').' | '.$item['provider'],
@@ -309,14 +321,14 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
                 $kind=$walletReport?achbotMessage('operational_reports.wallet_report_case').' '.$item['provider']:($service?$kinds[$item['provider']]:
                     ($labels[$item['provider']]??$item['provider']));
                 $label=($service?'⚙️ ':'💳 ').number_format((int)$item['price']).' '.
-                    achbotMessage('automatic_gateway_review.toman').' | '.(int)$item['user_id'].' | '.$kind;
+                    achbotMessage('labels.currency_toman').' | '.(int)$item['user_id'].' | '.$kind;
                 $rows[]=[['text'=>$label,'callback_data'=>($walletReport?'attentionReportC_':($service?'attentionService_':'attentionCase_')).(int)$item['id']]];
             }
             if ($more && $items) $rows[]=[['text'=>achbotMessage('automatic_gateway_review.older'),
                 'callback_data'=>'attentionInbox_'.(int)end($items)['case_cursor']]];
             if ($before>0) $rows[]=[['text'=>achbotMessage('automatic_gateway_review.newest'),
                 'callback_data'=>'attentionInbox']];
-            $rows[]=[['text'=>achbotMessage('automatic_gateway_review.back_admin'),
+            $rows[]=[['text'=>achbotMessage('labels.back_to_admin'),
                 'callback_data'=>'managePanel']];
             $body=achbotMessage('automatic_gateway_review.title');
             if (!$items) $body.="\n".achbotMessage('automatic_gateway_review.empty');
@@ -359,14 +371,14 @@ if (preg_match('/^attention(?:Inbox(?:_[1-9][0-9]{0,17})?|Case_[1-9][0-9]{0,17})
             $type=(string)$item['type'];
             $walletCase=(string)$item['provider']==='wallet';
             $subject=match(true) {
-                $type==='BUY_SUB' => achbotMessage('automatic_gateway_review.purchase'),
+                $type==='BUY_SUB' => achbotMessage('labels.labels.payment_type.label.e6343571a4'),
                 $type==='RENEW_ACCOUNT' =>
-                    achbotMessage('automatic_gateway_review.renew'),
+                    achbotMessage('labels.labels.payment_type.label.df1c62b99e'),
                 $type==='INCREASE_WALLET' => achbotMessage('automatic_gateway_review.wallet'),
                 str_starts_with($type,'INCREASE_DAY_') =>
                     achbotMessage('automatic_gateway_review.days'),
                 str_starts_with($type,'INCREASE_VOLUME_') =>
-                    achbotMessage('automatic_gateway_review.volume'),
+                    achbotMessage('labels.labels.payment_type.label.160a34aa6d'),
                 default => $safe($type),
             };
             $orderId=(int)($item['order_id']??0);
@@ -590,7 +602,7 @@ if (preg_match('/^gatewayReview_([ARV])_([1-9][0-9]{0,17})$/D',
             :achbotGatewayReviewCommit($connection,(int)$from_id,$attempt,$mode,(int)$admin);
         $status=(string)($result['status']??'unavailable');
         $text=match($status) {
-            'wallet_credited','service_pending','completed','delivery_unconfirmed','resolved'=>achbotCheckoutReceiptOutcomeText($status),
+            'wallet_credited','service_pending','completed','delivery_unconfirmed','resolved_refunded','resolved_closed'=>achbotCheckoutReceiptOutcomeText($status),
             'rejected'=>achbotMessage('automatic_gateway_review.status_rejected'),
             'busy'=>achbotMessage('automatic_gateway_review.status_busy'),
             'unknown'=>achbotMessage('automatic_gateway_review.status_unknown'),
@@ -600,16 +612,12 @@ if (preg_match('/^gatewayReview_([ARV])_([1-9][0-9]{0,17})$/D',
             default=>achbotMessage('automatic_gateway_review.status_unavailable'),
         };
         $body=achbotMessageHtml('automatic_gateway_review.result',['result'=>$text]);
-        $sent=editText($message_id,$body,$keys,'HTML',(int)$from_id);
-        if (!is_object($sent)||($sent->ok??false)!==true)
-            sendMessage($body,$keys,'HTML',(int)$from_id);
+        \AchBot\Telegram\Conversation\replaceTransient((int)$from_id,(int)$message_id,$body,$keys);
     } catch(Throwable $error) {
         error_log('achbot_gateway_review_callback_error class='.get_class($error));
         $body=achbotMessage('automatic_gateway_review.unavailable');
         try {
-            $sent=editText($message_id,$body,$keys,'HTML',(int)$from_id);
-            if (!is_object($sent)||($sent->ok??false)!==true)
-                sendMessage($body,$keys,'HTML',(int)$from_id);
+            \AchBot\Telegram\Conversation\replaceTransient((int)$from_id,(int)$message_id,$body,$keys);
         } catch(Throwable $ignored) {}
     }
     return;

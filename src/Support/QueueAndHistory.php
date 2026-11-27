@@ -21,10 +21,10 @@ function achbotTicketPage(mysqli $db,int $actor,bool $staff,string $type,int $of
 function achbotTicketListKeys(array $ticket,bool $staff): string {
     $id=(int)$ticket['id'];$scope=$staff?'s':'c';$rows=[];
     if ((int)$ticket['state']!==2) $rows[]=[
-        ['text'=>($staff?achbotMessage('support.queue_and_history.all_tickets.button.12e9251ccb'):achbotMessage('support.admin_reply.button.173875ae6b')),'callback_data'=>'closeTicket_'.$scope.'_'.$id],
+        ['text'=>($staff?achbotMessage('support.admin_reply.button.173875ae6b'):achbotMessage('support.admin_reply.button.173875ae6b')),'callback_data'=>'closeTicket_'.$scope.'_'.$id],
         ['text'=>($staff?achbotMessage('support.create_ticket.button.3b90dccc67'):achbotMessage('support.admin_reply.button.f8a34e79d9')),'callback_data'=>($staff?'reply_':'replySupport_').$id]
     ];
-    $rows[]=[['text'=>($staff?achbotMessage('support.queue_and_history.all_tickets.button.ce4f25e31b'):achbotMessage('support.customer_conversation.user_all_tickets.button.2f9a0fbfd0')),'callback_data'=>'latestMsg_'.$scope.'_'.$id]];
+    $rows[]=[['text'=>($staff?achbotMessage('support.customer_conversation.user_all_tickets.button.2f9a0fbfd0'):achbotMessage('support.customer_conversation.user_all_tickets.button.2f9a0fbfd0')),'callback_data'=>'latestMsg_'.$scope.'_'.$id]];
     return achbotTicketKeys($rows);
 }
 function achbotTicketAuthor($type): string {

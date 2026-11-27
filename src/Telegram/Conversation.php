@@ -67,10 +67,10 @@ function acknowledgedMessage($response,int $actor): ?int {
 /** Edit the exact caller-classified transient text screen. Unknown outcome,
  * no-op and rate-limit responses do not trigger another send. */
 function replaceTransient(int $actor,int $message,string $text,string $keys): ?int {
-    $result=\editText($message,$text,$keys,'HTML',$actor);
+    try {$result=\editText($message,$text,$keys,'HTML',$actor);} catch (\Throwable $ignored) {return null;}
     if (\AchBot\Telegram\Response\messageDeliveryOutcome($result,(string)$actor,$message)['result']==='acknowledged') return $message;
     if (!canReplaceRejectedEdit($result)) return null;
-    $replacement=\sendMessage($text,$keys,'HTML',$actor);
+    try {$replacement=\sendMessage($text,$keys,'HTML',$actor);} catch (\Throwable $ignored) {return null;}
     $id=acknowledgedMessage($replacement,$actor);
     if ($id===null) return null;
     try {\delMessage($message,$actor);} catch (\Throwable $ignored) {}
@@ -91,7 +91,8 @@ function referralSettingEditor(string $step): ?array {
  * local admission time. A delayed older update may see the NEW actor row,
  * so a row CAS alone does not establish input ownership. */
 function editorOpeningGeneration(array $cached): ?array {
-    if (!referralSettingEditor((string)($cached['step']??''))) return null;
+    $step=(string)($cached['step']??'');
+    if (!referralSettingEditor($step) && !preg_match('/\A(?:bc_edit_[1-9][0-9]*|s2a_msg_[1-9][0-9]*|s2a_title_(?:all|has|none|agents))\z/D',$step)) return null;
     if (preg_match('/^([1-9][0-9]*):([1-9][0-9]*)$/D',(string)($cached['temp']??''),$m)!==1)
         return null;
     return ['update'=>(int)$m[1],'opened_at'=>(int)$m[2]];
@@ -109,7 +110,7 @@ function updateAfterOpening(array $generation,$updateId,$eventTime): bool {
 /**
  * Only generation-bearing editors require a newer authenticated event.
  * Other editors retain their existing ownership rules; a malformed
- * generation can still be abandoned but cannot authorize a referral save.
+ * generation can still be abandoned but cannot authorize a protected save.
  */
 function editorAcceptsUpdate(array $row,int $actor,$update): bool {
     $generation=editorOpeningGeneration($row);
@@ -178,6 +179,24 @@ function transitionEditor(\mysqli $db,int $actor,array $cached,string $next='non
             error_log('achbot_conversation_transition_unconfirmed actor='.$actor.' class='.get_class($e));
         return null;
     }
+}
+
+/** A committed top-up is not an active amount editor. The stored prompt
+ * of a cancelled receipt/amount editor is disposable, unlike an invoice,
+ * a shared menu entry or the customer's authored input. */
+function abandonedEditorPresentation(array $row,int $actor): string {
+    $step=(string)($row['step']??'');
+    if (in_array($step,['','none'],true) || str_starts_with($step,'achbotWalletTopup:committed:')) return 'idle';
+    $prompt=0;$inline=false;
+    if (str_starts_with($step,'receipt:')) {
+        require_once __DIR__.'/../Finance/ManualCheckoutPresentation.php';
+        $receipt=\achbotReceiptStep($step);
+        $prompt=(int)($receipt['prompt']??0);$inline=$receipt!==null;
+    } elseif (preg_match('/\AachbotWalletTopup:(choose|amount):[1-9][0-9]*:([1-9][0-9]*):[1-9][0-9]*\z/D',$step,$m)) {
+        $prompt=(int)$m[2];$inline=$m[1]==='choose';
+    }
+    if ($prompt>0) try {\delMessage($prompt,$actor);} catch (\Throwable $ignored) {}
+    return $inline?'inline':'reply';
 }
 
 /** Completion feedback is a new message, not an edit: Telegram only accepts

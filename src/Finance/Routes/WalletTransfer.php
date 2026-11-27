@@ -333,7 +333,7 @@ if ((str_starts_with($transferStep,'achbotTransferAmount:') ||
         $sendTransferNotice(\achbotMessage('wallet.admin_wallet.admin_wallet_report_result.customer.a5b15e454e') . number_format($amount) .
             \achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.8e5e1ee663'),
             $removeKeyboard, null, $from_id, 'sender');
-        $sendTransferNotice(\achbotMessage('wallet.wallet_transfer.wallet_transfer_restart.text.b059640ccc'),
+        $sendTransferNotice(\achbotMessage('labels.select_option'),
             getMainKeys(), null, $from_id, 'sender_menu');
 
     // A committed transfer is never undone because an outbound Telegram

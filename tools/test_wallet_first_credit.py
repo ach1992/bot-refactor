@@ -31,7 +31,7 @@ case 'save':
  require_once dirname($argv[1]).'/ApiPayments.php';
  require_once dirname($argv[1]).'/ReceiptNotices.php';
  $GLOBALS['admin']=9001;
- $result=['status'=>achbotManualAdmitReceipt($db,$pay,'gift_card',1001,$spec['code'],'fixture gift',inlineKeyboard([]),'fixture_bot')?'saved':'invalid'];
+ $result=['status'=>achbotManualAdmitReceipt($db,$pay,'gift_card',1001,$spec['code'],'fixture gift',inlineKeyboard([]))?'saved':'invalid'];
  break;
 """
 ).replace(

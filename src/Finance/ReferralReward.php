@@ -44,12 +44,12 @@ function achbotPurchaseReferralStageReportsLocked(mysqli $db,array $pay,int $buy
         number_format($before).
         \achbotMessage('payment.referral_reward.give_referral_reward.text.c0780ce268').
         number_format($after).
-        \achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
+        \achbotMessage('labels.currency_toman_suffix');
     $operatorMsg=\achbotMessage('payment.referral_reward.give_referral_reward.operator_msg.7c8cfd9d4f').
         $payId.\achbotMessage('payment.referral_reward.give_referral_reward.text.23d0786d9b').
         $buyer.\achbotMessage('payment.referral_reward.give_referral_reward.text.6aaba1c235').
         $inviter.\achbotMessage('payment.referral_reward.give_referral_reward.text.534fd54cb9').
-        number_format($amount).\achbotMessage('payment.discounts.apply_discount_to_pay.text.2cc98f7f7c');
+        number_format($amount).\achbotMessage('labels.currency_toman_suffix');
     require_once __DIR__.'/WalletReports.php';
     $operatorMsg.="\n".achbotWalletReportFacts(achbotWalletReportEntryLocked($db,$walletId)).
         "\n".achbotMessageHtml('operational_reports.source_reference',['reference'=>'P'.$payId.' / '.$pay['hash_id'].' / svc_'.$serviceId]);

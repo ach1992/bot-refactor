@@ -102,6 +102,30 @@ function unpinOne($uid,$mid) {return \AchBot\Telegram\Messages\unpinOne('bot',$u
 function deleteOne($uid,$mid) {return \AchBot\Telegram\Messages\deleteOne('bot',$uid,$mid);}
 function sendMessage($text,$keys,$mode,$uid=9001) {return bot('sendMessage',['chat_id'=>$uid,'text'=>$text,'parse_mode'=>$mode,'reply_markup'=>$keys]);}
 function forwardmessage($uid,$chat,$mid) {return bot('forwardMessage',['chat_id'=>$uid,'from_chat_id'=>$chat,'message_id'=>$mid]);}
+if (str_starts_with($mode,'admit:')) {
+    $spec=json_decode(substr($mode,6),true,32,JSON_THROW_ON_ERROR);
+    $actor=(int)($spec['actor']??9001);$action=$spec['action']??'edit';
+    $cached=$connection->query("SELECT * FROM users WHERE userid=$actor")->fetch_assoc();
+    if ($spec['stale']??false) $cached['temp']='100:1';
+    $frame=(object)['from'=>(object)['id'=>$actor,'is_bot'=>false],
+        'chat'=>(object)['id'=>$actor,'type'=>'private'],'message_id'=>222,'date'=>time()];
+    $update=(object)['update_id'=>$spec['update']??2001];
+    $op=$spec['op']??'action';
+    if ($op==='open' || ($op==='action' && $action!=='edit'))
+        $update->callback_query=(object)['from'=>$frame->from,'message'=>$frame,'data'=>$op==='open'?'chooseSendGroup_all':'jobCreate_'.$action.'_8'];
+    else $update->message=$frame;
+    $body=$spec['body']??'fixture & edited';
+    $html=htmlspecialchars($body,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');
+    $result=match($op) {
+        'open'=>achbotBroadcastOpenEditor($connection,$actor,9001,$cached,'s2a_title_all',$update),
+        'draft'=>achbotBroadcastCreateDraft($connection,$actor,9001,$cached,'all','Fixture title',$update),
+        'submit'=>achbotBroadcastSubmitDraft($connection,$actor,9001,$cached,(int)$spec['id'],
+            $spec['payload']??['type'=>'text','text'=>$body,'html'=>$html],$update),
+        default=>achbotBroadcastQueueAction($connection,$actor,9001,8,$action,$cached,$update,$body,$html),
+    };
+    echo json_encode($result,JSON_THROW_ON_ERROR);
+    return;
+}
 if ($mode==='progress') {
     $row=$connection->query('SELECT target_group,`offset` FROM send_list WHERE id=8')->fetch_assoc();
     echo json_encode(['total'=>achbotBroadcastAudienceCount($connection,$row['target_group']),
@@ -160,7 +184,7 @@ def main():
             assert len(reports)==int(state==3),reports
             if reports:assert reports[0]['state']==3
         def command(mode):
-            return ['php', '-n', '-d', 'extension=mysqlnd', '-d', 'extension=mysqli',
+            return ['php', '-n', '-d', 'extension=mysqlnd', '-d', 'extension=mysqli', '-d', 'extension=mbstring',
                     str(driver), str(ROOT), str(work/'mysql.sock'), DB, mode, str(trace)]
         def run(mode='normal',failed=False):
             result = subprocess.run(command(mode), env=env, capture_output=True, text=True, timeout=70)
@@ -188,6 +212,124 @@ def main():
         users = [int(v) for v in sql('SELECT userid FROM users ORDER BY id').splitlines()]
         assert users == [1001, 9001, 9002], users
         first_id = int(sql('SELECT id FROM users WHERE userid=1001'))
+        # Use the actual common admission transaction, not a test-only SQL
+        # imitation. Invalid/stale editor claims cannot create queued effects.
+        def admit_command(**spec):
+            return command('admit:'+json.dumps(spec,ensure_ascii=False))
+        def admit(**spec):
+            result=subprocess.run(admit_command(**spec),env=env,capture_output=True,text=True,timeout=15)
+            assert result.returncode==0,(result.stderr,result.stdout)
+            return json.loads(result.stdout)
+        def seed_admission(kind='text'):
+            seed(kind)
+            sql("UPDATE send_list SET state=3 WHERE id=8; "
+                "UPDATE users SET step='bc_edit_8',temp=CONCAT('2000:',UNIX_TIMESTAMP()) WHERE userid IN (9001,9002)")
+        def no_job():
+            assert sql("SELECT COUNT(*) FROM bc_jobs WHERE broadcast_id=8")=='0'
+            assert sql("SELECT text FROM send_list WHERE id=8")=='literal <b> &'
+        seed_admission()
+        assert admit(stale=True) is None
+        assert admit(update=1999) is None
+        no_job()
+        assert sql("SELECT step FROM users WHERE userid=9001")=='bc_edit_8'
+        cases.append('broadcast_edit_stale_or_replayed_generation_never_queues')
+        seed_admission()
+        sql("CREATE TRIGGER fixture_broadcast_edit_fail BEFORE UPDATE ON send_list FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture rollback'")
+        try:
+            assert admit() is None
+            no_job()
+            assert sql("SELECT step FROM users WHERE userid=9001")=='bc_edit_8'
+        finally:sql('DROP TRIGGER fixture_broadcast_edit_fail')
+        result=admit()
+        assert result['status']=='created' and result['job']>0,result
+        assert sql("SELECT CONCAT(step,':',temp IS NULL) FROM users WHERE userid=9001")=='none:1'
+        assert sql("SELECT CONCAT(new_text,':',new_html) FROM bc_jobs WHERE broadcast_id=8")=='fixture & edited:fixture &amp; edited'
+        assert sql("SELECT CONCAT(text,':',text_html) FROM send_list WHERE id=8")=='fixture & edited:fixture &amp; edited'
+        assert admit() is None and sql("SELECT COUNT(*) FROM bc_jobs WHERE broadcast_id=8")=='1'
+        cases.append('broadcast_edit_job_content_and_editor_commit_or_rollback_together')
+        seed_admission('photo')
+        assert admit(body='x'*1025)['status']=='too_long'
+        no_job()
+        assert sql("SELECT step FROM users WHERE userid=9001")=='bc_edit_8'
+        sql("UPDATE users SET isAdmin=0 WHERE userid=9002")
+        try:
+            assert admit(actor=9002) is None
+            no_job()
+        finally:sql("UPDATE users SET isAdmin=1 WHERE userid=9002")
+        cases.append('broadcast_edit_current_role_and_real_caption_limit')
+        seed_admission()
+        procs=[subprocess.Popen(admit_command(actor=uid,body=f'fixture {uid}'),env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True) for uid in (9001,9002)]
+        results=[]
+        for proc in procs:
+            out,err=proc.communicate(timeout=15)
+            assert proc.returncode==0,(out,err)
+            results.append(json.loads(out))
+        assert sorted(r['status'] for r in results)==['active','created'],results
+        assert sql("SELECT COUNT(*) FROM bc_jobs WHERE broadcast_id=8 AND action='edit'")=='1'
+        assert sql("SELECT BINARY s.text=BINARY j.new_text AND BINARY s.text_html=BINARY j.new_html FROM send_list s JOIN bc_jobs j ON j.broadcast_id=s.id WHERE s.id=8")=='1'
+        cases.append('broadcast_edit_competing_staff_one_current_job')
+        seed_admission()
+        procs=[subprocess.Popen(admit_command(actor=uid,action='pin'),env=env,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True) for uid in (9001,9002)]
+        results=[]
+        for proc in procs:
+            out,err=proc.communicate(timeout=15)
+            assert proc.returncode==0,(out,err)
+            results.append(json.loads(out))
+        assert sorted(r['status'] for r in results)==['active','created'],results
+        assert sql("SELECT COUNT(*) FROM bc_jobs WHERE broadcast_id=8 AND action='pin'")=='1'
+        cases.append('broadcast_management_concurrent_same_action_one_job')
+        def seed_draft():
+            seed()
+            sql("DELETE FROM send_list; UPDATE users SET step='none',temp=NULL")
+            assert admit(op='open',update=3000) is True
+            assert sql("SELECT CONCAT(step,':',SUBSTRING_INDEX(temp,':',1)) FROM users WHERE userid=9001")=='s2a_title_all:3000'
+        seed_draft()
+        assert admit(op='draft',update=2999)==0
+        assert admit(op='draft',update=3001,stale=True)==0
+        assert sql("SELECT COUNT(*) FROM send_list")=='0'
+        sql("CREATE TRIGGER fixture_draft_editor_fail BEFORE UPDATE ON users FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture rollback'")
+        try:
+            assert admit(op='draft',update=3001)==0
+            assert sql("SELECT COUNT(*) FROM send_list")=='0'
+            assert sql("SELECT step FROM users WHERE userid=9001")=='s2a_title_all'
+        finally:sql('DROP TRIGGER fixture_draft_editor_fail')
+        bid=admit(op='draft',update=3001)
+        assert bid>0 and sql("SELECT COUNT(*) FROM send_list")=='1'
+        assert sql(f"SELECT CONCAT(step,':',SUBSTRING_INDEX(temp,':',1)) FROM users WHERE userid=9001")==f's2a_msg_{bid}:3001'
+        assert admit(op='draft',update=3001)==0
+        cases.append('broadcast_title_and_exact_message_editor_commit_or_rollback_together')
+        assert admit(op='submit',id=bid,update=3001) is False
+        assert admit(op='submit',id=bid,update=3002,actor=9002) is False
+        sql("CREATE TRIGGER fixture_draft_editor_fail BEFORE UPDATE ON users FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='fixture rollback'")
+        try:
+            assert admit(op='submit',id=bid,update=3002) is False
+            assert sql(f"SELECT type FROM send_list WHERE id={bid}")=='draft'
+            assert sql("SELECT step FROM users WHERE userid=9001")==f's2a_msg_{bid}'
+        finally:sql('DROP TRIGGER fixture_draft_editor_fail')
+        assert admit(op='submit',id=bid,update=3002) is True
+        assert sql(f"SELECT CONCAT(type,':',text,':',text_html,':',state) FROM send_list WHERE id={bid}")=='text:fixture & edited:fixture &amp; edited:0'
+        assert sql("SELECT CONCAT(step,':',temp IS NULL) FROM users WHERE userid=9001")=='none:1'
+        assert admit(op='submit',id=bid,update=3002,body='replacement') is False
+        cases.append('broadcast_initial_content_and_editor_commit_or_rollback_together')
+        for payload,expected in [
+            (dict(type='forwardall',text='original',chat=9001,message=222),'forwardall:original:9001:222:1:1'),
+            (dict(type='photo',text='original',file='fixture-photo',html='original'),'photo:original:0:0:0:0'),
+        ]:
+            seed_draft()
+            bid=admit(op='draft',update=3001)
+            assert bid>0
+            assert admit(op='submit',id=bid,update=3002,payload=payload) is True
+            assert sql(f"SELECT CONCAT(type,':',text,':',COALESCE(chat_id,0),':',COALESCE(message_id,0),':',file_id IS NULL,':',text_html IS NULL) FROM send_list WHERE id={bid}")==expected
+        seed_draft()
+        bid=admit(op='draft',update=3001)
+        sql(f"UPDATE send_list SET state=4 WHERE id={bid}")
+        assert admit(op='submit',id=bid,update=3002) is False
+        assert sql(f"SELECT CONCAT(type,':',state) FROM send_list WHERE id={bid}")=='draft:4'
+        assert sql("SELECT step FROM users WHERE userid=9001")==f's2a_msg_{bid}'
+        cases.append('broadcast_original_media_forward_and_cancelled_draft_preserved')
+
+
+
         seed()
         proc = subprocess.Popen(command('lost_after_dispatch'), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         try:

@@ -222,11 +222,11 @@ function getUserOrderDetailKeys($id, $offset = 0, ?object $provenRemote=null){
 
     $keyboard[] = [
         ['text' => $firstName, 'callback_data' => "wizwizch"],
-        ['text' => \achbotMessage('subscription.account_details.get_user_order_detail_keys.button.c9b4331f4f'), 'callback_data' => "wizwizch"],
+        ['text' => \achbotMessage('labels.customer_name'), 'callback_data' => "wizwizch"],
     ];
 
     $keyboard[] = [
-        ['text' => ($agentBought ? \achbotMessage('subscription.account_deletion.button.13159f8c74') : \achbotMessage('subscription.account_deletion.button.5f5c4c72bd')), 'callback_data' => "wizwizch"],
+        ['text' => ($agentBought ? \achbotMessage('labels.confirm_yes') : \achbotMessage('subscription.account_deletion.button.5f5c4c72bd')), 'callback_data' => "wizwizch"],
         ['text' => \achbotMessage('subscription.account_details.get_user_order_detail_keys.button.1c7f597d4f'), 'callback_data' => "wizwizch"],
     ];
 
@@ -450,7 +450,7 @@ function getOrderDetailKeys($from_id, $id, $offset = 0, ?object $provenRemote=nu
 
     $keyboard[] = [[
         'text' => \achbotMessage('legacy_buttons.back_button'),
-        'callback_data' => ($agentBought == true ? "agentConfigsList" : "mySubscriptions")
+        'callback_data' => ($agentBought == true ? "changeAgentOrder1" : "changeOrdersPage1")
     ]];
 
     return [
@@ -467,7 +467,9 @@ function showMessage(array $payload, ?int $messageId = null): bool {
     $parts=\AchBot\Subscription\Presentation\messageParts($payload['msg']);
     $recipient=(int)($GLOBALS['from_id']??0);
     if ($recipient<=0) return false;
-    $confirmed=true;
+    // A multipart detail is one new complete view, never a replacement
+    // of only its first old part followed by duplicate continuations.
+    if (count($parts)>1) $messageId=null;
     foreach ($parts as $index=>$part) {
         $keys=$index===count($parts)-1?$payload['keyboard']:json_encode(['inline_keyboard'=>[]]);
         $target=$index===0?$messageId:null;
@@ -481,15 +483,15 @@ function showMessage(array $payload, ?int $messageId = null): bool {
             }
             $result=\AchBot\Telegram\Response\messageDeliveryOutcome($response,(string)$recipient,$target);
             if ($result['result']!=='acknowledged') {
-                $confirmed=false;
                 error_log('achbot_subscription_view_unconfirmed part='.($index+1).
                     ' result='.$result['result']);
+                return false;
             }
         } catch (\Throwable $error) {
-            $confirmed=false;
             error_log('achbot_subscription_view_unconfirmed part='.($index+1).
                 ' class='.get_class($error));
+            return false;
         }
     }
-    return $confirmed;
+    return true;
 }
