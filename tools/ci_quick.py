@@ -247,6 +247,8 @@ REQUIRED_CURRENT_CASES = {
         "dispatched_bank_read_failure_retains_uncertain_effect",
         "gift_verify_unavailable_recovers_original_proof",
         "bank_review_horizon_remains_manual_not_unavailable",
+        "actual_bank_outage_staff_distinction_shared_customer_view",
+        "actual_gift_outage_staff_distinction_shared_customer_view",
         "receipt_outbox_atomic_rollback",
         "receipt_concurrent_original_winner",
         "receipt_late_ack_after_financial_commit",

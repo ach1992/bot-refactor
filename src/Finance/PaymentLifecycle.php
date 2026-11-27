@@ -716,11 +716,10 @@ function achbotPayUxState(array $pay, ?array $attempt): string {
     if ($state==='have_sent' ||
         ($state==='service_superseded' && $stage==='review' && achbotPayUxManualProvider($provider))) {
         return match($attempt['evidence_state']??null) {
-            'monitoring'=>'receipt_monitoring',
-            'manual','review'=>'receipt_manual',
             'invalid_code'=>'receipt_invalid',
             'dispatched','uncertain'=>'receipt_uncertain',
-            'reserved','proven'=>'receipt_verifying',
+            // Pending review has one customer meaning, regardless of how
+            // the original evidence is checked or whether the API is available.
             default=>'receipt_review'
         };
     }
@@ -804,7 +803,7 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         'expired' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.a1026d7b85'),
         'superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.74adf2adfe'),
         'declined' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.f8f1a7f2f5'),
-        'receipt_review','receipt_monitoring','receipt_manual','receipt_verifying' =>
+        'receipt_review' =>
             achbotMessage(achbotManualTypedGiftAttempt($attempt??[])?
                 'payment.payment_lifecycle.gift_received':'payment.payment_lifecycle.pay_ux_status_text.text.0a0cf2fd64'),
         'receipt_invalid'=>achbotMessage('payment.payment_lifecycle.gift_not_verified'),
@@ -835,9 +834,6 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         'superseded' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.c0ee0533a8'),
         'declined' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.b2948cf010'),
         'receipt_review' => $waitingGuidance,
-        'receipt_monitoring'=>achbotMessage('payment.payment_lifecycle.receipt_monitoring_next'),
-        'receipt_manual'=>achbotMessage('payment.payment_lifecycle.receipt_manual_next'),
-        'receipt_verifying'=>achbotMessage('payment.payment_lifecycle.receipt_verifying_next'),
         'receipt_invalid'=>achbotMessage('payment.payment_lifecycle.gift_not_verified_next'),
         'receipt_uncertain'=>achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.f1092775b2'),
         'hosted_waiting','hosted_confirming'=>achbotMessage('payment.payment_lifecycle.hosted_progress_next'),
@@ -845,11 +841,6 @@ function achbotPayUxStatusText(array $pay, ?array $attempt): string {
         'needs_review' => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.f1092775b2'),
         default => \achbotMessage('payment.payment_lifecycle.pay_ux_status_text.text.5e55076dd5'),
     };
-    // The Owner's established review-time wording remains visible in
-    // ordinary waiting states after the state-specific projection split.
-    // Do not promise this timing for invalid, uncertain or final outcomes.
-    if (in_array($state,['receipt_monitoring','receipt_manual','receipt_verifying'],true))
-        $next.="\n".$waitingGuidance;
     if ($state==='payment_recorded' && $outcome!==null) {
         $next=match ($outcome) {
             'service_pending'=>achbotMessage('payment.payment_lifecycle.progress_pending'),

@@ -253,21 +253,9 @@
       "before": null,
       "after": "🧾 اطلاعات پرداخت قبلی دیگر قابل استفاده نیست. وضعیت سفارش را از پیام ثبت رسید بررسی کنید."
     },
-    "payment.payment_lifecycle.receipt_manual_next": {
-      "before": null,
-      "after": "⏳ پرداخت برای بررسی مدیر ثبت شده است. نیازی به ارسال مجدد رسید نیست."
-    },
-    "payment.payment_lifecycle.receipt_monitoring_next": {
-      "before": null,
-      "after": "⏳ در انتظار تطبیق و تأیید خودکار پرداخت هستیم. نیازی به ارسال مجدد رسید نیست."
-    },
     "payment.payment_lifecycle.receipt_uncertain": {
       "before": null,
       "after": "⚠️ نتیجه بررسی پرداخت هنوز مشخص نیست."
-    },
-    "payment.payment_lifecycle.receipt_verifying_next": {
-      "before": null,
-      "after": "⏳ در حال بررسی نهایی پرداخت هستیم. تا مشخص شدن نتیجه، پرداخت را تکرار نکنید."
     },
     "payment.payment_lifecycle.status_update_unconfirmed": {
       "before": null,

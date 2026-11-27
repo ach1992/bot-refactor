@@ -115,9 +115,15 @@ review remain available. An original journaled external operation retains
 its own reserved/dispatched/uncertain/review or proven evidence instead of
 being downgraded by an unavailable read; an exception without a completed
 observation retains the last durable state. No new payment owner or schema
-is involved. Normal API monitoring is distinct from exceptional review. The established
-3/30-minute waiting guidance remains unchanged in ordinary receipt waiting
-views; invalid, uncertain and final outcomes use their own truthful status. Staff retain
+is involved. Staff distinguish monitoring, unavailable reads, manual review
+and original operation/proof states. Customers see one ordinary admitted
+receipt waiting presentation regardless of automatic or manual verification,
+provider availability or intermediate verification progress. The established
+3/30-minute guidance remains exact for the actual receipt/request kind.
+Only genuinely different customer-relevant outcomes (invalid evidence,
+unresolved effects requiring follow-up, rejection and terminal results)
+change that presentation; internal transitions alone require no edit or
+new notice. Staff retain
 currently admissible manual actions and the actual review-case link. A persisted
 external evidence operation fences the negative decision; the renderer and
 server-side rejection guard share this predicate. Delayed first staff delivery

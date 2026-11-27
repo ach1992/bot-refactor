@@ -377,6 +377,7 @@ function achbotApiPaymentStatusLabel(array $pay,array $a,?array $proof=null): ?s
     }
     return match($state) {
         'monitoring'=>achbotMessage('manual_payment.api_payment.current_monitoring'),
+        'unavailable'=>achbotMessage('automatic_gateway_review.unavailable'),
         'reserved','proven'=>achbotMessage('manual_payment.api_payment.current_verifying'),
         'dispatched','uncertain'=>achbotMessage('manual_payment.api_payment.status_uncertain'),
         'manual','review'=>achbotMessage('manual_payment.api_payment.status_review'),

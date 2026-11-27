@@ -151,29 +151,30 @@ def main():
         assert not any(e[0]=='edit' and e[4]==215 for e in r['events']),r
         current=run('payment_status',callback='ps_'+h,message_id=215,update_id=2000)
         assert not any(e[0] in ('edit','send') for e in current['events']),current
-        # The exact Owner-authored waiting guidance must survive the
-        # evidence-state split, not merely remain in an unused catalog key.
+        # The Owner requires one customer waiting view for all ordinary
+        # receipt review paths, even if staff see distinct backend states.
         waiting_copy='⏳ رسید در انتظار بررسی است؛ معمولا در کمتر از 3 دقیقه تایید می شود، در ساعات غیر کاری ممکن است تا 30 دقیقه و بیشتر طول بکشد.'
+        sql(f"UPDATE payment_message_refs SET synced_digest=NULL WHERE pay_row_id={pid} AND message_id=215")
+        baseline=run('projection',pay=int(pid))
+        original_edits=[e for e in baseline['events'] if e[0]=='edit']
+        assert len(original_edits)==1 and original_edits[0][4]==215 and original_edits[0][1].count(waiting_copy)==1,baseline
+        for evidence_state in ('monitoring','unavailable','manual','review','reserved','proven'):
+            sql(f"UPDATE payment_attempts SET evidence_state='{evidence_state}' WHERE pay_row_id={pid}")
+            r=run('projection',pay=int(pid))
+            assert not any(e[0] in ('edit','send') for e in r['events']),(evidence_state,r)
+            r=run('payment_status',callback='ps_'+h,message_id=215)
+            assert not any(e[0] in ('edit','send') for e in r['events']),(evidence_state,r)
         for evidence_state,expected in (
-                ('monitoring','در انتظار تطبیق و تأیید خودکار'),
-                ('manual','پرداخت برای بررسی مدیر ثبت شده است'),
-                ('review','پرداخت برای بررسی مدیر ثبت شده است'),
-                ('reserved','در حال بررسی نهایی پرداخت هستیم'),
-                ('proven','در حال بررسی نهایی پرداخت هستیم'),
                 ('uncertain','نتیجه بررسی پرداخت هنوز مشخص نیست'),
                 ('invalid_code','اعتبار کد گیفت‌کارت تأیید نشد')):
             sql(f"UPDATE payment_attempts SET evidence_state='{evidence_state}' WHERE pay_row_id={pid}")
-            # Adjacent states may render identical text. Reset the fixture
-            # digest to force a real projection of each source state.
-            sql(f"UPDATE payment_message_refs SET synced_digest=NULL WHERE pay_row_id={pid} AND message_id=215")
             r=run('projection',pay=int(pid))
             edits=[e for e in r['events'] if e[0]=='edit']
             assert len(edits)==1 and edits[0][4]==215 and expected in edits[0][1],(evidence_state,r)
-            assert edits[0][1].count(waiting_copy)==int(evidence_state not in ('uncertain','invalid_code')),(evidence_state,r)
-            assert not any(e[0]=='send' for e in r['events']),r
+            assert waiting_copy not in edits[0][1] and not any(e[0]=='send' for e in r['events']),r
         sql(f"UPDATE payment_attempts SET evidence_state=NULL WHERE pay_row_id={pid}")
         r=run('projection',pay=int(pid))
-        assert any(e[0]=='edit' and e[4]==215 and e[1].count(waiting_copy)==1 for e in r['events']),r
+        assert any(e==original_edits[0] for e in r['events']),r
         cases.append('owner_waiting_copy_survives_receipt_state_projection')
         original=sql(f"SELECT checkout_url,quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}")
         # A genuine credit is independent of the mutable receipt status.
