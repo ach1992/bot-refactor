@@ -340,12 +340,23 @@ function achbotCheckoutDraftRequestLocked(mysqli $db,array $pay,array $states): 
 }
 
 /** One amount + audience decision for method display and first admission.
- * The cap is outside audience exemptions and is always applied to the final
- * original Toman amount, not individual items or merchant-side adjustments. */
+ * Cap mode is AND (zero means unlimited for the eligible audience).
+ * Fallback mode is OR (zero means the alternative is absent); either way
+ * the real enabled flag and a valid policy are mandatory. Use the final
+ * original Toman amount, not individual items or merchant-side adjustments.
+ * A hosted original-link reopen historically rechecks current audience/flag,
+ * not the hard cap; it may also satisfy the current amount alternative. */
 function achbotCheckoutMethodAllowedLocked(mysqli $db,string $method,int $actor,array $states,
-    string $type,int $price): bool {
-    return achbotGatewayAmountAllowed($states,$method,$price) &&
-        achbotPayUxAudienceAllowedInState($db,$method,$actor,$states,true,$type);
+    string $type,int $price,bool $originalAttempt=false): bool {
+    $mode=achbotGatewayAmountMode($states,$method);
+    if ($price<0 || $mode===null) return false;
+    if ($mode==='cap' && $originalAttempt)
+        return achbotPayUxAudienceAllowedInState($db,$method,$actor,$states,true,$type);
+    $limit=achbotGatewayAmountLimit($states,$method);
+    if ($limit===null) return false;
+    if ($mode==='cap' && $limit>0 && $price>$limit) return false;
+    $alternative=$mode==='fallback' && $limit>0 && $price>0 && $price<=$limit;
+    return achbotPayUxAudienceAllowedInState($db,$method,$actor,$states,true,$type,$alternative);
 }
 
 /** Configured audience-eligible methods for a positive quote; safe

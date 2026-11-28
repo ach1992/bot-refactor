@@ -202,6 +202,27 @@ def compare_chili(before, after):
     assert seen==Counter({key:1 for key in (*replacements,*bot_replacements)}),seen
     return dict(Counter(method for rows in after.values() for method,_ in rows))
 
+AMOUNT_MODE_BASE="1ff589fedbe889adc25e0f53dfcb9d2b8bb5cb87"
+
+def compare_amount_mode(before, after):
+    assert before.keys()==after.keys()
+    old=r"\achbotMessage('payment_settings.gateway_rule_admin.cap_saved')"
+    new="achbotGatewayAdminAmountSaved($prior['method'])"
+    seen=0
+    for name,rows in before.items():
+        expected=[]
+        for method,args in rows:
+            changed=[]
+            for arg in args:
+                if name=="bot.php" and method=="editText" and old in arg:
+                    assert arg.count(old)==1
+                    arg=arg.replace(old,new);seen+=1
+                changed.append(arg)
+            expected.append([method,changed])
+        assert expected==after[name],("unapproved_amount_mode_wire_delta",name)
+    assert seen==1,seen
+    return dict(Counter(method for rows in after.values() for method,_ in rows))
+
 def main():
     def accepted(name):
         return (name.endswith(".php") and not name.startswith("messages/fa/")
@@ -231,7 +252,11 @@ def main():
         ["git","show",CHILI_BASE+":"+name],cwd=ROOT,text=True)
         for name in current})
     compare_ux(hygiene,chili)
-    total = compare_chili(chili,current)
+    amount_base=canonical({name:subprocess.check_output(
+        ["git","show",AMOUNT_MODE_BASE+":"+name],cwd=ROOT,text=True)
+        for name in current})
+    compare_chili(chili,amount_base)
+    total = compare_amount_mode(amount_base,current)
 
     # Mutate an actual current call, not a hand-written parser fixture.
     bot = now["bot.php"]
@@ -250,14 +275,14 @@ def main():
         assert replacement != bot
         mutation = dict(now, **{"bot.php": replacement})
         try:
-            compare_chili(chili, canonical(mutation))
+            compare_amount_mode(amount_base, canonical(mutation))
         except AssertionError:
             pass
         else:
             raise AssertionError("wire_mutation_not_detected")
     mutation = dict(now, **{"bot.php": bot.replace(
         "<?php", "<?php\n// sendMessage('inactive comment');", 1)})
-    assert compare_chili(chili, canonical(mutation)) == total
+    assert compare_amount_mode(amount_base, canonical(mutation)) == total
     print(json.dumps({"complete": True, "status": "PASS", "baseline": BASE,
         "calls": total, "cases": sum(total.values()),
         "exact_unchanged_paths_and_pinned_deltas": True,

@@ -515,6 +515,107 @@ def main():
         assert amount_allowed({**initial,'gatewayMaxAmountToman':{'nowpayments':100}},100,'nowpayments','INCREASE_WALLET')
         assert not amount_allowed({**initial,'gatewayMaxAmountToman':{'nowpayments':100}},101,'nowpayments','INCREASE_WALLET')
         cases.append('amount_caps_all_methods_inclusive_exemption_independent_and_bad_value_isolation')
+        # Amount alternative is explicit and per method: the same amount
+        # that denies an ordinary cap grants a separate OR path in fallback.
+        for method in ('nowpayments','zarinpal','nextpay','bank_transfer','gift_card',
+                       'manual_usdt','manual_trx','wallet'):
+            s=policy(method,[blank('buyers')],gatewayMaxAmountToman={method:500000},
+                     gatewayAmountMode={method:'fallback'})
+            for subject in (('BUY_SUB','INCREASE_WALLET') if method=='nowpayments' else ('BUY_SUB',)):
+                for amount in (1,499999,500000,500001):
+                    assert amount_allowed(s,amount,method,subject,who=1001)
+                    assert amount_allowed(s,amount,method,subject,who=1002)==(amount<=500000)
+            cap={**s,'gatewayAmountMode':{method:'cap'}}
+            assert amount_allowed(cap,500000,method)
+            assert not amount_allowed(cap,500001,method)
+            assert not amount_allowed(cap,500000,method,who=1002)
+        s=policy('bank_transfer',[],gatewayAmountMode={'bank_transfer':'fallback'},
+                 gatewayMaxAmountToman={'bank_transfer':500000})
+        assert amount_allowed(s,500000,'bank_transfer',who=1002)
+        assert not amount_allowed(s,500001,'bank_transfer',who=1002)
+        assert not amount_allowed(s,0,'bank_transfer',who=1002)
+        assert not amount_allowed({**s,'cartToCartState':'off'},1,'bank_transfer')
+        assert not amount_allowed(s,1,'bank_transfer',who=999999)
+        # Exemption remains an independent audience authorization, not a cap.
+        ex={**s,'gatewayRuleExemptUsers':{'bank_transfer':[1002]}}
+        assert amount_allowed(ex,500001,'bank_transfer',who=1002)
+        for raw in (None,0,'0','000'):
+            z={**s,'gatewayMaxAmountToman':{'bank_transfer':raw}}
+            assert not amount_allowed(z,1,'bank_transfer',who=1002)
+            assert amount_allowed({**z,'gatewayRuleExemptUsers':{'bank_transfer':[1002]}},
+                                  500001,'bank_transfer',who=1002)
+        for bad in (None,True,'unknown',1,[],{}):
+            z={**s,'gatewayAmountMode':{'bank_transfer':bad}}
+            assert not amount_allowed(z,1,'bank_transfer')
+            assert amount_allowed(z,1,'wallet')
+        for bad in (None,True,'fallback',[1]):
+            assert not amount_allowed({**s,'gatewayAmountMode':bad},1,'bank_transfer')
+        for bad in (-1,True,1.5,'-1','1e3',{},[]):
+            assert not amount_allowed({**s,'gatewayMaxAmountToman':{'bank_transfer':bad}},1,'bank_transfer')
+        assert not amount_allowed({**s,'gatewayRules':{'version':2,'methods':{}}},1,'bank_transfer')
+        assert not amount_allowed({**s,'gatewayRuleExemptUsers':None},1,'bank_transfer')
+        legacy={k:v for k,v in s.items() if k!='gatewayRules'}
+        for mode in ('off','buyers'):
+            z={**legacy,'gatewayAudience':{'bank_transfer':mode}}
+            assert amount_allowed(z,500000,'bank_transfer',who=1002)
+            assert not amount_allowed(z,500001,'bank_transfer',who=1002)
+        assert not amount_allowed({**legacy,'gatewayAudience':{'bank_transfer':'invalid'}},1,'bank_transfer')
+        assert not amount_allowed({**legacy,'gatewayAudience':None},1,'bank_transfer')
+        # Deliberately degrade the isolated unique index, as in the
+        # existing corrupt-schema identity regression above.
+        sql(w,e,"ALTER TABLE users DROP INDEX idx_users_userid_v1, ADD INDEX idx_users_userid_v1(userid)")
+        sql(w,e,f"INSERT INTO users(userid,name,username,refcode,wallet,date,is_agent) "
+            f"VALUES(1002,'Duplicate','duplicate_gateway_fixture','0',0,'{now}',1)")
+        assert not amount_allowed(s,1,'bank_transfer',who=1002)
+        sql(w,e,"DELETE FROM users WHERE username='duplicate_gateway_fixture'")
+        sql(w,e,"ALTER TABLE users DROP INDEX idx_users_userid_v1, ADD UNIQUE INDEX idx_users_userid_v1(userid)")
+        cases.append('amount_fallback_all_methods_inclusive_disabled_zero_identity_policy_and_exemptions')
+        # A structurally malformed active legacy map must not fall through
+        # to the omitted-method all default, the OR threshold or exemption.
+        # Numeric object keys are also invalid, not only contiguous lists.
+        method='bank_transfer'
+        for bad in (['off'], ['off','all'], {'0':'off','gift_card':'off'},
+                    {'2':'off',method:'all'}):
+            malformed={**initial,'gatewayAudience':bad}
+            for mode in ('cap','fallback'):
+                for price in (99,100,101):
+                    s={**malformed,'gatewayAmountMode':{method:mode},
+                       'gatewayMaxAmountToman':{method:100}}
+                    for exempt in ([],[1001]):
+                        assert not amount_allowed({**s,'gatewayRuleExemptUsers':{method:exempt}},
+                                                  price,method), (bad,mode,price,exempt)
+            for amount in ({method:0},{}):
+                s={**malformed,'gatewayAmountMode':{method:'fallback'},
+                   'gatewayMaxAmountToman':amount}
+                assert not amount_allowed(s,101,method)
+            for final in (False,True):
+                assert not allowed(malformed,method,final=final)
+                assert not allowed({**malformed,'gatewayRuleExemptUsers':{method:[1001]}},
+                                   method,final=final)
+        # Keep valid defaults and unrelated method value isolation. Modern
+        # explicit method rules supersede the inactive legacy document.
+        absent={k:v for k,v in initial.items() if k!='gatewayAudience'}
+        for base in (absent,{**initial,'gatewayAudience':{}},
+                     {**initial,'gatewayAudience':[]},
+                     {**initial,'gatewayAudience':{'wallet':'off'}},
+                     {**initial,'gatewayAudience':{'wallet':None}}):
+            assert amount_allowed({**base,'gatewayMaxAmountToman':{method:100}},100,method)
+            assert not amount_allowed({**base,'gatewayMaxAmountToman':{method:100}},101,method)
+            assert amount_allowed({**base,'gatewayAmountMode':{method:'fallback'},
+                                   'gatewayMaxAmountToman':{method:100}},101,method)
+        for bad in (['off'],{'0':'off','wallet':'all'}):
+            modern=policy(method,[blank('all')],gatewayAudience=bad)
+            assert amount_allowed(modern,100,method)
+            assert not amount_allowed(modern,100,'wallet')
+            deny=policy(method,[],gatewayAudience=bad)
+            assert not amount_allowed(deny,100,method)
+            fallback={**deny,'gatewayAmountMode':{method:'fallback'},
+                      'gatewayMaxAmountToman':{method:100}}
+            assert amount_allowed(fallback,100,method)
+            assert not amount_allowed(fallback,101,method)
+            assert amount_allowed({**fallback,'gatewayRuleExemptUsers':{method:[1001]}},
+                                  101,method)
+        cases.append('malformed_active_legacy_map_denied_cap_fallback_exemption_and_modern_precedence')
         # Rest of operator suite uses original source route and writer.
         store(initial)
         sequence=[1000]
@@ -554,7 +655,7 @@ def main():
         expanded={method:[blank('has_active_order')] for method in methods}
         store({**initial,'gatewayRules':{'version':1,'methods':expanded}})
         for method in methods:
-            for screen in ('gr|r|'+method+'|has_active_order',
+            for screen in ('gr|m|'+method,'gr|r|'+method+'|has_active_order',
                            'gr|f|'+method+'|has_active_order|volume'):
                 shown,_=act(screen)
                 assert len(shown)==1 and shown[0][0]=='edit',shown
@@ -652,6 +753,102 @@ def main():
         store(initial)
         cases.append('operator_amount_cap_create_clear_direct_edit_cas_independent_methods_and_authorization')
         cases.append('operator_amount_cap_staged_save_cancel_and_replay')
+        # Actual private operator route: amount-mode controls appear together,
+        # preserve the numeric amount, and never modify other methods.
+        store({**initial,'gatewayMaxAmountToman':{'bank_transfer':500000,'wallet':100}})
+        old_cap=cap_button('bank_transfer')
+        old_clear=cap_button('bank_transfer','u')
+        toggle=cap_button('bank_transfer','b')
+        assert toggle['text']=='🔀 حالت مبلغ — سقف برای همه',toggle
+        assert toggle['callback_data'].split('|')[-1]==old_cap['callback_data'].split('|')[-1]
+        events,_=act('gr|m|bank_transfer')
+        rows=json.loads(events[0][2])['inline_keyboard']
+        i=next(i for i,row in enumerate(rows) if row[0]['callback_data']==old_cap['callback_data'])
+        assert rows[i+1]==[toggle],rows
+        assert 'سقف مبلغ برای همه' in events[0][1],events
+        before=state()
+        for who,invalid in ((1001,None),(9001,'token'),(9001,'group'),(9001,'chat')):
+            act(toggle['callback_data'],who=who,invalid=invalid)
+            assert state()==before
+        events,_=act(toggle['callback_data'])
+        assert state()['gatewayAmountMode']=={'bank_transfer':'fallback'}
+        assert state()['gatewayMaxAmountToman']==before['gatewayMaxAmountToman']
+        assert any(e[0]=='edit' and 'کاربران واجد شرایط بدون سقف' in e[1] for e in events)
+        assert cap_button('bank_transfer')['text']=='💰 دسترسی جایگزین تا — 500,000 تومان'
+        assert cap_button('bank_transfer','b')['text']=='🔀 حالت مبلغ — دسترسی جایگزین'
+        assert cap_button('bank_transfer','u')['text']=='غیرفعال‌کردن دسترسی جایگزین'
+        before=state()
+        for stale in (toggle,old_cap,old_clear):
+            events,_=act(stale['callback_data'])
+            assert state()==before and any(e[0]=='deny' for e in events),events
+        assert sql(w,e,'SELECT step FROM users WHERE userid=9001')=='none'
+        # Save/Cancel and the displayed copy use the same fallback context.
+        events,_=act(cap_button('bank_transfer')['callback_data'])
+        assert any(e[0]=='send' and 'کاربران فاقد شرایط' in e[1] and '0 را ارسال کنید' in e[1] for e in events)
+        nonce,_=propose_cap('۶۰۰٬۰۰۰')
+        act('gr|x|'+str(nonce))
+        assert state()==before
+        act(cap_button('bank_transfer')['callback_data'])
+        nonce,_=propose_cap('۶۰۰٬۰۰۰')
+        events,_=act('gr|s|'+str(nonce))
+        assert state()['gatewayMaxAmountToman']['bank_transfer']==600000
+        assert state()['gatewayAmountMode']=={'bank_transfer':'fallback'}
+        assert any(e[0]=='edit' and 'مبلغ دسترسی جایگزین ذخیره شد' in e[1] for e in events)
+        cases.append('operator_amount_mode_toggle_actual_copy_preserves_amount_and_stale_buttons')
+        # Cross-mode edits are one CAS field; another method is independent.
+        act(cap_button('bank_transfer')['callback_data'],who=9001)
+        nonce,_=propose_cap('700000',who=9001)
+        other=cap_button('wallet','b',who=9002)
+        act(other['callback_data'],who=9002)
+        act('gr|s|'+str(nonce),who=9001)
+        assert state()['gatewayMaxAmountToman']=={'bank_transfer':700000,'wallet':100}
+        assert state()['gatewayAmountMode']=={'bank_transfer':'fallback','wallet':'fallback'}
+        act(cap_button('bank_transfer')['callback_data'],who=9001)
+        nonce,_=propose_cap('800000',who=9001)
+        act(cap_button('bank_transfer','b',who=9002)['callback_data'],who=9002)
+        before=state()
+        events,_=act('gr|s|'+str(nonce),who=9001)
+        assert state()==before and any(e[0]=='deny' for e in events),events
+        act('gr|x|'+str(nonce),who=9001)
+        assert state()['gatewayAmountMode']=={'wallet':'fallback'}
+        assert state()['gatewayMaxAmountToman']['bank_transfer']==700000
+        # A direct amount edit also invalidates a previously rendered toggle.
+        toggle=cap_button('bank_transfer','b')
+        sql(w,e,"UPDATE setting SET value=JSON_SET(value,'$.gatewayMaxAmountToman.bank_transfer',750000) WHERE type='BOT_STATES'")
+        before=state()
+        events,_=act(toggle['callback_data'])
+        assert state()==before and any(e[0]=='deny' for e in events),events
+        act(cap_button('bank_transfer','b')['callback_data'])
+        assert state()['gatewayAmountMode']['bank_transfer']=='fallback'
+        act(cap_button('bank_transfer','u')['callback_data'])
+        assert state()['gatewayAmountMode']['bank_transfer']=='fallback'
+        assert 'bank_transfer' not in state()['gatewayMaxAmountToman']
+        assert cap_button('bank_transfer')['text']=='💰 دسترسی جایگزین تا — غیرفعال'
+        act(cap_button('bank_transfer')['callback_data'])
+        nonce,_=propose_cap('10')
+        act('gr|s|'+str(nonce))
+        act(cap_button('bank_transfer')['callback_data'])
+        nonce,_=propose_cap('0')
+        act('gr|s|'+str(nonce))
+        assert 'bank_transfer' not in state()['gatewayMaxAmountToman']
+        assert state()['gatewayAmountMode']['bank_transfer']=='fallback'
+        cases.append('operator_amount_mode_cross_mode_cas_independent_methods_and_zero_clear')
+        # A malformed individual field is explicitly repairable, preserving
+        # other methods; a malformed entire map must not be overwritten.
+        store({**initial,'gatewayAmountMode':{'bank_transfer':'bad','wallet':'fallback'},
+               'gatewayMaxAmountToman':{'bank_transfer':500000}})
+        toggle=cap_button('bank_transfer','b')
+        assert 'نامعتبر' in toggle['text']
+        act(toggle['callback_data'])
+        assert state()['gatewayAmountMode']=={'wallet':'fallback'}
+        assert state()['gatewayMaxAmountToman']=={'bank_transfer':500000}
+        for malformed in (None,'bad',[1]):
+            store({**initial,'gatewayAmountMode':malformed})
+            before=state()
+            events,_=act(cap_button('bank_transfer','b')['callback_data'])
+            assert state()==before and any(e[0]=='deny' for e in events),events
+        store(initial)
+        cases.append('operator_amount_mode_invalid_field_repair_preserves_other_policies')
         events,_=act('gr|l')
         assert any(x[0]=='edit' and 'روش‌های پرداخت' in x[1] for x in events)
         events,_=act('gr|r|wallet|non_agents')

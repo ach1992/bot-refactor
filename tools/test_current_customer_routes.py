@@ -1040,6 +1040,40 @@ def main():
         assert run('wallet',hash=h)['events'][0][1]['status']=='funded'
         state()
         cases.append('bulk_total_and_locked_wallet_cap_with_exemption_and_stale_request')
+        # A nonqualifying audience gets an independent monetary alternative
+        # after discounts, not an arbitrary grant from the cached keyboard.
+        fallback={'gatewayAmountMode':{'wallet':'fallback'},
+                  'gatewayMaxAmountToman':{'wallet':80},'gatewayAudience':{'wallet':'off'}}
+        state(**fallback)
+        r=run('standard',callback='selectPlan7_1_none')
+        pid,h,price,_=latest(2001)
+        assert int(price)==100 and 'pw_'+h not in callbacks(r),r
+        sql("INSERT INTO discounts(hash_id,type,amount,expire_date,expire_count,can_use) VALUES ('fallbackroute20','percent',20,0,2,-1)")
+        run('discount',callback='haveDiscountCheckout_'+pid)
+        rr=run('discount',text='fallbackroute20')
+        assert latest(2001)[2]=='80' and 'pw_'+h in callbacks(rr),rr
+        state(**{**fallback,'gatewayMaxAmountToman':{'wallet':79}})
+        before=tuple(sql(q) for q in ('SELECT COUNT(*) FROM service_operations',
+            'SELECT COUNT(*) FROM wallet_entries','SELECT wallet FROM users WHERE userid=2001'))
+        rr=run('wallet',hash=h,expect_denied=True,stale_state=fallback)
+        assert rr['events']==[['denied','checkout_method_unavailable']],rr
+        assert tuple(sql(q) for q in ('SELECT COUNT(*) FROM service_operations',
+            'SELECT COUNT(*) FROM wallet_entries','SELECT wallet FROM users WHERE userid=2001'))==before
+        state(**fallback)
+        assert run('wallet',hash=h)['events'][0][1]['status']=='funded'
+        # An eligible audience has no amount ceiling in fallback mode.
+        state(**{**fallback,'gatewayAudience':{'wallet':'all'}})
+        r=run('standard',callback='selectPlan7_1_none')
+        pid,h,price,_=latest(2001)
+        assert int(price)==100 and 'pw_'+h in callbacks(r),r
+        # The entire bulk total, not each item, must pass the alternative.
+        state(**{**fallback,'gatewayMaxAmountToman':{'wallet':100}})
+        run('standard',actor=2002,callback='selectPlan7_1_much')
+        r=run('standard',actor=2002,text='3')
+        pid,h,price,_=latest(2002)
+        assert int(price)>100 and 'pw_'+h not in callbacks(r),r
+        state()
+        cases.append('fallback_actual_discount_bulk_total_and_locked_wallet_admission')
         # Invalid destination types are unavailable, never an implicit
         # string conversion into a bank recipient or crypto destination.
         state(walletState='off',cartToCartState='on',giftCardState='on',manualUsdtState='on')
@@ -1112,6 +1146,55 @@ def main():
         rr=run('manual_claim',pay=int(pid),method='bank_transfer',mode='topup')
         assert ['claim',True] in rr['events'] and sql(f'SELECT quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}')==issued,rr
         cases.append('topup_manual_cap_uses_invoice_amount_and_preserves_admitted_receipt')
+        alternative={'walletState':'off','cartToCartState':'on',
+                     'gatewayAudience':{'bank_transfer':'off'},
+                     'gatewayAmountMode':{'bank_transfer':'fallback'},
+                     'gatewayMaxAmountToman':{'bank_transfer':100000}}
+        state(**alternative)
+        assert_topup_methods({'bank_transfer'})
+        pid,h,_,_=latest(2001)
+        state(**{**alternative,'gatewayMaxAmountToman':{'bank_transfer':99999}})
+        before=sql('SELECT COUNT(*) FROM payment_attempts')
+        rr=run('manual_claim',pay=int(pid),method='bank_transfer',mode='topup',stale_state=alternative)
+        assert ['claim',False] in rr['events'] and sql('SELECT COUNT(*) FROM payment_attempts')==before,rr
+        state(**alternative)
+        rr=run('manual_claim',pay=int(pid),method='bank_transfer',mode='topup')
+        assert ['claim',True] in rr['events'],rr
+        issued=sql(f'SELECT quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}')
+        state(**{**alternative,'gatewayMaxAmountToman':{'bank_transfer':1}})
+        rr=run('manual_claim',pay=int(pid),method='bank_transfer',mode='topup')
+        assert ['claim',True] in rr['events'] and sql(f'SELECT quote_amount,wallet_invoice_sha256 FROM payment_attempts WHERE pay_row_id={pid}')==issued,rr
+        assert_topup_methods(set())
+        cases.append('fallback_actual_topup_manual_admission_and_original_receipt')
+        # A malformed list must hide bank transfer and deny definitive
+        # admission even when a valid keyboard/request snapshot offers it.
+        # Assert no new financial commitment, including at the OR boundary.
+        for mode in ('cap','fallback'):
+            for limit in (99999,100000,100001):
+                valid={**alternative,'gatewayAudience':{'bank_transfer':'all'},
+                       'gatewayAmountMode':{'bank_transfer':mode},
+                       'gatewayMaxAmountToman':{'bank_transfer':limit}}
+                # Produce a fresh original draft with a genuinely offered method.
+                state(**{**valid,'gatewayMaxAmountToman':{'bank_transfer':100001}})
+                assert_topup_methods({'bank_transfer'})
+                pid,h,_,_=latest(2001)
+                corrupt={**valid,'gatewayAudience':['off'],
+                         'gatewayRuleExemptUsers':{'bank_transfer':[2001]}}
+                state(**corrupt)
+                def financial_snapshot():
+                    return tuple(sql(q) for q in (
+                        'SELECT COUNT(*) FROM payment_attempts',
+                        'SELECT COUNT(*) FROM service_operations',
+                        'SELECT COUNT(*) FROM wallet_entries',
+                        'SELECT wallet FROM users WHERE userid=2001',
+                        f'SELECT state,checkout_operation_id IS NULL FROM pays WHERE id={pid}'))
+                before=financial_snapshot()
+                rr=run('manual_claim',pay=int(pid),method='bank_transfer',mode='topup',
+                       stale_state=valid)
+                assert ['claim',False] in rr['events'] and financial_snapshot()==before,rr
+                assert sql(f'SELECT checkout_operation_id IS NULL FROM pays WHERE id={pid}')=='1'
+                assert_topup_methods(set(),stale_state=valid)
+        cases.append('malformed_active_legacy_map_actual_topup_display_and_admission_no_commitment')
         state(walletState='off',zarinpal='on',nextpay='on',nowPaymentOther='on',nowPaymentWallet='on')
         sql("UPDATE setting SET value='"+json.dumps(base_keys)+"' WHERE type='PAYMENT_KEYS'")
         assert_topup_methods(set(),stale_keys={'zarinpal':'stale','nextpay':'stale','nowpayment':'stale','manualUsdtRateToman':'1000'})

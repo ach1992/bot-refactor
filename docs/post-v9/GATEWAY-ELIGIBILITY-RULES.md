@@ -39,27 +39,50 @@ historical backfill**.
   null is invalid and is rejected in previews, final payment authorization,
   administrator pages and authenticated policy writes without advancing
   their source watermark.
-- Optional `BOT_STATES.gatewayMaxAmountToman` is a map of independent
-  method ceilings, e.g. `{"bank_transfer":500000}`. Missing/null/zero means
-  unlimited. Positive integral Toman values (including decimal strings
-  directly edited in JSON) are inclusive maximums. Invalid explicit values
-  deny the affected method; a malformed map denies new monetary checkout
-  rather than silently bypassing configured policy. The cap is an AND
-  condition outside audience rules and exemptions, applied to the final
-  discounted original invoice amount (bulk total, recharge amount, renewal
-  or extension), not the randomized bank transfer amount, converted currency
-  or individual item price. Zero-price service paths remain nonmonetary.
-  Display and first admission use the same locked current setting; a prior
-  admitted/issued invoice retains original settlement eligibility. Scheduled
-  automatic renewal is a separate no-invoice wallet service command under
-  its existing independently configured policy, not method selection.
+- Optional `BOT_STATES.gatewayMaxAmountToman` holds independent method
+  amounts, e.g. `{"bank_transfer":500000}`. Positive integral Toman values
+  (including decimal strings directly edited in JSON) are inclusive.
+  Optional `BOT_STATES.gatewayAmountMode` holds per-method `cap` or
+  `fallback`, e.g. `{"bank_transfer":"fallback"}`. Omission defaults to
+  the established `cap` behavior, so existing configured ceilings remain
+  effective. Invalid explicit amounts/modes deny the affected method;
+  a malformed map denies new monetary checkout rather than silently
+  bypassing configured policy.
+  - Cap: eligible audience (including exempt users) AND amount at or
+    below the limit. Missing/null/zero amount means no monetary cap.
+  - Fallback: eligible audience (including exempt users) OR a positive
+    final invoice amount at or below the explicitly positive threshold.
+    Missing/null/zero disables only this alternative. Eligible customers
+    have no monetary ceiling in this mode. Empty/paused category rules
+    or audience `off` can still admit the explicit amount alternative;
+    the real method enable flag remains mandatory. Neither alternative
+    rescues malformed active policy, missing/ambiguous identity, or
+    other financial/provider/checkout checks. Independently satisfied
+    amount eligibility does not need a category/history query.
+  Both modes use the final discounted original invoice amount (bulk
+  total, recharge amount, renewal or extension), not the randomized
+  bank transfer amount, converted currency or individual item price.
+  Zero-price service paths remain nonmonetary. Display and first admission
+  use the same locked current setting; a prior admitted/issued invoice
+  retains original settlement eligibility. Hosted original-link reopens
+  keep their existing current audience/flag recheck, including the new
+  alternative when applicable; cap mode does not reapply a newly reduced
+  ceiling to a previously issued link. Scheduled automatic renewal is a
+  separate no-invoice wallet service command under its existing policy,
+  not method selection.
 - `BOT_STATES.gatewayRules` is optional and versioned:
   `{"version":1,"methods":{"wallet":[{"category":"non_agents","enabled":true,"registration_age_days":90,"metrics":{"buy":{"count":5,"days":90,"direction":"older"},"renew":{"count":0,"days":0,"direction":"older"},"volume":{"count":0,"days":0,"direction":"older"},"time":{"count":0,"days":0,"direction":"older"},"topup":{"count":0,"days":0,"direction":"older"}}}]}}`.
   **The example numbers are not defaults or UI limits.** All count and day
   values are freely entered nonnegative integers, with overflow validation.
 - If `gatewayRules` or a method key is **absent**, the existing
   `gatewayAudience` for that method remains authoritative, including explicit
-  `off`. A method key with an empty list is deny-all. A malformed explicit
+  `off`. An absent/empty legacy map or an omitted method in a valid map
+  retains the `all` default. A nonempty list or numeric key in the active
+  legacy map is structurally invalid and denies access before defaults,
+  amount alternatives or exemptions; invalid individual string-keyed values
+  remain method-local. An explicit modern method rule takes precedence over
+  inactive legacy policy. A modern method key with an empty list denies the
+  ordinary audience. A malformed explicit
   policy, unknown category/method, duplicate category, invalid number, ambiguous
   user or failed authoritative read fails closed. A newly added rule for a
   previously `off` method requires an explicit administrator action.
@@ -123,15 +146,21 @@ confirmations and revoked/non-admin/wrong-chat actions fail closed.
 The eligibility menu appears in the main administrator menu below the
 operations-attention entry, for Owner, Manager and Operator (not
 Support), independently of the Manager-only general gateway/settings menu.
-Each method has a «سقف مبلغ پرداخت» row, displaying the current amount or
-«بدون محدودیت». Open it, enter a nonnegative whole Toman amount (0 removes
-the limit); numeric input stages the amount and presents the existing
-bound Save/Cancel confirmation. Save commits the exact normalized value
-and returns to the current method menu; Cancel preserves the old cap.
-A separate «بدون محدودیت» action clears a configured cap. Both are
-field-revision bound, so direct edits to another method are preserved and a
-stale same-method editor cannot overwrite a new value. No schema migration
-is required for this setting. Each payment method has a single «معاف کاربر از قوانین» button immediately
+Each method has a monetary amount row and the adjacent «حالت مبلغ» toggle.
+The default «سقف برای همه» shows «سقف مبلغ پرداخت» and «بدون محدودیت» when
+unset. Toggle to «دسترسی جایگزین» to show «دسترسی جایگزین تا» and «غیرفعال»
+when unset. The toggle preserves the stored numeric amount. The page
+explains the current interpretation. Open the amount row, enter a
+nonnegative whole Toman amount (0 clears the amount condition, not the
+mode); numeric input stages it and presents the existing bound Save/Cancel
+confirmation. Save commits the exact normalized value and returns to the
+current method menu; Cancel preserves the old amount. The separate clear
+action removes the amount under the current interpretation. Both fields
+share one method-local revision: a stale amount editor, toggle or clear
+cannot overwrite a changed amount or mode, but direct edits and admins
+working on different methods remain independent. An invalid individual
+mode can be repaired to cap via the toggle; a malformed whole map cannot
+be overwritten by a per-method action. No schema migration is required. Each payment method has a single «معاف کاربر از قوانین» button immediately
 before Back. It opens a signed private input for one or more positive decimal
 IDs separated by whitespace or commas; prefixing IDs with - removes them
 from the same method's exemption list. Duplicates are ignored, invalid batches

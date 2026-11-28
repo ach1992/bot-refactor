@@ -484,11 +484,11 @@ if (is_string($data??null) &&
         // A rejection must never leave a stale editor that invites more
         // unsafe clicks. Re-validate authorization before showing fresh data.
         if ($operation!==null &&
-            in_array($operation['action'],['t','v','c','n','p','h','k','u'],true) &&
+            in_array($operation['action'],['t','v','c','n','p','h','k','u','b'],true) &&
             achbotGatewayAdminCanView($update,(int)$from_id,
                 (int)$chat_id,(int)$message_id,(int)$admin,$data)) {
             $refresh=match($operation['action']) {
-                'k','u'=>'gr|m|'.$operation['method'],
+                'k','u','b'=>'gr|m|'.$operation['method'],
                 'v','c','p'=>'gr|f|'.$operation['method'].'|'.$operation['category'].'|'.$operation['metric'],
                 default=>'gr|r|'.$operation['method'].'|'.$operation['category']
             };
@@ -524,13 +524,13 @@ if (is_string($data??null) &&
         editText($message_id,
             ($operation['action']==='s'
                 ? ($prior && $prior['phase']==='capconfirm'
-                    ? \achbotMessage('payment_settings.gateway_rule_admin.cap_saved')
+                    ? achbotGatewayAdminAmountSaved($prior['method'])
                     : \achbotMessage('bot.bot.gateway_audience_settings.message.fdfbaf2a40'))
                 : \achbotMessage('bot.bot.gateway_audience_settings.message.74d707fe02')).
             "\n".$page['text'],$page['keyboard']);
         return;
     }
-    $target=in_array($operation['action'],['d','u'],true)
+    $target=in_array($operation['action'],['d','u','b'],true)
         ? 'gr|m|'.$operation['method']
         : ($operation['action']==='q' ? 'gr|q|'.$operation['method'].'|'.$operation['category']
         : (in_array($operation['action'],['v','c','p'],true)
