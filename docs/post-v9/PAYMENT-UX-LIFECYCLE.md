@@ -219,7 +219,11 @@ PK **before** setting PKs, and commits the field-scoped settings JSON,
 stores per-field revision numbers, and a webhook-secret-keyed HMAC
 of the previewed value and revision is stored in the wizard; a stale editor
 cannot overwrite a concurrent modification, even if another administrator
-restores the original value (ABA). Different-field edits can both succeed.
+restores the original value (ABA). Different-field edits can both succeed. The source marker is edit history,
+not the active field registry. A well-formed retired field revision does not
+block other field editors and never authorizes a retired field callback.
+Keep historical revisions inert until the documented, separately authorized
+storage projection; preserve current revisions and the global watermark.
 Malformed, duplicate, revoked, unsigned, replayed or unknown-commit
 operations return **no success confirmation**, with reason-code-only
 administrative logging. No private field value or submitted credential is

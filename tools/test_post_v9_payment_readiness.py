@@ -150,6 +150,34 @@ def main():
         sql("UPDATE setting SET value='[]' WHERE type='BOT_STATES'")
         assert has(invoke(3),"setting_bot_states","BLOCK")
         cases.append("duplicate_and_malformed_settings_reported")
+        # Editor availability is separate from settlement readiness.
+        # Valid retired history is inert; genuinely broken editor metadata
+        # is visible without blocking already configured payment methods.
+        seed({"walletState":"on"},{"smsApiHorizonHours":"12","manualUsdtWallet":"historical"})
+        def marker(doc):
+            raw=json.dumps(doc,separators=(",",":")).encode().hex()
+            sql("DELETE FROM setting WHERE type='ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE'; "
+                "INSERT INTO setting(type,value) VALUES ('ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE',UNHEX('"+raw+"'))")
+        source={"version":1,"last_update_id":701,"actor_id":9001,
+                "field_versions":{"manualUsdtRateToman":700,"smsApiHorizonHours":699}}
+        marker(source)
+        original=sql("SELECT id,type,HEX(value) FROM setting ORDER BY id")
+        report=invoke(0)
+        assert any(c["id"]=="payment_key_editor_source" and c["code"]=="historical_revisions_retained_not_blocking_editor" for c in report["checks"])
+        assert has(report,"payment_key_storage","WARN")
+        assert original==sql("SELECT id,type,HEX(value) FROM setting ORDER BY id")
+        assert "historical" not in json.dumps(report["methods"])
+        for bad in (None,[1],{"manualUsdtRateToman":"700"}):
+            marker({**source,"field_versions":bad})
+            report=invoke(0)
+            assert any(c["id"]=="payment_key_editor_source" and c["code"]=="invalid_source_marker_editor_unavailable" for c in report["checks"])
+        marker({**source,"field_versions":{"manualUsdtRateToman":700}})
+        assert has(invoke(0),"payment_key_editor_source","PASS")
+        sql("INSERT INTO setting(type,value) VALUES ('ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE','{}')")
+        assert any(c["id"]=="payment_key_editor_source" and c["code"]=="duplicate_source_marker_editor_unavailable" for c in invoke(0)["checks"])
+        seed({"walletState":"on"},{})
+        assert has(invoke(0),"payment_key_editor_source","INFO")
+        cases.append("retired_and_malformed_editor_history_diagnosed_without_payment_runtime_block")
         seed({"walletState":"on"},{})
         sql("ALTER TABLE payment_delivery_intents DROP CONSTRAINT ck_delivery_source_v2")
         r=invoke(2)

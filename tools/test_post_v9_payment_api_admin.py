@@ -265,7 +265,109 @@ def main():
         assert states()==current and any(x[0]=='deny' for x in malformed['events'])
         checks.append('malformed_stored_secret_invalid_owner_allowed_duplicate_toggle_unknown_flag_denied')
 
-    report={'status':'PASS','checks':checks,'evidence_module':str(evidence),
+        # Installed upgrade: retiring a setting must not invalidate the
+        # entire editor's history. Exercise every actual current callback
+        # (including non-API public fields) against an existing watermark.
+        retired={'smsApiHorizonHours':'12','usdtAgentRateToman':'200000',
+                 'manualUsdtWallet':'historical-unscoped','tronwallet':'historical-tron'}
+        original=values() | retired | {'unclassifiedFixture':'preserve'}
+        keys.store(w,env,original)
+        history=keys.marker(w,env)
+        past={'smsApiHorizonHours':history['last_update_id']-3,
+              'usdtAgentRateToman':history['last_update_id']-2,
+              'previouslyEditableFixture':history['last_update_id']-1}
+        history['field_versions'].update(past)
+        def install_marker(doc):
+            raw=json.dumps(doc,separators=(',',':')).encode().hex()
+            keys.sql(w,env,"UPDATE setting SET value=UNHEX('"+raw+"') WHERE type='ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE'")
+        install_marker(history)
+        for field in retired:
+            result=call(data='changePaymentKeys'+field)
+            assert any(x[0]=='deny' for x in result['events']),result
+            assert values()==original and keys.marker(w,env)==history
+        sample={
+            'nowpayment':'synthetic-now','nextpay':'synthetic-next','zarinpal':'synthetic-zarin',
+            'bankAccount':'synthetic-bank','holderName':'Fixture holder',
+            'giftCardUrl':'https://example.com/gifts',
+            'manualUsdtWalletBEP20':'0x'+'a'*40,'manualUsdtWalletERC20':'0x'+'b'*40,
+            'manualUsdtWalletTRC20':'TNPeeaaFB7K9cmo4uQpcU32zGK8G1NYqeL',
+            'manualTrxWallet':'TJRabPrwbZy45sbavfcjinPJC18kjpRTv8',
+            'manualUsdtRateToman':'270000','manualTrxRateToman':'35000','inviteReward':'1200',
+            'smsApiUrl':'https://example.com/wp-json/ach-pay-manager/v1',
+            'smsApiToken':TOKEN,'smsApiProvider':'BANK','smsApiSender':'fixture-sender',
+            'smsApiMobileSource':'fixture-phone','smsApiRuleId':'12','smsApiBankKey':'fixture-bank',
+            'smsApiTimezone':'Asia/Tehran','smsApiCalendar':'gregorian',
+            'giftApiUrl':'https://example.com/wp-json/ach-gcw/v2','giftApiKeyId':'fixture-client',
+            'giftApiSecret':SECRET,'giftApiAmountUnit':'toman',
+            'giftApiGameKey':'fixture-game','giftApiValueId':'11',
+        }
+        active=json.loads(subprocess.check_output(['php','-r',
+            'require "src/Finance/PaymentKeyAdmin.php";echo json_encode(achbotPaymentKeyAdminFields());'],
+            cwd=ROOT,text=True))
+        assert set(sample)==set(active)
+        for field,value in sample.items():
+            before=values();prior=keys.marker(w,env)
+            editor(field)
+            opened_marker=keys.marker(w,env)
+            assert opened_marker['field_versions']==prior['field_versions']
+            assert opened_marker['last_update_id']>prior['last_update_id']
+            assert values()==before
+            canceled=call(kind='message',text=CANCEL_COPY)
+            assert values()==before and keys.step(w,env)=='none',canceled
+            assert keys.marker(w,env)['field_versions']==prior['field_versions']
+            saved=editor(field,value)
+            after=values();latest=keys.marker(w,env)
+            assert keys.step(w,env)=='none' and field in after,saved
+            if field in ('smsApiToken','giftApiSecret'):
+                assert after[field].startswith('achpe1:') and value not in str(saved)
+            else: assert after[field]==value,(field,saved)
+            assert {k:v for k,v in after.items() if k!=field}=={k:v for k,v in before.items() if k!=field}
+            assert latest['field_versions']==(prior['field_versions'] | {field:latest['last_update_id']})
+        assert all(keys.marker(w,env)['field_versions'][k]==v for k,v in past.items())
+        assert all(values()[k]==v for k,v in retired.items())
+        checks.append('historical_revisions_all_current_fields_start_cancel_save_preserve_peers')
+
+        # Actual ABA and stale source protections remain intact with retired
+        # history present; the old callback never becomes executable.
+        editor('manualTrxRateToman',actor=9002)
+        stale_step=keys.step(w,env,9002)
+        editor('manualTrxRateToman','36000',actor=9003)
+        editor('manualTrxRateToman','35000',actor=9003)
+        before=values();prior=keys.marker(w,env)
+        no_save(call(kind='message',text='37000',actor=9002))
+        assert values()==before and keys.marker(w,env)==prior and keys.step(w,env,9002)==stale_step
+        call(kind='message',text=CANCEL_COPY,actor=9002)
+        prior=keys.marker(w,env)
+        result=call(data='changePaymentKeysbankAccount',update_id=prior['last_update_id'])
+        assert any(x[0]=='deny' for x in result['events'])
+        assert keys.marker(w,env)==prior and values()==before and keys.step(w,env)=='none'
+        checks.append('historical_revisions_preserve_aba_and_authenticated_source_watermark')
+
+        # A bad revision document must never erase an active field baseline.
+        before=values();prior=keys.marker(w,env)
+        for malformed in (None,False,'bad',[1],{'0':1},{'':1},
+                          {'manualTrxRateToman':0},{'manualTrxRateToman':'1'},
+                          {'retiredFixture':False}):
+            bad=prior | {'field_versions':malformed}
+            install_marker(bad)
+            result=call(data='changePaymentKeysbankAccount')
+            assert any(x[0]=='deny' for x in result['events']),result
+            assert values()==before and keys.marker(w,env)==bad and keys.step(w,env)=='none'
+        install_marker(prior)
+        keys.sql(w,env,"INSERT INTO setting(type,value) VALUES ('ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE','{}')")
+        result=call(data='changePaymentKeysbankAccount')
+        assert any(x[0]=='deny' for x in result['events']) and values()==before and keys.step(w,env)=='none'
+        keys.sql(w,env,"DELETE FROM setting WHERE type='ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE' AND value='{}'")
+        assert keys.marker(w,env)==prior
+        # Existing valid old markers without field_versions remain valid.
+        historical=prior.copy();historical.pop('field_versions')
+        install_marker(historical)
+        editor('bankAccount');call(kind='message',text=CANCEL_COPY)
+        assert values()==before and keys.step(w,env)=='none'
+        assert keys.sql(w,env,'SELECT COUNT(*) FROM pays')=='0'
+        checks.append('malformed_or_duplicate_revisions_denied_missing_legacy_map_supported')
+
+    report={'status':'PASS','checks':checks,'scenarios':checks,'cases':len(checks),'evidence_module':str(evidence),
             'evidence_sha256':evidence_sha256}
     if args.report: args.report.write_text(json.dumps(report,ensure_ascii=False,indent=2)+'\n')
     print(json.dumps(report,ensure_ascii=False))
