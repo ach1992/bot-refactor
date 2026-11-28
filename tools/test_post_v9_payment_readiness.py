@@ -122,6 +122,13 @@ def main():
         seed({**fallback,"gatewayAmountMode":{"wallet":"unknown"}},{})
         assert invoke(3)["methods"]["wallet"]["offerability"]=="configured_but_policy_denied"
         cases.append("explicit_positive_amount_alternative_is_potential_not_actual_authorization")
+        for mode in ("cap","fallback"):
+            for bad in (["off"],{"0":"off","wallet":"all"}):
+                seed({"walletState":"on","gatewayAudience":bad,
+                      "gatewayAmountMode":{"wallet":mode},"gatewayMaxAmountToman":{"wallet":100},
+                      "gatewayRuleExemptUsers":{"wallet":[123]}},{})
+                assert has(invoke(3),"gateway_policies","BLOCK")
+        cases.append("malformed_legacy_map_readiness_rejects_numeric_keys")
         seed({"manualUsdtState":"on"},{"manualUsdtWalletBEP20":"0x"+"a"*40,"manualUsdtRateToman":"1000"})
         r=invoke(0)
         assert r["methods"]["manual_trx"]["offerability"]=="not_offered"

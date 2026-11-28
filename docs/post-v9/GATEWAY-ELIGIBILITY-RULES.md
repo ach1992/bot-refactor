@@ -76,7 +76,13 @@ historical backfill**.
   values are freely entered nonnegative integers, with overflow validation.
 - If `gatewayRules` or a method key is **absent**, the existing
   `gatewayAudience` for that method remains authoritative, including explicit
-  `off`. A method key with an empty list is deny-all. A malformed explicit
+  `off`. An absent/empty legacy map or an omitted method in a valid map
+  retains the `all` default. A nonempty list or numeric key in the active
+  legacy map is structurally invalid and denies access before defaults,
+  amount alternatives or exemptions; invalid individual string-keyed values
+  remain method-local. An explicit modern method rule takes precedence over
+  inactive legacy policy. A modern method key with an empty list denies the
+  ordinary audience. A malformed explicit
   policy, unknown category/method, duplicate category, invalid number, ambiguous
   user or failed authoritative read fails closed. A newly added rule for a
   previously `off` method requires an explicit administrator action.

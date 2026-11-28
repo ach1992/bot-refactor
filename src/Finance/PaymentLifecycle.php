@@ -604,6 +604,11 @@ function achbotPayUxAudienceAllowedInState(mysqli $db,string $method,int $userId
         if (!$hasRulePolicy) {
             $configured=array_key_exists('gatewayAudience',$states)?$states['gatewayAudience']:[];
             if (!is_array($configured)) return false;
+            // Associative JSON decoding also accepts lists and numeric
+            // object keys. Neither is a per-method map; do not let an
+            // absent method in a malformed map default to unrestricted.
+            foreach ($configured as $key=>$ignored)
+                if (!is_string($key)) return false;
             $mode=array_key_exists($method,$configured)?$configured[$method]:'all';
             if (!is_string($mode) || !array_key_exists($mode,achbotPayUxAudienceModes()))
                 return false;

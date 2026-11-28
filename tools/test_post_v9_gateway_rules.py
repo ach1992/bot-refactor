@@ -570,6 +570,52 @@ def main():
         sql(w,e,"DELETE FROM users WHERE username='duplicate_gateway_fixture'")
         sql(w,e,"ALTER TABLE users DROP INDEX idx_users_userid_v1, ADD UNIQUE INDEX idx_users_userid_v1(userid)")
         cases.append('amount_fallback_all_methods_inclusive_disabled_zero_identity_policy_and_exemptions')
+        # A structurally malformed active legacy map must not fall through
+        # to the omitted-method all default, the OR threshold or exemption.
+        # Numeric object keys are also invalid, not only contiguous lists.
+        method='bank_transfer'
+        for bad in (['off'], ['off','all'], {'0':'off','gift_card':'off'},
+                    {'2':'off',method:'all'}):
+            malformed={**initial,'gatewayAudience':bad}
+            for mode in ('cap','fallback'):
+                for price in (99,100,101):
+                    s={**malformed,'gatewayAmountMode':{method:mode},
+                       'gatewayMaxAmountToman':{method:100}}
+                    for exempt in ([],[1001]):
+                        assert not amount_allowed({**s,'gatewayRuleExemptUsers':{method:exempt}},
+                                                  price,method), (bad,mode,price,exempt)
+            for amount in ({method:0},{}):
+                s={**malformed,'gatewayAmountMode':{method:'fallback'},
+                   'gatewayMaxAmountToman':amount}
+                assert not amount_allowed(s,101,method)
+            for final in (False,True):
+                assert not allowed(malformed,method,final=final)
+                assert not allowed({**malformed,'gatewayRuleExemptUsers':{method:[1001]}},
+                                   method,final=final)
+        # Keep valid defaults and unrelated method value isolation. Modern
+        # explicit method rules supersede the inactive legacy document.
+        absent={k:v for k,v in initial.items() if k!='gatewayAudience'}
+        for base in (absent,{**initial,'gatewayAudience':{}},
+                     {**initial,'gatewayAudience':[]},
+                     {**initial,'gatewayAudience':{'wallet':'off'}},
+                     {**initial,'gatewayAudience':{'wallet':None}}):
+            assert amount_allowed({**base,'gatewayMaxAmountToman':{method:100}},100,method)
+            assert not amount_allowed({**base,'gatewayMaxAmountToman':{method:100}},101,method)
+            assert amount_allowed({**base,'gatewayAmountMode':{method:'fallback'},
+                                   'gatewayMaxAmountToman':{method:100}},101,method)
+        for bad in (['off'],{'0':'off','wallet':'all'}):
+            modern=policy(method,[blank('all')],gatewayAudience=bad)
+            assert amount_allowed(modern,100,method)
+            assert not amount_allowed(modern,100,'wallet')
+            deny=policy(method,[],gatewayAudience=bad)
+            assert not amount_allowed(deny,100,method)
+            fallback={**deny,'gatewayAmountMode':{method:'fallback'},
+                      'gatewayMaxAmountToman':{method:100}}
+            assert amount_allowed(fallback,100,method)
+            assert not amount_allowed(fallback,101,method)
+            assert amount_allowed({**fallback,'gatewayRuleExemptUsers':{method:[1001]}},
+                                  101,method)
+        cases.append('malformed_active_legacy_map_denied_cap_fallback_exemption_and_modern_precedence')
         # Rest of operator suite uses original source route and writer.
         store(initial)
         sequence=[1000]
