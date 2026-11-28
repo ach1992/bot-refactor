@@ -59,13 +59,19 @@ authentic funds/evidence or treating a migrated PasarGuard account as retired.
   Concurrent editors must not overwrite a newer relevant business value.
   [Owner decision #236](https://github.com/ach1992/bot-refactor/issues/236#issuecomment-7227556409).
 
-- Each registered checkout payment method has an optional configurable
-  inclusive maximum final invoice amount in Toman, unlimited by default.
-  This independently intersects enable/audience rules (even for exempt
-  users), uses the discounted bulk total or wallet recharge amount, and is
-  rechecked at first admission. Already admitted original receipts remain
-  settleable; the independent no-invoice scheduled renewal policy is
-  unchanged. [Owner approval #236](https://github.com/ach1992/bot-refactor/issues/236#issuecomment-7227732609).
+- Each registered checkout payment method has an optional inclusive final
+  invoice amount in Toman and a selectable amount mode. The default cap
+  mode intersects audience eligibility (including exemptions) with the
+  configured ceiling; zero or missing means no cap. Explicit fallback mode
+  admits an eligible audience OR a positive final amount within a positive
+  configured threshold; zero or missing disables only that alternative.
+  Eligible users have no ceiling in fallback mode. Both modes preserve
+  the actual method enable flag, valid policy, identity and financial/provider
+  checks, and use the original discounted invoice total at display and first
+  admission. Already admitted receipts remain settleable; the independent
+  no-invoice scheduled renewal policy is unchanged. See
+  [gateway rules](post-v9/GATEWAY-ELIGIBILITY-RULES.md) and
+  [Owner refinement #236](https://github.com/ach1992/bot-refactor/issues/236#issuecomment-7230152069).
 - Positive base-price plans are commercial offerings; zero-base-price
   plans are dedicated to trials. Ordinary, custom, bulk and representative
   commercial offerings use the actual eligible current catalogue.
