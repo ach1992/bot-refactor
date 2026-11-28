@@ -24,8 +24,8 @@ OLD='ACHBOT_MARZBAN_PANEL_GROUP'
 NEW='ACHBOT_PANEL_GROUP'
 SEED="""
 INSERT INTO setting(id,type,value) VALUES (71,'ACHBOT_MARZBAN_PANEL_GROUP','Physical fixture'),
- (72,'PAYMENT_KEYS','{"manualUsdtRateToman":"100000","usdtAgentRateToman":"200000"}'),
- (73,'ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE','{"version":1,"last_update_id":701,"actor_id":9001,"field_versions":{"manualUsdtRateToman":701,"usdtAgentRateToman":700}}'),
+ (72,'PAYMENT_KEYS','{"manualUsdtRateToman":"100000","usdtAgentRateToman":"200000","smsApiHorizonHours":"12","manualUsdtWallet":"historical-unscoped","tronwallet":"historical-tron","unclassifiedFixture":"keep"}'),
+ (73,'ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE','{"version":1,"last_update_id":701,"actor_id":9001,"field_versions":{"manualUsdtRateToman":701,"usdtAgentRateToman":700,"smsApiHorizonHours":699,"previouslyEditableFixture":698}}'),
  (75,'FIXTURE_UNCLASSIFIED_SETTING','{"keep":"unchanged"}');
 INSERT INTO server_config(id,panel_url,type,username,password,sub_links,provider_connection_id,provider_instance_key,provider_version,provider_enabled)
  VALUES(3,'https://fixture.invalid','pasarguard','fixture','fixture-key','fixture-sub',3,REPEAT('a',32),'5.5.1',1);
@@ -171,8 +171,8 @@ def main():
                 select=quoted
                 if t=='setting':
                     select=','.join("IF(type='"+OLD+"','"+NEW+"',type)" if c=='type' else
-                        "CASE WHEN type='PAYMENT_KEYS' THEN JSON_REMOVE(value,'$.usdtAgentRateToman') "
-                        "WHEN type='ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE' THEN JSON_REMOVE(value,'$.field_versions.usdtAgentRateToman') ELSE value END"
+                        "CASE WHEN type='PAYMENT_KEYS' THEN JSON_REMOVE(value,'$.usdtAgentRateToman','$.smsApiHorizonHours','$.manualUsdtWallet','$.tronwallet') "
+                        "WHEN type='ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE' THEN JSON_REMOVE(value,'$.field_versions.usdtAgentRateToman','$.field_versions.smsApiHorizonHours','$.field_versions.manualUsdtWallet','$.field_versions.tronwallet') ELSE value END"
                         if c=='value' else '`'+c+'`' for c in cols)
                 statements.append('INSERT INTO `'+target+'`.`'+t+'` ('+quoted+') SELECT '+select+' FROM `'+source+'`.`'+t+'`;')
             # There is a real cyclic attempt/transaction reference. Copy the
@@ -197,8 +197,9 @@ def main():
                             assert new[id]==[NEW,value]
                         elif kind in ('PAYMENT_KEYS','ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE'):
                             parsed=json.loads(value)
-                            if kind=='PAYMENT_KEYS': parsed.pop('usdtAgentRateToman',None)
-                            else: parsed.get('field_versions',{}).pop('usdtAgentRateToman',None)
+                            for retired in ('usdtAgentRateToman','smsApiHorizonHours','manualUsdtWallet','tronwallet'):
+                                if kind=='PAYMENT_KEYS': parsed.pop(retired,None)
+                                else: parsed.get('field_versions',{}).pop(retired,None)
                             assert new[id][0]==kind and json.loads(new[id][1])==parsed
                         else: assert new[id]==[kind,value]
                     assert set(old)==set(new)
@@ -206,6 +207,12 @@ def main():
                 assert rows(target,t,cols)==expected,t
             assert all(rows(source,t,columns(source,t))==original[t] for t in tables)
             checks.append('all_table_common_values_and_generated_columns_preserved')
+            assert json.loads(sql("SELECT value FROM setting WHERE type='PAYMENT_KEYS'",target))=={
+                'manualUsdtRateToman':'100000','unclassifiedFixture':'keep'}
+            assert json.loads(sql("SELECT value FROM setting WHERE type='ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE'",target))=={
+                'version':1,'last_update_id':701,'actor_id':9001,
+                'field_versions':{'manualUsdtRateToman':701,'previouslyEditableFixture':698}}
+            checks.append('exact_retired_payment_key_projection_preserves_current_and_unclassified_history')
             assert counters(source)==original_counters==counters(target)
             assert int(original_counters['setting'])>=1000 and int(original_counters['orders_list'])>=1000
             checks.append('identity_allocation_counters_preserved')

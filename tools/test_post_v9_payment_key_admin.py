@@ -474,8 +474,8 @@ def main():
         saved('/clear')
         assert state(w,e)['manualUsdtRateToman']==''
         checks.append('shared_usdt_rate_upper_boundary_and_clear')
-        # A source requiring controlled transfer cannot run a retired editor.
-        # Current fields remain editable after the exact retired projection.
+        # Historical valid revisions do not authorize the retired editor
+        # and do not block current fields before controlled projection.
         reset({'manualUsdtRateToman':'100000','usdtAgentRateToman':'200000'})
         opened('manualUsdtRateToman')
         saved('100001')
@@ -490,15 +490,17 @@ def main():
         assert 'changePaymentKeysusdtAgentRateToman' not in str(menu)
         assert 'changePaymentKeysmanualUsdtRateToman' in str(menu)
         checks.append('retired_agent_rate_menu_and_callback_removed')
-        denied(call(data='changePaymentKeysmanualUsdtRateToman'))
-        assert state(w,e)==old_state and marker(w,e)==old_marker
+        opened('manualUsdtRateToman')
+        saved('100002')
+        assert state(w,e)==(old_state | {'manualUsdtRateToman':'100002'})
+        assert marker(w,e)['field_versions']['usdtAgentRateToman']==old_marker['field_versions']['usdtAgentRateToman']
         sql(w,e,"UPDATE setting SET value=JSON_REMOVE(value,'$.field_versions.usdtAgentRateToman') WHERE type='ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE'")
         sql(w,e,"UPDATE setting SET value=JSON_REMOVE(value,'$.usdtAgentRateToman') WHERE type='PAYMENT_KEYS'")
         opened('manualUsdtRateToman')
         saved('123456')
         assert state(w,e)=={'manualUsdtRateToman':'123456'}
         assert 'usdtAgentRateToman' not in marker(w,e)['field_versions']
-        checks.append('retired_revision_requires_transfer_other_fields_editable')
+        checks.append('retired_revision_inert_before_and_after_controlled_transfer')
         # An in-flight retired wizard cannot save or clear its old value.
         sql(w,e,"UPDATE users SET step='achbotPaymentKey|usdtAgentRateToman|1|"+'a'*64+"' WHERE userid=9002")
         before_state=state(w,e);before_marker=marker(w,e);before_step=step(w,e)

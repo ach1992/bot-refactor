@@ -319,7 +319,14 @@ REQUIRED_SCENARIOS = {
     "current_storage_transfer": ("unmapped_nonzero_inbound_refused","group_collision_and_dangling_membership_refused",
         "complete_source_dump_restores_original_evidence","all_table_common_values_and_generated_columns_preserved",
         "ambiguous_or_malformed_payment_setting_refused","identity_allocation_counters_preserved",
+        "exact_retired_payment_key_projection_preserves_current_and_unclassified_history",
         "all_declared_foreign_key_relationships_verified"),
+
+    "payment_api_admin": (
+        "historical_revisions_all_current_fields_start_cancel_save_preserve_peers",
+        "historical_revisions_preserve_aba_and_authenticated_source_watermark",
+        "malformed_or_duplicate_revisions_denied_missing_legacy_map_supported",
+    ),
 
     "broadcast_delivery": (
         "broadcast_edit_stale_or_replayed_generation_never_queues",
@@ -396,6 +403,7 @@ REQUIRED_SCENARIOS = {
         "fresh_empty_structure_ready_not_payment_configured",
         "select_only_account_cannot_write",
         "configured_current_methods_and_no_private_output_or_database_writes",
+        "retired_and_malformed_editor_history_diagnosed_without_payment_runtime_block",
         "explicit_exemptions_are_potential_not_actual_authorization",
         "explicit_positive_amount_alternative_is_potential_not_actual_authorization",
         "malformed_legacy_map_readiness_rejects_numeric_keys",

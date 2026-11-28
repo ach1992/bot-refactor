@@ -64,6 +64,30 @@ function achbotPaymentKeyAdminStep(string $step): ?array {
     return $id===false?null:['field'=>$m[1],'source_id'=>$id,'baseline'=>$m[3]];
 }
 
+/** The marker is authenticated editor history, not the current field registry.
+ * Retiring a field must not invalidate unrelated editor sessions. Retain
+ * well-formed historical revisions until a controlled storage projection;
+ * only achbotPaymentKeyAdminFields() authorizes an actual field operation.
+ */
+function achbotPaymentKeyAdminSourceMarker(string $raw): array {
+    $marker=json_decode($raw,true,512,JSON_THROW_ON_ERROR);
+    if (!is_array($marker) || ($marker['version']??null)!==1 ||
+        !is_int($marker['last_update_id']??null) ||
+        !is_int($marker['actor_id']??null))
+        throw new RuntimeException('payment_key_source_stale_or_invalid');
+    // Missing revisions were supported before field-level CAS was added.
+    // An explicit malformed map must not be mistaken for missing history.
+    $revisions=array_key_exists('field_versions',$marker)?$marker['field_versions']:[];
+    if (!is_array($revisions)) throw new RuntimeException('payment_key_revisions_invalid');
+    foreach ($revisions as $revisionField=>$revision) {
+        if (!is_string($revisionField) || $revisionField==='' ||
+            !is_int($revision) || $revision<=0)
+            throw new RuntimeException('payment_key_revisions_invalid');
+    }
+    $marker['field_versions']=$revisions;
+    return $marker;
+}
+
 /** Keep original network/rate semantics, with no untrusted echo of secrets. */
 function achbotPaymentKeyAdminNormalize(string $field,string $input): ?string {
     if (!in_array($field,achbotPaymentKeyAdminFields(),true)) return null;
@@ -231,25 +255,15 @@ function achbotAdminPaymentKeyChange($update,int $actor,int $chat,int $message,
         };
         $markerType='ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE';
         $oldMarker=$locate($markerType);
+        $revisions=[];
         if ($oldMarker) {
-            $marker=json_decode((string)$oldMarker['value'],true,512,JSON_THROW_ON_ERROR);
-            if (!is_array($marker) || ($marker['version']??null)!==1 ||
-                !is_int($marker['last_update_id']??null) ||
-                !is_int($marker['actor_id']??null) ||
-                $sourceId<=$marker['last_update_id'])
+            $marker=achbotPaymentKeyAdminSourceMarker((string)$oldMarker['value']);
+            if ($sourceId<=$marker['last_update_id'])
                 throw new RuntimeException('payment_key_source_stale_or_invalid');
+            $revisions=$marker['field_versions'];
         }
-        // A per-field revision prevents ABA: an older wizard must not be
-        // accepted merely because another editor restored the same value.
-        // Revisions are stored in the existing source-marker JSON, no DDL.
-        $revisions=$marker['field_versions']??[];
-        if (!is_array($revisions)) throw new RuntimeException('payment_key_revisions_invalid');
-        foreach ($revisions as $revisionField=>$revision) {
-            if (!is_string($revisionField) ||
-                !in_array($revisionField,achbotPaymentKeyAdminFields(),true) ||
-                !is_int($revision) || $revision<=0)
-                throw new RuntimeException('payment_key_revisions_invalid');
-        }
+        // Retain the original field revision for ABA protection. Historical
+        // entries are inert; they cannot make a retired callback executable.
         $row=$locate('PAYMENT_KEYS');
         $keys=$row
             ? json_decode((string)$row['value'],true,512,JSON_THROW_ON_ERROR)

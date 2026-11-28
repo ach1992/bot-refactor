@@ -26,10 +26,16 @@ check without opening their contents. Extra database objects and files are not
 deleted; reconcile them separately against the release and actual webroot.
 This is not a full web-server routing or arbitrary extension audit.
 
-The tool reads only BOT_STATES and PAYMENT_KEYS for configuration checks.
-Missing settings on a newly initialized database mean unconfigured, not
-invalid schema. Duplicate or malformed documents and invalid current gateway
-rules are reported. A method is potentially offerable only with its switch,
+The tool reads BOT_STATES, PAYMENT_KEYS and the payment-key editor source
+marker for configuration checks. Missing settings on a newly initialized
+database mean unconfigured, not invalid schema. Duplicate or malformed
+payment settings documents and invalid current gateway rules are reported.
+Editor source-marker findings are independent of payment-processing readiness:
+a missing marker is normal on a fresh installation; well-formed historical
+field revisions do not prevent current field edits. Duplicate or malformed
+editor history warns that editing is unavailable, not that existing payment
+processing is broken. Noncurrent key names are reported for controlled
+reconciliation; no settings, history, or credentials are printed or deleted. A method is potentially offerable only with its switch,
 required local settings and an effective policy allowing some audience or an explicit valid user exemption.
 It uses the current manual destination/rate helpers and current gateway-rule
 parser. It does not test a real customer's eligibility, balance or merchant.

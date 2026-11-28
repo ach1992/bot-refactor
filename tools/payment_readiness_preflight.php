@@ -147,6 +147,31 @@ function readSettings(mysqli $db): ?array {
     }
     return $valid ? $records : null;
 }
+/** Inspect editor metadata separately from payment processing readiness.
+ * No actor action, credential decryption or mutation is performed. */
+function inspectPaymentKeyEditor(mysqli $db,array $keys): void {
+    require_once dirname(__DIR__).'/src/Finance/PaymentKeyAdmin.php';
+    $active=achbotPaymentKeyAdminFields();
+    $rows=$db->query("SELECT value FROM setting
+        WHERE type='ACHBOT_ADMIN_PAYMENT_KEYS_SOURCE' ORDER BY id LIMIT 2")->fetch_all(MYSQLI_ASSOC);
+    if (!$rows) {
+        finding('payment_key_editor_source','INFO','editor_history_not_created');
+    } elseif (count($rows)!==1) {
+        finding('payment_key_editor_source','WARN','duplicate_source_marker_editor_unavailable');
+    } else {
+        try {
+            $marker=achbotPaymentKeyAdminSourceMarker((string)$rows[0]['value']);
+            $historical=array_diff(array_keys($marker['field_versions']),$active);
+            finding('payment_key_editor_source',$historical?'WARN':'PASS',
+                $historical?'historical_revisions_retained_not_blocking_editor':'valid_source_marker');
+        } catch (Throwable $ignored) {
+            finding('payment_key_editor_source','WARN','invalid_source_marker_editor_unavailable');
+        }
+    }
+    if (array_diff(array_keys($keys),$active))
+        finding('payment_key_storage','WARN','noncurrent_key_names_retained_for_review');
+}
+
 function flag(array $state, string $key): bool {
     return ($state[$key] ?? 'off') === 'on';
 }
@@ -371,6 +396,7 @@ try {
         $settings=readSettings($db);
         if ($settings!==null) {
             $state=$settings['BOT_STATES'];$keys=$settings['PAYMENT_KEYS'];
+            inspectPaymentKeyEditor($db,$keys);
             $valid=policyCheck($state);
             finding('gateway_policies',$valid?'PASS':'BLOCK',$valid?'current_source_parser_accepts_rules':'malformed_or_unknown_rule_denies');
             achbotPreflightApiReadiness($state,$keys);
