@@ -34,9 +34,11 @@ Editor source-marker findings are independent of payment-processing readiness:
 a missing marker is normal on a fresh installation; well-formed historical
 field revisions do not prevent current field edits. Duplicate or malformed
 editor history warns that editing is unavailable, not that existing payment
-processing is broken. Noncurrent key names are reported for controlled
-reconciliation; no settings, history, or credentials are printed or deleted. A method is potentially offerable only with its switch,
-required local settings and an effective policy allowing some audience or an explicit valid user exemption.
+processing is broken. The presence of noncurrent keys is reported for
+controlled reconciliation, without listing individual key names. No settings,
+history, or credentials are printed or deleted. A method is potentially
+offerable only with its switch, required local settings and an effective
+policy allowing some audience or an explicit valid user exemption.
 It uses the current manual destination/rate helpers and current gateway-rule
 parser. It does not test a real customer's eligibility, balance or merchant.
 API credentials are checked only for local configuration/envelope presence,
