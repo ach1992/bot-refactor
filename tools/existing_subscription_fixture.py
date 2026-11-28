@@ -157,7 +157,10 @@ def existing_panel(trap=False):
 
 PHP=r'''<?php
 error_reporting(E_ALL);
-set_error_handler(static function($n,$m){if($n===E_DEPRECATED)return true;throw new ErrorException($m,0,$n);});
+set_error_handler(static function($n,$m){
+ if($n===E_DEPRECATED && empty($GLOBALS['spec']['strict_deprecations']))return true;
+ throw new ErrorException($m,0,$n);
+});
 $_SERVER['SCRIPT_FILENAME']=__FILE__;define('ACHBOT_PG_TEST_LOOPBACK',true);
 $root=$argv[1];$spec=json_decode($argv[4],true,64,JSON_THROW_ON_ERROR);
 $connection=new mysqli('localhost','root','',$argv[3],0,$argv[2]);$connection->set_charset('utf8mb4');
@@ -185,6 +188,7 @@ $update=json_decode(json_encode(['update_id'=>$source]+$frame));
 require $root.'/src/Telegram/UpdateBindings.php';
 $q=$connection->prepare('SELECT * FROM users WHERE userid=? LIMIT 1');$q->bind_param('i',$from_id);$q->execute();$userInfo=$q->get_result()->fetch_assoc();$q->close();
 if(!empty($spec['cached_admin']))$userInfo['isAdmin']=1;
+if(array_key_exists('cached_temp',$spec))$userInfo['temp']=$spec['cached_temp'];
 function sendMessage($text,$keyboard=null,$parse=null,$to=null){
  $GLOBALS['events'][]=['kind'=>'send','text'=>$text,'keyboard'=>$keyboard,'to'=>$to];
  return(object)['ok'=>$GLOBALS['spec']['telegram_ok']??true,

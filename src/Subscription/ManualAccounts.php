@@ -44,7 +44,7 @@ if (preg_match('/^addSubscriptionToCustomer([1-9][0-9]*)$/D',(string)$data,$matc
     exit();
 }
 
-$tempData = json_decode($userInfo['temp'], true) ?: [];
+$tempData = json_decode((string)($userInfo['temp'] ?? ''), true) ?: [];
 
 /**
  * Consume the legacy admin user-id selection atomically on the exact actor PK.
@@ -142,7 +142,7 @@ if ($userInfo['step'] == "awaiting_userid_input" && $text !== \achbotMessage('le
         sendMessage(\achbotMessage('subscription.manual_accounts.customer_not_found'),$cancelKey,'html');
         return;
     }
-    $tempData = json_decode($userInfo['temp'], true) ?: [];
+    $tempData = json_decode((string)($userInfo['temp'] ?? ''), true) ?: [];
     $tempData['custom_userid'] = $customUserId;
     unset($tempData['awaiting_userid_for_add']);
     try {
