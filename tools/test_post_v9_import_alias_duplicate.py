@@ -111,7 +111,7 @@ def run() -> list[str]:
             def customer_preview(actor,customer,token=None):
                 preview(actor,token)
                 call('manual',actor=actor,data='addSubscriptionToCustomer2')
-                call('manual',actor=actor,text=str(customer))
+                call('manual',actor=actor,text=str(customer),strict_deprecations=True)
             def import_for(actor, customer=None, token=None):
                 if customer is None:preview(actor,token)
                 else:customer_preview(actor,customer,token)
@@ -124,6 +124,47 @@ def run() -> list[str]:
                 assert 'reason=import_already_attached' in log, (provider,'duplicate_reason',log,response)
                 assert snapshot()==before,(provider,'duplicate_changed_database')
                 return response
+            # An ordinary request reaches the manual controller even when no
+            # import wizard is active. SQL NULL is the normal empty state.
+            # Keep deprecations fatal in these source-real checks rather than
+            # relying on the legacy fixture's default diagnostic filtering.
+            idle_values=(None, '', '{"server_id":2,"remark":"fixture"}',
+                         '{invalid', 'null', '[]')
+            before=snapshot()
+            native_before=current_native()
+            trace_before=list(vendor.trace)
+            for value in idle_values:
+                stored='NULL' if value is None else storage.text(value)
+                db("UPDATE users SET step='none',temp="+stored+" WHERE userid=1001")
+                raw=db("SELECT step,COALESCE(HEX(temp),'SQL_NULL') FROM users WHERE userid=1001")
+                response,_=call('manual',strict_deprecations=True)
+                assert response['events']==[], (value,response)
+                assert db("SELECT step,COALESCE(HEX(temp),'SQL_NULL') FROM users WHERE userid=1001")==raw
+            db("UPDATE users SET temp=NULL WHERE userid=1001")
+            assert snapshot()==before and current_native()==native_before and vendor.trace==trace_before
+            checks.append(provider+'_manual_idle_temp_values_without_deprecations_or_effects')
+
+            # SQL NULL and empty string remain distinct raw CAS values. The
+            # decoding fallback must not become an authorization/ownership
+            # comparison or alter the original recipient-selection workflow.
+            db("UPDATE users SET step='awaiting_userid_input',temp=NULL WHERE userid=9001")
+            response,_=call('manual',actor=9001,text='1002',
+                            strict_deprecations=True,cached_temp='')
+            assert response['events']==[] and db(
+                "SELECT step,temp IS NULL FROM users WHERE userid=9001")=='awaiting_userid_input\t1'
+            checks.append(provider+'_manual_raw_null_empty_stale_selection_denied')
+
+            # Both raw decode sites are reached with NULL in a synthetic
+            # already-armed recipient step. Preserve its existing transition;
+            # no import, provider request, or financial effect is exercised.
+            response,_=call('manual',actor=9001,text='1002',strict_deprecations=True)
+            assert db("SELECT step FROM users WHERE userid=9001")==''
+            assert json.loads(db("SELECT temp FROM users WHERE userid=9001"))=={'custom_userid':1002}
+            assert len(response['events'])==1 and response['events'][0]['kind']=='send'
+            db("UPDATE users SET step='none',temp=NULL WHERE userid=9001")
+            assert snapshot()==before and current_native()==native_before and vendor.trace==trace_before
+            checks.append(provider+'_manual_nullable_recipient_step_preserves_transition')
+
             result,log,_=import_for(1001)
             assert db("SELECT COUNT(*) FROM orders_list WHERE userid=1001 AND remark='"+remark+"' AND status=1")=='1',(
                 provider,'first_import_failed',result,log)
